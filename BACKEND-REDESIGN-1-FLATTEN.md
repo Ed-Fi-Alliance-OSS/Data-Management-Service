@@ -389,33 +389,85 @@ Array presence rule (recommended):
 
 ## 7. Concrete C# Shapes (No Per-Resource Codegen)
 
-The shapes below are designed to:
-- compile once per resource per schema version
-- execute fast with minimal allocation
-- isolate SQL dialect and bulk-loading differences
+This section defines the **concrete model and plan objects** that allow DMS to:
+
+- derive a relational mapping from `ApiSchema.json` once (per schema version)
+- compile SQL + bindings once (per schema version)
+- execute POST/PUT/GET with **no per-resource code generation** and without N+1 inserts/queries
+
+Think of these objects in **three layers**:
+
+1. **Shape layer** (`RelationalResourceModel`): what tables/columns/keys exist for a resource and how they correspond to JSON paths.
+2. **Plan layer** (`ResourceWritePlan`, `ResourceReadPlan`, `IdentityProjectionPlan`): compiled SQL plus precomputed details needed for efficient execution.
+3. **Execution layer** (`IResourceFlattener`, `IBulkInserter`, `IResourceReconstituter`): runtime services that consume the plans.
+
+All three layers are cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)` so the per-request cost is only: reference resolution + row materialization + SQL execution + JSON writing.
 
 ### 7.1 Value and naming primitives
 
 ```csharp
+/// <summary>
+/// Identifies an API resource type in a way that matches ApiSchema.json semantics.
+/// This is NOT a physical table name. It is used as the key for caching compiled models and plans.
+/// </summary>
 public readonly record struct QualifiedResourceName(string ProjectName, string ResourceName);
 
+/// <summary>
+/// Physical database schema name (e.g. "edfi", "tpdm", "dms").
+/// </summary>
 public readonly record struct DbSchemaName(string Value);
+
+/// <summary>
+/// Physical database table name (schema + local name).
+/// </summary>
 public readonly record struct DbTableName(DbSchemaName Schema, string Name)
 {
     public override string ToString() => $"{Schema.Value}.{Name}";
 }
 
+/// <summary>
+/// Physical database column name.
+/// </summary>
 public readonly record struct DbColumnName(string Value);
 
+/// <summary>
+/// The semantic role of a column within the relational mapping.
+/// </summary>
 public enum ColumnKind
 {
+    /// <summary>
+    /// A scalar value copied from JSON into a typed relational column.
+    /// </summary>
     Scalar,
-    DocumentFk,     // ..._DocumentId
-    DescriptorFk,   // ..._DescriptorId
+
+    /// <summary>
+    /// A foreign key to a concrete resource row (stored as BIGINT DocumentId).
+    /// Column naming convention: ..._DocumentId
+    /// </summary>
+    DocumentFk,
+
+    /// <summary>
+    /// A foreign key to dms.Descriptor(DocumentId) (stored as BIGINT).
+    /// Column naming convention: ..._DescriptorId
+    /// </summary>
+    DescriptorFk,
+
+    /// <summary>
+    /// Array order value for the current collection level.
+    /// Ordinal is required to preserve array ordering during reconstitution.
+    /// </summary>
     Ordinal,
+
+    /// <summary>
+    /// A key column that comes from the parent table’s key (e.g. ParentDocumentId and parent ordinals).
+    /// With composite parent+ordinal keys, the child table’s key begins with one or more ParentKeyPart columns.
+    /// </summary>
     ParentKeyPart
 }
 
+/// <summary>
+/// Abstract scalar kinds supported by DMS relational mapping. These map to engine-specific SQL types.
+/// </summary>
 public enum ScalarKind
 {
     String,
@@ -428,6 +480,9 @@ public enum ScalarKind
     Time
 }
 
+/// <summary>
+/// The relational scalar type, including constraints that affect DDL and parameter binding.
+/// </summary>
 public sealed record RelationalScalarType(
     ScalarKind Kind,
     int? MaxLength = null,
@@ -437,24 +492,77 @@ public sealed record RelationalScalarType(
 
 ### 7.2 JSON path compilation (avoid parsing JSONPath per value)
 
-ApiSchema paths are structurally simple (property navigation + `[*]` wildcards). Compile them to a light-weight segment list.
+ApiSchema JSONPath strings used by DMS are structurally simple:
+
+- property navigation (e.g. `$.nameOfInstitution`)
+- array wildcard selection (e.g. `$.addresses[*].streetNumberName`)
+
+For flatten/reconstitution we should treat JSONPath as a **restricted DSL**, compile it once, and avoid calling a general JSONPath engine for each value.
+
+Rules for the compiled path representation:
+- The canonical form is **absolute** (starts with `$`) to match ApiSchema content.
+- `[*]` indicates “for each element”; the *table* determines the element context (via `JsonScope`), so per-column access can be compiled to a relative path at plan compile time.
 
 ```csharp
+/// <summary>
+/// A restricted JSON path segment used by the relational mapper.
+/// Only property navigation and the "any array element" wildcard are required.
+/// </summary>
 public abstract record JsonPathSegment
 {
     public sealed record Property(string Name) : JsonPathSegment;
     public sealed record AnyArrayElement : JsonPathSegment; // [*]
 }
 
+/// <summary>
+/// A compiled representation of a JSON path used for:
+/// - describing the scope (the JSON object/element represented by a table row)
+/// - describing the source or destination location for a scalar/reference/descriptor value
+///
+/// Invariants:
+/// - Canonical always starts with "$"
+/// - Segments are normalized (no bracket quoting, no numeric indices)
+/// </summary>
 public readonly record struct JsonPathExpression(
     string Canonical,                  // original string for diagnostics
     IReadOnlyList<JsonPathSegment> Segments
 );
 ```
 
-### 7.3 Relational model (explicit, derived)
+### 7.3 Relational resource model (shape layer)
+
+The shape model is the output of the “derive from ApiSchema” step. It is:
+- **resource-specific** (one per resource type)
+- **fully explicit** (tables/columns/keys enumerated)
+- **dialect-neutral** (no SQL strings inside)
 
 ```csharp
+/// <summary>
+/// Fully derived relational mapping for a single API resource type.
+/// This is the canonical shape model used by:
+/// - the migrator (DDL generation)
+/// - runtime plan compilation (SQL generation + bindings)
+/// - runtime validation helpers (e.g. expected descriptor discriminator)
+/// </summary>
+/// <param name="Resource">Logical resource identity (ApiSchema project/resource).</param>
+/// <param name="PhysicalSchema">Physical DB schema where resource tables live (e.g. "edfi").</param>
+/// <param name="Root">The root table model (one row per document; key includes DocumentId).</param>
+/// <param name="TablesInReadDependencyOrder">
+/// Tables ordered for hydration (root first, then child tables, then nested child tables).
+/// This order is used to emit SELECT result sets and to reconstitute efficiently without N+1 queries.
+/// </param>
+/// <param name="TablesInWriteDependencyOrder">
+/// Tables ordered for writing (root first, then child tables in depth-first order).
+/// This order is used to delete/insert child rows in a stable way (replace semantics).
+/// </param>
+/// <param name="ReferenceBindings">
+/// The set of document-reference bindings derived from documentPathsMapping.referenceJsonPaths.
+/// Each binding declares: which JSON reference object it came from, which table stores the FK, and how to reconstitute the identity object.
+/// </param>
+/// <param name="DescriptorBindings">
+/// The set of descriptor-reference bindings derived from documentPathsMapping (descriptor paths).
+/// Each binding declares: which JSON descriptor string path it came from, which table stores the FK, and which descriptor discriminator is expected.
+/// </param>
 public sealed record RelationalResourceModel(
     QualifiedResourceName Resource,
     DbSchemaName PhysicalSchema,
@@ -465,6 +573,39 @@ public sealed record RelationalResourceModel(
     IReadOnlyList<DescriptorBinding> DescriptorBindings
 );
 
+/// <summary>
+/// Shape model for a single relational table.
+/// For root resources, a row corresponds to the root JSON object.
+/// For collection tables, a row corresponds to one array element object at the table’s JsonScope.
+/// </summary>
+/// <param name="Table">Physical table name.</param>
+/// <param name="JsonScope">
+/// The JSON scope represented by a single row:
+/// - Root: "$"
+/// - Child collection: "$.addresses[*]"
+/// - Nested collection: "$.addresses[*].periods[*]"
+/// The parent table is the table whose JsonScope is the longest proper prefix scope of this scope.
+/// </param>
+/// <param name="Key">
+/// The primary key for the table.
+/// Recommended scheme (composite parent+ordinal keys):
+/// - Root: (DocumentId)
+/// - Child: (ParentKeyPart..., Ordinal)
+/// Invariant: for any child table, the sequence of ParentKeyPart columns must match the parent table’s Key columns (by position).
+/// </param>
+/// <param name="Columns">
+/// All columns in the table, including:
+/// - key columns (DocumentId / parent key parts / ordinal)
+/// - scalar columns (typed)
+/// - document reference FK columns (..._DocumentId)
+/// - descriptor FK columns (..._DescriptorId)
+/// Column order is significant: plan compilation uses it to define parameter ordering and row buffers.
+/// </param>
+/// <param name="Constraints">
+/// Logical constraints derived from ApiSchema, used by DDL generation and for diagnostics:
+/// - unique constraints (identityJsonPaths, arrayUniquenessConstraints)
+/// - foreign keys (resource refs, descriptor refs, parent-child joins)
+/// </param>
 public sealed record DbTableModel(
     DbTableName Table,
     JsonPathExpression JsonScope,                 // "$" for root, "$.addresses[*]" for child, etc.
@@ -473,10 +614,35 @@ public sealed record DbTableModel(
     IReadOnlyList<TableConstraint> Constraints
 );
 
+/// <summary>
+/// A primary key description. Key column kinds should be:
+/// - Root: a single ParentKeyPart column holding DocumentId
+/// - Child: ParentKeyPart columns followed by Ordinal
+/// </summary>
 public sealed record TableKey(IReadOnlyList<DbKeyColumn> Columns);
 
+/// <summary>
+/// A single key column. The ColumnKind describes its semantic meaning.
+/// </summary>
 public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 
+/// <summary>
+/// A table column description used for both DDL and runtime binding.
+/// </summary>
+/// <param name="ColumnName">Physical column name.</param>
+/// <param name="Kind">Semantic kind (Scalar, DocumentFk, DescriptorFk, Ordinal, ParentKeyPart).</param>
+/// <param name="ScalarType">Scalar type definition for Kind=Scalar; otherwise null.</param>
+/// <param name="IsNullable">Whether the column can be null (DDL + parameter binding).</param>
+/// <param name="SourceJsonPath">
+/// The absolute JSON path to the value in the API document.
+/// For columns in a collection table, this path is still absolute (e.g. "$.addresses[*].streetNumberName").
+/// Plan compilation will turn this into a relative accessor for the per-row scope to avoid wildcard evaluation per value.
+/// </param>
+/// <param name="TargetResource">
+/// For Kind=DocumentFk: the referenced resource type.
+/// For Kind=DescriptorFk: the descriptor resource type (used to compute/validate discriminator).
+/// Null for scalar/ordinal/parent-key columns.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -486,6 +652,10 @@ public sealed record DbColumnModel(
     QualifiedResourceName? TargetResource          // for DocumentFk / DescriptorFk
 );
 
+/// <summary>
+/// Logical constraints that the migrator can translate into physical DDL.
+/// Names are deterministic so that constraint-violation errors can be mapped back to API concepts.
+/// </summary>
 public abstract record TableConstraint
 {
     public sealed record Unique(string Name, IReadOnlyList<DbColumnName> Columns) : TableConstraint;
@@ -497,6 +667,25 @@ public abstract record TableConstraint
     ) : TableConstraint;
 }
 
+/// <summary>
+/// Declares how a document reference object is stored and later reconstituted.
+/// </summary>
+/// <param name="ReferenceObjectPath">
+/// Path to the reference object itself in the JSON document (not to the individual identity fields).
+/// Examples: "$.schoolReference", "$.students[*].studentReference".
+/// This path is used to:
+/// - locate the correct table scope (root vs a child table)
+/// - reconstitute the nested reference object at the right location
+/// </param>
+/// <param name="Table">The table where the FK column is stored (root or child).</param>
+/// <param name="FkColumn">The FK column holding the referenced DocumentId.</param>
+/// <param name="TargetResource">The referenced resource type (project + resource).</param>
+/// <param name="FieldMappings">
+/// The ordered identity field mappings derived from ApiSchema documentPathsMapping.referenceJsonPaths.
+/// These mappings are used for:
+/// - write-time identity hash computation (already done by Core)
+/// - read-time identity projection: which values must be selected from the referenced resource to reconstitute the reference object
+/// </param>
 public sealed record ReferenceBinding(
     JsonPathExpression ReferenceObjectPath,        // e.g. "$.schoolReference" or "$.students[*].studentReference"
     DbTableName Table,
@@ -505,11 +694,29 @@ public sealed record ReferenceBinding(
     IReadOnlyList<ReferenceFieldMapping> FieldMappings
 );
 
+/// <summary>
+/// Maps one identity field in the referencing document’s reference object to the corresponding identity JSONPath in the referenced resource.
+/// </summary>
+/// <param name="ReferenceJsonPath">Absolute path to the identity field inside the reference object in the referencing document.</param>
+/// <param name="TargetIdentityJsonPath">Absolute path to the corresponding identity field in the referenced document.</param>
 public sealed record ReferenceFieldMapping(
     JsonPathExpression ReferenceJsonPath,          // where to write in the referencing document
     JsonPathExpression TargetIdentityJsonPath      // where to read from the referenced document identity
 );
 
+/// <summary>
+/// Declares how a descriptor string (URI) is stored and later reconstituted.
+/// </summary>
+/// <param name="DescriptorValuePath">Absolute path to the descriptor URI string in the JSON document.</param>
+/// <param name="Table">The table where the FK column is stored (root or child).</param>
+/// <param name="FkColumn">The FK column holding dms.Descriptor(DocumentId).</param>
+/// <param name="ExpectedDiscriminator">
+/// The descriptor type name expected at this path (e.g. "GradeLevelDescriptor").
+/// This is used for:
+/// - write-time validation (Uri + discriminator must exist)
+/// - query-time resolution (Uri + discriminator → DescriptorId)
+/// - optional DB-level enforcement via triggers (later)
+/// </param>
 public sealed record DescriptorBinding(
     JsonPathExpression DescriptorValuePath,        // path of the string descriptor URI in JSON
     DbTableName Table,
@@ -522,28 +729,123 @@ Notes:
 - `ReferenceBinding.FieldMappings` is derived from existing `documentPathsMapping.referenceJsonPaths`.
 - `TargetIdentityJsonPath` is used to drive identity projection join planning (section 7.5).
 
-### 7.4 Write and read plans (compiled for execution)
+### 7.4 Write and read plans (plan layer)
+
+The plan layer is compiled from the shape model + SQL dialect + runtime conventions.
+
+Plans contain:
+- SQL strings (parameterized)
+- binding rules (column order, batching limits, expected keyset shape)
+- *no* per-resource code; only metadata + generic executors
 
 ```csharp
+/// <summary>
+/// Compiled write plan for a single resource type.
+/// Used by POST and PUT to perform inserts/updates with replace-semantics for collections.
+/// </summary>
 public sealed record ResourceWritePlan(
     RelationalResourceModel Model,
     IReadOnlyDictionary<DbTableName, TableWritePlan> TablePlans
 );
 
+/// <summary>
+/// Compiled write plan for one table.
+/// </summary>
+/// <param name="TableModel">Shape model for the table.</param>
+/// <param name="InsertSql">
+/// Parameterized SQL for inserting one batch into this table.
+/// Convention: parameters are ordered to match DbTableModel.Columns for each row buffer.
+/// </param>
+/// <param name="UpdateSql">
+/// Parameterized SQL for updating the root table (child tables typically use delete+insert).
+/// Null for pure child tables.
+/// </param>
+/// <param name="DeleteByParentSql">
+/// Parameterized SQL to delete existing child rows for a given parent key (replace semantics).
+/// Null for the root table.
+/// </param>
+/// <param name="MaxRowsPerBatch">
+/// Maximum rows per batch for multi-row INSERT to stay within engine limits (e.g. SQL Server parameter limits).
+/// </param>
 public sealed record TableWritePlan(
     DbTableModel TableModel,
     string InsertSql,
-    string UpdateSql,                   // null for pure child tables
-    string DeleteByParentSql,           // null for root
-    int MaxRowsPerBatch
+    string? UpdateSql,
+    string? DeleteByParentSql,
+    int MaxRowsPerBatch,
+    IReadOnlyList<WriteColumnBinding> ColumnBindings
 );
 
+/// <summary>
+/// Declares how to produce one column value for a given table row during flattening.
+/// This is compiled once per schema version so per-row execution is a tight loop.
+/// </summary>
+/// <param name="Column">The column being populated.</param>
+/// <param name="Source">Where the value comes from (parent key, ordinal, scalar json value, reference resolution, ...).</param>
+public sealed record WriteColumnBinding(DbColumnModel Column, WriteValueSource Source);
+
+/// <summary>
+/// The source for a write-time column value.
+/// Note: the plan compiler is free to further compile these into delegates for maximum performance.
+/// </summary>
+public abstract record WriteValueSource
+{
+    /// <summary>
+    /// The root DocumentId for the resource being written.
+    /// </summary>
+    public sealed record DocumentId() : WriteValueSource;
+
+    /// <summary>
+    /// One component of the parent table key, by index in the parent key.
+    /// For nested collections this includes parent ordinals as well as the parent DocumentId.
+    /// </summary>
+    public sealed record ParentKeyPart(int Index) : WriteValueSource;
+
+    /// <summary>
+    /// The ordinal of the current array element at this table’s JsonScope.
+    /// </summary>
+    public sealed record Ordinal() : WriteValueSource;
+
+    /// <summary>
+    /// A scalar value read from JSON, relative to the table scope node.
+    /// The compiled plan should prefer relative paths here to avoid wildcard evaluation.
+    /// </summary>
+    public sealed record Scalar(JsonPathExpression RelativePath, RelationalScalarType Type) : WriteValueSource;
+
+    /// <summary>
+    /// A document reference FK value. The flattener computes the referenced referential id from JSON identity fields,
+    /// then uses ResolvedReferenceSet to map it to a referenced DocumentId.
+    /// </summary>
+    public sealed record DocumentReference(
+        ReferenceBinding Binding,
+        IReadOnlyList<JsonPathExpression> RelativeIdentityValuePaths
+    ) : WriteValueSource;
+
+    /// <summary>
+    /// A descriptor FK value. The flattener reads the descriptor URI string, normalizes it, then uses the expected
+    /// discriminator to look up the DescriptorId in ResolvedReferenceSet.
+    /// </summary>
+    public sealed record DescriptorReference(DescriptorBinding Binding, JsonPathExpression RelativePath)
+        : WriteValueSource;
+}
+
+/// <summary>
+/// Compiled read/reconstitution plan for a single resource type.
+/// </summary>
 public sealed record ResourceReadPlan(
     RelationalResourceModel Model,
     IReadOnlyDictionary<DbTableName, TableReadPlan> TablePlans,
     IReadOnlyDictionary<QualifiedResourceName, IdentityProjectionPlan> IdentityProjectionPlans
 );
 
+/// <summary>
+/// Compiled hydration SQL for a single table based on a materialized keyset named "page".
+/// </summary>
+/// <param name="SelectByKeysetSql">
+/// A SELECT statement that returns all rows needed for the page, by joining to a keyset named "page"
+/// containing a BIGINT column named "DocumentId".
+/// The reconstituter is responsible for materializing this keyset (temp table / table variable) before running table SELECTs.
+/// </param>
 public sealed record TableReadPlan(
     DbTableModel TableModel,
     string SelectByKeysetSql            // expects a keyset named `page` with a `DocumentId` column
@@ -553,12 +855,30 @@ public sealed record TableReadPlan(
 ### 7.5 Identity projection (reference reconstitution)
 
 ```csharp
+/// <summary>
+/// A compiled SQL plan that projects the identity fields for a referenced resource type.
+/// Given a set of referenced DocumentIds, this returns the values needed to reconstitute reference objects.
+/// </summary>
+/// <param name="Resource">The referenced resource type being projected.</param>
+/// <param name="Sql">
+/// Parameterized SQL that returns:
+/// - DocumentId
+/// - one column per identity field (with stable aliases)
+/// The plan compiler may include joins to other resource tables if the identity contains reference identities.
+/// </param>
+/// <param name="Fields">
+/// The identity fields (in ApiSchema identity order) and their SQL aliases.
+/// Used to populate JSON reference objects deterministically.
+/// </param>
 public sealed record IdentityProjectionPlan(
     QualifiedResourceName Resource,
     string Sql,
     IReadOnlyList<IdentityField> Fields
 );
 
+/// <summary>
+/// One identity field returned by an IdentityProjectionPlan.
+/// </summary>
 public sealed record IdentityField(
     JsonPathExpression IdentityJsonPath,    // e.g. "$.schoolId" or "$.schoolReference.schoolId"
     string SqlAlias                         // column alias in the projection result set
@@ -572,7 +892,9 @@ The `IdentityProjectionPlan` builder:
   - a join chain through FK columns to another resource’s identity columns
 - emits a single SQL query that returns all identity values for the requested `DocumentId`s
 
-### 7.6 Execution interfaces
+### 7.6 Execution interfaces (execution layer)
+
+These are the runtime services that use the compiled plans.
 
 ```csharp
 public interface IRelationalModelCache
@@ -588,8 +910,33 @@ public interface IResourcePlanProvider
 
 public interface IResourceFlattener
 {
-    FlattenedWriteSet Flatten(ResourceWritePlan plan, long documentId, System.Text.Json.Nodes.JsonNode document);
+    FlattenedWriteSet Flatten(
+        ResourceWritePlan plan,
+        long documentId,
+        System.Text.Json.Nodes.JsonNode document,
+        ResolvedReferenceSet resolved);
 }
+
+/// <summary>
+/// Per-request resolved lookups used during flattening to populate FK columns without per-row DB queries.
+/// </summary>
+/// <param name="DocumentIdByReferentialId">
+/// Maps a referenced resource’s referential id (UUIDv5) to its DocumentId.
+/// Used for non-descriptor document references.
+/// </param>
+/// <param name="DescriptorIdByKey">
+/// Maps (normalized URI, discriminator) to a descriptor DocumentId.
+/// Used for descriptor references and descriptor query parameters.
+/// </param>
+public sealed record ResolvedReferenceSet(
+    IReadOnlyDictionary<Guid, long> DocumentIdByReferentialId,
+    IReadOnlyDictionary<DescriptorKey, long> DescriptorIdByKey);
+
+/// <summary>
+/// Key used for resolving descriptors via dms.Descriptor.
+/// The URI must be normalized (lowercase) to match DMS canonicalization behavior.
+/// </summary>
+public readonly record struct DescriptorKey(string NormalizedUri, string Discriminator);
 
 public sealed record FlattenedWriteSet(
     DbTableName RootTable,
@@ -646,6 +993,215 @@ public interface IBulkInserter
 Dapper is optional:
 - use it for `QueryMultiple` and basic row reads if desired
 - avoid mapping to per-resource CLR types; materialize into `RowBuffer`/`DbDataReader`-backed structures
+
+### 7.7 Example: Pre-compilation (startup or migrator)
+
+This shows how the shape model and plans are compiled and cached. The same builder can be used by:
+- the migrator (DDL generation)
+- runtime (plan compilation + caching)
+
+```csharp
+public sealed class RelationalPlanProvider(
+    IRelationalModelCache modelCache,
+    ISqlDialect dialect,
+    IApiSchemaProvider apiSchemaProvider)
+    : IResourcePlanProvider
+{
+    public ResourceWritePlan GetWritePlan(string effectiveSchemaHash, QualifiedResourceName resource)
+    {
+        var model = modelCache.GetOrAdd(
+            effectiveSchemaHash,
+            resource,
+            build: () =>
+            {
+                var resourceSchema = apiSchemaProvider.GetResourceSchema(resource.ProjectName, resource.ResourceName);
+                return RelationalResourceModelBuilder.Build(resourceSchema);
+            });
+
+        return RelationalPlanCompiler.CompileWritePlan(model, dialect);
+    }
+
+    public ResourceReadPlan GetReadPlan(string effectiveSchemaHash, QualifiedResourceName resource)
+    {
+        var model = modelCache.GetOrAdd(
+            effectiveSchemaHash,
+            resource,
+            build: () =>
+            {
+                var resourceSchema = apiSchemaProvider.GetResourceSchema(resource.ProjectName, resource.ResourceName);
+                return RelationalResourceModelBuilder.Build(resourceSchema);
+            });
+
+        return RelationalPlanCompiler.CompileReadPlan(model, dialect, apiSchemaProvider);
+    }
+}
+```
+
+Key points:
+- `RelationalResourceModelBuilder.Build(...)` is where `jsonSchemaForInsert` + `documentPathsMapping` + `identityJsonPaths` are turned into explicit tables/columns/keys.
+- `RelationalPlanCompiler` is where physical names are quoted, parameter styles are applied, batching limits are chosen, and identity projection SQL is derived.
+
+### 7.8 Example: POST/PUT execution (flatten + write)
+
+```csharp
+public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
+{
+    var effectiveSchemaHash = _effectiveSchemaProvider.EffectiveSchemaHash;
+    var resource = new QualifiedResourceName(request.ResourceInfo.ProjectName.Value, request.ResourceInfo.ResourceName.Value);
+
+    // 1) Compile-or-get the write plan for this resource.
+    var writePlan = _planProvider.GetWritePlan(effectiveSchemaHash, resource);
+
+    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+    await using var tx = await connection.BeginTransactionAsync(ct);
+
+    // 2) Resolve identity (insert vs update) and obtain DocumentId.
+    //    (dms.ReferentialIdentity and dms.Document writes are not shown here.)
+    var documentId = await _documentIdAllocator.GetOrCreateDocumentIdAsync(request, connection, tx, ct);
+
+    // 3) Resolve all FK ids in bulk.
+    var resolved = await _referenceResolver.ResolveAsync(request.DocumentInfo, connection, tx, ct);
+
+    // 4) Flatten JSON into typed rows (no DB calls here).
+    var writeSet = _flattener.Flatten(writePlan, documentId, request.EdfiDoc /* JsonNode */, resolved);
+
+    // 5) Execute root + child table writes in plan order (set-based).
+    await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
+
+    await tx.CommitAsync(ct);
+}
+```
+
+Notes:
+- `_referenceResolver.ResolveAsync(...)` uses `dms.ReferentialIdentity` and `dms.Descriptor`.
+- `_writer.ExecuteAsync(...)` uses `TableWritePlan.DeleteByParentSql` + `IBulkInserter` to avoid N+1 inserts.
+
+Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` gets used):
+
+```csharp
+private static RowBuffer MaterializeRow(
+    TableWritePlan tablePlan,
+    long documentId,
+    JsonNode scopeNode,
+    IReadOnlyList<long> parentKeyParts, // e.g. [DocumentId] or [DocumentId, parentOrdinal]
+    int ordinal,
+    ResolvedReferenceSet resolved)
+{
+    var values = new object?[tablePlan.ColumnBindings.Count];
+
+    for (var i = 0; i < tablePlan.ColumnBindings.Count; i++)
+    {
+        values[i] = tablePlan.ColumnBindings[i].Source switch
+        {
+            WriteValueSource.DocumentId => documentId,
+            WriteValueSource.ParentKeyPart(var index) => parentKeyParts[index],
+            WriteValueSource.Ordinal => ordinal,
+            WriteValueSource.Scalar(var relPath, var type) => JsonValueReader.Read(scopeNode, relPath, type),
+
+            WriteValueSource.DescriptorReference(var binding, var relPath)
+                => ResolveDescriptorId(scopeNode, binding, relPath, resolved),
+
+            WriteValueSource.DocumentReference(var binding, var relIdentityPaths)
+                => ResolveReferencedDocumentId(scopeNode, binding, relIdentityPaths, resolved),
+
+            _ => throw new InvalidOperationException("Unsupported write value source")
+        };
+    }
+
+    return new(values);
+}
+
+private static long ResolveDescriptorId(
+    JsonNode scopeNode,
+    DescriptorBinding binding,
+    JsonPathExpression relPath,
+    ResolvedReferenceSet resolved)
+{
+    var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
+    return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, binding.ExpectedDiscriminator)];
+}
+```
+
+### 7.9 Example: GET by id execution (keyset spec)
+
+```csharp
+public async Task<byte[]?> GetByIdAsync(Guid documentUuid, CancellationToken ct)
+{
+    var effectiveSchemaHash = _effectiveSchemaProvider.EffectiveSchemaHash;
+    var resource = new QualifiedResourceName("EdFi", "Student");
+    var readPlan = _planProvider.GetReadPlan(effectiveSchemaHash, resource);
+
+    // Resolve UUID → DocumentId (dms.Document)
+    var documentId = await _documentLookup.ResolveDocumentIdAsync(documentUuid, ct);
+    if (documentId is null) return null;
+
+    var page = await _reconstituter.ReconstituteAsync(readPlan, new PageKeysetSpec.Single(documentId.Value), ct);
+    return page.Items.Single().Json;
+}
+```
+
+### 7.10 Example: GET by query execution (keyset spec + totalCount)
+
+```csharp
+public async Task<ReconstitutedPage> QueryAsync(IQueryRequest request, CancellationToken ct)
+{
+    var effectiveSchemaHash = _effectiveSchemaProvider.EffectiveSchemaHash;
+    var resource = new QualifiedResourceName(request.ResourceInfo.ProjectName.Value, request.ResourceInfo.ResourceName.Value);
+    var readPlan = _planProvider.GetReadPlan(effectiveSchemaHash, resource);
+
+    // Compile the page DocumentId SQL using ApiSchema queryFieldMapping → columns.
+    var compiled = _querySqlCompiler.CompilePageDocumentIdSql(request);
+
+    var keyset = new PageKeysetSpec.Query(
+        PageDocumentIdSql: compiled.PageDocumentIdSql,
+        Parameters: compiled.Parameters,
+        TotalCountSql: request.PaginationParameters.TotalCount ? compiled.TotalCountSql : null);
+
+    return await _reconstituter.ReconstituteAsync(readPlan, keyset, ct);
+}
+```
+
+Notes:
+- The query compiler is responsible for emitting *stable ordering*.
+- The reconstituter is responsible for:
+  1) materializing the `page` keyset from `PageDocumentIdSql`
+  2) running all `TableReadPlan.SelectByKeysetSql` statements (multi-resultset)
+  3) performing descriptor expansion and identity projection in batched follow-ups (or as additional result sets)
+
+Reconstitution inner loop sketch (single round-trip hydration with `NextResult()`):
+
+```csharp
+public async Task<ReconstitutedPage> ReconstituteAsync(
+    ResourceReadPlan plan,
+    PageKeysetSpec keyset,
+    CancellationToken ct)
+{
+    await using var connection = await _dataSource.OpenConnectionAsync(ct);
+    await using var cmd = connection.CreateCommand();
+
+    // One command text contains:
+    // - "materialize page keyset" SQL (from keyset spec)
+    // - a SELECT for dms.Document joined to page
+    // - one SELECT per TableReadPlan.SelectByKeysetSql
+    cmd.CommandText = SqlBatchBuilder.Build(plan, keyset);
+    SqlBatchBuilder.AddParameters(cmd, keyset);
+
+    await using var reader = await cmd.ExecuteReaderAsync(ct);
+
+    var documentMetadata = ReadDocumentRows(reader); // dms.Document JOIN page
+
+    foreach (var table in plan.Model.TablesInReadDependencyOrder)
+    {
+        await reader.NextResultAsync(ct);
+        ReadTableRows(reader, table); // grouped by (parent key parts..., ordinal)
+    }
+
+    // Optional: descriptor + identity projection follow-ups can either be:
+    // - additional result sets in this same command, or
+    // - a second command (still batched, page-sized)
+    return AssembleJson(plan, documentMetadata /* + tables + lookups */);
+}
+```
 
 ---
 
