@@ -112,7 +112,7 @@ At startup (or at migrator time), DMS builds a fully explicit internal model:
 - Child tables for each array path (and nested arrays)
 - Column types/nullability/constraints
 - Reference binding plan: JSON reference paths → FK columns → referenced resource
-- Descriptor binding plan: descriptor JSON paths → FK columns (to `dms.Descriptor`) and expected discriminator
+- Descriptor binding plan: descriptor JSON paths → FK columns (descriptor `DocumentId`, resolved via `dms.ReferentialIdentity`) and expected descriptor resource type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
 - Identity projection plans (for references in responses)
 
@@ -217,7 +217,7 @@ Before writing resource tables:
 - Resolve all **document references**:
   - `dms.ReferentialIdentity`: `ReferentialId → DocumentId`
 - Resolve all **descriptor references**:
-  - `dms.Descriptor`: `(Uri, Discriminator) → DescriptorDocumentId`
+  - `dms.ReferentialIdentity`: `ReferentialId → DocumentId` (descriptor referential ids are computed by Core from descriptor resource name + normalized URI)
 
 Cache these lookups aggressively (L1/L2 optional), but only populate caches after commit.
 
@@ -485,7 +485,8 @@ public enum ColumnKind
     DocumentFk,
 
     /// <summary>
-    /// A foreign key to dms.Descriptor(DocumentId) (stored as BIGINT).
+    /// A foreign key to a descriptor document row (stored as BIGINT DocumentId).
+    /// The referenced DocumentId is resolved from a descriptor URI via dms.ReferentialIdentity.
     /// Column naming convention: ..._DescriptorId
     /// </summary>
     DescriptorFk,
@@ -580,7 +581,7 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// This is the canonical shape model used by:
 /// - the migrator (DDL generation)
 /// - runtime plan compilation (SQL generation + bindings)
-/// - runtime validation helpers (e.g. expected descriptor discriminator)
+/// - runtime validation helpers (e.g. expected descriptor resource type)
 /// </summary>
 /// <param name="Resource">Logical resource identity (ApiSchema project/resource).</param>
 /// <param name="PhysicalSchema">Physical DB schema where resource tables live (e.g. "edfi").</param>
@@ -599,7 +600,7 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// </param>
 /// <param name="DescriptorBindings">
 /// The set of descriptor-reference bindings derived from documentPathsMapping (descriptor paths).
-/// Each binding declares: which JSON descriptor string path it came from, which table stores the FK, and which descriptor discriminator is expected.
+/// Each binding declares: which JSON descriptor string path it came from, which table stores the FK, and which descriptor resource type is expected.
 /// </param>
 public sealed record RelationalResourceModel(
     QualifiedResourceName Resource,
@@ -678,7 +679,7 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 /// </param>
 /// <param name="TargetResource">
 /// For Kind=DocumentFk: the referenced resource type.
-/// For Kind=DescriptorFk: the descriptor resource type (used to compute/validate discriminator).
+/// For Kind=DescriptorFk: the descriptor resource type (used to compute/validate descriptor referential identity).
 /// Null for scalar/ordinal/parent-key columns.
 /// </param>
 public sealed record DbColumnModel(
@@ -747,19 +748,19 @@ public sealed record ReferenceFieldMapping(
 /// </summary>
 /// <param name="DescriptorValuePath">Absolute path to the descriptor URI string in the JSON document.</param>
 /// <param name="Table">The table where the FK column is stored (root or child).</param>
-/// <param name="FkColumn">The FK column holding dms.Descriptor(DocumentId).</param>
-/// <param name="ExpectedDiscriminator">
-/// The descriptor type name expected at this path (e.g. "GradeLevelDescriptor").
+/// <param name="FkColumn">The FK column holding the descriptor DocumentId (BIGINT).</param>
+/// <param name="DescriptorResource">
+/// The descriptor resource type expected at this path (e.g. ("EdFi","GradeLevelDescriptor")).
 /// This is used for:
-/// - write-time validation (Uri + discriminator must exist)
-/// - query-time resolution (Uri + discriminator → DescriptorId)
+/// - write-time validation (descriptor referential id must exist in dms.ReferentialIdentity)
+/// - query-time resolution (descriptor URI → descriptor DocumentId, via referential id)
 /// - optional DB-level enforcement via triggers (later)
 /// </param>
 public sealed record DescriptorBinding(
     JsonPathExpression DescriptorValuePath,        // path of the string descriptor URI in JSON
     DbTableName Table,
     DbColumnName FkColumn,                         // ..._DescriptorId
-    string ExpectedDiscriminator                   // e.g. "GradeLevelDescriptor"
+    QualifiedResourceName DescriptorResource        // e.g. ("EdFi","GradeLevelDescriptor")
 );
 ```
 
@@ -862,8 +863,9 @@ public abstract record WriteValueSource
     public sealed record DocumentReference(ReferenceBinding Binding) : WriteValueSource;
 
     /// <summary>
-    /// A descriptor FK value. The flattener reads the descriptor URI string, normalizes it, then uses the expected
-    /// discriminator to look up the DescriptorId in ResolvedReferenceSet.
+    /// A descriptor FK value.
+    /// The flattener reads the descriptor URI string, normalizes it, and uses (normalizedUri, descriptor resource type)
+    /// to look up the descriptor DocumentId in ResolvedReferenceSet.DescriptorIdByKey (populated via dms.ReferentialIdentity resolution).
     /// </summary>
     public sealed record DescriptorReference(DescriptorBinding Binding, JsonPathExpression RelativePath)
         : WriteValueSource;
@@ -963,21 +965,22 @@ public interface IResourceFlattener
 /// </summary>
 /// <param name="DocumentIdByReferentialId">
 /// Maps a referenced resource’s referential id (UUIDv5) to its DocumentId.
-/// Used for non-descriptor document references.
+/// Resolved via dms.ReferentialIdentity and used for document references.
 /// </param>
 /// <param name="DescriptorIdByKey">
-/// Maps (normalized URI, discriminator) to a descriptor DocumentId.
-/// Used for descriptor references and descriptor query parameters.
+/// Maps (normalized URI, descriptor resource type) to a descriptor DocumentId.
+/// This is a convenience map derived from Core-extracted descriptor references after referential-id resolution.
+/// Used to populate descriptor FK columns without per-row referential-id hashing.
 /// </param>
 public sealed record ResolvedReferenceSet(
     IReadOnlyDictionary<Guid, long> DocumentIdByReferentialId,
     IReadOnlyDictionary<DescriptorKey, long> DescriptorIdByKey);
 
 /// <summary>
-/// Key used for resolving descriptors via dms.Descriptor.
+/// Key used for resolving descriptor URI strings to descriptor DocumentIds without per-row referential-id hashing.
 /// The URI must be normalized (lowercase) to match DMS canonicalization behavior.
 /// </summary>
-public readonly record struct DescriptorKey(string NormalizedUri, string Discriminator);
+public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResourceName DescriptorResource);
 
 /// <summary>
 /// Resolves extracted document-reference instances to referenced DocumentIds for a single write request.
@@ -1320,7 +1323,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 ```
 
 Notes:
-- `_referenceResolver.ResolveAsync(...)` uses `dms.ReferentialIdentity` and `dms.Descriptor`.
+- `_referenceResolver.ResolveAsync(...)` resolves both document and descriptor referential ids via `dms.ReferentialIdentity` (and may optionally validate descriptor DocumentIds exist in `dms.Descriptor`).
 - `_writer.ExecuteAsync(...)` uses `TableWritePlan.DeleteByParentSql` + `IBulkInserter` to avoid N+1 inserts.
 
 Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` gets used):
@@ -1367,7 +1370,7 @@ private static long ResolveDescriptorId(
     ResolvedReferenceSet resolved)
 {
     var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
-    return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, binding.ExpectedDiscriminator)];
+    return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, binding.DescriptorResource)];
 }
 
 private static long? ResolveReferencedDocumentId(
