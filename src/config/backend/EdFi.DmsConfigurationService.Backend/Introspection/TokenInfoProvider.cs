@@ -72,11 +72,8 @@ public class TokenInfoProvider(
                 educationOrganizationIds
             );
 
-            // Get authorized resources from claims hierarchy
-            var resources = await GetAuthorizedResourcesAsync(claimSetName);
-
-            // Get authorized services from claims hierarchy
-            var services = await GetAuthorizedServicesAsync(claimSetName);
+            // Get authorized resources and services from claims hierarchy (single call)
+            var (resources, services) = await GetAuthorizedResourcesAndServicesAsync(claimSetName);
 
             return new TokenInfoResponse
             {
@@ -132,20 +129,25 @@ public class TokenInfoProvider(
             .Where(id => id > 0);
     }
 
-    private async Task<IReadOnlyList<TokenInfoResource>> GetAuthorizedResourcesAsync(string claimSetName)
+    /// <summary>
+    /// Retrieves both authorized resources and services in a single call to avoid duplicate
+    /// database queries and processing for the claims hierarchy and authorization metadata.
+    /// </summary>
+    private async Task<(IReadOnlyList<TokenInfoResource> Resources, IReadOnlyList<TokenInfoService> Services)>
+        GetAuthorizedResourcesAndServicesAsync(string claimSetName)
     {
         try
         {
-            // Get claims hierarchy
+            // Get claims hierarchy once
             var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
 
             if (claimsHierarchyResult is not ClaimsHierarchyGetResult.Success success)
             {
                 logger.LogWarning("Claims hierarchy not found");
-                return Array.Empty<TokenInfoResource>();
+                return (Array.Empty<TokenInfoResource>(), Array.Empty<TokenInfoService>());
             }
 
-            // Get authorization metadata for the claim set
+            // Get authorization metadata once
             var authorizationMetadata = await authorizationMetadataResponseFactory.Create(
                 claimSetName,
                 success.Claims
@@ -154,110 +156,51 @@ public class TokenInfoProvider(
             if (!authorizationMetadata.ClaimSets.Any())
             {
                 logger.LogWarning("No claim sets found for: {ClaimSetName}", claimSetName);
-                return Array.Empty<TokenInfoResource>();
+                return (Array.Empty<TokenInfoResource>(), Array.Empty<TokenInfoService>());
             }
 
             var claimSet = authorizationMetadata.ClaimSets.First();
             var resources = new List<TokenInfoResource>();
-
-            // Build resources from claims and authorizations
-            foreach (var claim in claimSet.Claims)
-            {
-                var authorization = claimSet.Authorizations.FirstOrDefault(a => a.Id == claim.AuthorizationId);
-                if (authorization == null)
-                {
-                    continue;
-                }
-
-                // Convert claim name to resource path format
-                // Example: "http://ed-fi.org/ods/identity/claims/ed-fi/students" -> "/ed-fi/students"
-                var resourcePath = ConvertClaimNameToResourcePath(claim.Name);
-
-                var operations = authorization
-                    .Actions.Select(a => a.Name)
-                    .ToList();
-
-                if (operations.Any())
-                {
-                    resources.Add(
-                        new TokenInfoResource { Resource = resourcePath, Operations = operations }
-                    );
-                }
-            }
-
-            return resources;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error retrieving authorized resources for claim set: {ClaimSetName}", claimSetName);
-            return Array.Empty<TokenInfoResource>();
-        }
-    }
-
-    private async Task<IReadOnlyList<TokenInfoService>> GetAuthorizedServicesAsync(string claimSetName)
-    {
-        try
-        {
-            // Get claims hierarchy
-            var claimsHierarchyResult = await claimsHierarchyRepository.GetClaimsHierarchy();
-
-            if (claimsHierarchyResult is not ClaimsHierarchyGetResult.Success success)
-            {
-                logger.LogWarning("Claims hierarchy not found for services");
-                return Array.Empty<TokenInfoService>();
-            }
-
-            // Get authorization metadata for the claim set
-            var authorizationMetadata = await authorizationMetadataResponseFactory.Create(
-                claimSetName,
-                success.Claims
-            );
-
-            if (!authorizationMetadata.ClaimSets.Any())
-            {
-                logger.LogWarning("No claim sets found for services: {ClaimSetName}", claimSetName);
-                return Array.Empty<TokenInfoService>();
-            }
-
-            var claimSet = authorizationMetadata.ClaimSets.First();
             var services = new List<TokenInfoService>();
 
-            // Filter claims for services (following Ed-Fi ODS pattern)
+            // Build resources and services from claims and authorizations
             foreach (var claim in claimSet.Claims)
             {
-                // Only process service claims
-                if (!claim.Name.StartsWith(ClaimConstants.ServicesPrefix, StringComparison.OrdinalIgnoreCase))
-                {
-                    continue;
-                }
-
                 var authorization = claimSet.Authorizations.FirstOrDefault(a => a.Id == claim.AuthorizationId);
                 if (authorization == null)
                 {
                     continue;
                 }
 
-                // Extract service name by removing the prefix
-                var serviceName = claim.Name.Substring(ClaimConstants.ServicesPrefix.Length);
-
                 var operations = authorization
                     .Actions.Select(a => a.Name)
                     .ToList();
 
-                if (operations.Any())
+                if (!operations.Any())
                 {
-                    services.Add(
-                        new TokenInfoService { Service = serviceName, Operations = operations }
-                    );
+                    continue;
+                }
+
+                // Check if this is a service claim
+                if (claim.Name.StartsWith(ClaimConstants.ServicesPrefix, StringComparison.OrdinalIgnoreCase))
+                {
+                    var serviceName = claim.Name[ClaimConstants.ServicesPrefix.Length..];
+                    services.Add(new TokenInfoService { Service = serviceName, Operations = operations });
+                }
+                else
+                {
+                    // It's a resource claim
+                    var resourcePath = ConvertClaimNameToResourcePath(claim.Name);
+                    resources.Add(new TokenInfoResource { Resource = resourcePath, Operations = operations });
                 }
             }
 
-            return services;
+            return (resources, services);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Error retrieving authorized services for claim set: {ClaimSetName}", claimSetName);
-            return Array.Empty<TokenInfoService>();
+            logger.LogError(ex, "Error retrieving authorized resources and services for claim set: {ClaimSetName}", claimSetName);
+            return (Array.Empty<TokenInfoResource>(), Array.Empty<TokenInfoService>());
         }
     }
 
@@ -271,7 +214,7 @@ public class TokenInfoProvider(
         // Try the standard ODS prefix first
         if (claimName.StartsWith(ClaimConstants.OdsIdentityClaimsPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            var path = claimName.Substring(ClaimConstants.OdsIdentityClaimsPrefix.Length);
+            var path = claimName[ClaimConstants.OdsIdentityClaimsPrefix.Length..];
 
             // Handle special cases for domains
             if (path.StartsWith(ClaimConstants.DomainsPrefix, StringComparison.OrdinalIgnoreCase))
@@ -291,7 +234,7 @@ public class TokenInfoProvider(
         // Try the alternate identity claims prefix (without "ods")
         if (claimName.StartsWith(ClaimConstants.IdentityClaimsPrefix, StringComparison.OrdinalIgnoreCase))
         {
-            var path = claimName.Substring(ClaimConstants.IdentityClaimsPrefix.Length);
+            var path = claimName[ClaimConstants.IdentityClaimsPrefix.Length..];
             return "/" + path;
         }
 
