@@ -207,8 +207,8 @@ For a given request, backend already has:
 - validated/coerced JSON body (`JsonNode` / `JsonElement`)
 - `DocumentInfo`:
   - resource referential id
-  - descriptor references (with JSON paths)
-  - document references (referential ids; array groupings include JSON paths)
+  - descriptor references (with concrete JSON paths, including indices)
+  - document references (referential ids + concrete reference-object JSON paths, including indices; grouped by wildcard path)
 
 ### 5.2 Reference & descriptor resolution (bulk)
 
@@ -220,6 +220,44 @@ Before writing resource tables:
   - `dms.Descriptor`: `(Uri, Discriminator) → DescriptorDocumentId`
 
 Cache these lookups aggressively (L1/L2 optional), but only populate caches after commit.
+
+### 5.2.1 Document references inside nested collections (Option B)
+
+When a document reference appears inside a collection (or nested collection), its FK is stored in a **child table row** whose key includes one or more **ordinals**. To set the correct FK column without per-row JSONPath evaluation and per-row referential id hashing, we need a stable way to answer:
+
+> For this `ReferenceBinding`, and for this row’s **ordinal path**, what is the referenced `DocumentId`?
+
+There are two approaches:
+
+- **Option A**: backend flattener recomputes referential ids per row by reading identity fields from JSON at the row scope.
+  - Pros: no change to Core reference extraction shapes.
+  - Cons: repeats JSON reads + referential id hashing in hot loops; risks drifting from Core canonicalization; scales poorly for large nested arrays.
+
+- **Option B (preferred)**: Core emits each reference instance *with its concrete JSON location (indices)* so the backend can address it by ordinal path.
+  - Pros: referential id computation stays centralized in Core; flattening becomes pure lookup; nested collections work naturally with composite parent+ordinal keys.
+  - Cons: requires enhancing Core’s extracted reference model to carry location; backend builds a small per-request index.
+
+**What Core must provide (minimal enhancement)**
+
+For each reference object instance, Core must provide:
+- the **wildcard reference-object path** (already present as `DocumentReferenceArray.arrayPath`), e.g. `$.addresses[*].periods[*].calendarReference`
+- the **concrete reference-object path including indices**, e.g. `$.addresses[2].periods[0].calendarReference`
+- the computed `ReferentialId` (already present on `DocumentReference`)
+
+This is the same pattern already used for descriptor extraction (`DescriptorReference.Path`).
+
+**How backend uses it**
+
+Backend turns extracted references + bulk DB resolution into a per-request index:
+
+`(ReferenceObjectPath, OrdinalPath[]) → ReferencedDocumentId`
+
+Where `OrdinalPath[]` is the vector of array ordinals along the wildcard path:
+- Root scope: `[]`
+- `$.addresses[*]`: `[addressOrdinal]`
+- `$.addresses[*].periods[*]`: `[addressOrdinal, periodOrdinal]`
+
+During row materialization, the flattener already knows the current row’s `OrdinalPath` because it is enumerating the arrays. It performs an O(1) lookup to populate each FK column (no per-row hashing).
 
 ### 5.3 Row materialization (in-memory)
 
@@ -524,7 +562,7 @@ public abstract record JsonPathSegment
 /// - Segments are normalized (no bracket quoting, no numeric indices)
 /// </summary>
 public readonly record struct JsonPathExpression(
-    string Canonical,                  // original string for diagnostics
+    string Canonical,                  // canonical/normalized string form (no numeric indices)
     IReadOnlyList<JsonPathSegment> Segments
 );
 ```
@@ -813,13 +851,15 @@ public abstract record WriteValueSource
     public sealed record Scalar(JsonPathExpression RelativePath, RelationalScalarType Type) : WriteValueSource;
 
     /// <summary>
-    /// A document reference FK value. The flattener computes the referenced referential id from JSON identity fields,
-    /// then uses ResolvedReferenceSet to map it to a referenced DocumentId.
+    /// A document reference FK value.
+    ///
+    /// With Option B (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
+    /// The backend uses a per-request index keyed by:
+    /// - this binding (which identifies the wildcard reference-object path and the FK column)
+    /// - the current row's OrdinalPath (array indices from root to the current scope)
+    /// to return the referenced DocumentId without per-row hashing.
     /// </summary>
-    public sealed record DocumentReference(
-        ReferenceBinding Binding,
-        IReadOnlyList<JsonPathExpression> RelativeIdentityValuePaths
-    ) : WriteValueSource;
+    public sealed record DocumentReference(ReferenceBinding Binding) : WriteValueSource;
 
     /// <summary>
     /// A descriptor FK value. The flattener reads the descriptor URI string, normalizes it, then uses the expected
@@ -914,6 +954,7 @@ public interface IResourceFlattener
         ResourceWritePlan plan,
         long documentId,
         System.Text.Json.Nodes.JsonNode document,
+        IDocumentReferenceInstanceIndex documentReferences,
         ResolvedReferenceSet resolved);
 }
 
@@ -937,6 +978,200 @@ public sealed record ResolvedReferenceSet(
 /// The URI must be normalized (lowercase) to match DMS canonicalization behavior.
 /// </summary>
 public readonly record struct DescriptorKey(string NormalizedUri, string Discriminator);
+
+/// <summary>
+/// Resolves extracted document-reference instances to referenced DocumentIds for a single write request.
+///
+/// Key idea (Option B):
+/// - Core extraction emits each reference instance with a concrete JSONPath including indices.
+/// - Backend resolves ReferentialId → DocumentId in bulk once.
+/// - This index maps the current row's OrdinalPath to the referenced DocumentId without per-row hashing or DB I/O.
+///
+/// OrdinalPath definition:
+/// - The sequence of array indices from the root to the current table scope.
+/// - Root scope: empty.
+/// - Child scope "$.addresses[*]": [addressOrdinal]
+/// - Nested "$.addresses[*].periods[*]": [addressOrdinal, periodOrdinal]
+/// </summary>
+public interface IDocumentReferenceInstanceIndex
+{
+    /// <summary>
+    /// Returns the referenced DocumentId for the given binding at the given ordinal path, or null if the reference
+    /// object is not present at that location (optional reference).
+    /// </summary>
+    long? GetReferencedDocumentId(ReferenceBinding binding, ReadOnlySpan<int> ordinalPath);
+}
+
+/// <summary>
+/// Default implementation of <see cref="IDocumentReferenceInstanceIndex"/> that builds a fast per-request lookup
+/// from Core-extracted reference instances.
+///
+/// Implementation notes:
+/// - This is intentionally independent of any ORM and does not require per-resource CLR types.
+/// - Lookups must not allocate in the row materialization hot loop, so this uses:
+///   hash(ordinalPath) → small bucket → ordinalPath sequence compare.
+/// - Build cost is proportional to the number of references in the input document (not the number of rows written).
+/// </summary>
+public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceIndex
+{
+    private readonly IReadOnlyDictionary<ReferenceBinding, OrdinalPathMap<long>> _mapByBinding;
+
+    private DocumentReferenceInstanceIndex(IReadOnlyDictionary<ReferenceBinding, OrdinalPathMap<long>> mapByBinding)
+    {
+        _mapByBinding = mapByBinding;
+    }
+
+    public long? GetReferencedDocumentId(ReferenceBinding binding, ReadOnlySpan<int> ordinalPath)
+    {
+        if (!_mapByBinding.TryGetValue(binding, out var map))
+        {
+            return null;
+        }
+
+        return map.TryGet(ordinalPath, out var documentId) ? documentId : null;
+    }
+
+    /// <summary>
+    /// Builds the per-request index by combining:
+    /// - the resource model bindings (to know which FK columns exist)
+    /// - the Core-extracted reference instances (to know which reference occurs at which location)
+    /// - the bulk-resolved mapping ReferentialId → DocumentId (to avoid any DB work here)
+    ///
+    /// Required Core enhancement for Option B:
+    /// - each <c>DocumentReference</c> must carry a concrete JSONPath to the reference object instance (including indices),
+    ///   e.g. <c>"$.addresses[2].periods[0].calendarReference"</c>.
+    /// </summary>
+    public static DocumentReferenceInstanceIndex Build(
+        IReadOnlyList<ReferenceBinding> bindings,
+        EdFi.DataManagementService.Core.External.Model.DocumentReferenceArray[] extractedReferenceArrays,
+        IReadOnlyDictionary<Guid, long> documentIdByReferentialId)
+    {
+        // Map wildcard reference-object path → binding for fast association.
+        // The wildcard path is the ReferenceBinding.ReferenceObjectPath (e.g. "$.addresses[*].periods[*].calendarReference").
+        var bindingByPath = bindings.ToDictionary(b => b.ReferenceObjectPath.Canonical, b => b);
+
+        var mapsByBinding = new Dictionary<ReferenceBinding, OrdinalPathMap<long>>();
+
+        foreach (var array in extractedReferenceArrays)
+        {
+            if (!bindingByPath.TryGetValue(array.arrayPath.Value, out var binding))
+            {
+                // If this happens, ApiSchema and extraction disagree. Treat as a startup/schema error.
+                throw new InvalidOperationException($"No ReferenceBinding found for extracted path '{array.arrayPath.Value}'.");
+            }
+
+            if (!mapsByBinding.TryGetValue(binding, out var map))
+            {
+                map = new OrdinalPathMap<long>();
+                mapsByBinding.Add(binding, map);
+            }
+
+            foreach (var reference in array.DocumentReferences)
+            {
+                var ordinalPath = OrdinalPathParser.Parse(reference.Path.Value);
+                var documentId = documentIdByReferentialId[reference.ReferentialId.Value];
+                map.Add(ordinalPath, documentId);
+            }
+        }
+
+        return new(mapsByBinding);
+    }
+
+    /// <summary>
+    /// A small per-binding map from ordinal paths to values that supports allocation-free lookups using ReadOnlySpan.
+    /// </summary>
+    private sealed class OrdinalPathMap<TValue>
+    {
+        private readonly Dictionary<int, List<Entry>> _buckets = new();
+
+        public void Add(int[] ordinalPath, TValue value)
+        {
+            var hash = OrdinalPathHash.Hash(ordinalPath);
+            if (!_buckets.TryGetValue(hash, out var bucket))
+            {
+                bucket = [];
+                _buckets.Add(hash, bucket);
+            }
+            bucket.Add(new Entry(ordinalPath, value));
+        }
+
+        public bool TryGet(ReadOnlySpan<int> ordinalPath, out TValue value)
+        {
+            var hash = OrdinalPathHash.Hash(ordinalPath);
+            if (!_buckets.TryGetValue(hash, out var bucket))
+            {
+                value = default!;
+                return false;
+            }
+
+            foreach (var entry in bucket)
+            {
+                if (ordinalPath.SequenceEqual(entry.OrdinalPath))
+                {
+                    value = entry.Value;
+                    return true;
+                }
+            }
+
+            value = default!;
+            return false;
+        }
+
+        private readonly record struct Entry(int[] OrdinalPath, TValue Value);
+    }
+
+    private static class OrdinalPathHash
+    {
+        public static int Hash(ReadOnlySpan<int> ordinalPath)
+        {
+            var hc = new HashCode();
+            hc.Add(ordinalPath.Length);
+            for (var i = 0; i < ordinalPath.Length; i++)
+            {
+                hc.Add(ordinalPath[i]);
+            }
+            return hc.ToHashCode();
+        }
+
+        public static int Hash(int[] ordinalPath) => Hash(ordinalPath.AsSpan());
+    }
+
+    /// <summary>
+    /// Parses a canonical JSONPath that contains numeric indices (e.g. "$.a[2].b[0].c") into an ordinal path [2,0].
+    ///
+    /// This is used only during index build (once per reference instance), not during the row materialization hot loop.
+    /// </summary>
+    private static class OrdinalPathParser
+    {
+        public static int[] Parse(string jsonPathWithIndices)
+        {
+            // Minimal parser: scan for [digits] segments.
+            // Assumes paths have already been canonicalized by Core (JsonHelpers.ConvertPath → JsonPath.Parse → ToString()).
+            var ordinals = new List<int>(capacity: 2);
+
+            for (var i = 0; i < jsonPathWithIndices.Length; i++)
+            {
+                if (jsonPathWithIndices[i] != '[') continue;
+
+                var value = 0;
+                var j = i + 1;
+                while (j < jsonPathWithIndices.Length && char.IsDigit(jsonPathWithIndices[j]))
+                {
+                    value = (value * 10) + (jsonPathWithIndices[j] - '0');
+                    j++;
+                }
+
+                if (j < jsonPathWithIndices.Length && jsonPathWithIndices[j] == ']')
+                {
+                    ordinals.Add(value);
+                    i = j;
+                }
+            }
+
+            return ordinals.ToArray();
+        }
+    }
+}
 
 public sealed record FlattenedWriteSet(
     DbTableName RootTable,
@@ -1062,8 +1297,20 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     // 3) Resolve all FK ids in bulk.
     var resolved = await _referenceResolver.ResolveAsync(request.DocumentInfo, connection, tx, ct);
 
+    // 3b) Build a per-request index that maps (binding + ordinalPath) → referenced DocumentId.
+    //     This depends on Core emitting concrete JSON paths (including indices) for reference instances (Option B).
+    var documentReferences = DocumentReferenceInstanceIndex.Build(
+        writePlan.Model.ReferenceBindings,
+        request.DocumentInfo.DocumentReferenceArrays,
+        resolved.DocumentIdByReferentialId);
+
     // 4) Flatten JSON into typed rows (no DB calls here).
-    var writeSet = _flattener.Flatten(writePlan, documentId, request.EdfiDoc /* JsonNode */, resolved);
+    var writeSet = _flattener.Flatten(
+        writePlan,
+        documentId,
+        request.EdfiDoc /* JsonNode */,
+        documentReferences,
+        resolved);
 
     // 5) Execute root + child table writes in plan order (set-based).
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
@@ -1085,6 +1332,8 @@ private static RowBuffer MaterializeRow(
     JsonNode scopeNode,
     IReadOnlyList<long> parentKeyParts, // e.g. [DocumentId] or [DocumentId, parentOrdinal]
     int ordinal,
+    ReadOnlySpan<int> ordinalPath,      // e.g. [] (root), [2] (child), [2,0] (nested)
+    IDocumentReferenceInstanceIndex documentReferences,
     ResolvedReferenceSet resolved)
 {
     var values = new object?[tablePlan.ColumnBindings.Count];
@@ -1101,8 +1350,8 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.DescriptorReference(var binding, var relPath)
                 => ResolveDescriptorId(scopeNode, binding, relPath, resolved),
 
-            WriteValueSource.DocumentReference(var binding, var relIdentityPaths)
-                => ResolveReferencedDocumentId(scopeNode, binding, relIdentityPaths, resolved),
+            WriteValueSource.DocumentReference(var binding)
+                => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences),
 
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
@@ -1119,6 +1368,14 @@ private static long ResolveDescriptorId(
 {
     var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
     return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, binding.ExpectedDiscriminator)];
+}
+
+private static long? ResolveReferencedDocumentId(
+    ReferenceBinding binding,
+    ReadOnlySpan<int> ordinalPath,
+    IDocumentReferenceInstanceIndex documentReferences)
+{
+    return documentReferences.GetReferencedDocumentId(binding, ordinalPath);
 }
 ```
 
