@@ -17,6 +17,11 @@ public class EducationOrganizationRepository(
     ILogger<EducationOrganizationRepository> logger
 ) : IEducationOrganizationRepository
 {
+    /// <summary>
+    /// Maximum number of education organization IDs allowed per request to prevent DoS attacks.
+    /// </summary>
+    private const int MaxEducationOrganizationIds = 1000;
+
     public async Task<IReadOnlyList<TokenInfoEducationOrganization>> GetEducationOrganizationsAsync(
         IEnumerable<long> educationOrganizationIds
     )
@@ -26,6 +31,17 @@ public class EducationOrganizationRepository(
         if (!edOrgIdsList.Any())
         {
             return Array.Empty<TokenInfoEducationOrganization>();
+        }
+
+        // Prevent DoS attacks by limiting the number of education organization IDs
+        if (edOrgIdsList.Count > MaxEducationOrganizationIds)
+        {
+            logger.LogWarning(
+                "Received {Count} education organization IDs, exceeding the maximum allowed ({Max}). Truncating to limit.",
+                edOrgIdsList.Count,
+                MaxEducationOrganizationIds
+            );
+            edOrgIdsList = edOrgIdsList.Take(MaxEducationOrganizationIds).ToList();
         }
 
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
