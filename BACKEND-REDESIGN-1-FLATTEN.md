@@ -301,27 +301,28 @@ The API never supplies a “list of `DocumentId`s”. Reconstitution starts from
 
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
 
-#### Option A (preferred): single round-trip with a `page` CTE
+#### Single round-trip (required): materialize a `page` keyset, then hydrate by join
 
-Build one command that returns multiple result sets, all keyed by the same `page` CTE:
+Build one command that:
+1) materializes the page keyset server-side, then
+2) returns multiple result sets by joining each table to that keyset.
 
 ```sql
-WITH page AS (
-  -- GET by id:
-  SELECT @DocumentId AS DocumentId
+-- Materialize the page keyset (engine-specific DDL, same logical outcome):
+-- PostgreSQL: CREATE TEMP TABLE page (DocumentId bigint PRIMARY KEY) ON COMMIT DROP;
+-- SQL Server: DECLARE @page TABLE (DocumentId bigint PRIMARY KEY);  (or #page temp table, then DROP)
 
-  -- GET by query (example shape):
-  -- SELECT r.DocumentId
-  -- FROM edfi.Student r
-  -- WHERE r.LastSurname = @LastSurname
-  -- ORDER BY r.DocumentId
-  -- PostgreSQL paging: OFFSET @Offset LIMIT @Limit
-  -- SQL Server paging: OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
+WITH page_ids AS (
+  -- Provided by DMS query compilation (ApiSchema-driven):
+  -- GET by id:    SELECT @DocumentId AS DocumentId
+  -- GET by query: SELECT r.DocumentId FROM ... WHERE ... ORDER BY ... OFFSET/FETCH ...
+  <PageDocumentIdSql>
 )
+INSERT INTO page (DocumentId)
+SELECT DocumentId FROM page_ids;
 
--- Optional (if totalCount=true): add an additional result set that uses the same filters
--- without paging (OFFSET/LIMIT). The query builder can generate this alongside page SQL.
--- SELECT COUNT(*) AS TotalCount FROM edfi.Student r WHERE r.LastSurname = @LastSurname;
+-- Optional (if totalCount=true): add a result set that uses the same filters without paging.
+-- SELECT COUNT(*) AS TotalCount FROM ... WHERE ...;
 
 SELECT d.DocumentId, d.DocumentUuid, d.Etag, d.LastModifiedAt
 FROM dms.Document d
@@ -346,13 +347,6 @@ Execute with a single `DbCommand` and read with `DbDataReader.NextResult()` (or 
 Notes:
 - This avoids a second DB round-trip to “hydrate the page”.
 - The reconstituter can still materialize the page `DocumentId`s in memory (page-sized) as it reads the first result set for later descriptor/reference expansion.
-
-#### Option B: two-step (simpler fallback)
-
-1. Run the page query to get the `DocumentId`s for the current page (bounded by `limit`).
-2. Hydrate root + child tables using `WHERE ... IN (@ids)` (chunk if necessary).
-
-This still avoids N+1 behavior; the “id list” is an internal, page-bounded intermediate, not an API contract.
 
 ### 6.2 Descriptor expansion (batched)
 
@@ -552,7 +546,7 @@ public sealed record ResourceReadPlan(
 
 public sealed record TableReadPlan(
     DbTableModel TableModel,
-    string SelectByKeysetSql            // expects a `page` keyset (CTE/temp table) and returns rows for that page
+    string SelectByKeysetSql            // expects a keyset named `page` with a `DocumentId` column
 );
 ```
 
@@ -618,9 +612,9 @@ public abstract record PageKeysetSpec
     public sealed record Single(long DocumentId) : PageKeysetSpec;
 
     /// <summary>
-     /// A parameterized SQL that selects DocumentIds for the requested page, in stable page order.
-     /// The reconstituter will use this as a CTE (`WITH page AS (...)`) and hydrate tables by joining to it.
-     /// </summary>
+    /// A parameterized SQL that selects DocumentIds for the requested page, in stable page order.
+    /// The reconstituter will materialize this into a keyset named `page` and hydrate tables by joining to it.
+    /// </summary>
     public sealed record Query(
         string PageDocumentIdSql,
         IReadOnlyDictionary<string, object?> Parameters,
