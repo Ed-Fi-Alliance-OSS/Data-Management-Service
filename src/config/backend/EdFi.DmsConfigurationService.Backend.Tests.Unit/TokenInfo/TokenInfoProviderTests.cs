@@ -48,6 +48,355 @@ public class TokenInfoProviderTests
     }
 
     [Test]
+    public async Task GetTokenInfoAsync_WithMissingClaimSetName_ReturnsEmptyResourcesAndServices()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy();
+        A.CallTo(
+                () =>
+                    _authorizationMetadataResponseFactory.Create(
+                        "",
+                        A<List<Backend.Models.ClaimsHierarchy.Claim>>._
+                    )
+            )
+            .Returns(new AuthorizationMetadataResponse(new List<ClaimSetMetadata>()));
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.Resources.Should().BeEmpty();
+        result.Services.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithMissingClientId_ReturnsNull()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithMissingEducationOrganizationIds_ReturnsEmptyOrgs()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy();
+        SetupAuthorizationMetadata();
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.EducationOrganizations.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithMissingNamespacePrefixes_ReturnsEmptyPrefixes()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: ""
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy();
+        SetupAuthorizationMetadata();
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.NamespacePrefixes.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithUnknownClaimSetName_ReturnsEmptyResourcesAndServices()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "UnknownClaimSet",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy();
+        A.CallTo(() => _authorizationMetadataResponseFactory.Create("UnknownClaimSet", A<List<Backend.Models.ClaimsHierarchy.Claim>>._))
+            .Returns(new AuthorizationMetadataResponse(new List<ClaimSetMetadata>()));
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.Resources.Should().BeEmpty();
+        result.Services.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithUnknownClaimName_FallbacksToClaimName()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy(new List<Backend.Models.ClaimsHierarchy.Claim>());
+        var claimSet = new ClaimSetMetadata(
+            "SIS Vendor",
+            new List<ClaimSetMetadata.Claim> { new("custom://some-other-format/resource", 1) },
+            new List<ClaimSetMetadata.Authorization>
+            {
+                new(
+                    1,
+                    new[]
+                    {
+                        new ClaimSetMetadata.Action(
+                            "Read",
+                            new[] { new ClaimSetMetadata.AuthorizationStrategy("NoFurtherAuthorizationRequired") }
+                        ),
+                    }
+                ),
+            }
+        );
+        A.CallTo(() => _authorizationMetadataResponseFactory.Create("SIS Vendor", A<List<Backend.Models.ClaimsHierarchy.Claim>>._))
+            .Returns(new AuthorizationMetadataResponse(new List<ClaimSetMetadata> { claimSet }));
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.Resources.Should().ContainSingle(r => r.Resource == "custom://some-other-format/resource");
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithAlternateIdentityClaimsPrefix_ConvertsToResourcePath()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy(new List<Backend.Models.ClaimsHierarchy.Claim>());
+        var claimSet = new ClaimSetMetadata(
+            "SIS Vendor",
+            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/identity/claims/ed-fi/academicWeek", 1) },
+            new List<ClaimSetMetadata.Authorization>
+            {
+                new(
+                    1,
+                    new[]
+                    {
+                        new ClaimSetMetadata.Action(
+                            "Read",
+                            new[] { new ClaimSetMetadata.AuthorizationStrategy("NoFurtherAuthorizationRequired") }
+                        ),
+                    }
+                ),
+            }
+        );
+        A.CallTo(() => _authorizationMetadataResponseFactory.Create("SIS Vendor", A<List<Backend.Models.ClaimsHierarchy.Claim>>._))
+            .Returns(new AuthorizationMetadataResponse(new List<ClaimSetMetadata> { claimSet }));
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.Resources.Should().ContainSingle(r => r.Resource == "/ed-fi/academicWeek");
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WithDomainsPrefixAndEdFiDescriptors_ConvertsToDescriptorsPath()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        SetupClaimsHierarchy(new List<Backend.Models.ClaimsHierarchy.Claim>());
+        var claimSet = new ClaimSetMetadata(
+            "SIS Vendor",
+            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/ods/identity/claims/domains/edFiDescriptors", 1) },
+            new List<ClaimSetMetadata.Authorization>
+            {
+                new(
+                    1,
+                    new[]
+                    {
+                        new ClaimSetMetadata.Action(
+                            "Read",
+                            new[] { new ClaimSetMetadata.AuthorizationStrategy("NoFurtherAuthorizationRequired") }
+                        ),
+                    }
+                ),
+            }
+        );
+        A.CallTo(() => _authorizationMetadataResponseFactory.Create("SIS Vendor", A<List<Backend.Models.ClaimsHierarchy.Claim>>._))
+            .Returns(new AuthorizationMetadataResponse(new List<ClaimSetMetadata> { claimSet }));
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.Resources.Should().ContainSingle(r => r.Resource == "/ed-fi/descriptors");
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WhenClaimsHierarchyThrowsException_ReturnsEmptyResourcesAndServices()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs();
+        A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction?>._))
+            .Throws(new Exception("Claims hierarchy error"));
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().NotBeNull();
+        result!.Resources.Should().BeEmpty();
+        result.Services.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WhenEducationOrganizationRepositoryThrowsException_ReturnsNull()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "test-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        SetupApiClientAndOrgs(throwOnOrgs: true);
+        SetupClaimsHierarchy();
+        SetupAuthorizationMetadata();
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().BeNull();
+    }
+
+    [Test]
+    public async Task GetTokenInfoAsync_WhenApiClientNotFound_ReturnsNull()
+    {
+        // Arrange
+        var token = CreateTestJwtToken(
+            clientId: "notfound-client",
+            claimSetName: "SIS Vendor",
+            educationOrganizationIds: "255901",
+            namespacePrefixes: "uri://ed-fi.org"
+        );
+        A.CallTo(() => _apiClientRepository.GetApiClientByClientId("notfound-client"))
+            .Returns(new ApiClientGetResult.FailureNotFound());
+        // Act
+        var result = await _provider.GetTokenInfoAsync(token);
+        // Assert
+        result.Should().BeNull();
+    }
+
+    // --- Helper methods for setup ---
+    private void SetupApiClientAndOrgs(bool throwOnOrgs = false)
+    {
+        A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>._))
+            .Returns(
+                new ApiClientGetResult.Success(
+                    new ApiClientResponse
+                    {
+                        Id = 1,
+                        ApplicationId = 1,
+                        ClientId = "test-client",
+                        ClientUuid = Guid.NewGuid(),
+                        Name = "Test Client",
+                        IsApproved = true,
+                        DmsInstanceIds = new List<long>(),
+                    }
+                )
+            );
+        if (throwOnOrgs)
+        {
+            A.CallTo(() => _educationOrganizationRepository.GetEducationOrganizationsAsync(A<IEnumerable<long>>._))
+                .Throws(new Exception("DB error"));
+        }
+        else
+        {
+            A.CallTo(() => _educationOrganizationRepository.GetEducationOrganizationsAsync(A<IEnumerable<long>>._))
+                .Returns(new List<TokenInfoEducationOrganization>());
+        }
+    }
+
+    private void SetupClaimsHierarchy(List<Backend.Models.ClaimsHierarchy.Claim>? claims = null)
+    {
+        A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction?>._))
+            .Returns(
+                new ClaimsHierarchyGetResult.Success(
+                    claims ?? new List<Backend.Models.ClaimsHierarchy.Claim>(),
+                    DateTime.UtcNow,
+                    1
+                )
+            );
+    }
+
+    private void SetupAuthorizationMetadata()
+    {
+        var claimSet = new ClaimSetMetadata(
+            "SIS Vendor",
+            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/ods/identity/claims/ed-fi/students", 1) },
+            new List<ClaimSetMetadata.Authorization>
+            {
+                new(
+                    1,
+                    new[]
+                    {
+                        new ClaimSetMetadata.Action(
+                            "Read",
+                            new[] { new ClaimSetMetadata.AuthorizationStrategy("NoFurtherAuthorizationRequired") }
+                        ),
+                    }
+                ),
+            }
+        );
+        A.CallTo(
+                () =>
+                    _authorizationMetadataResponseFactory.Create(
+                        "SIS Vendor",
+                        A<List<Backend.Models.ClaimsHierarchy.Claim>>._
+                    )
+            )
+            .Returns(new AuthorizationMetadataResponse(new List<ClaimSetMetadata> { claimSet }));
+    }
+
+    [Test]
     public async Task GetTokenInfoAsync_WithInvalidToken_ReturnsNull()
     {
         // Arrange
