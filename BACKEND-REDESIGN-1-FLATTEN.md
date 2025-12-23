@@ -56,7 +56,6 @@ Add an optional `relational` section to each `resourceSchema`:
 ```json
 {
   "relational": {
-    "schemaNameOverride": "edfi",
     "rootTableNameOverride": "Student",
 
     "nameOverrides": {
@@ -69,13 +68,36 @@ Add an optional `relational` section to each `resourceSchema`:
 ```
 
 Semantics:
-- `schemaNameOverride`: optional physical schema override for the project.
 - `rootTableNameOverride`: optional physical root table name override.
 - `nameOverrides`: maps a **JSONPath** (property/array path) to a stable physical base name (column or table suffix).
   - `$.x.y` targets a column base name (before suffixes like `_DocumentId`/`_DescriptorId`).
   - `$.arr[*]` targets a child-table base name.
 
-### 3.3 What we intentionally do *not* add
+Schema name is not configurable here: it is always derived from `ProjectNamespace` (e.g., `ed-fi` → `edfi`).
+
+### 3.3 Strict rules for `nameOverrides`
+
+To keep the mapping deterministic, portable, and validateable, `nameOverrides` must follow these rules:
+
+1. **JSONPath grammar is restricted**:
+   - Must start at `$`
+   - Only property segments (`.propertyName`) and array wildcards (`[*]`) are allowed
+   - No numeric indexes (`[0]`), no filters (`[?()]`), no recursive descent (`..`), and no bracket property quoting
+
+2. **Keys must match a derived mapping element**:
+   - The key must match a derived column path or collection path for the resource.
+   - Unknown keys are an error (migration/startup fails fast) to prevent “silent typos”.
+
+3. **Meaning depends on whether the key ends with `[*]`**:
+   - If the key **ends with `[*]`**, it overrides the **collection table base name** for that array path (e.g., `$.addresses[*].periods[*]` → `SchoolAddressPeriod`).
+   - Otherwise, it overrides the **column base name** at that JSONPath (before suffixes like `_DocumentId` / `_DescriptorId`).
+     - For **document references**, the relevant path is the **reference object path** (e.g., `$.schoolReference`), not the identity field paths inside it (e.g., `$.schoolReference.schoolId`).
+
+4. **Overrides cannot create collisions**:
+   - After applying overrides and the standard identifier normalization/truncation rules, table/column names must still be unique.
+   - Collisions are a compile-time error (migration/startup fails) and must be resolved by adjusting overrides.
+
+### 3.4 What we intentionally do *not* add
 
 - We do **not** add a list of columns or childTables (that’s the full flattening metadata approach).
 - We do **not** add per-resource code hooks.

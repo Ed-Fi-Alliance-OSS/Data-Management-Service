@@ -481,8 +481,7 @@ Add an optional `relational` section to each `resourceSchema` to keep the mappin
 ```json
 {
   "relational": {
-    "mappingVersion": "1",
-    "schemaNameOverride": "edfi",
+    "rootTableNameOverride": "Student",
     "nameOverrides": {
       "$.someVeryLongPropertyName...": "ShortColumnName"
     }
@@ -493,6 +492,7 @@ Add an optional `relational` section to each `resourceSchema` to keep the mappin
 Intent:
 - Default behavior is convention-based derivation from JSON Schema.
 - Overrides are used only to handle name collisions/length limits and rare modeling edge cases.
+- Physical schema name is derived from `ProjectNamespace` and is not overridden here.
 - This avoids “flattening metadata” duplication while staying metadata-driven and non-generated.
 
 ## Write Path (POST Upsert / PUT by id)
