@@ -57,10 +57,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
         IUpsertRequest upsertRequest,
         DocumentReferenceIds documentReferenceIds,
         DocumentReferenceIds descriptorReferenceIds,
-        JsonElement? studentSchoolAuthorizationEducationOrganizationIds,
-        JsonElement? studentEdOrgResponsibilityAuthorizationIds,
-        JsonElement? contactStudentSchoolAuthorizationEducationOrganizationIds,
-        JsonElement? staffEducationOrganizationAuthorizationEdOrgIds,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         TraceId traceId
@@ -115,11 +111,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 IsDescriptor: upsertRequest.ResourceInfo.IsDescriptor,
                 ProjectName: upsertRequest.ResourceInfo.ProjectName.Value,
                 EdfiDoc: JsonSerializer.Deserialize<JsonElement>(upsertRequest.EdfiDoc),
-                SecurityElements: upsertRequest.DocumentSecurityElements.ToJsonElement(),
-                StudentSchoolAuthorizationEdOrgIds: studentSchoolAuthorizationEducationOrganizationIds,
-                StudentEdOrgResponsibilityAuthorizationIds: studentEdOrgResponsibilityAuthorizationIds,
-                ContactStudentSchoolAuthorizationEdOrgIds: contactStudentSchoolAuthorizationEducationOrganizationIds,
-                StaffEducationOrganizationAuthorizationEdOrgIds: staffEducationOrganizationAuthorizationEdOrgIds,
                 LastModifiedTraceId: traceId.Value
             ),
             PartitionKeyFor(upsertRequest.DocumentInfo.ReferentialId).Value,
@@ -193,30 +184,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                 return ReportReferenceFailure(upsertRequest.DocumentInfo, invalidReferentialIds);
             }
         }
-
-        if (upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.IsInEducationOrganizationHierarchy)
-        {
-            await _sqlAction.InsertEducationOrganizationHierarchy(
-                upsertRequest.ResourceInfo.ProjectName.Value,
-                upsertRequest.ResourceInfo.ResourceName.Value,
-                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.Id,
-                upsertRequest.ResourceInfo.EducationOrganizationHierarchyInfo.ParentId,
-                newDocumentId,
-                documentPartitionKey,
-                connection,
-                transaction
-            );
-        }
-
-        // Insert the SecurableDocument
-        await DocumentAuthorizationHelper.InsertSecurableDocument(
-            upsertRequest,
-            newDocumentId,
-            documentPartitionKey,
-            connection,
-            transaction,
-            _sqlAction
-        );
 
         _logger.LogDebug("Upsert success as insert - {TraceId}", upsertRequest.TraceId.Value);
         return new UpsertResult.InsertSuccess(upsertRequest.DocumentUuid);
@@ -457,10 +424,6 @@ public class UpsertDocument(ISqlAction _sqlAction, ILogger<UpsertDocument> _logg
                     upsertRequest,
                     documentReferenceIds,
                     descriptorReferenceIds,
-                    studentSchoolAuthorizationEdOrgIds,
-                    studentEdOrgResponsibilityAuthorizationIds,
-                    contactStudentSchoolAuthorizationEdOrgIds,
-                    staffEducationOrganizationAuthorizationEdOrgIds,
                     connection,
                     transaction,
                     upsertRequest.TraceId

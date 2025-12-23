@@ -60,33 +60,6 @@ public class DeleteDocumentById(ISqlAction _sqlAction, ILogger<DeleteDocumentByI
                 return new DeleteResult.DeleteFailureETagMisMatch();
             }
 
-            var securityElements = documentSummary.SecurityElements.ToDocumentSecurityElements()!;
-
-            var deleteAuthorizationResult = await deleteRequest.ResourceAuthorizationHandler.Authorize(
-                securityElements,
-                OperationType.Delete,
-                deleteRequest.TraceId
-            );
-
-            if (deleteAuthorizationResult is ResourceAuthorizationResult.NotAuthorized notAuthorized)
-            {
-                return new DeleteResult.DeleteFailureNotAuthorized(notAuthorized.ErrorMessages);
-            }
-
-            if (deleteRequest.DeleteInEdOrgHierarchy && documentSummary.DocumentId != null)
-            {
-                long documentId = documentSummary.DocumentId.Value;
-
-                await _sqlAction.DeleteEducationOrganizationHierarchy(
-                    deleteRequest.ResourceInfo.ProjectName.Value,
-                    deleteRequest.ResourceInfo.ResourceName.Value,
-                    documentId,
-                    documentPartitionKey.Value,
-                    connection,
-                    transaction
-                );
-            }
-
             int rowsAffectedOnDocumentDelete = await _sqlAction.DeleteDocumentByDocumentUuid(
                 documentPartitionKey,
                 deleteRequest.DocumentUuid,
