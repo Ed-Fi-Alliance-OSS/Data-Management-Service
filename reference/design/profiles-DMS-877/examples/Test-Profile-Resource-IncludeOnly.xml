@@ -1,0 +1,22 @@
+<Profile name="Test-Profile-Resource-IncludeOnly">
+ <Resource name="School">
+  <ReadContentType memberSelection="IncludeOnly">
+   <Property name="NameOfInstitution" />                               <!-- Inherited property -->
+   <Property name="OperationalStatusDescriptor" />                     <!-- Inherited Type property -->
+   <Property name="CharterApprovalSchoolYearTypeReference" />          <!-- Property -->
+   <Property name="SchoolTypeDescriptor" />                                      <!-- Type property -->
+   <Property name="AdministrativeFundingControlDescriptor" />          <!-- Descriptor property -->
+   <Collection name="EducationOrganizationAddresses" memberSelection="IncludeAll"/> <!-- Inherited Collection -->
+   <Collection name="SchoolCategories" memberSelection="IncludeAll" /> <!-- Collection -->
+  </ReadContentType>
+  <WriteContentType memberSelection="IncludeOnly">
+   <Property name="ShortNameOfInstitution" />                          <!-- Inherited property -->
+   <Property name="OperationalStatusDescriptor" />                     <!-- Inherited Type property -->
+   <Property name="WebSite" />                                         <!-- Property -->
+   <Property name="CharterStatusDescriptor" />                               <!-- Type property -->
+   <Property name="AdministrativeFundingControlDescriptor" />          <!-- Descriptor property -->
+   <Collection name="EducationOrganizationInternationalAddresses" memberSelection="IncludeAll" /> <!-- Inherited Collection -->
+   <Collection name="SchoolGradeLevels" memberSelection="IncludeAll" /> <!-- Collection -->
+  </WriteContentType>
+ </Resource>
+</Profile>

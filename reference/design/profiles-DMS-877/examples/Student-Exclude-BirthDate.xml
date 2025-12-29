@@ -1,0 +1,10 @@
+<Profile name="Student-Exclude-BirthDate">
+ <Resource name="Student">
+  <ReadContentType memberSelection="ExcludeOnly">
+    <Property name="BirthDate" />
+  </ReadContentType>
+  <WriteContentType memberSelection="ExcludeOnly">
+    <Property name="BirthDate" />
+  </WriteContentType>
+ </Resource>
+</Profile>
