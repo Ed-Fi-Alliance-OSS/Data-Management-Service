@@ -192,6 +192,7 @@ public record ProfileDefinition(
 
 public record ResourceProfile(
     string ResourceName,
+    string? LogicalSchema,                    // Optional schema for extension resources
     ContentTypeDefinition? ReadContentType,
     ContentTypeDefinition? WriteContentType
 );
@@ -204,21 +205,26 @@ public record ContentTypeDefinition(
     IReadOnlyList<ExtensionRule> Extensions
 );
 
-public enum MemberSelection { IncludeOnly, ExcludeOnly, IncludeAll, ExcludeAll }
+// Note: ExcludeAll is defined in the XSD but throws NotImplementedException in ODS/API.
+// DMS should NOT support ExcludeAll to maintain compatibility.
+public enum MemberSelection { IncludeOnly, ExcludeOnly, IncludeAll }
 
 public record PropertyRule(string Name);
 
 public record ObjectRule(
     string Name,
     MemberSelection MemberSelection,
+    string? LogicalSchema,                        // Optional schema for extension objects
     IReadOnlyList<PropertyRule>? Properties,
     IReadOnlyList<ObjectRule>? NestedObjects,
-    IReadOnlyList<CollectionRule>? Collections
+    IReadOnlyList<CollectionRule>? Collections,
+    IReadOnlyList<ExtensionRule>? Extensions      // Extensions can appear in nested objects
 );
 
 public record ExtensionRule(
     string Name,
     MemberSelection MemberSelection,
+    string? LogicalSchema,                    // Optional schema for extension definitions
     IReadOnlyList<PropertyRule>? Properties,
     IReadOnlyList<ObjectRule>? Objects,
     IReadOnlyList<CollectionRule>? Collections
@@ -227,8 +233,12 @@ public record ExtensionRule(
 public record CollectionRule(
     string Name,
     MemberSelection MemberSelection,
+    string? LogicalSchema,                            // Optional schema (inherited from ClassDefinition)
     IReadOnlyList<PropertyRule>? Properties,
-    IReadOnlyList<CollectionItemFilter>? ItemFilters  // For descriptor-based filtering
+    IReadOnlyList<ObjectRule>? NestedObjects,         // Collections can contain nested objects
+    IReadOnlyList<CollectionRule>? NestedCollections, // Collections can contain nested collections
+    IReadOnlyList<ExtensionRule>? Extensions,         // Collections can contain extensions
+    CollectionItemFilter? ItemFilter                  // Single filter per collection (XSD maxOccurs="1")
 );
 
 public record CollectionItemFilter(
@@ -525,9 +535,12 @@ Collections can have their own `memberSelection`:
 | Value | Behavior |
 |-------|----------|
 | `IncludeAll` | Include entire collection with all items |
-| `ExcludeAll` | Exclude entire collection |
 | `IncludeOnly` | Include collection, filter to specified properties |
 | `ExcludeOnly` | Include collection, exclude specified properties |
+
+**Note:** `ExcludeAll` is defined in the ODS XSD schema but throws
+`NotImplementedException` at runtime. DMS should not support `ExcludeAll`
+to maintain compatibility with ODS/API behavior.
 
 ### 7.3 Descriptor-Based Item Filtering
 
@@ -661,10 +674,10 @@ public enum FilterMode { IncludeOnly, ExcludeOnly }
 
 1. **Descriptor URI matching**: Values are full URIs
    (e.g., `uri://ed-fi.org/AddressTypeDescriptor#Physical`).
-   Matching should be case-insensitive.
+   Matching is **case-sensitive** (consistent with ODS/API behavior).
 
-2. **Multiple filters**: A collection can have multiple `<Filter>` elements on
-   different properties. Items must satisfy ALL filters (AND logic).
+2. **Single filter per collection**: The XSD schema specifies `maxOccurs="1"` for
+   the `<Filter>` element. Each collection can have at most one filter.
 
 3. **Empty result**: If all items are filtered out, return an empty array
    `[]`, not `null`.
@@ -755,9 +768,11 @@ Other properties like `MaximumWeight` are excluded.
 public record ObjectRule(
     string Name,
     MemberSelection MemberSelection,
+    string? LogicalSchema,                        // Optional schema for extension objects
     IReadOnlyList<PropertyRule>? Properties,
-    IReadOnlyList<ObjectRule>? NestedObjects,      // Recursive nesting
-    IReadOnlyList<CollectionRule>? Collections
+    IReadOnlyList<ObjectRule>? NestedObjects,     // Recursive nesting
+    IReadOnlyList<CollectionRule>? Collections,
+    IReadOnlyList<ExtensionRule>? Extensions      // Extensions can appear in nested objects
 );
 ```
 
@@ -806,6 +821,7 @@ the Sample extension is returned.
 public record ExtensionRule(
     string Name,                                    // Extension namespace (e.g., "Sample")
     MemberSelection MemberSelection,
+    string? LogicalSchema,                          // Optional schema for extension definitions
     IReadOnlyList<PropertyRule>? Properties,
     IReadOnlyList<ObjectRule>? Objects,
     IReadOnlyList<CollectionRule>? Collections
