@@ -408,16 +408,67 @@ This prevents profiles from creating unusable responses.
 
 ### 6.2 Write Behavior
 
-When a write request includes fields that the profile excludes, DMS silently
-strips those fields (similar to existing overpost removal). This ensures:
+#### 6.2.1 Creatability Validation (POST)
 
-- Clients don't need to know exactly which fields a profile allows
+Before a resource can be created, DMS must validate that the profile does not
+exclude any **required** members. A resource is **not creatable** if the
+profile's WriteContentType excludes:
+
+- Any required (non-nullable) properties
+- Any required references
+- Any required collections (or required members within collection items)
+- Any required embedded objects (or required members within embedded objects)
+
+If a profile makes a resource non-creatable, POST requests return a
+**400 Bad Request** with a `DataPolicyException`:
+
+```json
+{
+    "detail": "The data cannot be saved because a data policy has been applied to the request that prevents it.",
+    "type": "urn:ed-fi:api:data-policy-enforced",
+    "title": "Data Policy Enforced",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The Profile definition for 'Student-Exclude-Required' excludes (or does not include) one or more required data elements needed to create the resource."
+    ]
+}
+```
+
+For child items (collections/embedded objects), if the profile excludes required
+members of a child type, adding those child items also triggers this error:
+
+```json
+{
+    "detail": "The data cannot be saved because a data policy has been applied to the request that prevents it.",
+    "type": "urn:ed-fi:api:data-policy-enforced",
+    "title": "Data Policy Enforced",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The Profile definition for 'Student-Exclude-Required' excludes (or does not include) one or more required data elements needed to create a child item of type 'StudentAddress' in the resource."
+    ]
+}
+```
+
+**ODS/API Reference:** `ProfileBasedCreateEntityDecorator.cs` and
+`ProfileResourceContentTypes.IsCreatable()` implement this validation.
+
+#### 6.2.2 Optional Field Stripping
+
+For **optional** fields that the profile excludes, DMS silently strips those
+fields (similar to existing overpost removal). This ensures:
+
+- Clients don't need to know exactly which optional fields a profile allows
 - Existing integrations continue to work when profiles are applied
-- Consistent behavior with the ODS/API
 
 **Example:**
 
 Profile `Student-Exclude-BirthDate` excludes `birthDate` from writes.
+Since `birthDate` is a required field for Student, this profile would make
+the resource **non-creatable** (see 6.2.1 above).
+
+For a profile that excludes an **optional** field like `middleName`:
 
 ```json
 // Client sends:
@@ -425,20 +476,29 @@ Profile `Student-Exclude-BirthDate` excludes `birthDate` from writes.
   "studentUniqueId": "12345",
   "firstName": "John",
   "lastSurname": "Doe",
-  "birthDate": "2010-05-15"  // This field is excluded by profile
+  "birthDate": "2010-05-15",
+  "middleName": "William"  // Optional field excluded by profile
 }
 
 // DMS processes as:
 {
   "studentUniqueId": "12345",
   "firstName": "John",
-  "lastSurname": "Doe"
-  // birthDate silently removed
+  "lastSurname": "Doe",
+  "birthDate": "2010-05-15"
+  // middleName silently removed
 }
 ```
 
-The stripped fields are not persisted, and the client receives a normal success
-response (201 Created or 200 OK).
+The stripped optional fields are not persisted, and the client receives a
+normal success response (201 Created or 200 OK).
+
+#### 6.2.3 Collection Item Filter Enforcement
+
+For collections with descriptor-based item filters (see Section 7.3), items
+that don't match the filter criteria are silently stripped during writes.
+For example, if a profile only allows Physical addresses, any submitted
+Billing or Home addresses are removed before persistence.
 
 ---
 
@@ -788,6 +848,8 @@ The following error responses match the ODS/API implementation:
 | Resource not available for usage type in profile | 405 | `profile:method-usage` |
 | Multiple profiles assigned, none specified | 403 | `security:data-policy:incorrect-usage` |
 | Client not authorized for specified profile | 403 | `security:data-policy:incorrect-usage` |
+| Profile excludes required members (non-creatable) | 400 | `data-policy-enforced` |
+| Profile excludes required child item members | 400 | `data-policy-enforced` |
 
 **Note:** All error types use the `urn:ed-fi:api:` prefix.
 
@@ -939,6 +1001,40 @@ When the resource specified in the profile header doesn't match the endpoint:
     "correlationId": "abc-123-def",
     "errors": [
         "The resource specified by the profile-based content type ('School') does not match the requested resource ('Student')."
+    ]
+}
+```
+
+#### Profile Makes Resource Non-Creatable (400)
+
+When a profile excludes required members, making the resource non-creatable:
+
+```json
+{
+    "detail": "The data cannot be saved because a data policy has been applied to the request that prevents it.",
+    "type": "urn:ed-fi:api:data-policy-enforced",
+    "title": "Data Policy Enforced",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The Profile definition for 'Student-Exclude-BirthDate' excludes (or does not include) one or more required data elements needed to create the resource."
+    ]
+}
+```
+
+#### Profile Makes Child Item Non-Creatable (400)
+
+When a profile excludes required members of a child item type:
+
+```json
+{
+    "detail": "The data cannot be saved because a data policy has been applied to the request that prevents it.",
+    "type": "urn:ed-fi:api:data-policy-enforced",
+    "title": "Data Policy Enforced",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The Profile definition for 'Student-Exclude-AddressType' excludes (or does not include) one or more required data elements needed to create a child item of type 'StudentEducationOrganizationAssociationAddress' in the resource."
     ]
 }
 ```
