@@ -110,7 +110,7 @@ Request ──> JWT Auth ──> Profile Resolution Middleware
                     ┌────┴────┐              │
                     ▼         ▼              │
                  Store     Error             │
-                 context   406/415           │
+                 context    403              │
                     │                        │
                     └──────────┬─────────────┘
                                │
@@ -772,58 +772,176 @@ public record ContentTypeDefinition(
 
 ### 8.1 Error Response Matrix
 
+The following error responses match the ODS/API implementation:
+
 | Scenario | HTTP | Error Type |
 |----------|------|------------|
-| Invalid profile header (GET) | 406 | `not-acceptable` |
-| Invalid profile header (POST/PUT) | 415 | `unsupported-media-type` |
-| Profile not found (GET) | 406 | `not-acceptable` |
-| Profile not found (POST/PUT) | 415 | `unsupported-media-type` |
-| Profile not authorized (GET) | 406 | `not-acceptable` |
-| Profile not authorized (POST/PUT) | 415 | `unsupported-media-type` |
-| Wrong usage type (readable for POST) | 400 | `bad-request` |
-| Wrong usage type (writable for GET) | 400 | `bad-request` |
-| Profile doesn't cover resource | 400 | `bad-request` |
-| Multiple profiles, none specified | 403 | `security:data-policy:incorrect-usage` |
+| Invalid/malformed profile header format | 400 | `profile:invalid-profile-usage` |
+| Invalid usage type in header (not "readable"/"writable") | 400 | `profile:invalid-profile-usage` |
+| Wrong usage type for HTTP method (writable with GET) | 400 | `profile:invalid-profile-usage` |
+| Wrong usage type for HTTP method (readable with POST/PUT) | 400 | `profile:invalid-profile-usage` |
+| Resource in header doesn't match requested resource | 400 | `profile:invalid-profile-usage` |
+| Profile doesn't cover the requested resource | 400 | `profile:invalid-profile-usage` |
+| Profile doesn't exist (GET) | 406 | `profile:invalid-profile-usage` |
+| Profile doesn't exist (POST/PUT) | 415 | `profile:invalid-profile-usage` |
+| Profile is misconfigured/invalid | 406 | `profile:invalid-profile-usage` |
+| Resource not available for usage type in profile | 405 | `profile:method-usage` |
+| Multiple profiles assigned, none specified | 403 | `security:data-policy:incorrect-usage` |
+| Client not authorized for specified profile | 403 | `security:data-policy:incorrect-usage` |
 
 **Note:** All error types use the `urn:ed-fi:api:` prefix.
 
 ### 8.2 Error Response Format
 
-#### Profile Not Authorized (406)
+All profile-related errors return a **Problem Details** JSON structure
+following RFC 7807 format:
 
 ```json
 {
-    "detail": "Profile 'Student-Nutrition' is not authorized for this client",
-    "type": "urn:ed-fi:api:not-acceptable",
-    "title": "Not Acceptable",
+    "detail": "Human-readable explanation of the error",
+    "type": "urn:ed-fi:api:{error-type}",
+    "title": "Short summary of the problem",
+    "status": 400,
+    "correlationId": "unique-request-id",
+    "errors": [
+        "Specific error message(s)"
+    ]
+}
+```
+
+### 8.3 Example Error Responses
+
+#### Invalid Profile Header Format (400)
+
+```json
+{
+    "detail": "The request construction was invalid with respect to usage of a data policy.",
+    "type": "urn:ed-fi:api:profile:invalid-profile-usage",
+    "title": "Invalid Profile Usage",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The format of the profile-based 'Accept' header was invalid."
+    ]
+}
+```
+
+#### Wrong Usage Type for HTTP Method (400)
+
+For writable content-type with GET:
+
+```json
+{
+    "detail": "The request construction was invalid with respect to usage of a data policy.",
+    "type": "urn:ed-fi:api:profile:invalid-profile-usage",
+    "title": "Invalid Profile Usage",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "A profile-based content type that is writable cannot be used with GET requests."
+    ]
+}
+```
+
+For readable content-type with POST/PUT:
+
+```json
+{
+    "detail": "The request construction was invalid with respect to usage of a data policy.",
+    "type": "urn:ed-fi:api:profile:invalid-profile-usage",
+    "title": "Invalid Profile Usage",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "A profile-based content type that is readable cannot be used with POST requests."
+    ]
+}
+```
+
+#### Profile Doesn't Exist (406 for GET, 415 for POST/PUT)
+
+```json
+{
+    "detail": "The request construction was invalid with respect to usage of a data policy.",
+    "type": "urn:ed-fi:api:profile:invalid-profile-usage",
+    "title": "Invalid Profile Usage",
     "status": 406,
-    "correlationId": "abc-123-def"
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The profile specified by the content type in the 'Accept' header is not supported by this host."
+    ]
 }
 ```
 
-#### Multiple Profiles, None Specified (403)
+#### Profile Doesn't Cover Resource (400)
 
 ```json
 {
-    "status": 403,
-    "type": "urn:ed-fi:api:security:data-policy:incorrect-usage",
-    "detail": "Access to the resource could not be authorized. ...",
-    "message": "Based on profile assignments, one of the following
-        profile-specific content types is required: '...profile-a...',
-        '...profile-b...'",
-    "correlationId": "abc-123-def"
+    "detail": "The request construction was invalid with respect to usage of a data policy. The resource is not contained by the profile used by (or applied to) the request.",
+    "type": "urn:ed-fi:api:profile:invalid-profile-usage",
+    "title": "Invalid Profile Usage",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "Resource 'Student' is not accessible through the 'Test-Profile' profile specified by the content type."
+    ]
 }
 ```
 
-Full message values:
+#### Resource Not Available for Usage Type (405)
 
-- `detail`: "Access to the resource could not be authorized. The request was
-  not constructed correctly for the data policy applied to this data for
-  the caller."
-- `message`: "Based on profile assignments, one of the following profile-
-  specific content types is required when requesting this resource:
-  'application/vnd.ed-fi.student.profile-a.readable+json',
-  'application/vnd.ed-fi.student.profile-b.readable+json'"
+When a profile covers a resource but not for the requested usage type
+(e.g., profile defines only ReadContentType but client tries to POST):
+
+```json
+{
+    "detail": "The request construction was invalid with respect to usage of a data policy. An attempt was made to access a resource that is not writable using the profile.",
+    "type": "urn:ed-fi:api:profile:method-usage",
+    "title": "Method Not Allowed",
+    "status": 405,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "Resource class 'Student' is not writable using API profile 'Test-Profile'."
+    ]
+}
+```
+
+#### Multiple Profiles Assigned, None Specified (403)
+
+```json
+{
+    "detail": "Access to the resource could not be authorized. The request was not constructed correctly for the data policy applied to this data for the caller.",
+    "type": "urn:ed-fi:api:security:data-policy:incorrect-usage",
+    "title": "Forbidden",
+    "status": 403,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "Based on profile assignments, one of the following profile-specific content types is required when requesting this resource: 'application/vnd.ed-fi.student.profile-a.readable+json', 'application/vnd.ed-fi.student.profile-b.readable+json'"
+    ]
+}
+```
+
+#### Client Not Authorized for Specified Profile (403)
+
+Same response format as above - the error message lists the profiles that
+ARE available to the client.
+
+#### Resource Name Mismatch (400)
+
+When the resource specified in the profile header doesn't match the endpoint:
+
+```json
+{
+    "detail": "The request construction was invalid with respect to usage of a data policy.",
+    "type": "urn:ed-fi:api:profile:invalid-profile-usage",
+    "title": "Invalid Profile Usage",
+    "status": 400,
+    "correlationId": "abc-123-def",
+    "errors": [
+        "The resource specified by the profile-based content type ('School') does not match the requested resource ('Student')."
+    ]
+}
+```
 
 ---
 
