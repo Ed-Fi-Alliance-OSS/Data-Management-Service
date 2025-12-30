@@ -12,7 +12,17 @@ public static class ApiVersionDetails
     /// <summary>
     /// Semantic version of the DMS Configuration Api.
     /// </summary>
-    public const string Version = "2.2.0";
+    public const string Version = "0.7.0";
+
+    /// <summary>
+    /// Application name
+    /// </summary>
+    public const string ApplicationName = "Ed-Fi Alliance DMS Configuration Service";
+
+    /// <summary>
+    /// Informational version description
+    /// </summary>
+    public const string InformationalVersion = "Release Candidate 1";
 
     /// <summary>
     /// Assembly version of the DMS Configuration Api.

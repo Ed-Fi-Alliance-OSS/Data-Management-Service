@@ -13,7 +13,11 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.Options;
 
 var builder = WebApplication.CreateBuilder(args);
+
 builder.AddServices();
+builder.Services.AddHttpClient();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddOpenApi();
 
 // Add CORS policy to allow Swagger UI to access the Configuration Service
 string swaggerUiOrigin =
@@ -73,6 +77,7 @@ app.UseCors("AllowSwaggerUI");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapRouteEndpoints();
+app.MapOpenApi();
 await app.RunAsync();
 
 /// <summary>
