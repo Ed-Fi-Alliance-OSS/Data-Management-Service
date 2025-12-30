@@ -128,10 +128,61 @@ is still assigned to Applications.
 
 ### 3.3 Validation Rules
 
+#### Field Validation
+
 | Field | Rules |
 |-------|-------|
 | `profileName` | Required, max 256 chars, unique, alphanumeric/hyphens |
 | `definition` | Required, valid XML, `<Profile>` root, name must match |
+
+#### Definition Validation Levels
+
+**Note:** ODS/API performs these validations when profiles are accessed at
+runtime. This proposal moves validation to CMS at profile creation time,
+providing earlier feedback and preventing invalid profiles from being stored.
+
+CMS performs two levels of validation on the profile definition:
+
+**Level 1: XSD Schema Validation**
+
+- Validates XML structure against `Ed-Fi-ODS-API-Profiles.xsd`
+- Rejects profiles with invalid XML structure or unknown elements
+- Must pass before Level 2 validation proceeds
+
+**Level 2: Resource Model Validation**
+
+- Validates profile content against the Ed-Fi resource model
+- Checks that all referenced members actually exist
+- Validates identifying member protection rules
+
+#### Member Validation Rules
+
+| Rule | Severity | Behavior |
+|------|----------|----------|
+| Unknown member in `IncludeOnly` | Error | Profile rejected |
+| Unknown member in `ExcludeOnly` | Warning | Member silently ignored |
+| Excluding identifying member | Warning | Exclusion silently prevented |
+| Unknown resource name | Error | Profile rejected |
+| Unknown extension namespace | Error | Profile rejected |
+
+#### Validation Error Examples
+
+Unknown member (IncludeOnly):
+
+```text
+Profile 'Test-Profile' definition for the read content type for resource
+'Student' attempted to include member 'nonExistentProperty' of 'Student',
+but it doesn't exist. The following members are available: 'firstName',
+'lastSurname', 'birthDate', ...
+```
+
+Identifying member exclusion attempt (ExcludeOnly):
+
+```text
+Profile 'Test-Profile' definition for the write content type for resource
+'Student' attempted to exclude identifying member 'studentUniqueId' of
+'Student', but identifying members cannot be excluded.
+```
 
 ### 3.4 Error Responses
 
