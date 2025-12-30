@@ -47,14 +47,4 @@ public class ApplicationContextCache(IMemoryCache memoryCache, TimeSpan expirati
         string cacheKey = $"{CacheKeyPrefix}{clientId}";
         memoryCache.Remove(cacheKey);
     }
-
-    /// <summary>
-    /// Clears all application context entries from the cache
-    /// </summary>
-    public void ClearAllCache()
-    {
-        // Note: IMemoryCache doesn't provide a way to enumerate keys
-        // This would require tracking all cached keys separately if needed
-        // For now, entries will expire based on TTL
-    }
 }
