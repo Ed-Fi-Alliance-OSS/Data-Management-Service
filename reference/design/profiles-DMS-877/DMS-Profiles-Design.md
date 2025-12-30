@@ -33,9 +33,13 @@ application/vnd.ed-fi.[resource-name].[profile-name].[usage-type]+json
 
 | Component | Description | Example |
 |-----------|-------------|---------|
-| `resource-name` | Lowercase resource endpoint | `student`, `school` |
-| `profile-name` | Lowercase profile name | `student-exclude-birthdate` |
+| `resource-name` | Singular resource name (not the plural endpoint) | `student`, `school` |
+| `profile-name` | Profile name (case-insensitive) | `student-exclude-birthdate` |
 | `usage-type` | `readable` (GET), `writable` (POST/PUT) | `readable` |
+
+**Important:** Resource name matching is **case-insensitive**. The resource name
+in the header (e.g., `student`) is compared against the singular resource model
+name (e.g., `Student`), not the plural endpoint path (e.g., `/students`).
 
 ### 2.2 Header Usage by Operation
 

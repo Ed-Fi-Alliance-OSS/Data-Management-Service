@@ -257,7 +257,7 @@ requests from the cache.
 ```sql
 CREATE TABLE dmscs.Profile (
     Id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    ProfileName VARCHAR(256) NOT NULL,
+    ProfileName VARCHAR(500) NOT NULL,
     Definition TEXT NOT NULL,
     CreatedAt TIMESTAMP NOT NULL DEFAULT NOW(),
     CreatedBy VARCHAR(256),
