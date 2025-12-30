@@ -347,7 +347,48 @@ public static class ProfileResponseFilter
 }
 ```
 
-### 5.3 Identity Field Protection
+### 5.3 Response Content-Type Header
+
+When a profile is active (either explicitly specified or implicitly selected),
+the response `Content-Type` header **must** be set to the profile-specific
+media type. This is required for ODS/API compatibility.
+
+**Format:**
+
+```text
+Content-Type: application/vnd.ed-fi.{resourceName}.{profileName}.readable+json
+```
+
+**Example:**
+
+```text
+Content-Type: application/vnd.ed-fi.student.student-minimum-data.readable+json
+```
+
+**Implementation:**
+
+```csharp
+private string GetReadContentType(ProfileContext? profileContext, string resourceName)
+{
+    if (profileContext == null)
+    {
+        return "application/json";
+    }
+
+    return $"application/vnd.ed-fi.{resourceName.ToLower()}.{profileContext.ProfileName.ToLower()}.readable+json";
+}
+```
+
+**Rationale:** Setting the response Content-Type allows clients to:
+
+1. Confirm which profile was applied (important for implicit selection)
+2. Verify the profile matches their expectations
+3. Handle profile-specific response parsing if needed
+
+**ODS/API Reference:** `DataManagementControllerBase.GetReadContentType()` and
+`ProfilesContentTypeHelper.CreateContentType()` implement this behavior.
+
+### 5.4 Identity Field Protection
 
 Certain fields are **always included** regardless of profile rules:
 
