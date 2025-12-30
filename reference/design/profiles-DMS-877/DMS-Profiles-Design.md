@@ -1307,3 +1307,53 @@ polling mechanism in a future iteration.
    │<────────────────│                   │                    │
    │                 │                   │                    │
 ```
+
+---
+
+## 12. Profile-Specific OpenAPI Schemas
+
+### 12.1 Overview
+
+ODS/API publishes profile-specific OpenAPI documents that reflect the
+constrained resource schemas for each profile. DMS must provide equivalent
+functionality to enable client code generation and API documentation.
+
+### 12.2 Endpoint
+
+```text
+GET /metadata/data/v3/profiles/{profileName}/swagger.json
+```
+
+### 12.3 Runtime Generation
+
+DMS must generate profile-specific OpenAPI documents at runtime because:
+
+1. Profiles are stored in CMS and can be created/modified dynamically
+2. The base OpenAPI schema is already generated at runtime from ApiSchema
+3. Profile definitions are fetched and cached from CMS
+
+### 12.4 Schema Modification Approach
+
+For each profile, DMS generates a modified OpenAPI document by:
+
+1. Starting with the base resource OpenAPI schema
+2. Applying profile rules to filter properties:
+   - `IncludeOnly`: Remove properties not in the allowed list
+   - `ExcludeOnly`: Remove properties in the excluded list
+3. Generating separate schemas for readable vs writable content types
+4. Updating `required` arrays to reflect profile constraints
+5. Adding profile-specific content type headers to operations
+
+### 12.5 Response Structure
+
+The generated OpenAPI document follows standard OpenAPI 3.0 format with:
+
+- Profile name in the `info.title`
+- Only resources covered by the profile included
+- Schema properties filtered per profile rules
+- Appropriate `Accept`/`Content-Type` headers documented
+
+### 12.6 Caching
+
+Profile OpenAPI documents should be cached with the same TTL as profile
+definitions (default 30 minutes) to avoid regeneration on every request.
