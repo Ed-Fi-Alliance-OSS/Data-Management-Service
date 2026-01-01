@@ -58,7 +58,7 @@ However, there is a second cascade problem the draft does not address:
 
 With relational storage, the referencing row can keep pointing to the same referenced `DocumentId`, and reconstitution can output the *new* identity values. But then:
 - The `dms.ReferentialIdentity` mapping for the referencing resource (used for POST upsert detection and reference resolution) becomes stale unless it is updated.
-- If you also enable `dms.DocumentCache`, cached JSON becomes stale for every referencing document whose reference identity values “should” change.
+- If you also enable `dms.DocumentCache`, cached JSON becomes stale for every referencing document whose reference identity values “should” change **unless** you invalidate dependent caches; the updated draft proposes optional `dms.ReferenceEdge` + `BindingKey` to drive this cache-invalidation cascade.
 
 This is the core tension:
 - **Eliminate cascades** vs
@@ -85,7 +85,7 @@ Keep references as `DocumentId` and make POST upsert detection for identities th
 Keep the draft’s referential-id-based upsert detection, but when identity changes, perform a **referential-identity propagation** step:
 - Find all dependent resources whose identity includes that reference value and recompute/update their `dms.ReferentialIdentity` entries.
 - If `dms.DocumentCache` is enabled, invalidate/recompute dependent caches.
-This requires a reverse-dependency mechanism (see the “Reference edge table” suggestion below) or scanning many FK columns.
+This requires a reverse-dependency mechanism (the updated draft adds optional `dms.ReferenceEdge`) or scanning many FK columns.
 
 **Option C (restrict identity updates)**  
 Formally restrict `allowIdentityUpdates` to resources whose identities are not used as components of other identities (or disable entirely in relational mode). This is operationally simplest but may be unacceptable if identity updates are a required feature.
@@ -228,12 +228,12 @@ Recommendation:
 
 If you cache full JSON with expanded reference identities, then identity updates in referenced resources imply cache invalidation across the FK graph.
 
-If identity updates are supported (Goal #4), you need either:
-- no JSON cache for GET/query (cache only for integrations), or
-- a reverse-reference index for invalidation, or
-- very short TTL and an explicit statement that cached responses may temporarily contain stale reference identities.
+Update: the draft now introduces optional `dms.ReferenceEdge` (with stable `BindingKey`) and shows a concrete dependent-invalidation mechanism (reverse lookup by `ChildDocumentId` → delete dependent `dms.DocumentCache` rows). This directly addresses the cache-correctness gap *if* `dms.ReferenceEdge` is enabled and maintained reliably.
 
-Without addressing this, “cache is optional” is true for correctness but misleading for correctness *when enabled*.
+Remaining considerations to make the solution “production real”:
+- Make `dms.ReferenceEdge` truly optional (enable only when `dms.DocumentCache` strictness and/or delete diagnostics require it).
+- Use low-churn maintenance (stage+diff) so no-op updates don’t rewrite edges.
+- Decide on strict vs best-effort behavior: if edge maintenance fails, does the write fail, or do you accept temporary cache staleness (TTL fallback / async invalidation)?
 
 ## Suggested additions/adjustments to ApiSchema (minimal, non-codegen)
 
@@ -251,18 +251,20 @@ The draft’s `resourceSchema.relational` block (name overrides) is a good start
    - If you adopt membership tables, you likely don’t need new metadata: subclass relationships + `abstractResources` are enough.
    - But you may want an explicit list of which abstract types require membership materialization for performance/diagnostics.
 
-## A pragmatic compromise to consider: reintroduce a lightweight reference edge table
+## Design update: `dms.ReferenceEdge` is now in the draft
 
-Even if FK constraints replace `dms.Reference` for integrity, a generic edge table can solve multiple hard problems without reintroducing document-shape coupling:
+The updated draft incorporates an optional `dms.ReferenceEdge` table (keyed by `(ParentDocumentId, BindingKey, ChildDocumentId)`) and uses it for:
+- `dms.DocumentCache` dependent invalidation (cache “cascade” without rewriting relational data)
+- delete conflict diagnostics (“who references me?”) without scanning all resource tables
 
-`dms.ReferenceEdge(ParentDocumentId, ChildDocumentId, ReferenceBindingKey, CreatedAt, ...)`
+This is a good direction and is materially different from today’s `dms.Reference` in ways that address the churn concern:
+- It stores **resolved `DocumentId`s** (no alias join/partition key routing).
+- It’s **optional**, so high-write deployments can disable it unless they need strict cache correctness/diagnostics.
+- It can be maintained with a **diff** so unchanged reference sets do not rewrite rows.
 
-Potential uses:
-- invalidate `dms.DocumentCache` for “documents that reference X”
-- support identity propagation strategies (Option B) without scanning every FK column across every table
-- improve delete-conflict diagnostics (“what references me?”) beyond what FK constraint names alone can provide
-
-If you truly want “no reference table at all”, then explicitly accept reduced diagnostics and higher invalidation complexity.
+Two things to keep explicit in the design (to avoid reintroducing old pain):
+- `BindingKey` must be stable and meaningful (distinct reference sites, deterministic across engines, with clear truncation rules).
+- Cache invalidation workload can be large; consider async invalidation (outbox/worker) + TTL safety net if strict synchronous invalidation is too expensive.
 
 ## Suggested validation plan (to de-risk early)
 
@@ -282,7 +284,7 @@ If you truly want “no reference table at all”, then explicitly accept reduce
    - Update an entity’s natural key and confirm:
      - GET responses show updated identity in reference objects
      - POST upsert of dependent resources does not create duplicates / does not incorrectly 409
-     - (If cache enabled) cached results remain correct or are explicitly invalidated
+     - (If cache enabled) cached results remain correct or are explicitly invalidated (ideally via `dms.ReferenceEdge`), and no-op updates do not churn the edge table when diff-based maintenance is used
 
 4. **DDL parity checks**
    - SQL Server: table width/column count constraints on “wide” resources and extension-heavy resources
@@ -294,5 +296,4 @@ If you truly want “no reference table at all”, then explicitly accept reduce
 2. Is `queryFieldMapping` allowed to reference array paths, and if yes, which query semantics are required (exists-only, equals-only)?
 3. How should polymorphic reference identity projection be implemented (membership table vs union view vs CASE fanout)?
 4. What is the explicit supported JSON schema subset for `jsonSchemaForInsert` in relational mode?
-5. What correctness guarantees are required if `dms.DocumentCache` is enabled (especially around referenced identity changes)?
-
+5. If `dms.DocumentCache` is enabled, is `dms.ReferenceEdge` required for correctness (strict invalidation) or is TTL-only staleness acceptable? Should invalidation be synchronous or async?
