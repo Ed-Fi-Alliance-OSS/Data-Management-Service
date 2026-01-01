@@ -348,6 +348,11 @@ CREATE INDEX IX_ReferenceEdge_ChildDocumentId
 
 `ReferenceObjectPath`/`DescriptorValuePath` are the canonical/wildcard JSON paths from the derived `ReferenceBinding`/`DescriptorBinding` (no numeric indices).
 
+Purpose:
+- Distinguish multiple reference sites that may point to the same `ChildDocumentId` (do not collapse to just `(ParentDocumentId, ChildDocumentId)`).
+- Support low-churn edge maintenance by treating the “current reference set” for a parent as unique `(ChildDocumentId, BindingKey)` pairs.
+- Provide actionable diagnostics/debugging (“who references me, and via which field/path?”) and enables future selective invalidation policies if needed.
+
 Length handling:
 - If the computed string exceeds 256 chars, apply deterministic truncation + short hash suffix (same rule family as Naming Rules).
 
