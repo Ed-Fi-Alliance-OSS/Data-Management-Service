@@ -75,7 +75,7 @@ CREATE INDEX IX_Document_ProjectName_ResourceName_CreatedAt
 ```
 
 Notes:
-- `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity`.
+- `DocumentUuid` remains stable across identity updates; identity-based upserts map to it either via `dms.ReferentialIdentity` (self-contained identities) or via the resource root table’s natural-key unique constraint on resolved `..._DocumentId` FK columns + scalar identity parts (reference-bearing identities).
 - Authorization-related columns are intentionally omitted here.
 
 #### 2) `dms.ReferentialIdentity`
@@ -121,7 +121,7 @@ CREATE TABLE dms.ReferentialIdentity (
 ```
 
 Critical invariants:
-- **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document”.
+- **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document” for identities that can be computed from the document itself (self-contained identities and descriptor URIs). For identities that include other resources’ identities (reference-bearing identities), the authoritative uniqueness check is the resource root table’s natural-key unique constraint on resolved `..._DocumentId` FK columns + scalar identity parts (see Write Path).
 - Subclass writes insert both:
   - primary `ReferentialId` (subclass resource name)
   - superclass alias `ReferentialId` (superclass resource name)
@@ -411,7 +411,7 @@ One row per document; PK is `DocumentId` (shared surrogate key).
 
 Typical structure:
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
-- Natural key columns (from `identityJsonPaths`) → unique constraint
+- Natural key columns (from `identityJsonPaths`) → unique constraint. For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column rather than duplicating the referenced natural-key fields.
 - Scalar columns for top-level non-collection properties
 - Reference FK columns:
   - Non-descriptor references (concrete target): `..._DocumentId BIGINT` FK → `{schema}.{TargetResource}(DocumentId)` to enforce existence *and* resource type
@@ -546,10 +546,82 @@ Reference validation is provided by **two layers** (mirroring what the current `
 ### 1) Write-time validation (application-level)
 
 During POST/PUT processing, the backend:
-- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) from `ReferentialId` → `DocumentId` using `dms.ReferentialIdentity`.
+- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) to a target `DocumentId` using an ApiSchema-derived “natural-key resolver”:
+  - **Self-contained identities**: resolve by `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
+  - **Reference-bearing identities**: resolve by first resolving the identity’s component references to `DocumentId`s, then looking up the target row by the resource root table’s natural-key unique constraint (FK `..._DocumentId` columns + scalar identity parts). This avoids requiring propagation when upstream natural keys change.
 - Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
 
 This is required because the relational tables store **`DocumentId` foreign keys**, and we cannot write those without resolving them.
+
+#### ApiSchema-derived natural-key resolver (design)
+
+The **natural-key resolver** is the backend service that converts a `{Project, Resource, DocumentIdentity}` into a persisted `DocumentId` **without per-resource code**.
+
+It is used for:
+- resolving extracted `DocumentReference` / `DescriptorReference` instances during writes
+- POST upsert existence detection for resources whose identities include references
+- query-time resolution when a filter targets a referenced identity
+
+**Inputs**
+- `QualifiedResourceName` of the target (from `DocumentReference.ResourceInfo` / `DescriptorReference.ResourceInfo`)
+- `DocumentIdentity` (ordered `IdentityJsonPath → string value` pairs)
+- the request-local `ReferentialId` (already computed by Core for writes; optional for query-time and computable deterministically using the same UUIDv5 algorithm as Core)
+- optional “location” info for error reporting (e.g., concrete JSON path instance from Core extraction)
+
+**Outputs**
+- `DocumentId` when found
+- “not found” when no matching row exists (write-time: validation failure; query-time: empty-match behavior)
+
+##### Plan compilation (per resource, per `EffectiveSchemaHash`)
+
+The backend compiles and caches a `NaturalKeyResolverPlan` for each resource using **only ApiSchema metadata**:
+- `identityJsonPaths` (identity components and ordering)
+- `documentPathsMapping` (reference bindings and how referenced identity fields map into the current document)
+- the derived relational model (root table name + root column names/types for identity fields and `..._DocumentId` FK columns)
+
+**Classify identity shape**
+- **Self-contained identity**: none of the resource’s `identityJsonPaths` are sourced from a document reference (i.e., they do not appear as a `referenceJsonPaths[*].referenceJsonPath` in `documentPathsMapping` for non-descriptor references).
+- **Reference-bearing identity**: one or more `identityJsonPaths` are sourced from a document reference object.
+
+**Build identity decomposition**
+- For each non-descriptor `DocumentPath` in `documentPathsMapping`:
+  - compute the set intersection between `identityJsonPaths` and the path’s `referenceJsonPaths[*].referenceJsonPath`
+  - if non-empty, this reference binding is an **identity component reference** (it contributes a `..._DocumentId` to the target’s natural key)
+  - record a mapping from **referenced identity field** → **local identity field** using the `referenceJsonPaths[*]` pairs
+
+**Build lookup SQL**
+- For self-contained identities: no resource-specific SQL is required; resolution is via `dms.ReferentialIdentity`.
+- For reference-bearing identities: compile a parameterized lookup on the root table’s natural key:
+  - `SELECT r.DocumentId FROM {schema}.{Resource} r WHERE r.<IdCol1>=@p1 AND r.<IdCol2>=@p2 ...`
+  - reference-sourced identity elements map to `..._DocumentId` FK columns; scalar identity elements map to scalar columns
+  - parse identity strings into typed parameter values using the derived model’s column type info (avoid implicit casts)
+
+##### Resolution algorithm (bulk, request-scoped)
+
+The resolver runs as a small, request-scoped dependency evaluator with memoization:
+
+1. **Seed work items**: all `DocumentReference` + `DescriptorReference` instances to resolve.
+2. **Resolve self-contained identities** in bulk via `dms.ReferentialIdentity`:
+   - dedupe referential ids
+   - query once per batch and populate a request-local cache
+3. **Resolve reference-bearing identities** by natural key:
+   - for each identity component reference binding, construct the referenced resource’s `DocumentIdentity` by applying the ApiSchema mapping (referenced `identityJsonPath` ← local identity value)
+   - resolve those component identities first (recursively, using the same resolver)
+   - when all component `..._DocumentId` values are available, execute the compiled root-table natural-key lookup
+4. **Cycle detection**: if identity dependencies form a cycle (no progress possible), treat it as a schema/config error and fail fast.
+
+**Bulk lookup pattern**
+- Prefer set-based resolution for multiple natural keys of the same resource:
+  - PostgreSQL: `(VALUES ...)` key staging + join on all natural-key columns
+  - SQL Server: same `(VALUES ...)` join pattern, chunked to stay under the 2100-parameter limit; optionally upgrade to temp-table + bulk copy if needed
+
+##### Caching
+
+The resolver uses layered caching:
+- **Per-request memoization** (always): avoids duplicate recursive work within one request.
+- Optional L1/L2 caches (after-commit population only):
+  - `ReferentialId → DocumentId` (safe for self-contained identities + descriptor URIs)
+  - `{Resource, NaturalKeyTuple} → DocumentId` where `NaturalKeyTuple` is `(…_DocumentId FKs + scalar identity parts)` (safe across upstream identity changes; keys are stable because they use referenced `DocumentId`s).
 
 ### 2) Database enforcement (FKs)
 
@@ -633,11 +705,13 @@ Intent:
    - Document references (with `ReferentialId`s)
    - Descriptor references (with `ReferentialId`s, normalized URI)
 2. Backend resolves references in bulk:
-   - `dms.ReferentialIdentity` lookup for document refs → `DocumentId[]`
-   - `dms.ReferentialIdentity` + `dms.Descriptor` existence check for descriptor refs
+   - Use an ApiSchema-derived natural-key resolver to turn references into `DocumentId`s:
+     - self-contained identities: `dms.ReferentialIdentity` lookup
+     - reference-bearing identities: resolve component refs → `DocumentId`s, then unique-constraint lookup on the target root table
+   - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
 3. Backend writes within a single transaction:
    - `dms.Document` insert/update (sets `Etag`, `LastModifiedAt`, etc.)
-   - `dms.ReferentialIdentity` upsert (primary + superclass aliases)
+   - `dms.ReferentialIdentity` upsert (primary + superclass aliases) when the identity is self-contained or a descriptor URI (not required for reference-bearing identities)
    - Resource root + child tables (replace strategy for collections)
    - `dms.Descriptor` upsert if the resource is a descriptor
    - Optional: upsert `dms.ReferenceEdge` rows for this document (outgoing references and descriptor references), if enabled
@@ -721,8 +795,10 @@ WHERE e.ParentDocumentId = @ParentDocumentId
 
 ### Insert vs update detection
 
-- **Upsert (POST)**: detect by `ReferentialId`:
-  - Find `DocumentId` from `dms.ReferentialIdentity` where `IdentityRole=Primary` for that referential id.
+- **Upsert (POST)**: detect existing row by the resource’s natural key using one of two strategies (derived from `ApiSchema.json`):
+  - **Self-contained identity** (identity elements live on the resource itself): find `DocumentId` via `dms.ReferentialIdentity` where `IdentityRole=Primary` for the request’s `ReferentialId`.
+  - **Reference-bearing identity** (identity includes one or more document references): resolve referenced identities to `DocumentId`s first, then find `DocumentId` via the resource root table’s natural-key unique constraint (e.g., `Student_DocumentId + School_DocumentId + EntryDate`).
+    - This avoids requiring propagation/rewrite of dependent resources when upstream natural keys change.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.
 
@@ -734,6 +810,42 @@ If identity changes on update:
   - If `dms.DocumentCache` is enabled and cached JSON expands reference identities/descriptors, then identity changes of *this* document may make cached JSON of *other* documents stale (they embed this document’s identity/URI). If `dms.ReferenceEdge` is enabled, invalidate dependent caches by reverse lookup:
     - `DELETE FROM dms.DocumentCache WHERE DocumentId IN (SELECT ParentDocumentId FROM dms.ReferenceEdge WHERE ChildDocumentId = @thisDocumentId)`
     - This is a cache invalidation cascade (recompute-on-read), not a relational data rewrite.
+
+### Cascade scenarios (tables-per-resource)
+
+Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change, because relationships are stored as stable `DocumentId` FKs. Cascades still exist for **derived artifacts** (identity keys, caches, diagnostics), and should be handled explicitly:
+
+- **Identity/URI change on the document itself** (e.g., `StudentUniqueId` update, descriptor `namespace#codeValue` update)
+  - Update this document’s `dms.ReferentialIdentity` mapping (delete old `ReferentialId`, insert new) as part of the transaction.
+  - If `dms.DocumentCache` is enabled: invalidate this document’s cache entry after commit.
+  - If `dms.ReferenceEdge` is enabled: invalidate dependent cached JSON after commit by reverse lookup (`ChildDocumentId = @thisDocumentId`), because other cached documents embed this identity/URI.
+  - No rewrite of `dms.ReferenceEdge` rows is required for identity/URI changes: edges store `DocumentId`s and only change when outgoing references change.
+  - Update/evict any in-memory/Redis keys after commit (e.g., `ReferentialId → DocumentId`, `DocumentUuid → DocumentId`, descriptor expansion).
+
+- **Upstream identity changes affecting other documents’ effective identities** (reference-bearing identities)
+  - Do not rewrite referencing rows: FKs remain correct.
+  - Do not rely on `ReferentialId` lookups for correctness when the target identity includes references; resolve by:
+    - resolving component references to `DocumentId`s, then
+    - unique-constraint lookup on the target root table (the same mechanism used for POST upsert detection above).
+  - If `dms.DocumentCache` is enabled: use `dms.ReferenceEdge` to invalidate dependent caches when referenced identities/URIs change.
+  - Recommendation: do not require `dms.ReferentialIdentity` entries for reference-bearing identities (and avoid using them for lookups) to prevent stale referential ids from blocking natural-key reuse after identity updates.
+
+- **Outgoing reference set changes on a document** (FK values change)
+  - Relational writes update the FK columns as usual.
+  - If `dms.ReferenceEdge` is enabled: maintain edges for the parent with a diff-based upsert (avoid churn on no-op updates).
+  - If `dms.DocumentCache` is enabled: invalidate the parent cache entry (and invalidate dependents only if the parent’s own identity/URI changed).
+
+- **ETag / LastModified semantics under derived reference identities**
+  - Recommended baseline: update `dms.Document.Etag` / `LastModifiedAt` only when the document itself is written; referenced identity/URI changes trigger cache invalidation (and therefore representation changes) without metadata cascades.
+  - If strict “representation changed” semantics are required, implement an explicit (likely asynchronous) cascade using `dms.ReferenceEdge` that recomputes dependent representations and updates their `dms.Document` metadata.
+
+- **Deletes**
+  - Correctness is enforced by the FK graph (delete cascades or fails with FK violation).
+  - For richer “who references me?” diagnostics, prefer `dms.ReferenceEdge` when enabled (and fall back to deterministic FK-name mapping when disabled).
+
+- **Schema migration**
+  - Migration + restart remains the operational contract.
+  - Clear/rebuild `dms.DocumentCache` and (if enabled) `dms.ReferenceEdge` when the effective schema changes (bindings/paths and therefore `BindingKey`s may change).
 
 ### Concurrency (ETag)
 
@@ -790,8 +902,8 @@ Join to `dms.Document` only when you need cross-cutting metadata (e.g., `Created
 Reference/descriptor resolution is metadata-driven (no per-resource code):
 - For **descriptor** query params: compute the descriptor `ReferentialId` (descriptor resource type from `ApiSchema` + normalized URI) and resolve `DocumentId` via `dms.ReferentialIdentity`.
 - For **document reference** query params: use `documentPathsMapping.referenceJsonPaths` to group query terms by reference, and:
-  - If all referenced identity components are present, compute the referenced `ReferentialId` and resolve a single `DocumentId` via `dms.ReferentialIdentity`.
-  - If only a subset is present, resolve a *set* of referenced `DocumentId`s by querying the referenced root table’s identity columns, then filter the FK column with `IN (subquery)` (or an equivalent join).
+  - If all referenced identity components are present, resolve a single referenced `DocumentId` using the natural-key resolver (self-contained identities: `dms.ReferentialIdentity`; reference-bearing identities: resolve component refs then unique-constraint lookup on the referenced root table).
+  - If only a subset is present, resolve a *set* of referenced `DocumentId`s by filtering the referenced root table using the available identity components (including resolving any referenced identity components that are present), then filter the FK column with `IN (subquery)` (or an equivalent join).
 
 Indexing:
 - Create B-tree indexes on the resource root columns used by `queryFieldMapping` (scalar columns and FK columns).
@@ -809,10 +921,7 @@ This design is intentionally relational-first and correct without caching. Cache
    - Invalidation: schema migration + restart (natural).
 
 2. **`dms.ReferentialIdentity` lookups**
-   - Cache `ReferentialId → DocumentId` for:
-     - identity-based upsert detection
-     - resolving references on writes
-     - resolving reference-based query filters
+   - Cache `ReferentialId → DocumentId` for self-contained identities and descriptor URIs. This is also the “leaf” lookup used when resolving reference-bearing identities (after resolving component references).
    - Invalidation:
      - on insert: add cache entry after commit
      - on identity update: remove old `ReferentialId` entry and add new entry after commit
@@ -1129,7 +1238,9 @@ Migration scope:
 - `dms.Reference` is no longer required for referential integrity; the database enforces integrity via FKs.
 - `UpdateCascadeHandler` is not required for persistence correctness because references are stored as `DocumentId` FKs and reconstituted from current referenced identities (no rewrite of referencing rows).
   - If `dms.DocumentCache` is enabled, identity/URI changes can still require a **cache invalidation cascade**; `dms.ReferenceEdge` enables this without rewriting relational data.
-- Identity uniqueness is enforced in `dms.ReferentialIdentity` (and optionally in resource root unique constraints for direct human-debuggable keys).
+- Identity uniqueness is enforced by:
+  - `dms.ReferentialIdentity` for self-contained identities and descriptor URIs, and
+  - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) for reference-bearing identities.
 
 ## Risks / Open Questions
 
@@ -1323,8 +1434,10 @@ Algorithm sketch:
        - compute and persist `DescriptorBinding.BindingKey` deterministically from (parent resource type + canonical descriptor-value path)
 
 4. Apply `identityJsonPaths`:
-   - create a UNIQUE constraint on the root table for direct identity columns where possible (human-debuggable)
-   - but note that identity uniqueness is still primarily enforced by `dms.ReferentialIdentity`
+   - derive a deterministic natural-key UNIQUE constraint on the root table:
+     - scalar identity elements map to scalar columns
+     - identity elements that come from document references map to the corresponding `..._DocumentId` FK columns
+   - `dms.ReferentialIdentity` remains the primary resolver for self-contained identities and descriptors; for reference-bearing identities the root-table unique constraint is authoritative (and `dms.ReferentialIdentity` must not be required for correctness)
 
 5. Apply `arrayUniquenessConstraints`:
    - create UNIQUE constraints on child tables based on the specified JSONPaths (mapped to columns)
@@ -1393,7 +1506,9 @@ For a given request, backend already has:
 Before writing resource tables:
 
 - Resolve all **document references**:
-  - `dms.ReferentialIdentity`: `ReferentialId → DocumentId`
+  - resolve to `DocumentId` using the ApiSchema-derived natural-key resolver:
+    - self-contained identities: `dms.ReferentialIdentity` (`ReferentialId → DocumentId`)
+    - reference-bearing identities: resolve component refs → `DocumentId`s, then unique-constraint lookup on the target root table
 - Resolve all **descriptor references**:
   - `dms.ReferentialIdentity`: `ReferentialId → DocumentId` (descriptor referential ids are computed by Core from descriptor resource name + normalized URI)
 
@@ -2132,7 +2247,7 @@ public interface IResourceFlattener
 /// </summary>
 /// <param name="DocumentIdByReferentialId">
 /// Maps a referenced resource’s referential id (UUIDv5) to its DocumentId.
-/// Resolved via dms.ReferentialIdentity and used for document references.
+/// Produced by the ApiSchema-derived natural-key resolver (which may use `dms.ReferentialIdentity` and/or root-table natural-key lookups) and used for document references.
 /// </param>
 /// <param name="DescriptorIdByKey">
 /// Maps (normalized URI, descriptor resource type) to a descriptor DocumentId.
@@ -2579,7 +2694,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 ```
 
 Notes:
-- `_referenceResolver.ResolveAsync(...)` resolves both document and descriptor referential ids via `dms.ReferentialIdentity` (and may optionally validate descriptor DocumentIds exist in `dms.Descriptor`).
+- `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` using the ApiSchema-derived natural-key resolver (self-contained identities via `dms.ReferentialIdentity`; reference-bearing identities via component-reference resolution + root-table unique-constraint lookup), and may validate descriptor existence/type via `dms.Descriptor`.
 - `_writer.ExecuteAsync(...)` uses `TableWritePlan.DeleteByParentSql` + `IBulkInserter` to avoid N+1 inserts.
 
 Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` gets used):
