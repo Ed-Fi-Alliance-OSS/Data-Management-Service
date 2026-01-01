@@ -274,6 +274,126 @@ Uses:
 
 When disabled, DMS must reconstitute JSON from relational tables.
 
+#### 6) Optional: `dms.ReferenceEdge` (reverse reference index)
+
+A small, relational reverse index of **“this document references that document”**, maintained on writes.
+
+Important properties:
+- **Not required for correctness**: relational FKs enforce integrity. This table exists for *reverse lookups* (cache invalidation/diagnostics), not enforcement.
+- **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
+- **Can be disabled**: if you do not enable `dms.DocumentCache` (or you accept TTL-only staleness), you can omit this table entirely.
+
+Primary uses:
+- **`dms.DocumentCache` dependency invalidation**: when a referenced document’s identity/descriptor URI changes, invalidate cached JSON for documents that embed that identity/URI.
+- **Delete conflict diagnostics**: answer “who references me?” without scanning all tables or relying solely on constraint-name mapping.
+- Optional future use: identity-propagation tooling if DMS chooses to preserve referential-id-based upsert semantics across identity updates.
+
+##### DDL (PostgreSQL)
+
+```sql
+CREATE TABLE dms.ReferenceEdge (
+    ParentDocumentId bigint NOT NULL
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    ChildDocumentId  bigint NOT NULL
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+
+    -- Stable identifier of *where* the reference came from in the parent document.
+    -- Derived from ApiSchema bindings (see BindingKey below).
+    BindingKey varchar(256) NOT NULL,
+
+    CreatedAt timestamp without time zone NOT NULL DEFAULT now(),
+
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, BindingKey, ChildDocumentId)
+);
+
+-- Reverse lookup: "who references Child X?"
+CREATE INDEX IX_ReferenceEdge_ChildDocumentId
+    ON dms.ReferenceEdge (ChildDocumentId)
+    INCLUDE (ParentDocumentId, BindingKey);
+
+-- Optional: fast enumeration of a parent’s outgoing references (diagnostics/debug)
+CREATE INDEX IX_ReferenceEdge_ParentDocumentId
+    ON dms.ReferenceEdge (ParentDocumentId)
+    INCLUDE (ChildDocumentId, BindingKey);
+```
+
+##### DDL (SQL Server)
+
+```sql
+CREATE TABLE dms.ReferenceEdge (
+    ParentDocumentId bigint NOT NULL,
+    ChildDocumentId  bigint NOT NULL,
+    BindingKey nvarchar(256) NOT NULL,
+    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ReferenceEdge_CreatedAt DEFAULT (sysutcdatetime()),
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, BindingKey, ChildDocumentId),
+    CONSTRAINT FK_ReferenceEdge_Parent FOREIGN KEY (ParentDocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_ReferenceEdge_Child FOREIGN KEY (ChildDocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_ReferenceEdge_ChildDocumentId
+    ON dms.ReferenceEdge (ChildDocumentId)
+    INCLUDE (ParentDocumentId, BindingKey);
+```
+
+##### BindingKey (stable, non-generated, cross-engine)
+
+`BindingKey` is a deterministic identifier of the reference binding derived from ApiSchema:
+
+- For **document references**: `{ParentProject}.{ParentResource}:{ReferenceObjectPath}`
+  - Example: `EdFi.StudentSchoolAssociation:$.studentReference`
+- For **descriptor references**: `{ParentProject}.{ParentResource}:{DescriptorValuePath}`
+  - Example: `EdFi.School:$.schoolTypeDescriptor`
+
+`ReferenceObjectPath`/`DescriptorValuePath` are the canonical/wildcard JSON paths from the derived `ReferenceBinding`/`DescriptorBinding` (no numeric indices).
+
+Length handling:
+- If the computed string exceeds 256 chars, apply deterministic truncation + short hash suffix (same rule family as Naming Rules).
+
+Example C# helper (used during model compilation):
+
+```csharp
+static string BuildBindingKey(QualifiedResourceName parent, JsonPathExpression path)
+{
+    var raw = $"{parent.ProjectName}.{parent.ResourceName}:{path.Canonical}";
+    if (raw.Length <= 256) return raw;
+
+    var hash8 = Sha256Hex(raw).Substring(0, 8);
+    return raw.Substring(0, 256 - 1 - 8) + "|" + hash8;
+}
+```
+
+##### Addressing common concerns (explicit)
+
+**Concern: “We’re moving away from the three-table design because `dms.Reference` is slow/high churn. Won’t this be the same?”**
+
+No, unless we implement it naively and enable it everywhere. Key differences:
+- `dms.ReferenceEdge` is **optional** and can be enabled only when needed (e.g., `dms.DocumentCache` correctness across identity changes).
+- It stores **resolved `DocumentId` pairs**, so there is no `ReferentialId → DocumentId` join (no Alias-equivalent lookup), and no partition keys.
+- It can be maintained with a **low-churn diff** so “update that does not change references” performs **0 row writes** to this table.
+- It must not be used for referential integrity, so it can be operated in **eventual-consistency** mode (async maintenance + TTL cache) if desired.
+
+**Concern: “Doesn’t this require the same InsertReferences pattern?”**
+
+We can use a similar *concept* (stage + diff) to avoid churn, but it is far simpler than today’s `InsertReferences` because:
+- inputs are already-resolved `DocumentId`s (no Alias joins, no invalid `ReferentialId` reporting),
+- there is no partition-routing logic,
+- the table is keyed by the parent `DocumentId` (single delete scope), and
+- the diff is between two small sets of `(ChildDocumentId, BindingKey)`.
+
+**Concern: “Why does `dms.DocumentCache` need invalidation? Is this cascading updates?”**
+
+`dms.DocumentCache` stores **fully reconstituted JSON**, including:
+- reference objects expanded from the *current* identity values of referenced resources, and
+- descriptor URI strings (often derived from current descriptor fields).
+
+If a referenced document’s identity/URI changes, the cached JSON of documents that reference it becomes stale. This is a *cache invalidation cascade*, not a relational data cascade:
+- relational FK columns remain stable (`..._DocumentId` still points to the same row),
+- only cached JSON is invalidated/recomputed.
+
+Sample invalidation is shown in the Caching section.
+
 ### Resource tables (schema per project)
 
 Each project gets a schema derived from `ProjectNamespace` (e.g., `ed-fi` → `edfi`, `tpdm` → `tpdm`). Core `dms.*` tables remain in `dms`.
@@ -444,7 +564,11 @@ If DB-level enforcement of polymorphic membership is required, add one of:
 
 Deletes rely on the same FK graph:
 - If a document is referenced, `DELETE` fails with an FK violation; DMS maps that to a `409` conflict.
-- Because FK names are deterministic, DMS can map the violated constraint back to a resource/table to report “what is referencing me” without a separate `Reference` edge table.
+- Baseline: because FK names are deterministic, DMS can map the violated constraint back to a referencing resource/table to produce a conflict response.
+- Optional (recommended when `dms.ReferenceEdge` is enabled): use `dms.ReferenceEdge` for diagnostics:
+  - `SELECT ParentDocumentId FROM dms.ReferenceEdge WHERE ChildDocumentId = @deletedDocumentId`
+  - join `dms.Document` to report referencing resource types and (optionally) binding keys/paths
+  - this avoids scanning all resource tables and produces more consistent diagnostics across engines.
 
 ## Naming Rules (Deterministic, Cross-DB Safe)
 
@@ -511,7 +635,84 @@ Intent:
    - `dms.ReferentialIdentity` upsert (primary + superclass aliases)
    - Resource root + child tables (replace strategy for collections)
    - `dms.Descriptor` upsert if the resource is a descriptor
+   - Optional: upsert `dms.ReferenceEdge` rows for this document (outgoing references and descriptor references), if enabled
    - Optional: refresh `dms.DocumentCache`
+
+#### Maintaining `dms.ReferenceEdge` (optional; low-churn)
+
+If enabled, `dms.ReferenceEdge` is maintained as a **reverse lookup index** for:
+- `dms.DocumentCache` dependent invalidation (cache “cascade”)
+- delete conflict diagnostics (“who references me?”)
+
+It is intentionally **not** used for referential integrity.
+
+**Inputs for one write**
+- `ParentDocumentId` = the `DocumentId` being inserted/updated
+- a deduplicated set of `(ChildDocumentId, BindingKey)` derived from the FK columns written for this document:
+  - `..._DocumentId` columns (document references)
+  - `..._DescriptorId` columns (descriptor references; these are also `DocumentId`s)
+
+**Extraction approach (no per-resource codegen)**
+- During flattening/materialization, whenever a `DocumentFk` or `DescriptorFk` value is produced (non-null), add it to a per-request `HashSet<(long childDocumentId, string bindingKey)>`.
+- `bindingKey` is derived from the `ReferenceBinding` / `DescriptorBinding` (see `dms.ReferenceEdge.BindingKey`).
+
+**Write strategy**
+
+Two correct approaches:
+
+1) **Simple replace** (higher churn; simplest implementation)
+   - `DELETE FROM dms.ReferenceEdge WHERE ParentDocumentId=@parent`
+   - bulk insert the current edges
+
+2) **Diff-based upsert** (recommended to address churn concerns)
+   - Stage the current edges into a temp table
+   - Insert missing edges
+   - Delete stale edges
+   - If the reference set did not change, this performs **zero** writes to `dms.ReferenceEdge`
+
+**PostgreSQL example (diff-based)**
+
+```sql
+-- Per-session staging table
+CREATE TEMP TABLE IF NOT EXISTS reference_edge_stage (
+  ChildDocumentId bigint NOT NULL,
+  BindingKey varchar(256) NOT NULL,
+  PRIMARY KEY (ChildDocumentId, BindingKey)
+) ON COMMIT DELETE ROWS;
+
+-- For each invocation (within the same transaction as the resource write):
+DELETE FROM reference_edge_stage;
+
+-- Stage current edges (multi-row INSERT generated by C#)
+INSERT INTO reference_edge_stage (ChildDocumentId, BindingKey)
+VALUES
+  (@ChildDocumentId1, @BindingKey1),
+  (@ChildDocumentId2, @BindingKey2);
+
+-- Insert missing edges
+INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, BindingKey)
+SELECT @ParentDocumentId, s.ChildDocumentId, s.BindingKey
+FROM reference_edge_stage s
+LEFT JOIN dms.ReferenceEdge e
+  ON e.ParentDocumentId = @ParentDocumentId
+ AND e.ChildDocumentId = s.ChildDocumentId
+ AND e.BindingKey = s.BindingKey
+WHERE e.ParentDocumentId IS NULL;
+
+-- Delete stale edges
+DELETE FROM dms.ReferenceEdge e
+WHERE e.ParentDocumentId = @ParentDocumentId
+  AND NOT EXISTS (
+    SELECT 1
+    FROM reference_edge_stage s
+    WHERE s.ChildDocumentId = e.ChildDocumentId
+      AND s.BindingKey = e.BindingKey
+  );
+```
+
+**SQL Server sketch (diff-based)**
+- Use a `#reference_edge_stage` temp table or a table-valued parameter.
+- Use `INSERT ... WHERE NOT EXISTS` + `DELETE ... WHERE NOT EXISTS` (avoid `MERGE` unless you have strong operational confidence in its behavior under concurrency).
 
 ### Insert vs update detection
 
@@ -525,6 +726,9 @@ Intent:
 If identity changes on update:
 - Update `dms.ReferentialIdentity` by removing/replacing the primary `ReferentialId` mapping.
 - References stored as FKs (`DocumentId`) remain valid; no cascading rewrite needed.
+  - If `dms.DocumentCache` is enabled and cached JSON expands reference identities/descriptors, then identity changes of *this* document may make cached JSON of *other* documents stale (they embed this document’s identity/URI). If `dms.ReferenceEdge` is enabled, invalidate dependent caches by reverse lookup:
+    - `DELETE FROM dms.DocumentCache WHERE DocumentId IN (SELECT ParentDocumentId FROM dms.ReferenceEdge WHERE ChildDocumentId = @thisDocumentId)`
+    - This is a cache invalidation cascade (recompute-on-read), not a relational data rewrite.
 
 ### Concurrency (ETag)
 
@@ -617,6 +821,13 @@ This design is intentionally relational-first and correct without caching. Cache
    - Cache GET/PUT/DELETE resolution.
    - Invalidation: add on insert, remove on delete (or rely on TTL).
 
+5. **`dms.DocumentCache` (optional)**
+   - Cache `DocumentId → DocumentJson` (full API response JSON).
+   - Invalidation:
+     - on successful write to the document: refresh cache after commit (or delete to force recompute on next read)
+     - on delete: cascades from `dms.Document`
+     - on identity/URI-affecting updates of a *referenced* document: invalidate dependent caches (see “DocumentCache invalidation via dms.ReferenceEdge” below)
+
 Avoid initially:
 - Query-result caching (authorization filters and paging make invalidation/keying complex).
 - Negative caching for missing identities/descriptors (can cause “false not found” after recent inserts unless TTL is tiny).
@@ -669,6 +880,56 @@ Invalidation approaches (choose one):
 - **Identity updates** (`AllowIdentityUpdates=true`):
   - explicitly evict old `ReferentialId` keys and write the new mapping after commit
   - if caching “reference identity fragments” (`DocumentId → natural key values`), evict those for the updated resource after commit or keep TTL short and skip explicit eviction
+
+### DocumentCache invalidation via `dms.ReferenceEdge` (dependency “cascade”)
+
+If `dms.DocumentCache` stores fully reconstituted JSON, then a write to a referenced document can change the JSON that *other* documents should return:
+- reference objects embed the referenced document’s identity values
+- descriptor strings embed the descriptor’s URI
+
+Relational FKs do not change in these cases (they still point to the same `DocumentId`), so this is **not a relational cascade**. It is a **cache invalidation cascade**: delete dependent cache entries and let them be recomputed on next read.
+
+**SQL (shape)**
+
+```sql
+DELETE FROM dms.DocumentCache
+WHERE DocumentId IN (
+    SELECT DISTINCT ParentDocumentId
+    FROM dms.ReferenceEdge
+    WHERE ChildDocumentId = @ChangedDocumentId
+);
+```
+
+**C# (after commit; Dapper shown for brevity)**
+
+```csharp
+public static async Task InvalidateDependentDocumentCachesAsync(
+    DbConnection connection,
+    DbTransaction transaction,
+    long changedDocumentId,
+    CancellationToken ct)
+{
+    const string sql = @"
+        DELETE FROM dms.DocumentCache
+        WHERE DocumentId IN (
+            SELECT DISTINCT ParentDocumentId
+            FROM dms.ReferenceEdge
+            WHERE ChildDocumentId = @ChangedDocumentId
+        );";
+
+    await connection.ExecuteAsync(
+        new CommandDefinition(
+            sql,
+            new { ChangedDocumentId = changedDocumentId },
+            transaction,
+            cancellationToken: ct));
+}
+```
+
+Operational knobs to address churn concerns:
+- Enable `dms.ReferenceEdge` only when `dms.DocumentCache` strictness is required (or when you want richer delete diagnostics).
+- Maintain `dms.ReferenceEdge` with a diff (see Write Path) so unchanged reference sets do not rewrite rows.
+- If you accept brief staleness, run dependent invalidation asynchronously (outbox/background worker) and use TTL on cache entries as a safety net.
 
 ### Pseudocode (cache-aside, versioned keys)
 
@@ -781,6 +1042,54 @@ sequenceDiagram
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.
+- If `dms.ReferenceEdge` is enabled, prefer it for diagnostics (and to address “what references me?” consistently across engines):
+  - query `dms.ReferenceEdge` by `ChildDocumentId` to find referencing `ParentDocumentId`s
+  - join to `dms.Document` to report referencing resource types (and optionally `BindingKey`s)
+
+Example (PostgreSQL) conflict diagnostic query:
+
+```sql
+SELECT
+  p.DocumentUuid         AS ReferencingDocumentUuid,
+  p.ProjectName          AS ReferencingProjectName,
+  p.ResourceName         AS ReferencingResourceName,
+  e.BindingKey           AS ReferenceBindingKey
+FROM dms.ReferenceEdge e
+JOIN dms.Document p
+  ON p.DocumentId = e.ParentDocumentId
+WHERE e.ChildDocumentId = @DeletedDocumentId
+ORDER BY p.ProjectName, p.ResourceName, p.DocumentUuid;
+```
+
+Example (C#) mapping to today’s `DeleteFailureReference` shape:
+
+```csharp
+catch (DbException ex) when (IsForeignKeyViolation(ex))
+{
+    if (_referenceEdgeEnabled)
+    {
+        const string sql = @"
+            SELECT DISTINCT p.ResourceName
+            FROM dms.ReferenceEdge e
+            JOIN dms.Document p
+              ON p.DocumentId = e.ParentDocumentId
+            WHERE e.ChildDocumentId = @DeletedDocumentId;";
+
+        var resourceNames = (await connection.QueryAsync<string>(
+                new CommandDefinition(
+                    sql,
+                    new { DeletedDocumentId = documentId },
+                    transaction: tx,
+                    cancellationToken: ct)))
+            .ToArray();
+
+        return new DeleteResult.DeleteFailureReference(resourceNames);
+    }
+
+    // Fallback: map constraint name to a referencing resource if ReferenceEdge is disabled.
+    return MapFkConstraintToDeleteFailure(ex);
+}
+```
 
 ## Migration Strategy (Schema Changes)
 
@@ -813,7 +1122,8 @@ Migration scope:
 ## Key Implications vs the Current Three-Table Design
 
 - `dms.Reference` is no longer required for referential integrity; the database enforces integrity via FKs.
-- `UpdateCascadeHandler` becomes unnecessary for identity updates because references are stored as `DocumentId` FKs and reconstituted from current referenced identities.
+- `UpdateCascadeHandler` is not required for persistence correctness because references are stored as `DocumentId` FKs and reconstituted from current referenced identities (no rewrite of referencing rows).
+  - If `dms.DocumentCache` is enabled, identity/URI changes can still require a **cache invalidation cascade**; `dms.ReferenceEdge` enables this without rewriting relational data.
 - Identity uniqueness is enforced in `dms.ReferentialIdentity` (and optionally in resource root unique constraints for direct human-debuggable keys).
 
 ## Risks / Open Questions
@@ -822,8 +1132,11 @@ Migration scope:
    - Mitigation: aggressive batching, optional cache, and/or DB-side JSON assembly in later iterations.
 2. **CDC / OpenSearch / downstream integrations** that currently depend on a single “document table with JSON”.
    - Mitigation: require cache for those deployments, or introduce a materializer that emits JSON from relational changes.
-3. **Delete conflict details**: replacing reverse-reference enumeration (`dms.Reference`) with FK-based detection may change which referencing resources can be reported.
-4. **Schema evolution**: handling renames and destructive changes safely and predictably.
+3. **Delete conflict details**: without a reverse index, FK-based detection may reduce the fidelity of “what references me?” reporting compared to `dms.Reference`.
+   - Mitigation: enable `dms.ReferenceEdge` for richer diagnostics.
+4. **ReferenceEdge operational load** (if enabled): naive “delete-all then insert-all” maintenance can add churn for high-write resources.
+   - Mitigation: use a diff-based upsert (stage + insert missing + delete stale), and/or only enable when cache correctness/diagnostics require it.
+5. **Schema evolution**: handling renames and destructive changes safely and predictably.
 
 ## Suggested Implementation Phases
 
@@ -833,6 +1146,7 @@ Migration scope:
 4. **Generalize mapping**: make mapping derivation generic from ApiSchema + conventions; add minimal `relational` overrides.
 5. **Migration tool**: derive/apply DDL and record the effective schema/version set.
 6. **Optional cache + integration**: `dms.DocumentCache` and any required event/materialization paths.
+   - If strict cache correctness across identity/URI changes is required: add `dms.ReferenceEdge` + dependent invalidation.
 
 ## Operational Considerations
 
@@ -996,10 +1310,12 @@ Algorithm sketch:
 3. Apply `documentPathsMapping`:
    - For each reference object path (`referenceJsonPaths`):
      - create a `..._DocumentId` FK column at the table scope that owns that path
-     - record a `ReferenceBinding` (used for write-time FK population and read-time reference reconstitution)
+     - record a `ReferenceBinding` (used for write-time FK population, `dms.ReferenceEdge` maintenance, and read-time reference reconstitution)
+       - compute and persist `ReferenceBinding.BindingKey` deterministically from (parent resource type + canonical reference-object path)
    - For each descriptor path:
      - create a `..._DescriptorId` FK column at the table scope that owns that path
-     - record a `DescriptorBinding` (expected descriptor resource type, used for resolution and validation)
+     - record a `DescriptorBinding` (expected descriptor resource type, used for resolution/validation and `dms.ReferenceEdge` maintenance)
+       - compute and persist `DescriptorBinding.BindingKey` deterministically from (parent resource type + canonical descriptor-value path)
 
 4. Apply `identityJsonPaths`:
    - create a UNIQUE constraint on the root table for direct identity columns where possible (human-debuggable)
@@ -1124,20 +1440,22 @@ Pseudocode sketch:
 
 ```text
 Flatten(documentJson, resolvedRefs):
+  edges = new HashSet<(ChildDocumentId, BindingKey)>()
+
   rootRow = plan.Root.CreateRow(documentId)
   rootRow.SetScalarsFromJson(documentJson)
-  rootRow.SetFkColumnsFromResolvedRefs(documentJson, resolvedRefs)
+  rootRow.SetFkColumnsFromResolvedRefs(documentJson, resolvedRefs, edges)
 
   for each childPlan in plan.ChildrenDepthFirst:
     rows = []
     for each element in EnumerateArray(documentJson, childPlan.ArrayPath):
       row = childPlan.CreateRow(parentKey, ordinal)
       row.SetScalarsFromElement(element)
-      row.SetFkColumnsFromResolvedRefs(element, resolvedRefs)
+      row.SetFkColumnsFromResolvedRefs(element, resolvedRefs, edges)
       rows.add(row)
     plan.TableRows[childPlan.Table] = rows
 
-  return plan.TableRows
+  return (plan.TableRows, edges)
 ```
 
 ### 5.4 Write execution (single transaction, no N+1)
@@ -1149,6 +1467,7 @@ Within a single transaction:
 3. For each child table (depth-first):
    - `DELETE FROM Child WHERE ParentKey = @documentId` (or rely on cascade from the parent resource root row if you do “delete then insert root” in some flows)
    - bulk insert all rows for that child table in batches
+4. Optional: maintain `dms.ReferenceEdge` for this document (diff-based upsert recommended; see Write Path) so cache invalidation/diagnostics are available without scanning.
 
 Bulk insert options (non-codegen):
 - **Multi-row INSERT** with parameters (good default)
@@ -1571,7 +1890,12 @@ public abstract record TableConstraint
 /// - write-time identity hash computation (already done by Core)
 /// - read-time identity projection: which values must be selected from the referenced resource to reconstitute the reference object
 /// </param>
+/// <param name="BindingKey">
+/// Stable identifier for this binding used by <c>dms.ReferenceEdge</c> (reverse lookups and cache invalidation).
+/// Deterministically derived from (parent resource type + canonical JSON path). See <c>dms.ReferenceEdge.BindingKey</c>.
+/// </param>
 public sealed record ReferenceBinding(
+    string BindingKey,
     JsonPathExpression ReferenceObjectPath,        // e.g. "$.schoolReference" or "$.students[*].studentReference"
     DbTableName Table,
     DbColumnName FkColumn,                         // e.g. "School_DocumentId"
@@ -1602,7 +1926,12 @@ public sealed record ReferenceFieldMapping(
 /// - query-time resolution (descriptor URI → descriptor DocumentId, via referential id)
 /// - optional DB-level enforcement via triggers (later)
 /// </param>
+/// <param name="BindingKey">
+/// Stable identifier for this binding used by <c>dms.ReferenceEdge</c> (reverse lookups and cache invalidation).
+/// Deterministically derived from (parent resource type + canonical JSON path). See <c>dms.ReferenceEdge.BindingKey</c>.
+/// </param>
 public sealed record DescriptorBinding(
+    string BindingKey,
     JsonPathExpression DescriptorValuePath,        // path of the string descriptor URI in JSON
     DbTableName Table,
     DbColumnName FkColumn,                         // ..._DescriptorId
@@ -2012,8 +2341,15 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
 public sealed record FlattenedWriteSet(
     DbTableName RootTable,
     RowBuffer RootRow,
-    IReadOnlyDictionary<DbTableName, IReadOnlyList<RowBuffer>> ChildRows
+    IReadOnlyDictionary<DbTableName, IReadOnlyList<RowBuffer>> ChildRows,
+    IReadOnlyList<ReferenceEdgeRow> ReferenceEdges
 );
+
+/// <summary>
+/// One outgoing reference edge from the document being written.
+/// ChildDocumentId can refer to either a resource document or a descriptor document (both live in dms.Document).
+/// </summary>
+public sealed record ReferenceEdgeRow(long ChildDocumentId, string BindingKey);
 
 public sealed record RowBuffer(IReadOnlyList<object?> Values);
 
@@ -2052,11 +2388,94 @@ public interface IBulkInserter
 {
     Task InsertAsync(DbConnection connection, DbTransaction tx, DbTableModel table, IReadOnlyList<RowBuffer> rows, CancellationToken ct);
 }
+
+/// <summary>
+/// Optional writer for dms.ReferenceEdge maintenance (reverse reference index).
+/// This must not be required for correctness: failures should not corrupt relational data.
+/// </summary>
+public interface IReferenceEdgeWriter
+{
+    Task UpsertEdgesAsync(
+        DbConnection connection,
+        DbTransaction tx,
+        long parentDocumentId,
+        IReadOnlyList<ReferenceEdgeRow> edges,
+        CancellationToken ct);
+}
 ```
 
 Dapper is optional:
 - use it for `QueryMultiple` and basic row reads if desired
 - avoid mapping to per-resource CLR types; materialize into `RowBuffer`/`DbDataReader`-backed structures
+
+Example: PostgreSQL `IReferenceEdgeWriter` (diff-based, low-churn)
+
+```csharp
+public sealed class PostgresqlReferenceEdgeWriter : IReferenceEdgeWriter
+{
+    public async Task UpsertEdgesAsync(
+        DbConnection connection,
+        DbTransaction tx,
+        long parentDocumentId,
+        IReadOnlyList<ReferenceEdgeRow> edges,
+        CancellationToken ct)
+    {
+        const string createStage = @"
+            CREATE TEMP TABLE IF NOT EXISTS reference_edge_stage (
+                ChildDocumentId bigint NOT NULL,
+                BindingKey varchar(256) NOT NULL,
+                PRIMARY KEY (ChildDocumentId, BindingKey)
+            ) ON COMMIT DELETE ROWS;";
+
+        await connection.ExecuteAsync(new CommandDefinition(createStage, transaction: tx, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition("DELETE FROM reference_edge_stage;", transaction: tx, cancellationToken: ct));
+
+        if (edges.Count != 0)
+        {
+            var childIds = edges.Select(e => e.ChildDocumentId).ToArray();
+            var keys = edges.Select(e => e.BindingKey).ToArray();
+
+            const string stageInsert = @"
+                INSERT INTO reference_edge_stage (ChildDocumentId, BindingKey)
+                SELECT * FROM unnest(@ChildIds::bigint[], @Keys::varchar(256)[]);";
+
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    stageInsert,
+                    new { ChildIds = childIds, Keys = keys },
+                    transaction: tx,
+                    cancellationToken: ct));
+        }
+
+        const string insertMissing = @"
+            INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, BindingKey)
+            SELECT @ParentDocumentId, s.ChildDocumentId, s.BindingKey
+            FROM reference_edge_stage s
+            LEFT JOIN dms.ReferenceEdge e
+              ON e.ParentDocumentId = @ParentDocumentId
+             AND e.ChildDocumentId  = s.ChildDocumentId
+             AND e.BindingKey       = s.BindingKey
+            WHERE e.ParentDocumentId IS NULL;";
+
+        const string deleteStale = @"
+            DELETE FROM dms.ReferenceEdge e
+            WHERE e.ParentDocumentId = @ParentDocumentId
+              AND NOT EXISTS (
+                SELECT 1
+                FROM reference_edge_stage s
+                WHERE s.ChildDocumentId = e.ChildDocumentId
+                  AND s.BindingKey      = e.BindingKey
+              );";
+
+        await connection.ExecuteAsync(new CommandDefinition(insertMissing, new { ParentDocumentId = parentDocumentId }, tx, cancellationToken: ct));
+        await connection.ExecuteAsync(new CommandDefinition(deleteStale, new { ParentDocumentId = parentDocumentId }, tx, cancellationToken: ct));
+    }
+}
+```
+
+SQL Server analog:
+- stage into `#reference_edge_stage` (or a table-valued parameter)
+- run “insert missing” + “delete stale” with the same shape (avoid `MERGE` unless you have strong operational confidence in it).
 
 ### 7.7 Example: Pre-compilation (startup or migrator)
 
@@ -2130,7 +2549,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     //     This depends on Core emitting concrete JSON paths (including indices) for reference instances.
     var documentReferences = DocumentReferenceInstanceIndex.Build(
         writePlan.Model.ReferenceBindings,
-        request.DocumentInfo.DocumentReferences,
+        request.DocumentInfo.DocumentReferenceArrays,
         resolved.DocumentIdByReferentialId);
 
     // 4) Flatten: materialize all table rows in memory with FK columns filled.
@@ -2143,6 +2562,12 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 
     // 5) Execute root + child table writes in plan order (set-based).
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
+
+    // 6) Optional: maintain reverse reference index for cache invalidation/diagnostics.
+    if (_referenceEdgeWriter is not null)
+    {
+        await _referenceEdgeWriter.UpsertEdgesAsync(connection, tx, documentId, writeSet.ReferenceEdges, ct);
+    }
 
     await tx.CommitAsync(ct);
 }
@@ -2163,7 +2588,8 @@ private static RowBuffer MaterializeRow(
     int ordinal,
     ReadOnlySpan<int> ordinalPath,      // e.g. [] (root), [2] (child), [2,0] (nested)
     IDocumentReferenceInstanceIndex documentReferences,
-    ResolvedReferenceSet resolved)
+    ResolvedReferenceSet resolved,
+    HashSet<ReferenceEdgeRow> edges)
 {
     var values = new object?[tablePlan.ColumnBindings.Count];
 
@@ -2177,10 +2603,10 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.Scalar(var relPath, var type) => JsonValueReader.Read(scopeNode, relPath, type),
 
             WriteValueSource.DescriptorReference(var binding, var relPath)
-                => ResolveDescriptorId(scopeNode, binding, relPath, resolved),
+                => ResolveDescriptorId(scopeNode, binding, relPath, resolved, edges),
 
             WriteValueSource.DocumentReference(var binding)
-                => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences),
+                => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences, edges),
 
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
@@ -2193,18 +2619,27 @@ private static long ResolveDescriptorId(
     JsonNode scopeNode,
     DescriptorBinding binding,
     JsonPathExpression relPath,
-    ResolvedReferenceSet resolved)
+    ResolvedReferenceSet resolved,
+    HashSet<ReferenceEdgeRow> edges)
 {
     var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
-    return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, binding.DescriptorResource)];
+    var id = resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, binding.DescriptorResource)];
+    edges.Add(new ReferenceEdgeRow(id, binding.BindingKey));
+    return id;
 }
 
 private static long? ResolveReferencedDocumentId(
     ReferenceBinding binding,
     ReadOnlySpan<int> ordinalPath,
-    IDocumentReferenceInstanceIndex documentReferences)
+    IDocumentReferenceInstanceIndex documentReferences,
+    HashSet<ReferenceEdgeRow> edges)
 {
-    return documentReferences.GetReferencedDocumentId(binding, ordinalPath);
+    var id = documentReferences.GetReferencedDocumentId(binding, ordinalPath);
+    if (id is not null)
+    {
+        edges.Add(new ReferenceEdgeRow(id.Value, binding.BindingKey));
+    }
+    return id;
 }
 ```
 
