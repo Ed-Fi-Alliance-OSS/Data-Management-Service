@@ -117,14 +117,8 @@ public class TokenInfoProvider(
 
     private static IEnumerable<long> GetEducationOrganizationIds(List<Claim> claims)
     {
-        var value = GetClaimValue(claims, "educationOrganizationIds");
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return Array.Empty<long>();
-        }
-
-        return value
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        var values = GetClaimValues(claims, "educationOrganizationIds");
+        return values
             .Select(id => long.TryParse(id, out var result) ? result : 0)
             .Where(id => id > 0);
     }
