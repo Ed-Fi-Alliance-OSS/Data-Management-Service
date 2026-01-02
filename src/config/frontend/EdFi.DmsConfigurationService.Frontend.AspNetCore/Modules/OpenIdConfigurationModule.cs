@@ -51,6 +51,7 @@ public class OpenIdConfigurationModule : IEndpointModule
                     ? null
                     : enhancedConfig.AuthorizationEndpoint,
                 token_endpoint = enhancedConfig.TokenEndpoint,
+                token_info_endpoint = enhancedConfig.TokenInfoEndpoint,
                 userinfo_endpoint = string.IsNullOrEmpty(enhancedConfig.UserinfoEndpoint)
                     ? null
                     : enhancedConfig.UserinfoEndpoint,
