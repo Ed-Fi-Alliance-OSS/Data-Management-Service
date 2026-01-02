@@ -226,7 +226,7 @@ public class TokenInfoProviderTests
         var result = await _provider.GetTokenInfoAsync(token);
         // Assert
         result.Should().NotBeNull();
-        result!.Resources.Should().ContainSingle(r => r.Resource == "/ed-fi/academicWeek");
+        result!.Resources.Should().ContainSingle(r => r.Resource == "/ed-fi/academicWeeks");
     }
 
     [Test]
@@ -1277,7 +1277,7 @@ public class TokenInfoProviderTests
         // Assert
         result.Should().NotBeNull();
         result!.Resources.Should().HaveCount(1);
-        result.Resources[0].Resource.Should().Be("/ed-fi/academicWeek");
+        result.Resources[0].Resource.Should().Be("/ed-fi/academicWeeks");
     }
 
     [Test]
