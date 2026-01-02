@@ -432,6 +432,99 @@ For each JSON array of objects/scalars under the resource:
 
 Nested collections add the parent’s ordinal(s) into the key and FK, avoiding generated IDs and `RETURNING`/`OUTPUT` key-capture round trips.
 
+#### Abstract identity views for polymorphic references (union view approach)
+
+Some Ed-Fi references target **abstract resources** (polymorphic references), notably:
+- `EducationOrganization` (e.g., `educationOrganizationReference`)
+- `GeneralStudentProgramAssociation` (e.g., `generalStudentProgramAssociationReference`)
+
+Abstract resources have **no physical root table**, but DMS must still:
+- validate membership/type for abstract-target references (application-level), and
+- **reconstitute reference identity objects** on reads (e.g., output `educationOrganizationId`, not `schoolId`).
+
+This design uses a narrow **union view per abstract resource**:
+
+- View name: `{schema}.{AbstractResource}_View` (deterministic; participates in migration like tables)
+- Columns:
+  - `DocumentId` (the referenced document)
+  - `Discriminator` (concrete resource name; optional but recommended for diagnostics)
+  - one column per abstract identity element (typed), using the abstract identity field names
+- Rows:
+  - `UNION ALL` over each concrete resource table that participates in the hierarchy, projecting:
+    - `DocumentId`
+    - abstract identity columns (including identity renames, e.g. `School.SchoolId AS EducationOrganizationId`)
+    - discriminator constant (e.g., `'School'`)
+
+**Why a view**
+- Works well for small, stable hierarchies (your stated case).
+- Requires no triggers and no additional write-path maintenance.
+- Provides a single join target for identity projection during reconstitution.
+
+**How DMS derives the view definition (metadata-driven)**
+- Source of truth is `ApiSchema.json`:
+  - `projectSchema.abstractResources[A].identityPathOrder` defines the abstract identity field names and order.
+  - `resourceSchema.isSubclass` + `superclass*` fields define which concrete resources belong to `A` and how identity renames map.
+- DMS chooses a canonical SQL type for each abstract identity field (from `abstractResources[A].openApiFragment` when present, otherwise from the participating concrete resources) and casts each `SELECT` accordingly to keep the union portable across engines.
+- For each concrete resource `R` in the hierarchy, DMS derives, per abstract identity field:
+  - If `R.identityJsonPaths` contains `$.{fieldName}`, use the corresponding root-table column directly.
+  - Else, if `R.isSubclass=true` and `R.superclassIdentityJsonPath == $.{fieldName}`, use the concrete identity column(s) from `R.identityJsonPaths` (identity rename case; e.g., `$.schoolId` → `EducationOrganizationId`).
+- If a concrete type cannot supply all abstract identity fields, migration/startup fails fast (schema mismatch).
+
+**PostgreSQL example: `EducationOrganization_View`**
+
+```sql
+CREATE OR REPLACE VIEW edfi.EducationOrganization_View AS
+SELECT
+    s.DocumentId,
+    s.SchoolId AS EducationOrganizationId,
+    'School'::varchar(256) AS Discriminator
+FROM edfi.School s
+UNION ALL
+SELECT
+    lea.DocumentId,
+    lea.LocalEducationAgencyId AS EducationOrganizationId,
+    'LocalEducationAgency'::varchar(256) AS Discriminator
+FROM edfi.LocalEducationAgency lea
+UNION ALL
+SELECT
+    sea.DocumentId,
+    sea.StateEducationAgencyId AS EducationOrganizationId,
+    'StateEducationAgency'::varchar(256) AS Discriminator
+FROM edfi.StateEducationAgency sea;
+```
+
+**SQL Server example: `EducationOrganization_View`**
+
+```sql
+CREATE OR ALTER VIEW edfi.EducationOrganization_View AS
+SELECT
+    s.DocumentId,
+    s.SchoolId AS EducationOrganizationId,
+    CAST('School' AS nvarchar(256)) AS Discriminator
+FROM edfi.School s
+UNION ALL
+SELECT
+    lea.DocumentId,
+    lea.LocalEducationAgencyId AS EducationOrganizationId,
+    CAST('LocalEducationAgency' AS nvarchar(256)) AS Discriminator
+FROM edfi.LocalEducationAgency lea
+UNION ALL
+SELECT
+    sea.DocumentId,
+    sea.StateEducationAgencyId AS EducationOrganizationId,
+    CAST('StateEducationAgency' AS nvarchar(256)) AS Discriminator
+FROM edfi.StateEducationAgency sea;
+```
+
+**How the view is used**
+- **Write-time resolution**: abstract references resolve via `dms.ReferentialIdentity` (superclass aliases) and do not depend on the view.
+- **Read-time identity projection**: when reconstituting an abstract-target reference object, join to `{AbstractResource}_View` by `DocumentId` to fetch the abstract identity fields.
+- **Optional membership/type validation**: to ensure a `..._DocumentId` FK to `dms.Document` actually belongs to the allowed hierarchy, application code can validate `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId=@id)`.
+
+Operational note:
+- Adding a new concrete subtype requires a migration that updates the view definition (same operational contract as table changes).
+- If view performance ever becomes a bottleneck, consider materialization (PostgreSQL materialized view; SQL Server indexed view) as a later, measured optimization.
+
 #### PostgreSQL examples (Student, School, StudentSchoolAssociation)
 
 ```sql
@@ -582,6 +675,7 @@ The backend compiles and caches a `NaturalKeyResolverPlan` for each resource usi
 **Classify identity shape**
 - **Self-contained identity**: none of the resource’s `identityJsonPaths` are sourced from a document reference (i.e., they do not appear as a `referenceJsonPaths[*].referenceJsonPath` in `documentPathsMapping` for non-descriptor references).
 - **Reference-bearing identity**: one or more `identityJsonPaths` are sourced from a document reference object.
+- **Abstract identity target**: if the referenced resource is an `abstractResources` entry (e.g., `EducationOrganization`), treat it as self-contained for resolution purposes and resolve via `dms.ReferentialIdentity` using superclass aliases.
 
 **Build identity decomposition**
 - For each non-descriptor `DocumentPath` in `documentPathsMapping`:
@@ -672,6 +766,7 @@ The design uses existing metadata and adds minimal new hints to avoid embedding 
 - `documentPathsMapping`: identifies references vs scalars vs descriptor paths, plus reference identity mapping
 - `decimalPropertyValidationInfos`: precision/scale for `decimal`
 - `arrayUniquenessConstraints`: relational unique constraints for collection tables
+- `abstractResources`: abstract identity metadata for polymorphic reference targets (used for union-view identity projection on reads)
 - `isSubclass` + superclass metadata: drives alias identity insertion
 - `queryFieldMapping`: defines queryable fields and their JSON paths/types
 
@@ -861,7 +956,7 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
 3. Otherwise, reconstitute:
    - Load resource root row + child rows (batched) and assemble JSON in C# using the relational mapping derived from `ApiSchema`.
    - For descriptor properties: join to `dms.Descriptor` to output `namespace#codeValue` URI (or stored `Uri`).
-   - For document references: join to referenced resource root tables to output reference identity objects (natural key values).
+   - For document references: join to referenced resource root tables to output reference identity objects (natural key values); for abstract/polymorphic targets, join to `{AbstractResource}_View` to project the abstract identity fields.
 
 Reconstitution must preserve:
 - Array order (via `Ordinal`)
@@ -1400,6 +1495,7 @@ At startup (or at migrator time), DMS builds a fully explicit internal model:
 - Descriptor binding plan: descriptor JSON paths → FK columns (descriptor `DocumentId`, resolved via `dms.ReferentialIdentity`) and expected descriptor resource type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
 - Identity projection plans (for references in responses)
+- Abstract identity projection plans for abstract targets (via `{AbstractResource}_View` union views derived from `abstractResources`)
 
 This is not code generation; it is compiled metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
@@ -1411,6 +1507,7 @@ Inputs:
 - `resourceSchema.identityJsonPaths`
 - `resourceSchema.decimalPropertyValidationInfos`
 - `resourceSchema.arrayUniquenessConstraints`
+- `projectSchema.abstractResources` (abstract identity fields for polymorphic targets)
 - optional `resourceSchema.relational` overrides
 
 Algorithm sketch:
@@ -1445,6 +1542,11 @@ Algorithm sketch:
 6. Apply naming rules + `nameOverrides`:
    - resolve all table and column names deterministically
    - validate no collisions and fail fast if any occur
+
+7. Apply `abstractResources` (polymorphic identity views):
+   - For each abstract resource `A`, create/replace `{schema}.{A}_View` as a narrow `UNION ALL` projection over all concrete resource root tables that participate in `A`’s hierarchy.
+   - Project `DocumentId`, an optional `Discriminator`, and the abstract identity fields (from `abstractResources[A].identityPathOrder`) using identity renames where needed.
+   - Use these views to compile abstract identity projection plans for read-time reference reconstitution.
 
 ### 4.2 Recommended child-table keys (composite parent+ordinal)
 
@@ -1688,7 +1790,7 @@ To reconstitute reference objects, DMS must output the referenced resource’s i
 
 Identity projection is planned from `ApiSchema`:
 - For each `ReferenceBinding`, identify the referenced resource type and which identity fields are required.
-- Compile one `IdentityProjectionPlan` per target resource type.
+- Compile one `IdentityProjectionPlan` per target resource type (for abstract/polymorphic targets, the plan queries `{AbstractResource}_View`).
 
 Execution strategy:
 - For the page, collect all FK `DocumentId`s per target resource type across all results.
@@ -2210,10 +2312,13 @@ public sealed record IdentityField(
 ```
 
 The `IdentityProjectionPlan` builder:
-- takes a resource’s `identityJsonPaths`
-- maps each to either:
-  - a scalar column on the resource root table, or
-  - a join chain through FK columns to another resource’s identity columns
+- takes either:
+  - a concrete resource’s `identityJsonPaths`, or
+  - an abstract resource’s `abstractResources[...].identityPathOrder` (treated as `$.{fieldName}` JSON paths)
+- maps each identity field to one of:
+  - a scalar column on the target’s root table,
+  - a join chain through FK columns to other resources’ identity columns (for reference-bearing identities), or
+  - for abstract/polymorphic targets, a scalar column projected from `{AbstractResource}_View`
 - emits a single SQL query that returns all identity values for the requested `DocumentId`s
 
 ### 7.6 Execution interfaces (execution layer)
