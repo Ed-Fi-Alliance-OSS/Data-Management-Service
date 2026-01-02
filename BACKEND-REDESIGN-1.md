@@ -768,7 +768,7 @@ The design uses existing metadata and adds minimal new hints to avoid embedding 
 - `arrayUniquenessConstraints`: relational unique constraints for collection tables
 - `abstractResources`: abstract identity metadata for polymorphic reference targets (used for union-view identity projection on reads)
 - `isSubclass` + superclass metadata: drives alias identity insertion
-- `queryFieldMapping`: defines queryable fields and their JSON paths/types
+- `queryFieldMapping`: defines queryable fields and their JSON paths/types, and is already constrained in ApiSchema to paths that map to root-table columns (no array/child-table predicates)
 
 ### Proposed ApiSchema additions (small, optional)
 
@@ -966,6 +966,10 @@ Reconstitution must preserve:
 ### Query
 
 Filter directly on **resource root table columns** and (when needed) resolve reference/descriptor query terms to `DocumentId`s.
+
+Contract/clarification:
+- `queryFieldMapping` is already constrained in ApiSchema to **root-table** paths (no JSON paths that cross an array boundary like `[*]`), so query compilation does not need child-table `EXISTS (...)` / join predicate support.
+- Backend model compilation should still fail fast if any `queryFieldMapping` path cannot be mapped to a root-table column.
 
 1. Translate query parameters to typed filters using Core’s canonicalization rules (`ValidateQueryMiddleware` → `QueryElement[]`).
 2. Build a SQL predicate plan from `ApiSchema`:
