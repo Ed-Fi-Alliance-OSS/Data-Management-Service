@@ -31,7 +31,7 @@ Special Education). The Configuration Service needs to:
 | Field | Type | Constraints | Description |
 |-------|------|-------------|-------------|
 | `Id` | BIGINT | PK, Auto-generated | Unique identifier |
-| `ProfileName` | VARCHAR(256) | NOT NULL, UNIQUE | Profile name |
+| `ProfileName` | VARCHAR(500) | NOT NULL, UNIQUE | Profile name |
 | `Definition` | TEXT | NOT NULL | XML profile definition |
 | `CreatedAt` | TIMESTAMP | NOT NULL, DEFAULT NOW() | Creation timestamp |
 | `CreatedBy` | VARCHAR(256) | | Creator identifier |
@@ -132,7 +132,7 @@ is still assigned to Applications.
 
 | Field | Rules |
 |-------|-------|
-| `profileName` | Required, max 256 chars, unique, alphanumeric/hyphens |
+| `profileName` | Required, max 500 chars, unique |
 | `definition` | Required, valid XML, `<Profile>` root, name must match |
 
 #### Definition Validation Levels
@@ -160,10 +160,15 @@ CMS performs two levels of validation on the profile definition:
 | Rule | Severity | Behavior |
 |------|----------|----------|
 | Unknown member in `IncludeOnly` | Error | Profile rejected |
-| Unknown member in `ExcludeOnly` | Warning | Member silently ignored |
-| Excluding identifying member | Warning | Exclusion silently prevented |
+| Unknown member in `ExcludeOnly` | Warning | Profile rejected (ODS treats warnings as invalid) |
+| Excluding identifying member | Warning | Profile rejected (ODS treats warnings as invalid) |
+| `memberSelection="ExcludeAll"` | Error | Profile rejected (ODS throws NotImplementedException) |
 | Unknown resource name | Error | Profile rejected |
 | Unknown extension namespace | Error | Profile rejected |
+
+**Note:** ODS considers any validation failure (including warnings) to make the
+profile invalid and it will not be loaded. CMS should reject profiles that
+produce warnings to maintain compatibility.
 
 #### Validation Error Examples
 

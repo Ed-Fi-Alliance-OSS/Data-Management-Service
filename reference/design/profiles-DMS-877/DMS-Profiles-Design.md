@@ -74,6 +74,12 @@ the requested resource:
 - Client can use standard `application/json` content type
 - Client can also explicitly specify the profile (header takes precedence)
 
+When a client's application has **no** profiles assigned:
+
+- No implicit profile selection or assignment enforcement is applied
+- Requests without a profile header proceed with the full resource
+- If a profile header is provided, it is honored after normal header validation
+
 When a client's application has **multiple** profiles covering the resource:
 
 - Client **must** specify which profile to use via header
@@ -181,6 +187,7 @@ With Profile Support:
 4. **Validate authorization**
    - Check if client's application has the profile assigned
    - Handle implicit profile selection
+   - If the application has no assigned profiles, skip assignment enforcement
 
 5. **Store in RequestInfo**
    - Add `ProfileContext` to `RequestInfo` for downstream use
@@ -756,7 +763,7 @@ Profiles support filtering properties within nested objects using the
 
 ```xml
 <ReadContentType memberSelection="IncludeOnly|ExcludeOnly|IncludeAll">
-    <Object name="NestedObjectName" memberSelection="IncludeOnly|ExcludeOnly|IncludeAll|ExcludeAll">
+    <Object name="NestedObjectName" memberSelection="IncludeOnly|ExcludeOnly|IncludeAll">
         <Property name="PropertyName" />
         <Object name="DeeplyNestedObject" memberSelection="...">
             <!-- Can nest further -->
@@ -775,7 +782,6 @@ Profiles support filtering properties within nested objects using the
 | `IncludeOnly` | Only listed properties/objects/collections included |
 | `ExcludeOnly` | Listed items excluded, all others included |
 | `IncludeAll` | All properties included (can filter child elements) |
-| `ExcludeAll` | Entire object excluded from response |
 
 #### Example 1: Exclude Specific Properties from Nested Object
 
@@ -840,7 +846,7 @@ similarly to `<Object>` but targets extension namespaces.
 
 ```xml
 <ReadContentType memberSelection="IncludeOnly">
-    <Extension name="ExtensionNamespace" memberSelection="IncludeOnly|ExcludeOnly|IncludeAll|ExcludeAll">
+    <Extension name="ExtensionNamespace" memberSelection="IncludeOnly|ExcludeOnly|IncludeAll">
         <Property name="ExtensionProperty" />
         <Object name="ExtensionObject" memberSelection="...">
             <!-- Nested object within extension -->
@@ -1041,7 +1047,7 @@ When a profile covers a resource but not for the requested usage type
 {
     "detail": "The request construction was invalid with respect to usage of a data policy. An attempt was made to access a resource that is not writable using the profile.",
     "type": "urn:ed-fi:api:profile:method-usage",
-    "title": "Method Not Allowed",
+    "title": "Method Not Allowed with Profile",
     "status": 405,
     "correlationId": "abc-123-def",
     "errors": [
@@ -1054,9 +1060,9 @@ When a profile covers a resource but not for the requested usage type
 
 ```json
 {
-    "detail": "Access to the resource could not be authorized. The request was not constructed correctly for the data policy applied to this data for the caller.",
+    "detail": "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
     "type": "urn:ed-fi:api:security:data-policy:incorrect-usage",
-    "title": "Forbidden",
+    "title": "Data Policy Failure Due to Incorrect Usage",
     "status": 403,
     "correlationId": "abc-123-def",
     "errors": [
