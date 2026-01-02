@@ -8,6 +8,12 @@ This document describes how the Data Management Service (DMS) applies API
 Profiles during read and write operations. Profiles constrain the data surface
 area of API Resources based on rules defined in XML profile definitions.
 
+### Scope and Limitations
+
+**Version 1 Limitation:** This implementation does not support multiple data
+standards in multi-instance deployments. All instances within a deployment
+must use the same data standard version.
+
 ---
 
 ## 1. Problem Statement
@@ -474,6 +480,10 @@ profile's WriteContentType excludes:
 - Any required collections (or required members within collection items)
 - Any required embedded objects (or required members within embedded objects)
 
+**Note:** Update (PUT) behavior is different. Updates are allowed as long as
+key fields are present, even if the profile excludes other required members.
+This is because the existing resource already has those required values stored.
+
 If a profile makes a resource non-creatable, POST requests return a
 **400 Bad Request** with a `DataPolicyException`:
 
@@ -891,7 +901,18 @@ public record ContentTypeDefinition(
 
 ## 8. Error Handling
 
-### 8.1 Error Response Matrix
+### 8.1 Graceful Failure for Invalid Profiles
+
+While profiles are validated when inserted into CMS, DMS must still handle
+invalid or misconfigured profiles gracefully at runtime. This could occur due to:
+
+- Data corruption
+- Manual database modifications
+
+When DMS encounters an invalid profile, it should return an appropriate error
+response (see 8.2) rather than throwing an unhandled exception.
+
+### 8.2 Error Response Matrix
 
 The following error responses match the ODS/API implementation:
 
@@ -914,7 +935,7 @@ The following error responses match the ODS/API implementation:
 
 **Note:** All error types use the `urn:ed-fi:api:` prefix.
 
-### 8.2 Error Response Format
+### 8.3 Error Response Format
 
 All profile-related errors return a **Problem Details** JSON structure
 following RFC 7807 format:
@@ -932,7 +953,7 @@ following RFC 7807 format:
 }
 ```
 
-### 8.3 Example Error Responses
+### 8.4 Example Error Responses
 
 #### Invalid Profile Header Format (400)
 
@@ -1107,7 +1128,7 @@ When a profile excludes required members of a child item type:
 ### 9.1 Cache Architecture
 
 DMS caches all profiles for an application in a single cache entry, keyed by
-`ApplicationId`.
+`TenantId` and `ApplicationId`.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1117,7 +1138,7 @@ DMS caches all profiles for an application in a single cache entry, keyed by
 │  ┌─────────────────────────────────────────────────────────────────────┐    │
 │  │  In-Memory Application Profiles Cache                               │    │
 │  │  ┌─────────────────────────────────────────────────────────────┐    │    │
-│  │  │  Key: ApplicationId                                         │    │    │
+│  │  │  Key: (TenantId, ApplicationId)                             │    │    │
 │  │  │  Value: Dictionary<ProfileName, ParsedProfileDefinition>    │    │    │
 │  │  │  TTL: Configurable (default 30 minutes)                     │    │    │
 │  │  └─────────────────────────────────────────────────────────────┘    │    │
@@ -1142,8 +1163,8 @@ DMS caches all profiles for an application in a single cache entry, keyed by
 ┌─────────────┐     ┌─────────────────────────────────────────────────────────┐
 │   Request   │     │                    DMS Profile Service                  │
 │   with      │────>│                                                         │
-│   Profile   │     │  1. Extract ApplicationId from authenticated client     │
-└─────────────┘     │  2. Check cache for ApplicationId                       │
+│   Profile   │     │  1. Extract TenantId and ApplicationId from request     │
+└─────────────┘     │  2. Check cache for (TenantId, ApplicationId)           │
                     │     │                                                   │
                     │     ├── Cache hit: Lookup profile by name from cache    │
                     │     │                                                   │
@@ -1162,8 +1183,7 @@ DMS caches all profiles for an application in a single cache entry, keyed by
 ```json
 {
   "ProfileCache": {
-    "ApplicationProfilesTtlSeconds": 1800,
-    "MaxApplicationsCached": 1000
+    "ApplicationProfilesTtlSeconds": 1800
   }
 }
 ```
