@@ -55,8 +55,8 @@ public class CachedClaimSetProvider(
             },
             new HybridCacheEntryOptions
             {
-                Expiration = TimeSpan.FromMinutes(cacheSettings.ClaimSetsCacheExpirationMinutes),
-                LocalCacheExpiration = TimeSpan.FromMinutes(cacheSettings.ClaimSetsCacheExpirationMinutes),
+                Expiration = TimeSpan.FromSeconds(cacheSettings.ClaimSetsCacheExpirationSeconds),
+                LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.ClaimSetsCacheExpirationSeconds),
             }
         );
 

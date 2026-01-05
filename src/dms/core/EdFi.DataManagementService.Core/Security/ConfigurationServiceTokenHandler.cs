@@ -37,8 +37,8 @@ public class ConfigurationServiceTokenHandler(
             async cancel => await FetchTokenAsync(clientId, clientSecret, scope, cancel),
             new HybridCacheEntryOptions
             {
-                Expiration = TimeSpan.FromMinutes(cacheSettings.TokenCacheExpirationMinutes),
-                LocalCacheExpiration = TimeSpan.FromMinutes(cacheSettings.TokenCacheExpirationMinutes),
+                Expiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
+                LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
             }
         );
     }

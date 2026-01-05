@@ -71,9 +71,9 @@ public class CachedApplicationContextProvider(
             },
             new HybridCacheEntryOptions
             {
-                Expiration = TimeSpan.FromMinutes(cacheSettings.ApplicationContextCacheExpirationMinutes),
-                LocalCacheExpiration = TimeSpan.FromMinutes(
-                    cacheSettings.ApplicationContextCacheExpirationMinutes
+                Expiration = TimeSpan.FromSeconds(cacheSettings.ApplicationContextCacheExpirationSeconds),
+                LocalCacheExpiration = TimeSpan.FromSeconds(
+                    cacheSettings.ApplicationContextCacheExpirationSeconds
                 ),
             }
         );
@@ -102,9 +102,9 @@ public class CachedApplicationContextProvider(
             },
             new HybridCacheEntryOptions
             {
-                Expiration = TimeSpan.FromMinutes(cacheSettings.ApplicationContextCacheExpirationMinutes),
-                LocalCacheExpiration = TimeSpan.FromMinutes(
-                    cacheSettings.ApplicationContextCacheExpirationMinutes
+                Expiration = TimeSpan.FromSeconds(cacheSettings.ApplicationContextCacheExpirationSeconds),
+                LocalCacheExpiration = TimeSpan.FromSeconds(
+                    cacheSettings.ApplicationContextCacheExpirationSeconds
                 ),
             }
         );

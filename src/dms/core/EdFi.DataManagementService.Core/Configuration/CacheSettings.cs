@@ -7,11 +7,11 @@ namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
 /// Cache configuration settings for DMS HybridCache behavior.
-/// All expiration values are in minutes. Bound from appsettings.json "CacheSettings" section.
+/// All expiration values are in seconds. Bound from appsettings.json "CacheSettings" section.
 /// </summary>
 public class CacheSettings
 {
-    public int ClaimSetsCacheExpirationMinutes { get; set; } = 10;
-    public int ApplicationContextCacheExpirationMinutes { get; set; } = 10;
-    public int TokenCacheExpirationMinutes { get; set; } = 25;
+    public int ClaimSetsCacheExpirationSeconds { get; set; } = 600; // 10 minutes
+    public int ApplicationContextCacheExpirationSeconds { get; set; } = 600; // 10 minutes
+    public int TokenCacheExpirationSeconds { get; set; } = 1500; // 25 minutes
 }
