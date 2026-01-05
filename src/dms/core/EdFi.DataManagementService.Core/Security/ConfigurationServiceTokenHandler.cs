@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Core.Security;
 
 public interface IConfigurationServiceTokenHandler
 {
-    Task<string?> GetTokenAsync(string clientId, string clientSecret, string scope);
+    Task<string> GetTokenAsync(string clientId, string clientSecret, string scope);
 }
 
 /// <summary>
@@ -28,19 +28,22 @@ public class ConfigurationServiceTokenHandler(
 {
     private const string TokenCacheKey = "ConfigServiceToken";
 
-    public async Task<string?> GetTokenAsync(string clientId, string clientSecret, string scope)
+    public async Task<string> GetTokenAsync(string clientId, string clientSecret, string scope)
     {
         // HybridCache.GetOrCreateAsync provides stampede protection:
         // Only one concurrent caller executes the factory; others wait for the result
-        return await hybridCache.GetOrCreateAsync(
-            TokenCacheKey,
-            async cancel => await FetchTokenAsync(clientId, clientSecret, scope, cancel),
-            new HybridCacheEntryOptions
-            {
-                Expiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
-                LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
-            }
-        );
+        // Factory throws on null, so result is never null
+        return (
+            await hybridCache.GetOrCreateAsync(
+                TokenCacheKey,
+                async cancel => await FetchTokenAsync(clientId, clientSecret, scope, cancel),
+                new HybridCacheEntryOptions
+                {
+                    Expiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
+                    LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.TokenCacheExpirationSeconds),
+                }
+            )
+        )!;
     }
 
     private async Task<string?> FetchTokenAsync(
@@ -67,14 +70,9 @@ public class ConfigurationServiceTokenHandler(
             cancellationToken
         );
         var tokenResponse = await response.Content.ReadFromJsonAsync<BearerToken>(cancellationToken);
-        var token = tokenResponse?.Access_token;
 
-        if (string.IsNullOrEmpty(token))
-        {
-            logger.LogWarning("Received empty or null token from Configuration service");
-        }
-
-        return token;
+        return tokenResponse?.Access_token
+            ?? throw new InvalidOperationException("Failed to retrieve token from Configuration Service");
     }
 }
 
