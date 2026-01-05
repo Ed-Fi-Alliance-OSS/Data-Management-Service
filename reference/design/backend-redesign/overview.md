@@ -4,15 +4,6 @@
 
 Draft. This is an initial design proposal for replacing the current three-table document store (`Document`/`Alias`/`Reference`) with a relational model using tables per resource, while keeping DMS behavior metadata-driven via `ApiSchema.json`.
 
-## Reader Map
-
-- Read this doc end-to-end for the goals, constraints, and the Core/Backend boundary.
-- For the database model (tables, naming rules, SQL Server guardrails): [data-model.md](data-model.md)
-- For the derived mapping + flattening/reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
-- For extension mapping (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
-- For reference validation, transactional cascades, caching, and ops: [caching-and-ops.md](caching-and-ops.md)
-- For authorization storage and query filtering: [auth.md](auth.md)
-
 ## Table of Contents
 
 - [Goals and Constraints](#goals-and-constraints)
@@ -63,14 +54,14 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - optional cached JSON (`dms.DocumentCache`) rebuild/refresh (eventual)
 - Identity uniqueness is enforced by:
   - `dms.ReferentialIdentity` (for all identities, including reference-bearing), and
-  - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a recommended relational guardrail.
+  - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a relational guardrail.
 
 ## High-Level Architecture
 
 Keep DMS Core mostly intact:
 
 - Core remains the home of API canonicalization, validation, identity extraction, and referential-id computation.
-- **Only required Core change in this redesign**: add concrete JSON location (with indices) to extracted *document references* (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
+- **Only required Core change in this redesign**: add concrete *JSON location* (with indices) to extracted document references (see “Document references inside nested collections” in [flattening-reconstitution.md](flattening-reconstitution.md)). Descriptors already carry location via `DescriptorReference.Path`.
 
 - Core continues to produce `DocumentInfo` (identity + `ReferentialId` + extracted references/descriptors, including reference locations) and operates on JSON bodies.
 - Backend repositories (`IDocumentStoreRepository`, `IQueryHandler`) become responsible for:
@@ -96,15 +87,6 @@ This redesign is split into focused docs in this directory:
 - **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
 - **Fail-fast on schema mismatch**: DMS should verify on startup that the database schema matches the configured effective `ApiSchema.json` set (core + extensions) fingerprint (see `dms.EffectiveSchema`) and refuse to start/serve if it does not.
 
-## Glossary (Current DMS Terms)
-
-- **DocumentUuid**: The API “id” (UUID) exposed in URLs and stored as `id` in documents.
-- **DocumentId**: A database surrogate key (BIGINT) for internal relationships and FKs.
-- **DocumentIdentity**: Ordered natural-key elements extracted from the document (from `identityJsonPaths`).
-- **ReferentialId**: Deterministic UUIDv5 hash of `(ProjectNamespace, ResourceName, DocumentIdentity)` used for identity-based lookups and references.
-- **ProjectNamespace** (aka `ProjectName` in some DMS tables/code): The `ApiSchema.json` key for a project schema (`projectSchemas[{ProjectNamespace}]`), the first URL segment (e.g., `/ed-fi/...`), and the basis for physical DB schema names (e.g., `ed-fi` → `edfi`).
-- **ResourceName**: The resource endpoint name (key of `resourceSchemas[{ResourceName}]`).
-
 ## Risks / Open Questions
 
 1. **Strict materialization cost (if enabled)**: strict transactional `dms.DocumentCache` maintenance (including identity/URI cascades) can add write-time work and fan out.
@@ -114,12 +96,3 @@ This redesign is split into focused docs in this directory:
 3. **ReferenceEdge operational load**: required edge maintenance adds overhead; naive “delete-all then insert-all” can churn.
    - Mitigation: diff-based upsert (stage + insert missing + delete stale) and careful indexing.
 4. **Schema evolution**: handling renames and destructive changes safely and predictably.
-
-## Suggested Implementation Phases
-
-1. **Foundational tables**: `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.EdgeSource`, `dms.ReferenceEdge`, `dms.IdentityLock`, `dms.EffectiveSchema`, `dms.SchemaComponent`.
-2. **One resource end-to-end**: implement relational mapping + CRUD + reconstitution for a small resource (and descriptors).
-3. **Column-based query**: build SQL query predicates from `ApiSchema` and execute paging queries directly on the resource root table (with reference/descriptor resolution), then reconstitute the page (optionally serving from `dms.DocumentCache` when present and fresh).
-4. **Optional projection**: add `dms.DocumentCache` (eventual) for performance and CDC/indexing projections, maintained independently of API cache misses.
-5. **Migration tool**: derive/apply DDL and record the effective schema/version set; rebuild `dms.ReferenceEdge` as needed when bindings change, and optionally rebuild `dms.DocumentCache` when enabled.
-6. **Performance hardening**: batching, chunk sizing, indexes, and optional L1/L2 caches for identity/descriptor lookups.
