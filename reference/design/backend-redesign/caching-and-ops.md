@@ -44,6 +44,8 @@ This is required because the relational tables store **`DocumentId` foreign keys
 
 The **natural-key resolver** is the backend service that converts a `{Project, Resource, DocumentIdentity}` into a persisted `DocumentId` **without per-resource code**.
 
+This design keeps `ReferentialId` as the canonical “natural identity key” that the resolver uses for `ReferentialId → DocumentId` lookups; see [overview.md#Why keep ReferentialId](overview.md#why-keep-referentialid).
+
 It is used for:
 - resolving extracted `DocumentReference` / `DescriptorReference` instances during writes
 - POST upsert existence detection (always via `dms.ReferentialIdentity`)
@@ -177,8 +179,8 @@ It is intentionally **not** used for referential integrity.
   - `..._DescriptorId` columns (descriptor references; these are also `DocumentId`s)
 
 **Extraction approach (no per-resource codegen)**
-- During flattening/materialization, whenever a `DocumentFk` or `DescriptorFk` value is produced (non-null), add it to a per-request `HashSet<(long childDocumentId, long edgeSourceId, bool isIdentityComponent)>`.
-- `edgeSourceId` is the ApiSchema-derived identifier for the reference site (see `dms.EdgeSource` and `dms.ReferenceEdge.EdgeSourceId`), and `isIdentityComponent` is derived from ApiSchema (identity definition(s) + `documentPathsMapping`), including superclass/abstract alias identity when present.
+- During flattening/materialization, whenever a `DocumentFk` or `DescriptorFk` value is produced (non-null), add it to a per-request `HashSet<(long childDocumentId, int edgeSourceId, bool isIdentityComponent)>`.
+- `edgeSourceId` is the database identity value for the reference site (looked up from `dms.EdgeSource` by `EdgeSourceKey` during migration/startup plan compilation so the hot write path does not query by key), and `isIdentityComponent` is derived from ApiSchema (identity definition(s) + `documentPathsMapping`), including superclass/abstract alias identity when present.
 
 **Write strategy**
 
@@ -200,7 +202,7 @@ Two correct approaches:
 -- Per-session staging table
 CREATE TEMP TABLE IF NOT EXISTS reference_edge_stage (
   ChildDocumentId bigint NOT NULL,
-  EdgeSourceId bigint NOT NULL,
+  EdgeSourceId integer NOT NULL,
   IsIdentityComponent boolean NOT NULL,
   PRIMARY KEY (ChildDocumentId, EdgeSourceId)
 ) ON COMMIT DELETE ROWS;
@@ -352,7 +354,7 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
 - **Schema migration**
   - Migration + restart remains the operational contract.
   - If `dms.DocumentCache` is enabled, clear/rebuild it when the effective schema changes.
-  - Rebuild `dms.EdgeSource` and `dms.ReferenceEdge` when edge sources (paths) change (and therefore `EdgeSourceId`s may change).
+  - Rebuild `dms.ReferenceEdge` when edge sources (paths) change. If `dms.EdgeSource` is rebuilt (identity ids re-assigned), `dms.ReferenceEdge` must be rebuilt as well because it stores `EdgeSourceId` foreign keys.
 
 ### Concurrency (ETag)
 
@@ -392,6 +394,7 @@ Ordering/paging contract:
 - Collection GET results are ordered by the **resource root table’s** `DocumentId` (ascending).
 - This is an acceptable ordering contract because `DocumentId` is a monotonic identity value allocated at insert time and therefore roughly correlates with created order.
 - Pagination applies to that ordering (`offset` skips N rows in `DocumentId` order; `limit` bounds the page size).
+- Paging queries are executed against the **resource root table** (and any required authorization joins), not against `dms.Document`.
 - Response materialization joins the page’s `DocumentId`s to `dms.Document` to obtain API fields (`id`, `_etag`, `_lastModifiedDate`). If `dms.DocumentCache` is enabled, it can be used as a best-effort projection; otherwise reconstitute the page from relational tables.
 
 1. Translate query parameters to typed filters using Core’s canonicalization rules (`ValidateQueryMiddleware` → `QueryElement[]`).

@@ -16,15 +16,13 @@ This document is the data-model deep dive for `overview.md`.
 
 - [Proposed Database Model](#proposed-database-model)
 - [Naming Rules (Deterministic, Cross-DB Safe)](#naming-rules-deterministic-cross-db-safe)
-- [SQL Server Parity Notes (Design Guardrails)](#sql-server-parity-notes-design-guardrails)
+- [Other Notes (Design Guardrails)](#other-notes-design-guardrails)
 
 ---
 
 ## Proposed Database Model
 
 ### Core tables (schema: `dms`)
-
-#### Foundational tables (required)
 
 ##### 1) `dms.Document`
 
@@ -45,8 +43,8 @@ CREATE TABLE dms.Document (
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_Document_ProjectName_ResourceName_CreatedAt
-    ON dms.Document (ProjectName, ResourceName, CreatedAt, DocumentId);
+CREATE INDEX IX_Document_ProjectName_ResourceName_DocumentId
+    ON dms.Document (ProjectName, ResourceName, DocumentId);
 ```
 
 Notes:
@@ -61,12 +59,13 @@ Notes:
   - Concurrency: updates guarded by `If-Match` should use a conditional update (`WHERE DocumentId=@id AND Etag=@expected`) so the bump is atomic and race-safe.
   - Cascades should update `Etag`/`LastModifiedAt` with **set-based writes** over an impacted set (computed using `dms.ReferenceEdge`), rather than reconstituting and hashing large JSON payloads.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
-- Terminology: `ProjectName` values are the API project endpoint namespace (ApiSchema `ProjectNamespace` / `projectSchemas` key, e.g. `ed-fi`), not the MetaEd display name (`projectName`).
 - Authorization-related columns are intentionally omitted here. Authorization storage and query filtering is described in [auth.md](auth.md).
 
 ##### 2) `dms.ReferentialIdentity`
 
-Maps `ReferentialId` → `DocumentId` (replaces/absorbs today’s `dms.Alias`), including superclass aliases used for polymorphic references.
+Maps `ReferentialId` → `DocumentId` (replaces today’s `dms.Alias`), including superclass aliases used for polymorphic references.
+
+Rationale for retaining `ReferentialId` in this redesign: see [overview.md#Why keep ReferentialId](overview.md#why-keep-referentialid).
 
 **PostgreSQL**
 
@@ -85,10 +84,6 @@ CREATE TABLE dms.ReferentialIdentity (
 CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
 ```
 
-Database Specific Differences:
-- The logical shape is identical across engines (UUID `ReferentialId` → `DocumentId` + `{ProjectName, ResourceName}`).
-- The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
-
 **SQL Server**
 
 ```sql
@@ -103,6 +98,20 @@ CREATE TABLE dms.ReferentialIdentity (
     CONSTRAINT UX_ReferentialIdentity_DocumentId_Resource UNIQUE CLUSTERED (DocumentId, ProjectName, ResourceName)
 );
 ```
+
+Database Specific Differences:
+- The logical shape is identical across engines (UUID `ReferentialId` → `DocumentId` + `{ProjectName, ResourceName}`).
+- The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
+
+Operational considerations:
+- `ReferentialId` is a deterministic UUIDv5 and is effectively randomly distributed for index insertion. The primary operational concern is **write amplification** (page splits, fragmentation/bloat), not point-lookup speed.
+- **SQL Server**:
+  - Keep the UUID key as **NONCLUSTERED** (as shown) and use a sequential clustered key (e.g., `(DocumentId, ProjectName, ResourceName)`).
+  - Consider a lower `FILLFACTOR` (e.g., 80–90) on the UUID index to reduce page splits; monitor fragmentation and rebuild/reorganize as needed.
+- **PostgreSQL**:
+  - B-tree point lookups on UUID are fine; manage bloat under high write rates with index/table `fillfactor` (e.g., 80–90), healthy autovacuum settings/monitoring, and periodic `REINDEX` when warranted.
+  - If sustained ingest is extreme, consider hash partitioning `dms.ReferentialIdentity` by `ReferentialId` (e.g., 8–32 partitions) to reduce contention and make maintenance cheaper.
+
 
 Critical invariants:
 - **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document” for **all** identities (self-contained identities, reference-bearing identities, and descriptor URIs). This requires `dms.ReferentialIdentity` to be maintained transactionally on identity changes, including cascading recompute when upstream identity components change.
@@ -240,17 +249,220 @@ manifest =
 effectiveSchemaHash = sha256hex(utf8(manifest))
 ```
 
-#### Optional projection tables (performance / integrations)
+##### 5) `dms.EdgeSource` (edge-source dictionary)
 
-##### 5) `dms.DocumentCache` (optional projection; eventually consistent)
+`dms.EdgeSource` defines the **source site** for an outgoing edge in a parent document: *“this parent resource type, at this canonical JSONPath, emits a document/descriptor reference”*.
 
-Materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
+Purpose:
+- Avoid repeating a long string identifier on every `dms.ReferenceEdge` row (which is hot and high-volume).
+- Provide a stable, human-readable identifier for diagnostics and debugging.
+- Allow `dms.ReferenceEdge` to store only a compact `EdgeSourceId` (INT).
+
+Population:
+- `dms.EdgeSource` is derived from `ApiSchema.json` during schema migration/startup validation (per `dms.EffectiveSchemaHash`).
+- It is **not** populated on the hot write path.
+
+##### DDL (PostgreSQL)
+
+```sql
+CREATE TABLE dms.EdgeSource (
+    EdgeSourceId integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    EdgeSourceKey varchar(256) NOT NULL,
+    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT UX_EdgeSource_EdgeSourceKey UNIQUE (EdgeSourceKey)
+);
+```
+
+##### DDL (SQL Server)
+
+```sql
+CREATE TABLE dms.EdgeSource (
+    EdgeSourceId int NOT NULL IDENTITY(1,1),
+    EdgeSourceKey nvarchar(256) NOT NULL,
+    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_EdgeSource_CreatedAt DEFAULT (sysutcdatetime()),
+    CONSTRAINT PK_EdgeSource PRIMARY KEY CLUSTERED (EdgeSourceId),
+    CONSTRAINT UX_EdgeSource_EdgeSourceKey UNIQUE (EdgeSourceKey)
+);
+```
+
+##### EdgeSourceKey (stable) and EdgeSourceId (database identity)
+
+`EdgeSourceKey` is a deterministic identifier derived from ApiSchema, describing *where* the reference came from in the parent document.
+
+Format (recommended):
+
+- For **document references**: `{ParentProject}.{ParentResource}:docref:{ReferenceObjectPath}`
+  - Example: `EdFi.StudentSchoolAssociation:docref:$.studentReference`
+- For **descriptor references**: `{ParentProject}.{ParentResource}:desc:{DescriptorValuePath}`
+  - Example: `EdFi.School:desc:$.schoolTypeDescriptor`
+
+`ReferenceObjectPath`/`DescriptorValuePath` are canonical/wildcard JSON paths from derived relational mapping (no numeric indices).
+
+Length handling:
+- `EdgeSourceKey` is stored as `varchar(256)`/`nvarchar(256)` so it can be indexed safely on both engines.
+- If the computed raw key exceeds 256 chars, apply deterministic truncation + short hash suffix:
+  - `EdgeSourceKey = prefix + "|" + sha256hex(rawKey)[0..8]`
+
+`EdgeSourceId` is an **integer identity** assigned by the database and used as a compact foreign key in `dms.ReferenceEdge`.
+
+Notes:
+- Migration (or startup schema validation) is responsible for inserting/updating the `dms.EdgeSource` dictionary for the effective schema and for resolving `EdgeSourceKey → EdgeSourceId` into compiled plans:
+  - Derive the required `EdgeSourceKey` set from `ApiSchema.json` (for the `EffectiveSchemaHash`) and upsert it into `dms.EdgeSource` (unique on `EdgeSourceKey`).
+  - Query the resulting `(EdgeSourceKey, EdgeSourceId)` pairs and build an in-memory lookup used by the plan compiler.
+  - While compiling each resource’s read/write plans, write the resolved `EdgeSourceId` directly into each `DocumentReferenceEdgeSource` / `DescriptorEdgeSource` so request-time edge maintenance uses the `int` id without any DB lookup by key.
+
+Example C# helpers (used during model compilation/migration):
+
+```csharp
+static string BuildEdgeSourceKey(QualifiedResourceName parent, string kind, JsonPathExpression path)
+{
+    var raw = $"{parent.ProjectName}.{parent.ResourceName}:{kind}:{path.Canonical}";
+    if (raw.Length <= 256) return raw;
+
+    var hash8 = Sha256Hex(raw).Substring(0, 8);
+    return raw.Substring(0, 256 - 1 - 8) + "|" + hash8;
+}
+
+// EdgeSourceId is a DB identity; resolve it once per EffectiveSchemaHash and cache it in compiled plans.
+static int GetEdgeSourceId(IReadOnlyDictionary<string, int> edgeSourceIdsByKey, string edgeSourceKey) =>
+    edgeSourceIdsByKey[edgeSourceKey];
+```
+
+##### 6) `dms.ReferenceEdge` (reverse reference index for cascades)
+
+A small, relational reverse index of **“this document references that document”**, maintained on writes.
+
+Important properties:
+- **Required for derived-artifact cascades**:
+  - `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
+  - `dms.Document` representation-metadata cascades (`Etag`, `LastModifiedAt`) so `_etag`/`_lastModifiedDate` change when the representation changes
+  - JSON document cascade when `dms.DocumentCache` is enabled
+- **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
+- **Coverage requirement is correctness-critical**:
+  - DMS must record **all** outgoing document references and descriptor references, including those inside nested collections/child tables.
+  - If edge maintenance fails, the write must fail (otherwise dependent referential-id and representation-metadata cascades can become incorrect).
+
+Primary uses:
+- **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities/descriptor URIs change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
+- **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity/descriptor URI changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
+- **Delete conflict messaging**: answer “who references me?” without scanning all tables or relying solely on constraint name parsing.
+
+##### DDL (PostgreSQL)
+
+```sql
+CREATE TABLE dms.ReferenceEdge (
+    ParentDocumentId bigint NOT NULL
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    ChildDocumentId  bigint NOT NULL
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+
+    -- Compact identifier of *where* the reference came from in the parent document.
+    -- See dms.EdgeSource (EdgeSourceKey -> EdgeSourceId).
+    EdgeSourceId integer NOT NULL
+        REFERENCES dms.EdgeSource (EdgeSourceId) ON DELETE RESTRICT,
+
+    -- True when this edge source participates in the parent document's identityJsonPaths.
+    -- Used to drive transitive cache updates when identities/URIs change.
+    IsIdentityComponent boolean NOT NULL,
+
+    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
+
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, EdgeSourceId, ChildDocumentId)
+);
+
+-- Reverse lookup: "who references Child X?" (also supports identity-dependency closure expansion via IsIdentityComponent)
+CREATE INDEX IX_ReferenceEdge_ChildDocumentId
+    ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
+    INCLUDE (ParentDocumentId, EdgeSourceId);
+```
+
+Notes on `IsIdentityComponent`:
+- Compute it from ApiSchema as “this edge source contributes to any stored identity for the parent”, including superclass/abstract alias identity (for `isSubclass=true` resources where DMS stores an alias row in `dms.ReferentialIdentity`).
+
+##### DDL (SQL Server)
+
+```sql
+CREATE TABLE dms.ReferenceEdge (
+    ParentDocumentId bigint NOT NULL,
+    ChildDocumentId  bigint NOT NULL,
+    EdgeSourceId int NOT NULL,
+    IsIdentityComponent bit NOT NULL,
+    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ReferenceEdge_CreatedAt DEFAULT (sysutcdatetime()),
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, EdgeSourceId, ChildDocumentId),
+    CONSTRAINT FK_ReferenceEdge_Parent FOREIGN KEY (ParentDocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_ReferenceEdge_Child FOREIGN KEY (ChildDocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_ReferenceEdge_EdgeSource FOREIGN KEY (EdgeSourceId)
+        REFERENCES dms.EdgeSource (EdgeSourceId)
+);
+
+CREATE INDEX IX_ReferenceEdge_ChildDocumentId
+    ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
+    INCLUDE (ParentDocumentId, EdgeSourceId);
+```
+
+##### ReferenceEdge FAQ
+
+**We’re moving away from the three-table design because `dms.Reference` is slow/high churn. Won’t this be the same?**
+
+Key differences:
+- It stores **resolved `DocumentId` pairs**, so there is no `ReferentialId → DocumentId` join (no Alias-equivalent lookup), and no partition keys.
+- It can be maintained with a **low-churn diff** so “update that does not change references” performs **0 row writes** to this table.
+- It is not used for referential integrity; it exists for reverse lookups, identity/version cascades (`IsIdentityComponent=true`), and optional cache rebuild/invalidation.
+
+**Doesn’t this require the same InsertReferences pattern?**
+
+We can use a similar *concept* (stage + diff) to avoid churn, but it is far simpler than today’s `InsertReferences` because:
+- inputs are already-resolved `DocumentId`s (no Alias joins, no invalid `ReferentialId` reporting),
+- there is no partition-routing logic,
+- the table is keyed by the parent `DocumentId` (single delete scope), and
+- the diff is between two small sets of `(ChildDocumentId, EdgeSourceId)` pairs (with associated `IsIdentityComponent` flags).
+
+**Why does `dms.DocumentCache` need an update cascade?**
+
+`dms.DocumentCache` stores **fully reconstituted JSON**, including:
+- reference objects expanded from the *current* identity values of referenced resources, and
+- descriptor URI strings (often derived from current descriptor fields).
+
+If a referenced document’s identity/URI changes, the JSON that referencing documents should return changes as well. This is a *cache/projection refresh cascade*, not a relational data cascade:
+- relational FK columns remain stable (`..._DocumentId` still points to the same row),
+- only cached JSON requires recomputation/upsert.
+
+In the preferred eventual-cache mode, this is handled as an **async rebuild cascade** (enqueue/mark dependents for rebuild) rather than an in-transaction “no stale window” rewrite. Targeting rules are described in the Caching section.
+
+##### 7) `dms.IdentityLock` (lock orchestration for strict identity correctness)
+
+To support **strict synchronous** `dms.ReferentialIdentity` maintenance (including cascading referential-id recompute for reference-bearing and abstract identities), the backend needs a stable per-document row to lock.
+
+This design uses a dedicated lock table:
+
+**PostgreSQL / SQL Server (logical)**
+
+```sql
+CREATE TABLE dms.IdentityLock (
+    DocumentId bigint NOT NULL PRIMARY KEY
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+```
+
+Rules:
+- Every `dms.Document` insert also inserts the same `DocumentId` into `dms.IdentityLock` (same transaction).
+- Identity-changing writes and any write that binds to other documents’ identity values must use row locks on `dms.IdentityLock` (shared/update) to prevent “stale-at-birth” referential ids and to make identity cascades phantom-safe (details in Write Path).
+- Concurrency is controlled by row locks on the affected documents’ `dms.IdentityLock` rows + lock ordering + deadlock retry.
+
+Notes:
+- See [caching-and-ops.md](caching-and-ops.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
+
+##### 8) `dms.DocumentCache` (optional, eventually consistent projection)
+
+Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
 
 This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
 - it is not purely a “cache-aside” optimization
-- when enabled, DMS should materialize documents into this table via a write-driven/background projector so documents appear here even if they are never read via the API
+- when enabled, DMS should materialize documents into this table via a write-driven/background projector
 
-Correctness must not depend on this table. Preferred maintenance is **eventual consistency** (background/write-driven projection); rows may be missing/stale and rebuilt asynchronously. For rationale and projector/refresh semantics, see [caching-and-ops.md](caching-and-ops.md) (`dms.DocumentCache` section).
+Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [caching-and-ops.md](caching-and-ops.md) (`dms.DocumentCache` section).
 
 **PostgreSQL**
 
@@ -301,243 +513,6 @@ CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
 Uses:
 - Faster GET/query responses (skip reconstitution)
 - Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
-
-##### 6) `dms.EdgeSource` (edge-source dictionary; required)
-
-`dms.EdgeSource` defines the **source site** for an outgoing edge in a parent document: *“this parent resource type, at this canonical JSONPath, emits a document/descriptor reference”*.
-
-Purpose:
-- Avoid repeating a long string identifier on every `dms.ReferenceEdge` row (which is hot and high-volume).
-- Provide a stable, human-readable identifier for diagnostics and debugging.
-- Allow `dms.ReferenceEdge` to store only a compact `EdgeSourceId` (BIGINT).
-
-Population:
-- `dms.EdgeSource` is derived from `ApiSchema.json` during schema migration/startup validation (per `dms.EffectiveSchemaHash`).
-- It is **not** populated on the hot write path.
-
-##### DDL (PostgreSQL)
-
-```sql
-CREATE TABLE dms.EdgeSource (
-    EdgeSourceId bigint NOT NULL PRIMARY KEY,
-    EdgeSourceKey varchar(256) NOT NULL,
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT UX_EdgeSource_EdgeSourceKey UNIQUE (EdgeSourceKey)
-);
-```
-
-##### DDL (SQL Server)
-
-```sql
-CREATE TABLE dms.EdgeSource (
-    EdgeSourceId bigint NOT NULL,
-    EdgeSourceKey nvarchar(256) NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_EdgeSource_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_EdgeSource PRIMARY KEY CLUSTERED (EdgeSourceId),
-    CONSTRAINT UX_EdgeSource_EdgeSourceKey UNIQUE (EdgeSourceKey)
-);
-```
-
-##### EdgeSourceKey and EdgeSourceId (stable, non-generated, cross-engine)
-
-`EdgeSourceKey` is a deterministic identifier derived from ApiSchema, describing *where* the reference came from in the parent document.
-
-Format (recommended):
-
-- For **document references**: `{ParentProject}.{ParentResource}:docref:{ReferenceObjectPath}`
-  - Example: `EdFi.StudentSchoolAssociation:docref:$.studentReference`
-- For **descriptor references**: `{ParentProject}.{ParentResource}:desc:{DescriptorValuePath}`
-  - Example: `EdFi.School:desc:$.schoolTypeDescriptor`
-
-`ReferenceObjectPath`/`DescriptorValuePath` are canonical/wildcard JSON paths from derived relational mapping (no numeric indices).
-
-Length handling:
-- `EdgeSourceKey` is stored as `varchar(256)`/`nvarchar(256)` so it can be indexed safely on both engines.
-- If the computed raw key exceeds 256 chars, apply deterministic truncation + short hash suffix:
-  - `EdgeSourceKey = prefix + "|" + sha256hex(rawKey)[0..8]`
-
-`EdgeSourceId` is a compact deterministic hash used by `dms.ReferenceEdge`. Calculation must be stable across languages and engines:
-
-- `EdgeSourceId = int64_be( sha256(utf8(rawKey))[0..8] )`
-  - “`int64_be`” means interpret the first 8 bytes as a signed 64-bit integer in big-endian order.
-
-Collision handling:
-- The chance of a 64-bit collision is vanishingly small, but it is still non-zero.
-- Migration must fail fast if inserting computed `(EdgeSourceId, EdgeSourceKey)` pairs produces a primary-key collision for different keys (this indicates a hash collision and requires bumping the mapping version / switching to a wider id scheme).
-
-Example C# helpers (used during model compilation/migration):
-
-```csharp
-static string BuildEdgeSourceKey(QualifiedResourceName parent, string kind, JsonPathExpression path)
-{
-    var raw = $"{parent.ProjectName}.{parent.ResourceName}:{kind}:{path.Canonical}";
-    if (raw.Length <= 256) return raw;
-
-    var hash8 = Sha256Hex(raw).Substring(0, 8);
-    return raw.Substring(0, 256 - 1 - 8) + "|" + hash8;
-}
-
-static long BuildEdgeSourceId(QualifiedResourceName parent, string kind, JsonPathExpression path)
-{
-    var raw = $"{parent.ProjectName}.{parent.ResourceName}:{kind}:{path.Canonical}";
-    return Sha256Int64BigEndian(raw);
-}
-```
-
-##### 7) `dms.ReferenceEdge` (reverse reference index; required for cascades)
-
-A small, relational reverse index of **“this document references that document”**, maintained on writes.
-
-Important properties:
-- **Not required for referential integrity**: relational FKs enforce integrity.
-- **Required for derived-artifact cascades**:
-  - `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
-  - `dms.Document` representation-metadata cascades (`Etag`, `LastModifiedAt`) so `_etag`/`_lastModifiedDate` change when the representation changes
-  - optional targeted async cache rebuild/invalidation when `dms.DocumentCache` is enabled
-- **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
-- **Coverage requirement is correctness-critical**:
-  - DMS must record **all** outgoing document references and descriptor references, including those inside nested collections/child tables.
-  - If edge maintenance fails, the write must fail (otherwise dependent referential-id and representation-metadata cascades can become incorrect).
-
-Primary uses:
-- **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities/descriptor URIs change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
-- **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity/descriptor URI changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
-- **Delete conflict diagnostics**: answer “who references me?” without scanning all tables or relying solely on constraint-name mapping.
-
-##### DDL (PostgreSQL)
-
-```sql
-CREATE TABLE dms.ReferenceEdge (
-    ParentDocumentId bigint NOT NULL
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    ChildDocumentId  bigint NOT NULL
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-
-    -- Compact identifier of *where* the reference came from in the parent document.
-    -- See dms.EdgeSource (EdgeSourceKey -> EdgeSourceId).
-    EdgeSourceId bigint NOT NULL
-        REFERENCES dms.EdgeSource (EdgeSourceId) ON DELETE RESTRICT,
-
-    -- True when this edge source participates in the parent document's identityJsonPaths.
-    -- Used to drive transitive cache updates when identities/URIs change.
-    IsIdentityComponent boolean NOT NULL,
-
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, EdgeSourceId, ChildDocumentId)
-);
-
--- Reverse lookup: "who references Child X?"
-CREATE INDEX IX_ReferenceEdge_ChildDocumentId
-    ON dms.ReferenceEdge (ChildDocumentId)
-    INCLUDE (ParentDocumentId, EdgeSourceId, IsIdentityComponent);
-
--- Optional: optimized identity-component BFS step
-CREATE INDEX IX_ReferenceEdge_ChildDocumentId_IdentityComponent
-    ON dms.ReferenceEdge (ChildDocumentId)
-    INCLUDE (ParentDocumentId, EdgeSourceId)
-    WHERE IsIdentityComponent;
-
--- Optional: fast enumeration of a parent’s outgoing references (diagnostics/debug)
-CREATE INDEX IX_ReferenceEdge_ParentDocumentId
-    ON dms.ReferenceEdge (ParentDocumentId)
-    INCLUDE (ChildDocumentId, EdgeSourceId);
-```
-
-Notes on `IsIdentityComponent`:
-- Compute it from ApiSchema as “this edge source contributes to any stored identity for the parent”, including superclass/abstract alias identity (for `isSubclass=true` resources where DMS stores an alias row in `dms.ReferentialIdentity`).
-
-##### DDL (SQL Server)
-
-```sql
-CREATE TABLE dms.ReferenceEdge (
-    ParentDocumentId bigint NOT NULL,
-    ChildDocumentId  bigint NOT NULL,
-    EdgeSourceId bigint NOT NULL,
-    IsIdentityComponent bit NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ReferenceEdge_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, EdgeSourceId, ChildDocumentId),
-    CONSTRAINT FK_ReferenceEdge_Parent FOREIGN KEY (ParentDocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_ReferenceEdge_Child FOREIGN KEY (ChildDocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_ReferenceEdge_EdgeSource FOREIGN KEY (EdgeSourceId)
-        REFERENCES dms.EdgeSource (EdgeSourceId)
-);
-
-CREATE INDEX IX_ReferenceEdge_ChildDocumentId
-    ON dms.ReferenceEdge (ChildDocumentId)
-    INCLUDE (ParentDocumentId, EdgeSourceId, IsIdentityComponent);
-
--- Optional: optimized identity-component BFS step
-CREATE INDEX IX_ReferenceEdge_ChildDocumentId_IdentityComponent
-    ON dms.ReferenceEdge (ChildDocumentId)
-    INCLUDE (ParentDocumentId, EdgeSourceId)
-    WHERE IsIdentityComponent = 1;
-```
-
-##### Correctness: completeness is required
-
-`dms.ReferenceEdge` is a strict dependency index used to drive:
-- `dms.ReferentialIdentity` cascading recompute (via `IsIdentityComponent=true` edges), and
-- representation-version cascades (`dms.Document.Etag` / `LastModifiedAt`) when reference identities or descriptor URIs change.
-
-If a document has an outgoing reference FK value that is not represented in `dms.ReferenceEdge`, then upstream changes will silently miss dependents and leave derived artifacts stale after commit. There is no other efficient way to discover the full dependent set without scanning every FK column across every resource table.
-
-For design approaches to make edge coverage provable (by-construction extraction, optional in-transaction verification, and audit/repair tooling), see the “Maintaining `dms.ReferenceEdge`” section in [caching-and-ops.md](caching-and-ops.md).
-
-##### Addressing common concerns (explicit)
-
-**Concern: “We’re moving away from the three-table design because `dms.Reference` is slow/high churn. Won’t this be the same?”**
-
-No, unless we implement it naively. Key differences:
-- It stores **resolved `DocumentId` pairs**, so there is no `ReferentialId → DocumentId` join (no Alias-equivalent lookup), and no partition keys.
-- It can be maintained with a **low-churn diff** so “update that does not change references” performs **0 row writes** to this table.
-- It is not used for referential integrity; it exists for reverse lookups, identity/version cascades (`IsIdentityComponent=true`), and optional cache rebuild/invalidation.
-
-**Concern: “Doesn’t this require the same InsertReferences pattern?”**
-
-We can use a similar *concept* (stage + diff) to avoid churn, but it is far simpler than today’s `InsertReferences` because:
-- inputs are already-resolved `DocumentId`s (no Alias joins, no invalid `ReferentialId` reporting),
-- there is no partition-routing logic,
-- the table is keyed by the parent `DocumentId` (single delete scope), and
-- the diff is between two small sets of `(ChildDocumentId, EdgeSourceId)` pairs (with associated `IsIdentityComponent` flags).
-
-**Concern: “Why does `dms.DocumentCache` need an update cascade? Is this cascading updates?”**
-
-`dms.DocumentCache` stores **fully reconstituted JSON**, including:
-- reference objects expanded from the *current* identity values of referenced resources, and
-- descriptor URI strings (often derived from current descriptor fields).
-
-If a referenced document’s identity/URI changes, the JSON that referencing documents should return changes as well. This is a *cache/projection refresh cascade*, not a relational data cascade:
-- relational FK columns remain stable (`..._DocumentId` still points to the same row),
-- only cached JSON requires recomputation/upsert.
-
-In the preferred eventual-cache mode, this is handled as an **async rebuild cascade** (enqueue/mark dependents for rebuild) rather than an in-transaction “no stale window” rewrite. Targeting rules are described in the Caching section.
-
-##### 8) `dms.IdentityLock` (lock orchestration for strict identity correctness)
-
-To support **strict synchronous** `dms.ReferentialIdentity` maintenance (including cascading referential-id recompute for reference-bearing and abstract identities), the backend needs a stable per-document row to lock.
-
-This design uses a dedicated lock table:
-
-**PostgreSQL / SQL Server (logical)**
-
-```sql
-CREATE TABLE dms.IdentityLock (
-    DocumentId bigint NOT NULL PRIMARY KEY
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
-);
-```
-
-Rules:
-- Every `dms.Document` insert also inserts the same `DocumentId` into `dms.IdentityLock` (same transaction).
-- Identity-changing writes and any write that binds to other documents’ identity values must use row locks on `dms.IdentityLock` (shared/update) to prevent “stale-at-birth” referential ids and to make identity cascades phantom-safe (details in Write Path).
-- There is **no global** “only one identity update at a time” lock; concurrency is controlled by row locks on the affected documents’ `dms.IdentityLock` rows + lock ordering + deadlock retry.
-
-Notes:
-- The SQL Server update primitive intentionally uses `XLOCK` so it *conflicts* with shared locks; `UPDLOCK` does not reliably provide that blocking relationship.
-- See [caching-and-ops.md](caching-and-ops.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
 
 ### Resource tables (schema per project)
 
@@ -596,7 +571,7 @@ This design uses a narrow **union view per abstract resource**:
     - discriminator constant (e.g., `'School'`)
 
 **Why a view**
-- Works well for small, stable hierarchies (your stated case).
+- Works well for small, stable hierarchies.
 - Requires no triggers and no additional write-path maintenance.
 - Provides a single join target for identity projection during reconstitution.
 
@@ -796,15 +771,5 @@ To keep migrations tractable and avoid rename cascades, physical names must be d
   - When exceeding, apply deterministic truncation + short hash suffix.
 
 
-
-## SQL Server Parity Notes (Design Guardrails)
-
-- Avoid PostgreSQL-only features in the **core** design (e.g., jsonb GIN as the only query strategy).
-- Use standard types:
-  - `BIGINT`, `INT`, `BIT/BOOLEAN`, `DATE`, `DATETIME2/TIMESTAMP`, `DECIMAL(p,s)`, `NVARCHAR/VARCHAR`
-- Preserve array order with explicit `Ordinal INT`, not implicit ordering.
-- Plan for identifier length limits and reserved words.
-- Watch SQL Server limits:
-  - max columns per table (1024)
-  - row size constraints; prefer extension tables and 1:1 split tables for very wide objects
-  - **MetaEd validation**: add a rule that caps the number of fields in any Domain Entity/Association (e.g., ~50) so relational root tables do not become unmanageably wide in the first place; treat this as an upstream schema-generation constraint rather than a runtime “auto vertical split” feature in DMS
+## Other Notes (Design Guardrails)
+  - **MetaEd validation**: add a rule that caps the number of fields in any Domain Entity/Association (e.g., ~50) so relational root tables do not become unmanageably wide.

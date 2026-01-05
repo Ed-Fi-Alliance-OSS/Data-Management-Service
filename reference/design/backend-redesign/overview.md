@@ -8,6 +8,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 
 - [Goals and Constraints](#goals-and-constraints)
 - [Key Implications vs the Current Three-Table Design](#key-implications-vs-the-current-three-table-design)
+- [Why keep ReferentialId](#why-keep-referentialid)
 - [High-Level Architecture](#high-level-architecture)
 - [Deep Dives](#deep-dives)
 - [Related Changes Implied by This Redesign](#related-changes-implied-by-this-redesign)
@@ -55,6 +56,29 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - Identity uniqueness is enforced by:
   - `dms.ReferentialIdentity` (for all identities, including reference-bearing), and
   - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a relational guardrail.
+
+## Why keep ReferentialId
+
+`ReferentialId` is the deterministic UUIDv5 hash of `(ProjectNamespace, ResourceName, DocumentIdentity)` that DMS Core computes.
+
+This redesign keeps it and stores it in `dms.ReferentialIdentity(ReferentialId → DocumentId)` (absorbing today’s `dms.Alias`) as the backend’s uniform “natural identity key”.
+
+### What it is for
+
+- **Uniform identity resolution without per-resource SQL**: one metadata-driven lookup (`ReferentialId → DocumentId`) supports:
+  - write-time reference validation/resolution,
+  - POST upsert existence detection, and
+  - query-time resolution of reference and descriptor filters.
+- **Preserves the Core/Backend boundary**: Core continues to compute referential ids for the written document and extracted references; the backend turns those into relational `..._DocumentId` FKs via bulk lookups.
+- **Descriptors use the same mechanism**: descriptor referential ids are computed from (descriptor resource type + normalized URI), so descriptor resolution uses the same index.
+- **Polymorphism without an extra alias table**: superclass/abstract alias referential ids preserve current polymorphic reference behavior in a single identity index.
+
+### If we removed it
+
+- The backend needs an alternative identity index, or it must resolve identities by querying/joining per-resource tables on multi-column natural keys (derived from metadata), increasing implementation complexity and cross-engine divergence.
+- For reference-bearing identities, resolution becomes recursive/join-heavy (resolve referenced identities first, then match), or forces denormalizing referenced natural-key columns into referencing tables (reintroducing rewrite/cascade pressure the redesign is avoiding).
+- Bulk “resolve all refs in a request” becomes many resource-specific queries instead of one `IN (...)` lookup, raising N+1 and batching/parameterization risks.
+- Abstract identity lookups require additional mapping tables/views to find concrete `DocumentId`s from abstract identity values.
 
 ## High-Level Architecture
 
