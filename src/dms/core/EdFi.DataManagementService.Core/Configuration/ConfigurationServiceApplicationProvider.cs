@@ -18,7 +18,7 @@ public class ConfigurationServiceApplicationProvider(
     IConfigurationServiceTokenHandler configurationServiceTokenHandler,
     ConfigurationServiceContext configurationServiceContext,
     ILogger<ConfigurationServiceApplicationProvider> logger
-) : IApplicationContextProvider
+) : IApplicationContextProvider, IConfigurationServiceApplicationProvider
 {
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 

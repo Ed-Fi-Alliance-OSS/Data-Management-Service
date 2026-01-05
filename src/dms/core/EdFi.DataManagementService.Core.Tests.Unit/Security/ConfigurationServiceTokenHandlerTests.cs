@@ -4,11 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
-using System.Text.Json;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Security;
-using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -16,96 +16,116 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Security;
 
 public class ConfigurationServiceTokenHandlerTests
 {
+    protected static HybridCache CreateHybridCache()
+    {
+        var services = new ServiceCollection();
+        services.AddMemoryCache();
+        services.AddHybridCache();
+        var serviceProvider = services.BuildServiceProvider();
+        return serviceProvider.GetRequiredService<HybridCache>();
+    }
+
+    protected static CacheSettings CreateCacheSettings() => new();
+
     [TestFixture]
     [Parallelizable]
     public class Given_Valid_Credentials : ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;
-        private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private readonly string? _expectedToken = "valid-token";
+        private readonly string _expectedToken = "valid-token";
         private string? _token;
+        private int _httpCallCount;
 
         [SetUp]
         public async Task Setup()
         {
-            var httpClientFactory = A.Fake<IHttpClientFactory>();
-
+            _httpCallCount = 0;
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             handler.SetResponse(
                 "https://api.example.com/connect/token",
                 new { Access_Token = "valid-token", Expires_in = 1800 }
             );
+            handler.OnRequest = () => _httpCallCount++;
+
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com") };
-
-            A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored)).Returns(httpClient);
-
-            ConfigurationServiceApiClient _configServiceApiClient = new(httpClient);
-
-            object? cached = null;
-            A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(false);
+            var configServiceApiClient = new ConfigurationServiceApiClient(httpClient);
 
             _configServiceTokenHandler = new ConfigurationServiceTokenHandler(
-                _memoryCache,
-                _configServiceApiClient,
+                CreateHybridCache(),
+                CreateCacheSettings(),
+                configServiceApiClient,
                 NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
             _token = await _configServiceTokenHandler.GetTokenAsync("ClientId", "Secret", "Scope");
         }
 
         [Test]
-        public void Should_Return_Valid_Token_Not_From_Cache()
+        public void It_Should_Return_Valid_Token()
         {
             _token.Should().NotBeNullOrEmpty();
             _token.Should().Be(_expectedToken);
-            A.CallTo(() => _memoryCache.CreateEntry(A<string>.Ignored)).MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public void It_Should_Make_Http_Call_On_Cache_Miss()
+        {
+            _httpCallCount.Should().Be(1);
         }
     }
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Cache_Has_Valid_Token : ConfigurationServiceTokenHandlerTests
+    public class Given_Subsequent_Request_After_Cache_Populated : ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;
-        private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private readonly string? _expectedToken = "valid-token";
-        private string? _token;
+        private readonly string _expectedToken = "valid-token";
+        private string? _firstToken;
+        private string? _secondToken;
+        private int _httpCallCount;
 
         [SetUp]
         public async Task Setup()
         {
-            var httpClientFactory = A.Fake<IHttpClientFactory>();
+            _httpCallCount = 0;
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            handler.SetResponse(
+                "https://api.example.com/connect/token",
+                new { Access_Token = "valid-token", Expires_in = 1800 }
+            );
+            handler.OnRequest = () => _httpCallCount++;
 
-            var json = JsonSerializer.Serialize(new { Access_Token = "valid-token", Expires_in = 1800 });
-            var httpClient = new HttpClient(new TestHttpMessageHandler(HttpStatusCode.OK, json))
-            {
-                BaseAddress = new Uri("https://api.example.com"),
-            };
+            var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com") };
+            var configServiceApiClient = new ConfigurationServiceApiClient(httpClient);
 
-            A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored)).Returns(httpClient);
-
-            ConfigurationServiceApiClient _configServiceApiClient = new(httpClient);
-
-            object? cached = _expectedToken;
-            A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(true);
+            // Use the same HybridCache instance for both calls
+            var hybridCache = CreateHybridCache();
 
             _configServiceTokenHandler = new ConfigurationServiceTokenHandler(
-                _memoryCache,
-                _configServiceApiClient,
+                hybridCache,
+                CreateCacheSettings(),
+                configServiceApiClient,
                 NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
-            _token = await _configServiceTokenHandler.GetTokenAsync("ClientId", "Secret", "Scope");
+
+            // First call - should fetch from HTTP
+            _firstToken = await _configServiceTokenHandler.GetTokenAsync("ClientId", "Secret", "Scope");
+
+            // Second call - should return from cache
+            _secondToken = await _configServiceTokenHandler.GetTokenAsync("ClientId", "Secret", "Scope");
         }
 
         [Test]
-        public void Should_Return_Valid_Token_From_Cache()
+        public void It_Should_Return_Same_Token_For_Both_Calls()
         {
-            object? cached = _expectedToken;
+            _firstToken.Should().Be(_expectedToken);
+            _secondToken.Should().Be(_expectedToken);
+        }
 
-            _token.Should().NotBeNullOrEmpty();
-            _token.Should().Be(_expectedToken);
-            A.CallTo(() => _memoryCache.CreateEntry(A<string>.Ignored)).MustNotHaveHappened();
-            A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached))
-                .MustHaveHappenedOnceExactly();
+        [Test]
+        public void It_Should_Make_Only_One_Http_Call()
+        {
+            // Second request should come from cache
+            _httpCallCount.Should().Be(1);
         }
     }
 
@@ -114,64 +134,53 @@ public class ConfigurationServiceTokenHandlerTests
     public class Given_Api_Throws_Error : ConfigurationServiceTokenHandlerTests
     {
         private ConfigurationServiceTokenHandler? _configServiceTokenHandler;
-        private readonly IMemoryCache _memoryCache = A.Fake<IMemoryCache>();
-        private TestHttpMessageHandler? _handler = null;
+        private TestHttpMessageHandler? _handler;
 
         [Test]
-        public void Should_Throw_Exception_For_BadRequest()
+        public void It_Should_Throw_Exception_For_BadRequest()
         {
-            // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.BadRequest);
 
-            // Act & Assert
             Assert.ThrowsAsync<HttpRequestException>(async () =>
                 await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
         [Test]
-        public void Should_Throw_Exception_For_Unauthorized()
+        public void It_Should_Throw_Exception_For_Unauthorized()
         {
-            // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.Unauthorized);
 
-            // Act & Assert
             Assert.ThrowsAsync<HttpRequestException>(async () =>
                 await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
         [Test]
-        public void Should_Throw_Exception_For_NotFound()
+        public void It_Should_Throw_Exception_For_NotFound()
         {
-            // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.NotFound);
 
-            // Act & Assert
             Assert.ThrowsAsync<HttpRequestException>(async () =>
                 await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
         [Test]
-        public void Should_Throw_Exception_For_Forbidden()
+        public void It_Should_Throw_Exception_For_Forbidden()
         {
-            // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.Forbidden);
 
-            // Act & Assert
             Assert.ThrowsAsync<HttpRequestException>(async () =>
                 await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
         }
 
         [Test]
-        public void Should_Throw_Exception_For_InternalServerError()
+        public void It_Should_Throw_Exception_For_InternalServerError()
         {
-            // Arrange
             SetConfigurationServiceTokenHandler(HttpStatusCode.InternalServerError);
 
-            // Act & Assert
             Assert.ThrowsAsync<HttpRequestException>(async () =>
                 await _configServiceTokenHandler!.GetTokenAsync("ClientId", "Secret", "Scope")
             );
@@ -186,23 +195,18 @@ public class ConfigurationServiceTokenHandlerTests
             {
                 InnerHandler = _handler,
             };
-            var httpClientFactory = A.Fake<IHttpClientFactory>();
 
-            var httpClient = new HttpClient(configServiceHandler!)
+            var httpClient = new HttpClient(configServiceHandler)
             {
                 BaseAddress = new Uri("https://api.example.com"),
             };
 
-            A.CallTo(() => httpClientFactory.CreateClient(A<string>.Ignored)).Returns(httpClient);
-
-            ConfigurationServiceApiClient _configServiceApiClient = new(httpClient);
-
-            object? cached = null;
-            A.CallTo(() => _memoryCache.TryGetValue(A<object>.Ignored, out cached)).Returns(false);
+            var configServiceApiClient = new ConfigurationServiceApiClient(httpClient);
 
             _configServiceTokenHandler = new ConfigurationServiceTokenHandler(
-                _memoryCache,
-                _configServiceApiClient,
+                CreateHybridCache(),
+                CreateCacheSettings(),
+                configServiceApiClient,
                 NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
         }

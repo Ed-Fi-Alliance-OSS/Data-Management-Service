@@ -136,7 +136,7 @@ public class InvalidResourceSchemasTests
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 apiSchemaUploadService,
                 serviceProvider,
-                A.Fake<ClaimSetsCache>(),
+                A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 new CompiledSchemaCache()
             );

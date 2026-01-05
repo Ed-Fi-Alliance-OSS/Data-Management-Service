@@ -7,10 +7,11 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Core.Validation;
 using FakeItEasy;
 using FluentAssertions;
-using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -27,12 +28,18 @@ namespace EdFi.DataManagementService.Core.Tests.Unit;
 public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
 {
     private ApiService _apiService = null!;
-    private IMemoryCache _fakeMemoryCache = null!;
-    private IClaimSetProvider _fakeClaimSetProvider = null!;
+    private IConfigurationServiceClaimSetProvider _fakeConfigServiceClaimSetProvider = null!;
+
+    protected static HybridCache CreateHybridCache()
+    {
+        var services = new ServiceCollection();
+        services.AddMemoryCache();
+        services.AddHybridCache();
+        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
+    }
 
     private ApiService CreateApiService(
-        IMemoryCache memoryCache,
-        IClaimSetProvider claimSetProvider,
+        IConfigurationServiceClaimSetProvider configServiceClaimSetProvider,
         bool enableClaimsetReload
     )
     {
@@ -63,12 +70,20 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         var services = new ServiceCollection();
         var serviceProvider = services.BuildServiceProvider();
 
-        // Create ClaimSetsCache with the fake IMemoryCache
-        var claimSetsCache = new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(10));
+        var hybridCache = CreateHybridCache();
+        var cacheSettings = new CacheSettings();
+
+        // Create CachedClaimSetProvider with HybridCache
+        var cachedClaimSetProvider = new CachedClaimSetProvider(
+            configServiceClaimSetProvider,
+            hybridCache,
+            cacheSettings,
+            NullLogger<CachedClaimSetProvider>.Instance
+        );
 
         return new ApiService(
             fakeApiSchemaProvider,
-            claimSetProvider,
+            cachedClaimSetProvider, // Use as IClaimSetProvider
             fakeDocumentValidator,
             fakeMatchingDocumentUuidsValidator,
             fakeEqualityConstraintValidator,
@@ -80,7 +95,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             resourceLoadOrderCalculator,
             fakeApiSchemaUploadService,
             serviceProvider,
-            claimSetsCache,
+            cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
             fakeCompiledSchemaCache
         );
@@ -94,26 +109,21 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         [SetUp]
         public async Task Setup()
         {
-            _fakeMemoryCache = A.Fake<IMemoryCache>();
-            _fakeClaimSetProvider = A.Fake<IClaimSetProvider>();
-            _apiService = CreateApiService(_fakeMemoryCache, _fakeClaimSetProvider, true);
+            _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
+
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
 
             await _apiService.ReloadClaimsetsAsync(TestTenant);
-        }
-
-        [Test]
-        public void It_should_clear_cache_for_the_specified_tenant()
-        {
-            // Verify that Remove was called with the tenant-specific cache key.
-            A.CallTo(() => _fakeMemoryCache.Remove("ClaimSetsCache:test-tenant"))
-                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
         public void It_should_reload_claimsets_for_the_specified_tenant()
         {
             // Verify that GetAllClaimSets was called with the correct tenant parameter
-            A.CallTo(() => _fakeClaimSetProvider.GetAllClaimSets(TestTenant)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TestTenant))
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -123,25 +133,21 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         [SetUp]
         public async Task Setup()
         {
-            _fakeMemoryCache = A.Fake<IMemoryCache>();
-            _fakeClaimSetProvider = A.Fake<IClaimSetProvider>();
-            _apiService = CreateApiService(_fakeMemoryCache, _fakeClaimSetProvider, true);
+            _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
+
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
 
             await _apiService.ReloadClaimsetsAsync();
-        }
-
-        [Test]
-        public void It_should_clear_cache_with_default_key()
-        {
-            // Verify that Remove was called with the default cache key (no tenant suffix)
-            A.CallTo(() => _fakeMemoryCache.Remove("ClaimSetsCache")).MustHaveHappenedOnceExactly();
         }
 
         [Test]
         public void It_should_reload_claimsets_with_null_tenant()
         {
             // Verify that GetAllClaimSets was called with null (single-tenant mode)
-            A.CallTo(() => _fakeClaimSetProvider.GetAllClaimSets(null)).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(null))
+                .MustHaveHappenedOnceExactly();
         }
     }
 
@@ -154,27 +160,30 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         [SetUp]
         public async Task Setup()
         {
-            _fakeMemoryCache = A.Fake<IMemoryCache>();
-            _fakeClaimSetProvider = A.Fake<IClaimSetProvider>();
-            _apiService = CreateApiService(_fakeMemoryCache, _fakeClaimSetProvider, true);
+            _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>.Ignored))
+                .Returns(new List<ClaimSet> { new("TestClaimSet", []) });
+
+            _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider, true);
 
             await _apiService.ReloadClaimsetsAsync(TenantA);
             await _apiService.ReloadClaimsetsAsync(TenantB);
         }
 
         [Test]
-        public void It_should_clear_cache_for_each_tenant_separately()
+        public void It_should_reload_claimsets_for_each_tenant()
         {
-            // Verify that Remove was called once for each tenant with tenant-specific keys
-            A.CallTo(() => _fakeMemoryCache.Remove("ClaimSetsCache:tenant-a")).MustHaveHappenedOnceExactly();
-            A.CallTo(() => _fakeMemoryCache.Remove("ClaimSetsCache:tenant-b")).MustHaveHappenedOnceExactly();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TenantA))
+                .MustHaveHappenedOnceExactly();
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(TenantB))
+                .MustHaveHappenedOnceExactly();
         }
 
         [Test]
-        public void It_should_not_clear_cache_for_default_tenant()
+        public void It_should_not_reload_claimsets_for_default_tenant()
         {
-            // Verify that Remove was not called with the default key (no tenant)
-            A.CallTo(() => _fakeMemoryCache.Remove("ClaimSetsCache")).MustNotHaveHappened();
+            // Verify that GetAllClaimSets was not called with null (default tenant)
+            A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(null)).MustNotHaveHappened();
         }
     }
 }
@@ -183,11 +192,18 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
 public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
 {
     private ApiService _apiService = null!;
-    private IMemoryCache _fakeMemoryCache = null!;
-    private IClaimSetProvider _fakeClaimSetProvider = null!;
+    private IConfigurationServiceClaimSetProvider _fakeConfigServiceClaimSetProvider = null!;
     private int _statusCode;
 
-    private ApiService CreateApiService(IMemoryCache memoryCache, IClaimSetProvider claimSetProvider)
+    protected static HybridCache CreateHybridCache()
+    {
+        var services = new ServiceCollection();
+        services.AddMemoryCache();
+        services.AddHybridCache();
+        return services.BuildServiceProvider().GetRequiredService<HybridCache>();
+    }
+
+    private ApiService CreateApiService(IConfigurationServiceClaimSetProvider configServiceClaimSetProvider)
     {
         var appSettings = Options.Create(
             new AppSettings
@@ -216,12 +232,19 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
         var services = new ServiceCollection();
         var serviceProvider = services.BuildServiceProvider();
 
-        // Create ClaimSetsCache with the fake IMemoryCache
-        var claimSetsCache = new ClaimSetsCache(memoryCache, TimeSpan.FromMinutes(10));
+        var hybridCache = CreateHybridCache();
+        var cacheSettings = new CacheSettings();
+
+        var cachedClaimSetProvider = new CachedClaimSetProvider(
+            configServiceClaimSetProvider,
+            hybridCache,
+            cacheSettings,
+            NullLogger<CachedClaimSetProvider>.Instance
+        );
 
         return new ApiService(
             fakeApiSchemaProvider,
-            claimSetProvider,
+            cachedClaimSetProvider,
             fakeDocumentValidator,
             fakeMatchingDocumentUuidsValidator,
             fakeEqualityConstraintValidator,
@@ -233,7 +256,7 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             resourceLoadOrderCalculator,
             fakeApiSchemaUploadService,
             serviceProvider,
-            claimSetsCache,
+            cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
             fakeCompiledSchemaCache
         );
@@ -242,9 +265,8 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
     [SetUp]
     public async Task Setup()
     {
-        _fakeMemoryCache = A.Fake<IMemoryCache>();
-        _fakeClaimSetProvider = A.Fake<IClaimSetProvider>();
-        _apiService = CreateApiService(_fakeMemoryCache, _fakeClaimSetProvider);
+        _fakeConfigServiceClaimSetProvider = A.Fake<IConfigurationServiceClaimSetProvider>();
+        _apiService = CreateApiService(_fakeConfigServiceClaimSetProvider);
 
         var response = await _apiService.ReloadClaimsetsAsync("any-tenant");
         _statusCode = response.StatusCode;
@@ -257,14 +279,9 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
     }
 
     [Test]
-    public void It_should_not_clear_cache()
-    {
-        A.CallTo(() => _fakeMemoryCache.Remove(A<object>._)).MustNotHaveHappened();
-    }
-
-    [Test]
     public void It_should_not_reload_claimsets()
     {
-        A.CallTo(() => _fakeClaimSetProvider.GetAllClaimSets(A<string?>._)).MustNotHaveHappened();
+        A.CallTo(() => _fakeConfigServiceClaimSetProvider.GetAllClaimSets(A<string?>._))
+            .MustNotHaveHappened();
     }
 }

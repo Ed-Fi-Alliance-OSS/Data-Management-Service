@@ -50,10 +50,10 @@ Service, mapping API clients to their authorized DMS instances.
 
 **Location:**
 
-- `src/dms/core/.../Configuration/ApplicationContextCache.cs`
 - `src/dms/core/.../Configuration/CachedApplicationContextProvider.cs`
 
-**Implementation:** `IMemoryCache` (Microsoft.Extensions.Caching.Memory)
+**Implementation:** `HybridCache` (Microsoft.Extensions.Caching.Hybrid) with
+built-in stampede protection
 
 **Cache Structure:**
 
@@ -96,10 +96,10 @@ resource access permissions from the Configuration Service.
 
 **Location:**
 
-- `src/dms/core/.../Security/ClaimSetsCache.cs`
 - `src/dms/core/.../Security/CachedClaimSetProvider.cs`
 
-**Implementation:** `IMemoryCache` (Microsoft.Extensions.Caching.Memory)
+**Implementation:** `HybridCache` (Microsoft.Extensions.Caching.Hybrid) with
+built-in stampede protection
 
 **Cache Structure:**
 
@@ -204,14 +204,15 @@ Configuration Management Service (CMS).
 
 - `src/dms/core/.../Security/ConfigurationServiceTokenHandler.cs`
 
-**Implementation:** `IMemoryCache` (Microsoft.Extensions.Caching.Memory)
+**Implementation:** `HybridCache` (Microsoft.Extensions.Caching.Hybrid) with
+built-in stampede protection
 
 **Cache Structure:**
 
 - **Key:** `ConfigServiceToken` (static string, single entry)
 - **Value:** `string` - the OAuth access token (e.g., `"eyJhbGciOiJSUzI1NiIs..."`)
 
-**TTL:** Dynamic - based on token `expires_in` value from OAuth response (default: 1800 seconds / 30 minutes)
+**TTL:** 25 minutes (fixed, safely less than typical 30-minute token lifetime)
 
 **Cache Operations:**
 
@@ -377,17 +378,74 @@ fully functional. When `BypassAuthorization` is enabled, the warm-up is skipped.
 
 ---
 
+## Stampede Protection
+
+DMS uses `Microsoft.Extensions.Caching.Hybrid` (HybridCache) to provide stampede
+protection for frequently accessed caches. Stampede protection ensures that
+when multiple concurrent requests experience a cache miss, only one request
+executes the factory function to fetch data while others wait for the result.
+
+### How It Works
+
+1. **First request** experiences cache miss and acquires internal lock
+2. **Subsequent concurrent requests** for the same key wait on the lock
+3. **Factory executes once**, result is cached
+4. **All waiting requests** receive the cached result
+5. **Lock is released**
+
+This prevents the "thundering herd" problem where N concurrent requests
+could trigger N redundant backend calls, potentially overwhelming the
+Configuration Service during cache expiration under high load.
+
+### Protected Caches
+
+| Cache                          | Stampede Protected | Implementation                 |
+| ------------------------------ | ------------------ | ------------------------------ |
+| ClaimSets                      | Yes                | HybridCache.GetOrCreateAsync   |
+| Application Context            | Yes                | HybridCache.GetOrCreateAsync   |
+| Configuration Service Token    | Yes                | HybridCache.GetOrCreateAsync   |
+| Compiled Schemas               | No*                | ConcurrentDictionary.GetOrAdd  |
+| NpgsqlDataSource               | No*                | ConcurrentDictionary.GetOrAdd  |
+| DMS Instances                  | No                 | Direct assignment on startup   |
+| OIDC Metadata                  | Yes                | ConfigurationManager (built-in)|
+
+*These caches use `ConcurrentDictionary.GetOrAdd()` which provides atomic
+factory execution but not waiting behavior - concurrent requests may execute
+the factory multiple times, though only one result is stored.
+
+### Configuration
+
+HybridCache is configured in `WebApplicationBuilderExtensions.cs`:
+
+```csharp
+webAppBuilder.Services.AddMemoryCache();
+webAppBuilder.Services.AddHybridCache();
+```
+
+Per-cache TTL is configured via `CacheSettings`:
+
+```csharp
+new CacheSettings(
+    ClaimSetsCacheExpirationMinutes: configServiceSettings.CacheExpirationMinutes,
+    ApplicationContextCacheExpirationMinutes: configServiceSettings.CacheExpirationMinutes
+)
+```
+
+Default values: ClaimSets and AppContext = 10 min, Token = 25 min.
+
+---
+
 ## Summary Table
 
-| Cache        | Mechanism    | Scope | TTL    | Tenant | Invalidation |
-| ------------ | ------------ | ----- | ------ | ------ | ------------ |
-| App Context  | IMemoryCache | Sing. | 10 min | No     | Manual + TTL |
-| ClaimSets    | IMemoryCache | Sing. | 10 min | Yes    | Manual + TTL |
-| Comp. Schema | ConcurDict   | Sing. | None   | No     | Reload ID    |
-| CMS Token    | IMemoryCache | Sing. | 30 min | No     | TTL only     |
-| NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | Shutdown     |
-| DMS Instance | ConcurDict   | Sing. | None   | Yes    | Restart      |
-| OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Auto-refresh |
+| Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
+| ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
+| App Context  | HybridCache  | Sing. | 10 min | No     | Yes      | Manual + TTL |
+| ClaimSets    | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
+| Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
+| CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
+| NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
+| DMS Instance | ConcurDict   | Sing. | None   | Yes    | No       | Restart      |
+| OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
 
 ## Cache Invalidation Patterns
 
@@ -484,12 +542,12 @@ schemas on-demand only when first requested.
 
 ### Hard-Coded Defaults
 
-| Setting         | Value        | Location                           |
-| --------------- | ------------ | ---------------------------------- |
-| CMS Token TTL   | 1800 seconds | `ConfigurationServiceToken...:45`  |
-| Schema Cache    | No TTL       | Version-based invalidation         |
+| Setting         | Value      | Location                         |
+| --------------- | ---------- | -------------------------------- |
+| CMS Token TTL   | 25 minutes | `CacheSettings` (configurable)   |
+| Schema Cache    | No TTL     | Version-based invalidation       |
 
-Note: App Context TTL is now configurable via `CacheExpirationMinutes` setting.
+Note: All cache TTLs are now configurable via `CacheSettings`.
 
 ## Operational Considerations
 

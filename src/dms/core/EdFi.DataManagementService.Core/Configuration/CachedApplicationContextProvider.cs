@@ -3,20 +3,30 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Utilities;
+using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Cached implementation of IApplicationContextProvider that wraps ConfigurationServiceApplicationProvider
-/// with a caching layer and retry logic
+/// Cached implementation of IApplicationContextProvider with stampede protection.
+/// Uses HybridCache to ensure only one request fetches data on cache miss while others wait.
 /// </summary>
 public class CachedApplicationContextProvider(
-    ConfigurationServiceApplicationProvider configurationServiceApplicationProvider,
-    ApplicationContextCache applicationContextCache,
+    IConfigurationServiceApplicationProvider configurationServiceApplicationProvider,
+    HybridCache hybridCache,
+    CacheSettings cacheSettings,
     ILogger<CachedApplicationContextProvider> logger
 ) : IApplicationContextProvider
 {
+    private const string CacheKeyPrefix = "ApplicationContext";
+
+    /// <summary>
+    /// Gets the cache key for a client ID.
+    /// </summary>
+    private static string GetCacheKey(string clientId) => $"{CacheKeyPrefix}:{clientId}";
+
     /// <inheritdoc />
     public async Task<ApplicationContext?> GetApplicationByClientIdAsync(string clientId)
     {
@@ -26,63 +36,47 @@ public class CachedApplicationContextProvider(
             return null;
         }
 
-        // Try to get from cache first
-        ApplicationContext? cachedContext = applicationContextCache.GetCachedApplicationContext(clientId);
-        if (cachedContext != null)
-        {
-            logger.LogDebug("Application context found in cache for clientId: {ClientId}", clientId);
-            return cachedContext;
-        }
+        var cacheKey = GetCacheKey(clientId);
 
-        logger.LogDebug(
-            "Application context not in cache for clientId: {ClientId}, fetching from CMS",
-            clientId
+        // HybridCache.GetOrCreateAsync provides stampede protection:
+        // Only one concurrent caller executes the factory; others wait for the result
+        return await hybridCache.GetOrCreateAsync(
+            cacheKey,
+            async cancel =>
+            {
+                // First attempt
+                var context = await configurationServiceApplicationProvider.GetApplicationByClientIdAsync(
+                    clientId
+                );
+
+                if (context != null)
+                {
+                    return context;
+                }
+
+                // Not found on first try - try reloading (it might be a new client)
+                context = await configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
+                    clientId
+                );
+
+                if (context == null)
+                {
+                    logger.LogWarning(
+                        "Application context not found for clientId: {ClientId}",
+                        LoggingSanitizer.SanitizeForLogging(clientId)
+                    );
+                }
+
+                return context;
+            },
+            new HybridCacheEntryOptions
+            {
+                Expiration = TimeSpan.FromMinutes(cacheSettings.ApplicationContextCacheExpirationMinutes),
+                LocalCacheExpiration = TimeSpan.FromMinutes(
+                    cacheSettings.ApplicationContextCacheExpirationMinutes
+                ),
+            }
         );
-
-        // Not in cache, fetch from CMS
-        ApplicationContext? applicationContext =
-            await configurationServiceApplicationProvider.GetApplicationByClientIdAsync(clientId);
-
-        if (applicationContext != null)
-        {
-            // Cache the result
-            applicationContextCache.CacheApplicationContext(clientId, applicationContext);
-            logger.LogInformation(
-                "Application context fetched and cached for clientId: {ClientId}, ApplicationId: {ApplicationId}",
-                clientId,
-                applicationContext.ApplicationId
-            );
-            return applicationContext;
-        }
-
-        // Not found in CMS on first try - try reloading (it might be a new client)
-        logger.LogInformation(
-            "Application not found for clientId: {ClientId}, attempting reload from CMS",
-            clientId
-        );
-
-        applicationContext = await configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
-            clientId
-        );
-
-        if (applicationContext != null)
-        {
-            // Cache the result
-            applicationContextCache.CacheApplicationContext(clientId, applicationContext);
-            logger.LogInformation(
-                "Application context fetched on reload and cached for clientId: {ClientId}, ApplicationId: {ApplicationId}",
-                clientId,
-                applicationContext.ApplicationId
-            );
-            return applicationContext;
-        }
-
-        // Still not found after reload
-        logger.LogWarning(
-            "Application context not found for clientId: {ClientId} even after reload attempt",
-            clientId
-        );
-        return null;
     }
 
     /// <inheritdoc />
@@ -94,33 +88,25 @@ public class CachedApplicationContextProvider(
             return null;
         }
 
-        logger.LogInformation("Force reloading application context for clientId: {ClientId}", clientId);
+        // Clear cache first, then fetch fresh
+        var cacheKey = GetCacheKey(clientId);
+        await hybridCache.RemoveAsync(cacheKey);
 
-        // Clear cache first
-        applicationContextCache.ClearCacheForClient(clientId);
-
-        // Fetch fresh from CMS
-        ApplicationContext? applicationContext =
-            await configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(clientId);
-
-        if (applicationContext != null)
-        {
-            // Cache the fresh result
-            applicationContextCache.CacheApplicationContext(clientId, applicationContext);
-            logger.LogInformation(
-                "Application context reloaded and cached for clientId: {ClientId}, ApplicationId: {ApplicationId}",
-                clientId,
-                applicationContext.ApplicationId
-            );
-        }
-        else
-        {
-            logger.LogWarning(
-                "Application context not found on forced reload for clientId: {ClientId}",
-                clientId
-            );
-        }
-
-        return applicationContext;
+        return await hybridCache.GetOrCreateAsync(
+            cacheKey,
+            async cancel =>
+            {
+                return await configurationServiceApplicationProvider.ReloadApplicationByClientIdAsync(
+                    clientId
+                );
+            },
+            new HybridCacheEntryOptions
+            {
+                Expiration = TimeSpan.FromMinutes(cacheSettings.ApplicationContextCacheExpirationMinutes),
+                LocalCacheExpiration = TimeSpan.FromMinutes(
+                    cacheSettings.ApplicationContextCacheExpirationMinutes
+                ),
+            }
+        );
     }
 }

@@ -30,10 +30,7 @@ internal class VersionedLazy<T>(Func<T> valueFactory, Func<Guid> versionProvider
     /// </summary>
     public T Value
     {
-        get
-        {
-            return GetFreshValueAndVersion().Value;
-        }
+        get { return GetFreshValueAndVersion().Value; }
     }
 
     /// <summary>

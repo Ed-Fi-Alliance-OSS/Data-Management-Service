@@ -78,7 +78,7 @@ public static class DmsCoreServiceExtensions
             .AddResiliencePipeline("backendResiliencePipeline", backendResiliencePipeline)
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
-            .AddSingleton<ConfigurationServiceApplicationProvider>()
+            .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
             .AddScoped<ResolveDmsInstanceMiddleware>();
 
         return services;
