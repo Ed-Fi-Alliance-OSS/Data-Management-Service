@@ -243,7 +243,7 @@ public class TokenInfoProviderTests
         SetupClaimsHierarchy(new List<Backend.Models.ClaimsHierarchy.Claim>());
         var claimSet = new ClaimSetMetadata(
             "SIS Vendor",
-            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/ods/identity/claims/domains/edFiDescriptors", 1) },
+            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/identity/claims/domains/edFiDescriptors", 1) },
             new List<ClaimSetMetadata.Authorization>
             {
                 new(
@@ -371,7 +371,7 @@ public class TokenInfoProviderTests
     {
         var claimSet = new ClaimSetMetadata(
             "SIS Vendor",
-            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/ods/identity/claims/ed-fi/students", 1) },
+            new List<ClaimSetMetadata.Claim> { new("http://ed-fi.org/identity/claims/ed-fi/students", 1) },
             new List<ClaimSetMetadata.Authorization>
             {
                 new(
@@ -439,7 +439,7 @@ public class TokenInfoProviderTests
                     "SIS Vendor",
                     new List<ClaimSetMetadata.Claim>
                     {
-                        new("http://ed-fi.org/ods/identity/claims/ed-fi/students", 1),
+                        new("http://ed-fi.org/identity/claims/ed-fi/students", 1),
                     },
                     new List<ClaimSetMetadata.Authorization>
                     {
@@ -618,8 +618,8 @@ public class TokenInfoProviderTests
                     "Service Provider",
                     new List<ClaimSetMetadata.Claim>
                     {
-                        new("http://ed-fi.org/ods/identity/claims/services/identity", 1),
-                        new("http://ed-fi.org/ods/identity/claims/services/rostering", 2),
+                        new("http://ed-fi.org/identity/claims/services/identity", 1),
+                        new("http://ed-fi.org/identity/claims/services/rostering", 2),
                     },
                     new List<ClaimSetMetadata.Authorization>
                     {
@@ -971,7 +971,7 @@ public class TokenInfoProviderTests
                     new List<ClaimSetMetadata.Claim>
                     {
                         // Claim with authorization ID that doesn't match any authorization
-                        new("http://ed-fi.org/ods/identity/claims/ed-fi/students", 999),
+                        new("http://ed-fi.org/identity/claims/ed-fi/students", 999),
                     },
                     new List<ClaimSetMetadata.Authorization>
                     {
@@ -1056,7 +1056,7 @@ public class TokenInfoProviderTests
                     "SIS Vendor",
                     new List<ClaimSetMetadata.Claim>
                     {
-                        new("http://ed-fi.org/ods/identity/claims/ed-fi/students", 1),
+                        new("http://ed-fi.org/identity/claims/ed-fi/students", 1),
                     },
                     new List<ClaimSetMetadata.Authorization>
                     {
@@ -1128,7 +1128,7 @@ public class TokenInfoProviderTests
                     new List<ClaimSetMetadata.Claim>
                     {
                         // Domains claim for descriptors
-                        new("http://ed-fi.org/ods/identity/claims/domains/edFiDescriptors", 1),
+                        new("http://ed-fi.org/identity/claims/domains/edFiDescriptors", 1),
                     },
                     new List<ClaimSetMetadata.Authorization>
                     {

@@ -18,6 +18,12 @@
 ###
 ### 4. Run requests sequentially by clicking "Send Request" above each block
 
+@dmsPort=8080
+@configPort=8081
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+@tokenScope=edfi_admin_api/full_access
+
 ###############################################################################
 ### IDENTITY PROVIDER CONFIGURATION
 ### Uncomment ONE section below based on your environment
@@ -25,24 +31,12 @@
 
 ### ----- OPTION 1: Self-Contained OpenIddict (DEFAULT) -----
 @identityProvider=self-contained
-@dmsPort=8080
-@configPort=8081
-@sysAdminId=DmsConfigurationService
-@sysAdminSecret=s3creT@09
 @tokenEndpoint=http://localhost:{{configPort}}/connect/token
-@tokenScope=edfi_admin_api/full_access
 
 ### ----- OPTION 2: Keycloak -----
 ### Uncomment below and comment out Option 1 above to use Keycloak
 # @identityProvider=keycloak
-# @dmsPort=8080
-# @configPort=8081
-# @keycloakPort=8045
-# @keycloakRealm=edfi
-# @sysAdminId=DmsConfigurationService
-# @sysAdminSecret=s3creT@09
 # @tokenEndpoint=http://localhost:{{keycloakPort}}/realms/{{keycloakRealm}}/protocol/openid-connect/token
-# @tokenScope=edfi_admin_api/full_access
 
 ###############################################################################
 ### STEP 1: Authenticate as System Admin
