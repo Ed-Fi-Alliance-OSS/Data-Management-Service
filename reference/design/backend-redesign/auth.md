@@ -15,6 +15,8 @@ This document is the authorization deep dive for `overview.md`:
 This document proposes an authorization storage/query design that fits the relational primary store
 and can support an ODS-style view-based authorization approach (similar to `auth.*` views in Ed-Fi ODS).
 
+**Note:** This document is intended to be a starting point for authorization design, showing how it can be incorporated into the new backend design. It is not intended to have the same depth as the other design documents.
+
 ## Table of Contents
 
 - [1. Goals and Constraints](#1-goals-and-constraints)

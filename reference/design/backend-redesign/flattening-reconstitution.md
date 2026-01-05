@@ -12,19 +12,9 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Caching & operations: [caching-and-ops.md](caching-and-ops.md)
 - Authorization: [auth.md](auth.md)
 
-This content was originally a standalone flattening/reconstitution draft and split out for readability.
-
-This section fills the largest design gap in the redesign: **how DMS flattens JSON documents into relational tables on POST/PUT**, and **how it reconstitutes JSON from those tables on GET/query**, **without code-generating per-resource code**.
+This section describes how DMS flattens JSON documents into relational tables on POST/PUT, and how it reconstitutes JSON from those tables on GET/query without code-generating per-resource code.
 
 It also defines the minimal `ApiSchema.json` metadata needed (beyond what already exists) and proposes concrete C# shapes for implementing a high-performance, schema-driven flattener/reconstituter with good batching characteristics (no N+1 insert/query patterns).
-
-## Reader Map
-
-- ApiSchema changes and rationale: sections 2–3
-- Derived model compilation: section 4
-- Write path (flattening): section 5
-- Read path (reconstitution): section 6
-- Concrete C# shapes: section 7
 
 ## Table of Contents
 
@@ -40,11 +30,8 @@ It also defines the minimal `ApiSchema.json` metadata needed (beyond what alread
 
 ---
 
-## 1. Requirements & Constraints (Restated)
+## 1. Requirements & Constraints
 
-- Canonical storage is relational; materialized JSON (`dms.DocumentCache`) is **optional**. When enabled, prefer **eventual consistency** (background projector / async rebuild) rather than strict transactional maintenance/cascades.
-  - `dms.DocumentCache` is not purely cache-aside: one primary use is CDC streaming (e.g., Debezium → Kafka), so documents must be materialized here independent of API read cache misses.
-- Schema changes are operational events (migration + restart); runtime hot reload is out of scope.
 - No code generation of per-resource classes or per-resource SQL artifacts checked into source.
 - Must be driven by `ApiSchema.json` metadata; avoid hard-coding resource shapes in C#.
 - Must support nested collections and preserve array ordering.
@@ -81,7 +68,7 @@ Everything else can be derived and compiled once at startup into a resource-spec
 ### 3.1 Goals of the block
 
 - Keep `ApiSchema.json` authoritative but not bloated.
-- Provide *stable* physical naming and a small escape hatch for “bad cases”.
+- Provide stable physical naming and a small escape hatch for “bad cases”.
 - Avoid enumerating tables/columns explicitly.
 
 ### 3.2 Proposed shape
@@ -108,8 +95,6 @@ Semantics:
   - `$.x.y` targets a column base name (before suffixes like `_DocumentId`/`_DescriptorId`).
   - `$.arr[*]` targets a child-table base name.
 
-Schema name is not configurable here: it is always derived from `ProjectNamespace` (e.g., `ed-fi` → `edfi`).
-
 ### 3.3 Strict rules for `nameOverrides`
 
 To keep the mapping deterministic, portable, and validateable, `nameOverrides` must follow these rules:
@@ -131,11 +116,6 @@ To keep the mapping deterministic, portable, and validateable, `nameOverrides` m
 4. **Overrides cannot create collisions**:
    - After applying overrides and the standard identifier normalization/truncation rules, table/column names must still be unique.
    - Collisions are a compile-time error (migration/startup fails) and must be resolved by adjusting overrides.
-
-### 3.4 What we intentionally do *not* add
-
-- We do **not** add a list of columns or childTables (that’s the full flattening metadata approach).
-- We do **not** add per-resource code hooks.
 
 ---
 
@@ -171,7 +151,10 @@ Important note on `additionalProperties`:
 - As a result, `jsonSchemaForInsert.additionalProperties=true` is treated as “allow overposting, then ignore it” rather than “persist arbitrary dynamic properties”.
 - In relational mode, the derived mapping therefore treats schemas as effectively **closed-world** (persist only known properties); dictionary/map semantics via `additionalProperties` are not supported.
 
-Algorithm sketch:
+#### Algorithm sketch
+
+Note: C# types referenced below are defined in [7.3 Relational resource model](#73-relational-resource-model)
+
 1. **Resolve `$ref`** in the JSON schema into an in-memory schema graph (or a resolver that can answer “what is the schema at path X?”).
 2. Walk the schema tree starting at `$`:
    - Each **array** node creates a **child table** with:
@@ -184,18 +167,18 @@ Algorithm sketch:
 
 3. Apply `documentPathsMapping`:
    - For each reference object path (`referenceJsonPaths`):
-     - create a `..._DocumentId` FK column at the table scope that owns that path
-     - suppress scalar-column derivation for the reference object’s descendants (identity fields and `link` internals). Relationally, a reference is represented by **one** FK, not duplicated natural-key columns.
+     - create a `..._DocumentId` FK column at the table scope that owns that path and will represent the entire reference object as a single `..._DocumentId` foreign key
+     - suppress scalar-column derivation for the reference object’s descendants (identity fields and `link` internals). Relationally, a reference object is represented by one FK, not duplicated natural-key columns.
      - record a `DocumentReferenceEdgeSource` (used for write-time FK population, `dms.ReferenceEdge` maintenance, and read-time reference reconstitution)
        - compute and persist `DocumentReferenceEdgeSource.EdgeSourceKey` deterministically from (parent resource type + canonical reference-object path) and apply 256-char truncation+hash rules
-       - compute and persist `DocumentReferenceEdgeSource.EdgeSourceId` deterministically from the same raw key (see `dms.EdgeSource`)
+       - compute and cache `DocumentReferenceEdgeSource.EdgeSourceId` deterministically from the raw edge-source key (see `dms.EdgeSource`); persist the `(EdgeSourceId, EdgeSourceKey)` dictionary during migration/startup validation
        - compute and persist `DocumentReferenceEdgeSource.IsIdentityComponent` as `true` when any `identityJsonPaths` element is sourced from this reference object (i.e., when any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`)
    - For each descriptor path:
      - create a `..._DescriptorId` FK column at the table scope that owns that path
      - suppress the raw descriptor string scalar column at that JSON path; reconstitute the string from `dms.Descriptor` during reads.
      - record a `DescriptorEdgeSource` (expected descriptor resource type, used for resolution/validation and `dms.ReferenceEdge` maintenance)
        - compute and persist `DescriptorEdgeSource.EdgeSourceKey` deterministically from (parent resource type + canonical descriptor-value path) and apply 256-char truncation+hash rules
-       - compute and persist `DescriptorEdgeSource.EdgeSourceId` deterministically from the same raw key (see `dms.EdgeSource`)
+       - compute and cache `DescriptorEdgeSource.EdgeSourceId` deterministically from the raw edge-source key (see `dms.EdgeSource`); persist the `(EdgeSourceId, EdgeSourceKey)` dictionary during migration/startup validation
        - compute and persist `DescriptorEdgeSource.IsIdentityComponent` as `true` when the descriptor value path is present in `identityJsonPaths`
 
 4. Apply `identityJsonPaths`:
@@ -219,7 +202,7 @@ Algorithm sketch:
 
 ### 4.2 Recommended child-table keys (composite parent+ordinal)
 
-To avoid `INSERT ... RETURNING` identity capture and to batch nested collections efficiently, use:
+To avoid `INSERT ... RETURNING` identity capture and to batch nested collections efficiently, instead of a surrogate key use:
 
 - Root table PK: `(DocumentId)`
 - Child table PK: `(ParentKeyPart..., Ordinal)`
@@ -256,8 +239,6 @@ CREATE TABLE IF NOT EXISTS edfi.SchoolAddressPeriod (
 );
 ```
 
-If a surrogate key is still desired (for operational/debuggability), it can be added later, but the composite key should remain the one used for parent/child FKs to preserve the batching benefits.
-
 ---
 
 ## 5. Flattening (POST/PUT) Design
@@ -274,7 +255,7 @@ For a given request, backend already has:
 - `DocumentInfo`:
   - resource referential id
   - descriptor references (with concrete JSON paths, including indices)
-  - document references (referential ids + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires `DocumentReference.Path` as described below)
+  - document references (referential ids + concrete reference-object JSON paths, including indices; grouped by wildcard path; requires addition of `DocumentReference.Path` as described below)
 
 ### 5.2 Reference & descriptor resolution (bulk)
 
@@ -419,7 +400,7 @@ The page case must not become “GET by id repeated N times”.
 The API never supplies a “list of `DocumentId`s”. Reconstitution starts from a **page keyset**:
 
 - **GET by id**: resolve `DocumentUuid → DocumentId`, then the keyset is a single `DocumentId`.
-- **GET by query**: compile a parameterized SQL that selects the `DocumentId`s in the requested page (filters + stable ordering + paging).
+- **GET by query**: compile a parameterized SQL over the **resource root table** that selects the `DocumentId`s in the requested page (filters + `ORDER BY r.DocumentId` + paging).
 
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
 Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same key/ordinal columns (see [extensions.md](extensions.md)).
@@ -433,12 +414,13 @@ Build one command that:
 ```sql
 -- Materialize the page keyset (engine-specific DDL, same logical outcome):
 -- PostgreSQL: CREATE TEMP TABLE page (DocumentId bigint PRIMARY KEY) ON COMMIT DROP;
--- SQL Server: DECLARE @page TABLE (DocumentId bigint PRIMARY KEY);  (or #page temp table, then DROP)
+-- SQL Server: CREATE TABLE #page (DocumentId bigint PRIMARY KEY);
+-- Note: in SQL Server, use #page in place of page in the statements below.
 
 WITH page_ids AS (
   -- Provided by DMS query compilation (ApiSchema-driven):
   -- GET by id:    SELECT @DocumentId AS DocumentId
-  -- GET by query: SELECT r.DocumentId FROM ... WHERE ... ORDER BY ... OFFSET/FETCH ...
+  -- GET by query: SELECT r.DocumentId FROM <schema>.<ResourceRoot> r WHERE ... ORDER BY r.DocumentId OFFSET/FETCH ...
   <PageDocumentIdSql>
 )
 INSERT INTO page (DocumentId)
@@ -651,7 +633,7 @@ public readonly record struct JsonPathExpression(
 );
 ```
 
-### 7.3 Relational resource model (shape layer)
+### 7.3 Relational resource model
 
 The shape model is the output of the “derive from ApiSchema” step. It is:
 - **resource-specific** (one per resource type)
@@ -811,7 +793,7 @@ public abstract record TableConstraint
 /// Deterministically derived from (parent resource type + canonical JSON path) with truncation+hash rules. See <c>dms.EdgeSource</c>.
 /// </param>
 /// <param name="EdgeSourceId">
-/// Compact numeric identifier used by <c>dms.ReferenceEdge</c>, derived deterministically from the same raw key. See <c>dms.EdgeSource</c>.
+/// Compact numeric identifier used by <c>dms.ReferenceEdge</c>, derived deterministically from the raw edge-source key (see <c>dms.EdgeSource</c>).
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this edge source contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
@@ -856,7 +838,7 @@ public sealed record ReferenceFieldMapping(
 /// Deterministically derived from (parent resource type + canonical JSON path) with truncation+hash rules. See <c>dms.EdgeSource</c>.
 /// </param>
 /// <param name="EdgeSourceId">
-/// Compact numeric identifier used by <c>dms.ReferenceEdge</c>, derived deterministically from the same raw key. See <c>dms.EdgeSource</c>.
+/// Compact numeric identifier used by <c>dms.ReferenceEdge</c>, derived deterministically from the raw edge-source key (see <c>dms.EdgeSource</c>).
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
@@ -977,16 +959,16 @@ public sealed record ResourceReadPlan(
 );
 
 /// <summary>
-/// Compiled hydration SQL for a single table based on a materialized keyset named "page".
+/// Compiled hydration SQL for a single table based on a materialized keyset table (dialect-specific name).
 /// </summary>
 /// <param name="SelectByKeysetSql">
-/// A SELECT statement that returns all rows needed for the page, by joining to a keyset named "page"
+/// A SELECT statement that returns all rows needed for the page, by joining to a materialized keyset table
 /// containing a BIGINT column named "DocumentId".
 /// The reconstituter is responsible for materializing this keyset (temp table / table variable) before running table SELECTs.
 /// </param>
 public sealed record TableReadPlan(
     DbTableModel TableModel,
-    string SelectByKeysetSql            // expects a keyset named `page` with a `DocumentId` column
+    string SelectByKeysetSql            // expects a keyset table with a BIGINT `DocumentId` column
 );
 ```
 
@@ -1631,7 +1613,7 @@ public async Task<ReconstitutedPage> QueryAsync(IQueryRequest request, Cancellat
 ```
 
 Notes:
-- The query compiler is responsible for emitting *stable ordering*.
+- The query compiler is responsible for emitting stable ordering by the resource root table `DocumentId` (ascending).
 - The reconstituter is responsible for:
   1) materializing the `page` keyset from `PageDocumentIdSql`
   2) running all `TableReadPlan.SelectByKeysetSql` statements (multi-resultset)
