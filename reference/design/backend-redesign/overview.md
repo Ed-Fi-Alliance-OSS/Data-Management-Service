@@ -12,9 +12,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - [High-Level Architecture](#high-level-architecture)
 - [Deep Dives](#deep-dives)
 - [Related Changes Implied by This Redesign](#related-changes-implied-by-this-redesign)
-- [Glossary (Current DMS Terms)](#glossary-current-dms-terms)
 - [Risks / Open Questions](#risks--open-questions)
-- [Suggested Implementation Phases](#suggested-implementation-phases)
 
 ## Goals and Constraints
 
@@ -60,7 +58,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 
 ## Why keep ReferentialId
 
-`ReferentialId` is the deterministic UUIDv5 hash of `(ProjectNamespace, ResourceName, DocumentIdentity)` that DMS Core computes.
+`ReferentialId` is the deterministic UUIDv5 hash of `(ProjectName, ResourceName, DocumentIdentity)` that DMS Core computes (`ProjectName` is the MetaEd project name like `EdFi`, not the URL project segment like `ed-fi`).
 
 This redesign keeps it and stores it in `dms.ReferentialIdentity(ReferentialId → DocumentId)` (absorbing today’s `dms.Alias`) as the backend’s uniform “natural identity key”.
 
@@ -105,6 +103,7 @@ This redesign is split into focused docs in this directory:
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching, migration): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization (subject model + view-based options): [auth.md](auth.md)
+- Risk areas (operational + correctness + performance): [risk-areas.md](risk-areas.md)
 
 ## Related Changes Implied by This Redesign
 

@@ -11,6 +11,7 @@ This document is the data-model deep dive for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
+- Risk areas: [risk-areas.md](risk-areas.md)
 
 ## Table of Contents
 
@@ -176,11 +177,11 @@ CREATE UNIQUE INDEX UX_EffectiveSchema_EffectiveSchemaHash
 CREATE TABLE dms.SchemaComponent (
     EffectiveSchemaId bigint NOT NULL
         REFERENCES dms.EffectiveSchema (EffectiveSchemaId) ON DELETE CASCADE,
-    ProjectNamespace varchar(128) NOT NULL,
+    ProjectEndpointName varchar(128) NOT NULL,
     ProjectName varchar(256) NOT NULL,
     ProjectVersion varchar(64) NOT NULL,
     IsExtensionProject boolean NOT NULL,
-    CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaId, ProjectNamespace)
+    CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaId, ProjectEndpointName)
 );
 ```
 
@@ -191,10 +192,10 @@ CREATE TABLE dms.SchemaComponent (
 Recommendations:
 - Use `SHA-256` and store as lowercase hex (64 chars).
 - Require a single `ApiSchemaFormatVersion` across core + extensions (fail fast if they differ).
-- Validate that each configured `ApiSchema.json` file contributes exactly one `projectSchemas[ProjectNamespace]` entry.
+- Validate that each configured `ApiSchema.json` file contributes exactly one `projectSchema` entry.
 - Exclude OpenAPI payloads from hashing to avoid churn and reduce input size:
-  - `projectSchemas[*].openApiBaseDocuments`
-  - `projectSchemas[*].resourceSchemas[*].openApiFragments`
+  - `projectSchema.openApiBaseDocuments`
+  - `projectSchema.resourceSchemas[*].openApiFragments`
 - Keep arrays in-order (many arrays are semantically ordered), but sort objects by property name recursively.
 - Include a DMS-controlled constant “relational mapping version” so that a breaking change in mapping conventions forces a mismatch even if ApiSchema content is unchanged.
 
@@ -202,14 +203,14 @@ Algorithm (suggested):
 1. Parse the configured core + extension ApiSchema files.
 2. For each file, extract:
    - `ApiSchemaFormatVersion` (`apiSchemaVersion`)
-   - the single `projectSchemas[ProjectNamespace]` entry (after removing OpenAPI payloads)
-3. Sort projects by `ProjectNamespace`.
+   - the `projectSchema` entry (after removing OpenAPI payloads)
+3. Sort projects by `ProjectEndpointName`.
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
    - a constant mapping version (e.g., `relational-mapping:v1`)
    - `ApiSchemaFormatVersion`
-   - one line per project: `ProjectNamespace|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
+   - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
 Pseudocode:
 
@@ -223,25 +224,26 @@ for file in configuredApiSchemaFiles:
   json = parse(file)
   apiSchemaFormatVersion = apiSchemaFormatVersion ?? json.apiSchemaVersion
   assert(apiSchemaFormatVersion == json.apiSchemaVersion)
-  (projectNamespace, projectSchema) = extractSingleProjectSchema(json.projectSchemas)
+  projectSchema = json.projectSchema
+  projectEndpointName = projectSchema.projectEndpointName
   projectSchema = removeOpenApiPayloads(projectSchema)
   projectHash = sha256hex(canonicalizeJson(projectSchema))
   projects.add({
-    projectNamespace,
+    projectEndpointName,
     projectName: projectSchema.projectName,
     projectVersion: projectSchema.projectVersion,
     isExtensionProject: projectSchema.isExtensionProject,
     projectHash
   })
 
-projects = sortBy(projects, p => p.projectNamespace)
+projects = sortBy(projects, p => p.projectEndpointName)
 
 manifest =
   HashVersion + "\n" +
   RelationalMappingVersion + "\n" +
   "apiSchemaFormatVersion=" + apiSchemaFormatVersion + "\n" +
   join(projects, "\n",
-    p.projectNamespace + "|" +
+    p.projectEndpointName + "|" +
     p.projectName + "|" +
     p.projectVersion + "|" +
     p.isExtensionProject + "|" +
@@ -431,7 +433,7 @@ Uses:
 
 ### Resource tables (schema per project)
 
-Each project gets a schema derived from `ProjectNamespace` (e.g., `ed-fi` → `edfi`, `tpdm` → `tpdm`). Core `dms.*` tables remain in `dms`.
+Each project gets a schema derived from `ProjectEndpointName` (e.g., `ed-fi` → `edfi`, `tpdm` → `tpdm`). Core `dms.*` tables remain in `dms`.
 
 For each resource `R`:
 
@@ -659,7 +661,7 @@ CREATE INDEX IF NOT EXISTS IX_SSA_SchoolDocumentId  ON edfi.StudentSchoolAssocia
 
 Extension projects and resource extensions should follow a consistent “separate schema, separate table hierarchy” pattern without merging extension columns into the core resource table:
 
-- Extension tables live in the **extension project schema** (derived from `ProjectNamespace`, e.g., `sample`, `tpdm`), not in the core project schema.
+- Extension tables live in the **extension project schema** (derived from `ProjectEndpointName`, e.g., `sample`, `tpdm`), not in the core project schema.
 - Table-name patterns follow the old flattening design:
   - extension root table: `{ResourceName}Extension` (e.g., `sample.ContactExtension`)
   - extension collection tables: `{ResourceName}Extension{CollectionSuffix}` (e.g., `sample.ContactExtensionAddress`)
@@ -675,7 +677,7 @@ See [extensions.md](extensions.md) for the normative mapping rules for `_ext` (r
 
 To keep migrations tractable and avoid rename cascades, physical names must be deterministic:
 
-- Schema name: derived from `ProjectNamespace` (`ed-fi` → `edfi`, non-alphanumerics removed/normalized).
+- Schema name: derived from `ProjectEndpointName` (`ed-fi` → `edfi`, non-alphanumerics removed/normalized).
 - Table names: PascalCase resource names (MetaEd `resourceName`), plus deterministic suffixes for collections.
 - Column names: PascalCase of JSON property names, with suffixes:
   - `..._DocumentId` for non-descriptor references
@@ -687,4 +689,4 @@ To keep migrations tractable and avoid rename cascades, physical names must be d
 
 
 ## Other Notes (Design Guardrails)
-  - **MetaEd validation**: add a rule that caps the number of fields in any Domain Entity/Association (e.g., ~50) so relational root tables do not become unmanageably wide.
+- **MetaEd validation**: add a rule that caps the number of fields in any Domain Entity/Association (e.g., ~50) so relational root tables do not become unmanageably wide.
