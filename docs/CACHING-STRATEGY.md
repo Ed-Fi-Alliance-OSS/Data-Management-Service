@@ -15,8 +15,8 @@ fast access times while requiring consideration for multi-instance deployments.
 DMS uses exclusively **in-memory caching**:
 
 - **No distributed cache** - Each DMS instance maintains its own cache
-- **No Redis or external cache stores** - All caching uses either
-  `IMemoryCache` or `ConcurrentDictionary`
+- **No Redis or external cache stores** - Caching uses `HybridCache` (with
+  in-memory storage only) or `ConcurrentDictionary`
 - **Instance isolation** - Cache state is not shared between DMS instances
 
 This approach is appropriate for DMS because:
