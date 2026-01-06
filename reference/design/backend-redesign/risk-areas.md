@@ -26,7 +26,6 @@ Authorization-specific risks are out of scope here.
 1. **ReferenceEdge correctness** can silently break identity/ETag cascades if it drifts from actual relational FKs.
 2. **IdentityLock orchestration** (closure expansion + lock ordering) is complex and can create deadlocks/throughput collapse in “hub resource” scenarios.
 3. **Read-path reconstitution cost** may exceed typical API latency targets unless `dms.DocumentCache` is treated as the primary read path.
-4. **Abstract union views** (e.g., `EducationOrganization_View`) may become a scaling bottleneck and need benchmarking/fallback plans.
 
 ---
 
@@ -45,7 +44,7 @@ If `dms.ReferenceEdge` ever diverges from the actual persisted FK graph (bug in 
 - delete conflict messages become incomplete
 
 ### Why it’s tricky
-The design currently frames verification/validation as “optional/configurable”. For a system depending on derived tables for correctness, **validation is mandatory** (at least sampling-based) or correctness becomes “best effort in prod”.
+The design currently frames verification/validation as “optional/configurable”. For a system depending on derived tables for correctness, **validation should be mandatory** (at least sampling-based) or correctness becomes “best effort in prod”.
 
 ### Possible actions / mitigations
 - **Consistency Watchdog (production feature)**:
@@ -60,10 +59,10 @@ The design currently frames verification/validation as “optional/configurable�
 - **Sampling-based verification on writes**:
   - verify on a small percentage of commits (e.g., 0.1–1%) in production
   - treat mismatches as “incident-grade” signals (alert immediately)
-- **Fail writes on edge-maintenance failure** (already suggested in the draft):
+- **Fail writes on edge-maintenance failure** (already in design):
   - do not allow “fire-and-forget” edge writes
 
-### Instrumentation (minimum)
+### Instrumentation ideas
 - `ReferenceEdgeWriteRows`, `ReferenceEdgeDiffRowsInserted/Deleted`
 - `ReferenceEdgeVerifySampleRate`, `ReferenceEdgeVerifyFailures`
 - watchdog: mismatch count by resource type; repair count; time-to-repair
@@ -76,7 +75,7 @@ The design currently frames verification/validation as “optional/configurable�
 The `dms.IdentityLock` orchestration (Algorithms 1–2 in `transactions-and-concurrency.md`) is the most complex part of the design:
 - shared locks on identity-component children before parent writes (Invariant A)
 - closure expansion to fixpoint (Algorithm 2)
-- optional SERIALIZABLE semantics for phantom-safe parent-of-closure scans
+- SERIALIZABLE semantics for phantom-safe parent-of-closure scans
 
 Failure modes:
 - **deadlocks under load** (especially if cycles exist or lock ordering is violated in any edge case)
@@ -90,9 +89,9 @@ Bulk importing large sets where many documents reference the same identity compo
 - SQL Server: `WITH (HOLDLOCK)` can be aggressive; if write transactions are long, those locks are held longer, compounding contention.
 
 ### Possible actions / mitigations
-- **Cycle safety is mandatory**:
+- **Cycle safety**:
   - reject identity dependency cycles at the resource-type level during startup schema validation (already stated in the draft) and ensure the rule is exhaustive (including transitive cycles).
-- **Define a deadlock/serialization retry policy now (not “later”)**:
+- **Define a deadlock/serialization retry policy**:
   - max retry attempts
   - jittered exponential backoff strategy
   - what is logged vs. counted vs. surfaced (telemetry + diagnostics)
@@ -122,12 +121,12 @@ The redesign moves read complexity from:
 to:
 - “hydrate root + many child tables + identity projections + descriptor expansions + assemble JSON”
 
-Even with “one command / multiple resultsets”, a deep resource can require 10–20 result sets per page. This adds:
+Even with “one command / multiple resultsets”, a deep resource can require many result sets per page. This adds:
 - DB CPU cost (joins, sorts by ordinals, projection joins)
-- application allocation pressure (many small row objects; JSON assembly work)
+- application allocation pressure (many small row objects, JSON assembly work)
 
 ### Guidance / critique
-Treating `dms.DocumentCache` as “optional” is risky for realistic latency targets. For resources with >~3 child tables, the cache is likely **operationally required** for:
+Treating `dms.DocumentCache` as “optional” may not be practical given:
 - standard API latency expectations (example target: <200ms for typical reads)
 - protecting DB CPU from repeated reconstitution work
 
@@ -141,19 +140,3 @@ Treating `dms.DocumentCache` as “optional” is risky for realistic latency ta
 - per-resource `GetByIdLatencyMs`, `QueryLatencyMs`
 - cache hit rate, rebuild rate, rebuild latency
 - per-request result set count and reconstitution CPU time
-
----
-
-## Abstract Reference Views (Union View Scaling)
-
-### Risk
-Union views for abstract resources (e.g., `EducationOrganization_View`) may scale poorly:
-- performance can degrade with number/size of concrete tables
-- changes require updating the database view definition and restarting DMS (and are validated via `dms.EffectiveSchema` on startup)
-
-### Possible actions / mitigations
-- Benchmark abstract-view usage for high-volume abstract targets (EducationOrganization is pervasive).
-- Ensure concrete tables have appropriate indexes for the common access pattern (typically `WHERE DocumentId = ...`).
-- Maintain a fallback plan if view performance is insufficient:
-  - materialized view (engine-specific)
-  - a denormalized membership table (e.g., `dms.AbstractMembership(AbstractName, DocumentId, ...)`) maintained on writes
