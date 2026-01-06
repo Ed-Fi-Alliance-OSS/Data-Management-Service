@@ -11,6 +11,7 @@ This document is the extensions deep dive for `overview.md`.
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
+- Risk areas: [risk-areas.md](risk-areas.md)
 
 ## Table of Contents
 
@@ -55,7 +56,7 @@ This redesign keeps those table-name patterns, while using the redesigned key st
 
 ### Physical database schemas
 
-Each project (core and extension) has its own physical DB schema derived from `ProjectNamespace`:
+Each project (core and extension) has its own physical DB schema derived from `ProjectEndpointName` (the URL segment):
 
 - core: `ed-fi` → `edfi`
 - extension example: `sample` → `sample`, `tpdm` → `tpdm`
@@ -70,13 +71,13 @@ DMS already merges extension resource:schemas into the effective schema at runti
 
 When the mapper finds a JSON schema object property named `_ext`, its child property names are treated as *extension-project keys*.
 
-Resolve an `_ext` key `k` to a `ProjectNamespace` as follows:
+Resolve an `_ext` key `k` to a `ProjectEndpointName` as follows:
 
-1. If `k` matches a configured `projectSchemas` key, it is a `ProjectNamespace`.
-2. Else if `k` matches a `projectNameMapping` key, map it to the corresponding `ProjectNamespace`.
+1. If `k` matches a configured `projectSchema.projectEndpointName` (case-insensitive), it is that `ProjectEndpointName`.
+2. Else if `k` matches a configured `projectSchema.projectName` (case-insensitive), map it to that project’s `ProjectEndpointName` (defensive fallback).
 3. Else fail fast (schema compilation/migration): unknown extension key.
 
-This supports either `ProjectNamespace` or MetaEd project name tokens inside `_ext`.
+This supports either `ProjectEndpointName` tokens (recommended) or MetaEd project name tokens inside `_ext`.
 
 ### Where `_ext` can appear
 
@@ -91,7 +92,7 @@ The mapper discovers these sites by walking `jsonSchemaForInsert` and finding `_
 
 ### 1) Resource-level `_ext` → extension root table (1:1 per project)
 
-For a base resource `R` and an extension project namespace `p` where `$._ext.{p}` exists:
+For a base resource `R` and an extension project endpoint name `p` where `$._ext.{p}` exists:
 
 - Create `{pSchema}.{R}Extension`
 - Primary key: `DocumentId` (same surrogate key as the base resource row)
@@ -161,8 +162,8 @@ Reconstitution assembles the base JSON as usual, then overlays extensions:
 ## Example: Contact + Sample extension (resource + common-type)
 
 Assume:
-- base project namespace: `ed-fi` → schema `edfi`
-- extension project namespace: `sample` → schema `sample`
+- base project endpoint name: `ed-fi` → schema `edfi`
+- extension project endpoint name: `sample` → schema `sample`
 - base resource: `Contact`
 - base collection: `addresses[*]`
 
@@ -182,6 +183,6 @@ Extension tables are part of the derived relational model:
 
 ## Open questions / decisions to confirm
 
-1. **Canonical `_ext` key token**: choose a single canonical form for `_ext` keys (prefer `ProjectNamespace`) and enforce/normalize at schema generation time; keep the runtime mapping logic as a defensive fallback.
+1. **Canonical `_ext` key token**: choose a single canonical form for `_ext` keys (prefer `ProjectEndpointName`) and enforce/normalize at schema generation time; keep the runtime mapping logic as a defensive fallback.
 2. **Naming overrides**: confirm that `resourceSchema.relational.nameOverrides` (if adopted) applies to extension-derived table/column base names as well as core names.
 3. **Polymorphic references in extensions**: enforcement strategy should match the core approach: FK to `dms.Document` + membership validation via `{AbstractResource}_View` (derived from `ApiSchema.json` `abstractResources`).

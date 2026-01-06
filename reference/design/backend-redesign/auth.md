@@ -11,6 +11,7 @@ This document is the authorization deep dive for `overview.md`:
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Extensions: [extensions.md](extensions.md)
+- Risk areas: [risk-areas.md](risk-areas.md)
 
 This document proposes an authorization storage/query design that fits the relational primary store
 and can support an ODS-style view-based authorization approach (similar to `auth.*` views in Ed-Fi ODS).
@@ -88,7 +89,7 @@ DMS already has schema-derived authorization metadata:
 From the relational primary store redesign we additionally have:
 
 - Stable `dms.Document(DocumentId, DocumentUuid, ProjectName, ResourceName, ...)`.
-- Referential resolution via `dms.ReferentialIdentity(ReferentialId -> DocumentId)` including polymorphic superclass alias rows (e.g., `School` as `EducationOrganization`).
+- Referential resolution via `dms.ReferentialIdentity(ReferentialId → DocumentId)` including polymorphic superclass alias rows (e.g., `School` as `EducationOrganization`).
 - Resource data stored in per-resource tables with FK columns storing `..._DocumentId` for references.
 - Optional `dms.DocumentCache` which must not be used as an authorization source of truth.
 

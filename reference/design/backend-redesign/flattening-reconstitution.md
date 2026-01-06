@@ -11,6 +11,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
+- Risk areas: [risk-areas.md](risk-areas.md)
 
 This section describes how DMS flattens JSON documents into relational tables on POST/PUT, and how it reconstitutes JSON from those tables on GET/query without code-generating per-resource code.
 
@@ -97,7 +98,7 @@ Semantics:
 
 ### 3.3 Strict rules for `nameOverrides`
 
-To keep the mapping deterministic, portable, and validateable, `nameOverrides` must follow these rules:
+To keep the mapping deterministic, portable, and validatable, `nameOverrides` must follow these rules:
 
 1. **JSONPath grammar is restricted**:
    - Must start at `$`
@@ -1324,70 +1325,87 @@ public sealed class PostgresqlReferenceEdgeWriter : IReferenceEdgeWriter
         long parentDocumentId,
         IReadOnlyList<ReferenceEdgeRow> edges,
         CancellationToken ct)
-	    {
-	        const string createStage = @"
-	            CREATE TEMP TABLE IF NOT EXISTS reference_edge_stage (
-	                ChildDocumentId bigint NOT NULL,
-	                IsIdentityComponent boolean NOT NULL,
-	                PRIMARY KEY (ChildDocumentId)
-	            ) ON COMMIT DELETE ROWS;";
+    {
+        const string createStage = @"
+            CREATE TEMP TABLE IF NOT EXISTS reference_edge_stage (
+                ChildDocumentId bigint NOT NULL,
+                IsIdentityComponent boolean NOT NULL,
+                PRIMARY KEY (ChildDocumentId)
+            ) ON COMMIT DELETE ROWS;";
 
-	        await connection.ExecuteAsync(new CommandDefinition(createStage, transaction: tx, cancellationToken: ct));
-	        await connection.ExecuteAsync(new CommandDefinition("DELETE FROM reference_edge_stage;", transaction: tx, cancellationToken: ct));
+        await connection.ExecuteAsync(
+            new CommandDefinition(createStage, transaction: tx, cancellationToken: ct));
+        await connection.ExecuteAsync(
+            new CommandDefinition("DELETE FROM reference_edge_stage;", transaction: tx, cancellationToken: ct));
 
-	        if (edges.Count != 0)
-	        {
-	            var childIds = edges.Select(e => e.ChildDocumentId).ToArray();
-	            var identityFlags = edges.Select(e => e.IsIdentityComponent).ToArray();
+        if (edges.Count != 0)
+        {
+            var childIds = edges.Select(e => e.ChildDocumentId).ToArray();
+            var identityFlags = edges.Select(e => e.IsIdentityComponent).ToArray();
 
-	            const string stageInsert = @"
-	                INSERT INTO reference_edge_stage (ChildDocumentId, IsIdentityComponent)
-	                SELECT * FROM unnest(@ChildIds::bigint[], @IdentityFlags::boolean[]);";
+            const string stageInsert = @"
+                INSERT INTO reference_edge_stage (ChildDocumentId, IsIdentityComponent)
+                SELECT * FROM unnest(@ChildIds::bigint[], @IdentityFlags::boolean[]);";
 
-	            await connection.ExecuteAsync(
-	                new CommandDefinition(
-	                    stageInsert,
-	                    new { ChildIds = childIds, IdentityFlags = identityFlags },
-	                    transaction: tx,
-	                    cancellationToken: ct));
-	        }
+            await connection.ExecuteAsync(
+                new CommandDefinition(
+                    stageInsert,
+                    new { ChildIds = childIds, IdentityFlags = identityFlags },
+                    transaction: tx,
+                    cancellationToken: ct));
+        }
 
-	        const string insertMissing = @"
-	            INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
-	            SELECT @ParentDocumentId, s.ChildDocumentId, s.IsIdentityComponent
-	            FROM reference_edge_stage s
-	            LEFT JOIN dms.ReferenceEdge e
-	              ON e.ParentDocumentId = @ParentDocumentId
-	             AND e.ChildDocumentId  = s.ChildDocumentId
-	            WHERE e.ParentDocumentId IS NULL;";
+        const string insertMissing = @"
+            INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+            SELECT @ParentDocumentId, s.ChildDocumentId, s.IsIdentityComponent
+            FROM reference_edge_stage s
+            LEFT JOIN dms.ReferenceEdge e
+              ON e.ParentDocumentId = @ParentDocumentId
+             AND e.ChildDocumentId  = s.ChildDocumentId
+            WHERE e.ParentDocumentId IS NULL;";
 
-	        const string updateChanged = @"
-	            UPDATE dms.ReferenceEdge e
-	            SET IsIdentityComponent = s.IsIdentityComponent
-	            FROM reference_edge_stage s
-	            WHERE e.ParentDocumentId = @ParentDocumentId
-	              AND e.ChildDocumentId  = s.ChildDocumentId
-	              AND e.IsIdentityComponent IS DISTINCT FROM s.IsIdentityComponent;";
+        const string updateChanged = @"
+            UPDATE dms.ReferenceEdge e
+            SET IsIdentityComponent = s.IsIdentityComponent
+            FROM reference_edge_stage s
+            WHERE e.ParentDocumentId = @ParentDocumentId
+              AND e.ChildDocumentId  = s.ChildDocumentId
+              AND e.IsIdentityComponent IS DISTINCT FROM s.IsIdentityComponent;";
 
-	        const string deleteStale = @"
-	            DELETE FROM dms.ReferenceEdge e
-	            WHERE e.ParentDocumentId = @ParentDocumentId
-	              AND NOT EXISTS (
-	                SELECT 1
-	                FROM reference_edge_stage s
-	                WHERE s.ChildDocumentId = e.ChildDocumentId
-	              );";
+        const string deleteStale = @"
+            DELETE FROM dms.ReferenceEdge e
+            WHERE e.ParentDocumentId = @ParentDocumentId
+              AND NOT EXISTS (
+                SELECT 1
+                FROM reference_edge_stage s
+                WHERE s.ChildDocumentId = e.ChildDocumentId
+              );";
 
-	        await connection.ExecuteAsync(new CommandDefinition(insertMissing, new { ParentDocumentId = parentDocumentId }, tx, cancellationToken: ct));
-	        await connection.ExecuteAsync(new CommandDefinition(updateChanged, new { ParentDocumentId = parentDocumentId }, tx, cancellationToken: ct));
-	        await connection.ExecuteAsync(new CommandDefinition(deleteStale, new { ParentDocumentId = parentDocumentId }, tx, cancellationToken: ct));
-	    }
-	}
-	```
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                insertMissing,
+                new { ParentDocumentId = parentDocumentId },
+                tx,
+                cancellationToken: ct));
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                updateChanged,
+                new { ParentDocumentId = parentDocumentId },
+                tx,
+                cancellationToken: ct));
+        await connection.ExecuteAsync(
+            new CommandDefinition(
+                deleteStale,
+                new { ParentDocumentId = parentDocumentId },
+                tx,
+                cancellationToken: ct));
+    }
+}
+```
 
-	SQL Server analog:
-	- stage into `#reference_edge_stage(ChildDocumentId, IsIdentityComponent)` (or a table-valued parameter)
-	- run “insert missing” + “update changed” + “delete stale” with the same shape (avoid `MERGE` unless you have strong operational confidence in it).
+SQL Server analog:
+- stage into `#reference_edge_stage(ChildDocumentId, IsIdentityComponent)` (or a table-valued parameter)
+- run “insert missing” + “update changed” + “delete stale” with the same shape (avoid `MERGE` unless you have strong operational confidence in it).
 
 ### 7.7 Example: Pre-compilation (startup or migrator)
 
@@ -1500,15 +1518,15 @@ Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` gets used):
 private static RowBuffer MaterializeRow(
     TableWritePlan tablePlan,
     long documentId,
-	    JsonNode scopeNode,
-	    IReadOnlyList<long> parentKeyParts, // e.g. [DocumentId] or [DocumentId, parentOrdinal]
-	    int ordinal,
-	    ReadOnlySpan<int> ordinalPath,      // e.g. [] (root), [2] (child), [2,0] (nested)
-	    IDocumentReferenceInstanceIndex documentReferences,
-	    ResolvedReferenceSet resolved,
-	    Dictionary<long, bool> edgesByChild)
-	{
-	    var values = new object?[tablePlan.ColumnBindings.Count];
+    JsonNode scopeNode,
+    IReadOnlyList<long> parentKeyParts, // e.g. [DocumentId] or [DocumentId, parentOrdinal]
+    int ordinal,
+    ReadOnlySpan<int> ordinalPath, // e.g. [] (root), [2] (child), [2,0] (nested)
+    IDocumentReferenceInstanceIndex documentReferences,
+    ResolvedReferenceSet resolved,
+    Dictionary<long, bool> edgesByChild)
+{
+    var values = new object?[tablePlan.ColumnBindings.Count];
 
     for (var i = 0; i < tablePlan.ColumnBindings.Count; i++)
     {
@@ -1519,11 +1537,11 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.Ordinal => ordinal,
             WriteValueSource.Scalar(var relPath, var type) => JsonValueReader.Read(scopeNode, relPath, type),
 
-	            WriteValueSource.DescriptorReference(var edgeSource, var relPath)
-	                => ResolveDescriptorId(scopeNode, edgeSource, relPath, resolved, edgesByChild),
+            WriteValueSource.DescriptorReference(var edgeSource, var relPath)
+                => ResolveDescriptorId(scopeNode, edgeSource, relPath, resolved, edgesByChild),
 
-	            WriteValueSource.DocumentReference(var edgeSource)
-	                => ResolveReferencedDocumentId(edgeSource, ordinalPath, documentReferences, edgesByChild),
+            WriteValueSource.DocumentReference(var edgeSource)
+                => ResolveReferencedDocumentId(edgeSource, ordinalPath, documentReferences, edgesByChild),
 
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
@@ -1532,43 +1550,48 @@ private static RowBuffer MaterializeRow(
     return new(values);
 }
 
-	private static long ResolveDescriptorId(
-	    JsonNode scopeNode,
-	    DescriptorEdgeSource edgeSource,
-	    JsonPathExpression relPath,
-	    ResolvedReferenceSet resolved,
-	    Dictionary<long, bool> edgesByChild)
-	{
-	    var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
-	    var id = resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, edgeSource.DescriptorResource)];
-	    AddOrUpdateEdge(edgesByChild, id, edgeSource.IsIdentityComponent);
-	    return id;
-	}
+private static long ResolveDescriptorId(
+    JsonNode scopeNode,
+    DescriptorEdgeSource edgeSource,
+    JsonPathExpression relPath,
+    ResolvedReferenceSet resolved,
+    Dictionary<long, bool> edgesByChild)
+{
+    var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
+    var id = resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, edgeSource.DescriptorResource)];
+    AddOrUpdateEdge(edgesByChild, id, edgeSource.IsIdentityComponent);
+    return id;
+}
 
-	private static long? ResolveReferencedDocumentId(
-	    DocumentReferenceEdgeSource edgeSource,
-	    ReadOnlySpan<int> ordinalPath,
-	    IDocumentReferenceInstanceIndex documentReferences,
-	    Dictionary<long, bool> edgesByChild)
-	{
-	    var id = documentReferences.GetReferencedDocumentId(edgeSource, ordinalPath);
-	    if (id is not null)
-	    {
-	        AddOrUpdateEdge(edgesByChild, id.Value, edgeSource.IsIdentityComponent);
-	    }
-	    return id;
-	}
+private static long? ResolveReferencedDocumentId(
+    DocumentReferenceEdgeSource edgeSource,
+    ReadOnlySpan<int> ordinalPath,
+    IDocumentReferenceInstanceIndex documentReferences,
+    Dictionary<long, bool> edgesByChild)
+{
+    var id = documentReferences.GetReferencedDocumentId(edgeSource, ordinalPath);
+    if (id is not null)
+    {
+        AddOrUpdateEdge(edgesByChild, id.Value, edgeSource.IsIdentityComponent);
+    }
 
-	private static void AddOrUpdateEdge(Dictionary<long, bool> edgesByChild, long childDocumentId, bool isIdentityComponent)
-	{
-	    if (edgesByChild.TryGetValue(childDocumentId, out var existing))
-	    {
-	        edgesByChild[childDocumentId] = existing || isIdentityComponent;
-	        return;
-	    }
-	    edgesByChild.Add(childDocumentId, isIdentityComponent);
-	}
-	```
+    return id;
+}
+
+private static void AddOrUpdateEdge(
+    Dictionary<long, bool> edgesByChild,
+    long childDocumentId,
+    bool isIdentityComponent)
+{
+    if (edgesByChild.TryGetValue(childDocumentId, out var existing))
+    {
+        edgesByChild[childDocumentId] = existing || isIdentityComponent;
+        return;
+    }
+
+    edgesByChild.Add(childDocumentId, isIdentityComponent);
+}
+```
 
 ### 7.9 Example: GET by id execution (keyset spec)
 
@@ -1658,7 +1681,7 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
 - **N+1 writes**: prevented by per-table batched inserts; nested collections avoid identity capture via composite keys.
 - **N+1 reads**: prevented by per-table batched selects; reference identity projection is grouped per target resource type.
 - **Network traffic**: minimized by multi-resultset reads and batching, plus optional L1/L2 caches for identity/descriptor lookups.
-- **Schema complexity**: the model builder must validate supported JSON schema constructs and fail migration/startup for unsupported patterns (e.g., `$ref`/`allOf`/`oneOf`/`anyOf`/type unions). `additionalProperties` is not treated as persisted dynamic content because Core prunes overposted properties before extraction.
+- **Schema complexity**: the model builder must validate supported JSON schema constructs and fail migration/startup for unsupported patterns (only support the subset MetaEd actually emits). `additionalProperties` is not treated as persisted dynamic content because Core prunes overposted properties before extraction.
 
 ---
 
