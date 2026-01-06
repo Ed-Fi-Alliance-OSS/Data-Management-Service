@@ -11,7 +11,7 @@ This document is the authorization deep dive for `overview.md`:
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Extensions: [extensions.md](extensions.md)
-- Risk areas: [risk-areas.md](risk-areas.md)
+- Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 This document proposes an authorization storage/query design that fits the relational primary store
 and can support an ODS-style view-based authorization approach (similar to `auth.*` views in Ed-Fi ODS).

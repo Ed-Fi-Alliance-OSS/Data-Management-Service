@@ -11,7 +11,7 @@ This document is the data-model deep dive for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
-- Risk areas: [risk-areas.md](risk-areas.md)
+- Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 ## Table of Contents
 
