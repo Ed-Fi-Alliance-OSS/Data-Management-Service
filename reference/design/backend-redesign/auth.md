@@ -9,7 +9,7 @@ This document is the authorization deep dive for `overview.md`:
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
-- Caching & operations: [caching-and-ops.md](caching-and-ops.md)
+- Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Extensions: [extensions.md](extensions.md)
 
 This document proposes an authorization storage/query design that fits the relational primary store
@@ -416,7 +416,7 @@ This keeps authorization enforcement:
 
 The authorization predicate must be applied inside the same query used to select page keys (DocumentIds), before `ORDER BY/OFFSET/LIMIT`.
 
-Implementation detail depends on the query shape chosen for the relational primary store (see `reference/design/backend-redesign/caching-and-ops.md`), but the critical invariant is:
+Implementation detail depends on the query shape chosen for the relational primary store (see `reference/design/backend-redesign/transactions-and-concurrency.md`), but the critical invariant is:
 
 > The page is computed over already-authorized rows.
 

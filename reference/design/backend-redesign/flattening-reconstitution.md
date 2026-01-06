@@ -9,7 +9,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
 - Extensions: [extensions.md](extensions.md)
-- Caching & operations: [caching-and-ops.md](caching-and-ops.md)
+- Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
 
 This section describes how DMS flattens JSON documents into relational tables on POST/PUT, and how it reconstitutes JSON from those tables on GET/query without code-generating per-resource code.

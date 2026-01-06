@@ -9,7 +9,7 @@ This document is the data-model deep dive for `overview.md`.
 - Overview: [overview.md](overview.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
-- Caching & operations: [caching-and-ops.md](caching-and-ops.md)
+- Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
 
 ## Table of Contents
@@ -58,7 +58,7 @@ Notes:
   - `Etag` should be incremented (e.g., `Etag = Etag + 1`) at least once per committed transaction for every document whose **representation** changes, including identity/descriptor cascades; dedupe the impacted `DocumentId` set so a document is bumped once per cascade transaction.
   - Concurrency: updates guarded by `If-Match` should use a conditional update (`WHERE DocumentId=@id AND Etag=@expected`) so the bump is atomic and race-safe.
   - Cascades should update `Etag`/`LastModifiedAt` with **set-based writes** over an impacted set (computed using `dms.ReferenceEdge`), rather than reconstituting and hashing large JSON payloads.
-  - Strictness: the impacted-set computation must be **phantom-safe** w.r.t. concurrent `dms.ReferenceEdge` writes; see `caching-and-ops.md` (“Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)”).
+  - Strictness: the impacted-set computation must be **phantom-safe** w.r.t. concurrent `dms.ReferenceEdge` writes; see `transactions-and-concurrency.md` (“Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)”).
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization-related columns are intentionally omitted here. Authorization storage and query filtering is described in [auth.md](auth.md).
 
@@ -367,7 +367,7 @@ Rules:
 - Concurrency is controlled by row locks on the affected documents’ `dms.IdentityLock` rows + lock ordering + deadlock retry.
 
 Notes:
-- See [caching-and-ops.md](caching-and-ops.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
+- See [transactions-and-concurrency.md](transactions-and-concurrency.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
 
 ##### 7) `dms.DocumentCache` (optional, eventually consistent projection)
 
@@ -377,7 +377,7 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 - it is not purely a “cache-aside” optimization
 - when enabled, DMS should materialize documents into this table via a write-driven/background projector
 
-Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [caching-and-ops.md](caching-and-ops.md) (`dms.DocumentCache` section).
+Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
 **PostgreSQL**
 
@@ -445,7 +445,7 @@ Typical structure:
 - Scalar columns for top-level non-collection properties
 - Reference FK columns:
   - Non-descriptor references (concrete target): `..._DocumentId BIGINT` FK → `{schema}.{TargetResource}(DocumentId)` to enforce existence *and* resource type
-  - Non-descriptor references (polymorphic/abstract target): `..._DocumentId BIGINT` FK → `dms.Document(DocumentId)` plus optional discriminator/membership enforcement (see Reference Validation in [caching-and-ops.md](caching-and-ops.md))
+  - Non-descriptor references (polymorphic/abstract target): `..._DocumentId BIGINT` FK → `dms.Document(DocumentId)` plus optional discriminator/membership enforcement (see Reference Validation in [transactions-and-concurrency.md](transactions-and-concurrency.md))
   - Descriptor references: `..._DescriptorId BIGINT` FK → `dms.Descriptor(DocumentId)`
 
 #### Child tables for collections
