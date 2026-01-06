@@ -249,86 +249,7 @@ manifest =
 effectiveSchemaHash = sha256hex(utf8(manifest))
 ```
 
-##### 5) `dms.EdgeSource` (edge-source dictionary)
-
-`dms.EdgeSource` defines the **source site** for an outgoing edge in a parent document: *“this parent resource type, at this canonical JSONPath, emits a document/descriptor reference”*.
-
-Purpose:
-- Avoid repeating a long string identifier on every `dms.ReferenceEdge` row (which is hot and high-volume).
-- Provide a stable, human-readable identifier for diagnostics and debugging.
-- Allow `dms.ReferenceEdge` to store only a compact `EdgeSourceId` (INT).
-
-Population:
-- `dms.EdgeSource` is derived from `ApiSchema.json` during schema migration/startup validation (per `dms.EffectiveSchemaHash`).
-- It is **not** populated on the hot write path.
-
-##### DDL (PostgreSQL)
-
-```sql
-CREATE TABLE dms.EdgeSource (
-    EdgeSourceId integer GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    EdgeSourceKey varchar(256) NOT NULL,
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT UX_EdgeSource_EdgeSourceKey UNIQUE (EdgeSourceKey)
-);
-```
-
-##### DDL (SQL Server)
-
-```sql
-CREATE TABLE dms.EdgeSource (
-    EdgeSourceId int NOT NULL IDENTITY(1,1),
-    EdgeSourceKey nvarchar(256) NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_EdgeSource_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_EdgeSource PRIMARY KEY CLUSTERED (EdgeSourceId),
-    CONSTRAINT UX_EdgeSource_EdgeSourceKey UNIQUE (EdgeSourceKey)
-);
-```
-
-##### EdgeSourceKey (stable) and EdgeSourceId (database identity)
-
-`EdgeSourceKey` is a deterministic identifier derived from ApiSchema, describing *where* the reference came from in the parent document.
-
-Format (recommended):
-
-- For **document references**: `{ParentProject}.{ParentResource}:docref:{ReferenceObjectPath}`
-  - Example: `EdFi.StudentSchoolAssociation:docref:$.studentReference`
-- For **descriptor references**: `{ParentProject}.{ParentResource}:desc:{DescriptorValuePath}`
-  - Example: `EdFi.School:desc:$.schoolTypeDescriptor`
-
-`ReferenceObjectPath`/`DescriptorValuePath` are canonical/wildcard JSON paths from derived relational mapping (no numeric indices).
-
-Length handling:
-- `EdgeSourceKey` is stored as `varchar(256)`/`nvarchar(256)` so it can be indexed safely on both engines.
-- If the computed raw key exceeds 256 chars, apply deterministic truncation + short hash suffix:
-  - `EdgeSourceKey = prefix + "|" + sha256hex(rawKey)[0..8]`
-
-`EdgeSourceId` is an **integer identity** assigned by the database and used as a compact foreign key in `dms.ReferenceEdge`.
-
-Notes:
-- Migration (or startup schema validation) is responsible for inserting/updating the `dms.EdgeSource` dictionary for the effective schema and for resolving `EdgeSourceKey → EdgeSourceId` into compiled plans:
-  - Derive the required `EdgeSourceKey` set from `ApiSchema.json` (for the `EffectiveSchemaHash`) and upsert it into `dms.EdgeSource` (unique on `EdgeSourceKey`).
-  - Query the resulting `(EdgeSourceKey, EdgeSourceId)` pairs and build an in-memory lookup used by the plan compiler.
-  - While compiling each resource’s read/write plans, write the resolved `EdgeSourceId` directly into each `DocumentReferenceEdgeSource` / `DescriptorEdgeSource` so request-time edge maintenance uses the `int` id without any DB lookup by key.
-
-Example C# helpers (used during model compilation/migration):
-
-```csharp
-static string BuildEdgeSourceKey(QualifiedResourceName parent, string kind, JsonPathExpression path)
-{
-    var raw = $"{parent.ProjectName}.{parent.ResourceName}:{kind}:{path.Canonical}";
-    if (raw.Length <= 256) return raw;
-
-    var hash8 = Sha256Hex(raw).Substring(0, 8);
-    return raw.Substring(0, 256 - 1 - 8) + "|" + hash8;
-}
-
-// EdgeSourceId is a DB identity; resolve it once per EffectiveSchemaHash and cache it in compiled plans.
-static int GetEdgeSourceId(IReadOnlyDictionary<string, int> edgeSourceIdsByKey, string edgeSourceKey) =>
-    edgeSourceIdsByKey[edgeSourceKey];
-```
-
-##### 6) `dms.ReferenceEdge` (reverse reference index for cascades)
+##### 5) `dms.ReferenceEdge` (reverse reference index for cascades)
 
 A small, relational reverse index of **“this document references that document”**, maintained on writes.
 
@@ -341,6 +262,9 @@ Important properties:
 - **Coverage requirement is correctness-critical**:
   - DMS must record **all** outgoing document references and descriptor references, including those inside nested collections/child tables.
   - If edge maintenance fails, the write must fail (otherwise dependent referential-id and representation-metadata cascades can become incorrect).
+- **Collapsed edge granularity**:
+  - This design stores **one row per `(ParentDocumentId, ChildDocumentId)`** (not “per reference site/path”) to reduce write amplification and index churn.
+  - The `IsIdentityComponent` flag is the **OR** of all reference sites in the parent document that reference the same `ChildDocumentId`.
 
 Primary uses:
 - **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities/descriptor URIs change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
@@ -355,29 +279,22 @@ CREATE TABLE dms.ReferenceEdge (
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     ChildDocumentId  bigint NOT NULL
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-
-    -- Compact identifier of *where* the reference came from in the parent document.
-    -- See dms.EdgeSource (EdgeSourceKey -> EdgeSourceId).
-    EdgeSourceId integer NOT NULL
-        REFERENCES dms.EdgeSource (EdgeSourceId) ON DELETE RESTRICT,
-
-    -- True when this edge source participates in the parent document's identityJsonPaths.
-    -- Used to drive transitive cache updates when identities/URIs change.
     IsIdentityComponent boolean NOT NULL,
 
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
 
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, EdgeSourceId, ChildDocumentId)
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, ChildDocumentId)
 );
 
 -- Reverse lookup: "who references Child X?" (also supports identity-dependency closure expansion via IsIdentityComponent)
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId
     ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
-    INCLUDE (ParentDocumentId, EdgeSourceId);
+    INCLUDE (ParentDocumentId);
 ```
 
 Notes on `IsIdentityComponent`:
-- Compute it from ApiSchema as “this edge source contributes to any stored identity for the parent”, including superclass/abstract alias identity (for `isSubclass=true` resources where DMS stores an alias row in `dms.ReferentialIdentity`).
+- Compute it from ApiSchema as “this reference contributes to any stored identity for the parent”, including superclass/abstract alias identity (for `isSubclass=true` resources where DMS stores an alias row in `dms.ReferentialIdentity`).
+- When a parent document references the same child document in multiple places, the stored value is `true` if **any** of those reference sites is an identity component.
 
 ##### DDL (SQL Server)
 
@@ -385,21 +302,18 @@ Notes on `IsIdentityComponent`:
 CREATE TABLE dms.ReferenceEdge (
     ParentDocumentId bigint NOT NULL,
     ChildDocumentId  bigint NOT NULL,
-    EdgeSourceId int NOT NULL,
     IsIdentityComponent bit NOT NULL,
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ReferenceEdge_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, EdgeSourceId, ChildDocumentId),
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, ChildDocumentId),
     CONSTRAINT FK_ReferenceEdge_Parent FOREIGN KEY (ParentDocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     CONSTRAINT FK_ReferenceEdge_Child FOREIGN KEY (ChildDocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_ReferenceEdge_EdgeSource FOREIGN KEY (EdgeSourceId)
-        REFERENCES dms.EdgeSource (EdgeSourceId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
 );
 
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId
     ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
-    INCLUDE (ParentDocumentId, EdgeSourceId);
+    INCLUDE (ParentDocumentId);
 ```
 
 ##### ReferenceEdge FAQ
@@ -417,7 +331,7 @@ We can use a similar *concept* (stage + diff) to avoid churn, but it is far simp
 - inputs are already-resolved `DocumentId`s (no Alias joins, no invalid `ReferentialId` reporting),
 - there is no partition-routing logic,
 - the table is keyed by the parent `DocumentId` (single delete scope), and
-- the diff is between two small sets of `(ChildDocumentId, EdgeSourceId)` pairs (with associated `IsIdentityComponent` flags).
+- the diff is between two small sets of `ChildDocumentId`s (with associated `IsIdentityComponent` flags, aggregated by OR when a parent references the same child multiple times).
 
 **Why does `dms.DocumentCache` need an update cascade?**
 
@@ -431,7 +345,7 @@ If a referenced document’s identity/URI changes, the JSON that referencing doc
 
 In the preferred eventual-cache mode, this is handled as an **async rebuild cascade** (enqueue/mark dependents for rebuild) rather than an in-transaction “no stale window” rewrite. Targeting rules are described in the Caching section.
 
-##### 7) `dms.IdentityLock` (lock orchestration for strict identity correctness)
+##### 6) `dms.IdentityLock` (lock orchestration for strict identity correctness)
 
 To support **strict synchronous** `dms.ReferentialIdentity` maintenance (including cascading referential-id recompute for reference-bearing and abstract identities), the backend needs a stable per-document row to lock.
 
@@ -454,7 +368,7 @@ Rules:
 Notes:
 - See [caching-and-ops.md](caching-and-ops.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
 
-##### 8) `dms.DocumentCache` (optional, eventually consistent projection)
+##### 7) `dms.DocumentCache` (optional, eventually consistent projection)
 
 Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
 
