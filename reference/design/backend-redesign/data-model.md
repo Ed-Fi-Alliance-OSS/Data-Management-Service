@@ -159,7 +159,7 @@ If DB-level enforcement of “descriptor must be of type X” becomes necessary 
 
 ##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
-Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database is migrated to, and records the **exact project versions** present in that effective schema. At startup, DMS will use this to validate consistency between the loaded ApiSchema.json files and the database (see **EffectiveSchemaHash Calculation** below).
+Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database schema is provisioned for, and records the **exact project versions** present in that effective schema. At startup, DMS will use this to validate consistency between the loaded ApiSchema.json files and the database (see **EffectiveSchemaHash Calculation** below).
 
 **PostgreSQL**
 
@@ -476,7 +476,7 @@ Abstract resources have **no physical root table**, but DMS must still:
 
 This design uses a narrow **union view per abstract resource**:
 
-- View name: `{schema}.{AbstractResource}_View` (deterministic; participates in migration like tables)
+- View name: `{schema}.{AbstractResource}_View` (deterministic; validated as part of the expected schema shape)
 - Columns:
   - `DocumentId` (the referenced document)
   - `Discriminator` (concrete resource name; optional but recommended for diagnostics)
@@ -500,7 +500,7 @@ This design uses a narrow **union view per abstract resource**:
 - For each concrete resource `R` in the hierarchy, DMS derives, per abstract identity field:
   - If `R.identityJsonPaths` contains `$.{fieldName}`, use the corresponding root-table column directly.
   - Else, if `R.isSubclass=true` and `R.superclassIdentityJsonPath == $.{fieldName}`, use the concrete identity column(s) from `R.identityJsonPaths` (identity rename case; e.g., `$.schoolId` → `EducationOrganizationId`).
-- If a concrete type cannot supply all abstract identity fields, migration/startup fails fast (schema mismatch).
+- If a concrete type cannot supply all abstract identity fields, startup schema validation fails fast (schema mismatch).
 
 **PostgreSQL example: `EducationOrganization_View`**
 
@@ -554,7 +554,7 @@ FROM edfi.StateEducationAgency sea;
 - **Membership/type validation (standard)**: to ensure a `..._DocumentId` FK to `dms.Document` actually belongs to the allowed hierarchy, validate `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId=@id)` (batch when possible).
 
 Operational note:
-- Adding a new concrete subtype requires a migration that updates the view definition (same operational contract as table changes).
+- Adding a new concrete subtype requires updating the view definition in the database (startup validation will fail fast if it does not match).
 - If view performance ever becomes a bottleneck, consider materialization (PostgreSQL materialized view; SQL Server indexed view) as a later, measured optimization.
 
 #### PostgreSQL examples (Student, School, StudentSchoolAssociation)
@@ -675,7 +675,7 @@ See [extensions.md](extensions.md) for the normative mapping rules for `_ext` (r
 
 ## Naming Rules (Deterministic, Cross-DB Safe)
 
-To keep migrations tractable and avoid rename cascades, physical names must be deterministic:
+To keep schema management tractable and avoid rename cascades, physical names must be deterministic:
 
 - Schema name: derived from `ProjectEndpointName` (`ed-fi` → `edfi`, non-alphanumerics removed/normalized).
 - Table names: PascalCase resource names (MetaEd `resourceName`), plus deterministic suffixes for collections.

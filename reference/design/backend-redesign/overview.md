@@ -33,9 +33,9 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity/descriptor cascades.
   - Use an **opaque “representation version” token** in `dms.Document` (not a JSON/content hash) and update it with **set-based cascades** (similar to `dms.ReferentialIdentity` recompute) to minimize cascade cost.
   - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `transactions-and-concurrency.md`).
-- **Schema updates require migration + restart**: Applying a new `ApiSchema.json` requires migrating the relational schema and restarting DMS; in-process schema reload/hot-reload is out of scope for this design.
+- **Schema updates are validated, not applied**: DMS does not perform in-place schema changes; it validates on startup that the database matches the configured effective `ApiSchema.json` fingerprint (see `dms.EffectiveSchema`) and refuses to start/serve if it does not. In-process schema reload/hot-reload is out of scope for this design.
 - **Authorization companion doc**: Authorization storage and query filtering for this redesign is described in [auth.md](auth.md).
-- **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource”. SQL may still be *produced and executed* by a migrator from metadata, but should not require generated source artifacts to compile/run DMS.
+- **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
 - **Polymorphic references use union views**: For abstract reference targets (e.g., `EducationOrganization`), store `..._DocumentId` as an FK to `dms.Document(DocumentId)` for existence and standardize membership validation + identity projection on `{AbstractResource}_View` (derived from `ApiSchema.json` `abstractResources`; see [data-model.md](data-model.md)).
 
 ## Key Implications vs the Current Three-Table Design
@@ -101,15 +101,15 @@ This redesign is split into focused docs in this directory:
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
-- Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching, migration): [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization (subject model + view-based options): [auth.md](auth.md)
 - Risk areas (operational + correctness + performance): [risk-areas.md](risk-areas.md)
 
 ## Related Changes Implied by This Redesign
 
-- **Remove schema reload/hot-reload**: The current reload behavior exists primarily for testing convenience. With relational-first storage, schema changes are operational events (migration + restart), not runtime toggles.
-- **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
-- **Fail-fast on schema mismatch**: DMS should verify on startup that the database schema matches the configured effective `ApiSchema.json` set (core + extensions) fingerprint (see `dms.EffectiveSchema`) and refuse to start/serve if it does not.
+ - **Remove schema reload/hot-reload**: The current reload behavior exists primarily for testing convenience. With relational-first storage, DMS uses startup schema validation (`dms.EffectiveSchema`) instead of runtime schema toggles.
+ - **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
+ - **Fail-fast on schema mismatch**: DMS should verify on startup that the database schema matches the configured effective `ApiSchema.json` set (core + extensions) fingerprint (see `dms.EffectiveSchema`) and refuse to start/serve if it does not.
 
 ## Risks / Open Questions
 
@@ -119,4 +119,4 @@ This redesign is split into focused docs in this directory:
    - Mitigation: add invariant checks/audits and build high-coverage tests around derived bindings; fail writes on edge maintenance failures.
 3. **ReferenceEdge operational load**: required edge maintenance adds overhead; naive “delete-all then insert-all” can churn.
    - Mitigation: diff-based upsert (stage + insert missing + delete stale) and careful indexing.
-4. **Schema evolution**: handling renames and destructive changes safely and predictably.
+4. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).

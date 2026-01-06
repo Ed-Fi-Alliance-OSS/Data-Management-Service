@@ -23,7 +23,7 @@ This document is the extensions deep dive for `overview.md`.
 - [Flattening integration](#flattening-postput-integration)
 - [Reconstitution integration](#reconstitution-getquery-integration)
 - [Example](#example-contact--sample-extension-resource--common-type)
-- [Migration notes](#migration-notes)
+- [Schema validation notes](#schema-validation-notes)
 - [Open questions](#open-questions--decisions-to-confirm)
 
 ---
@@ -41,7 +41,7 @@ Authorization storage is described in [auth.md](auth.md).
 
 ## Goals & Constraints
 
-- **Schema-driven, no codegen**: derive extension tables/columns from effective `ApiSchema.json` (`jsonSchemaForInsert` + `documentPathsMapping`) and compile plans at startup/migration time.
+- **Schema-driven, no codegen**: derive extension tables/columns from effective `ApiSchema.json` (`jsonSchemaForInsert` + `documentPathsMapping`) and compile plans at startup.
 - **Low coupling to document shape**: treat `_ext` as a generic “project-scoped subtree” discovered via JSON schema traversal (no hard-coded paths).
 - **Cross-engine**: PostgreSQL + SQL Server parity.
 - **No core-table widening**: avoid merging extension columns into core resource tables; keep extension projects’ data in their own table hierarchies.
@@ -75,7 +75,7 @@ Resolve an `_ext` key `k` to a `ProjectEndpointName` as follows:
 
 1. If `k` matches a configured `projectSchema.projectEndpointName` (case-insensitive), it is that `ProjectEndpointName`.
 2. Else if `k` matches a configured `projectSchema.projectName` (case-insensitive), map it to that project’s `ProjectEndpointName` (defensive fallback).
-3. Else fail fast (schema compilation/migration): unknown extension key.
+3. Else fail fast (schema compilation/startup validation): unknown extension key.
 
 This supports either `ProjectEndpointName` tokens (recommended) or MetaEd project name tokens inside `_ext`.
 
@@ -175,10 +175,9 @@ Sample extension tables:
 - `sample.ContactExtension` (resource-level extension fields under `$._ext.sample`)
 - `sample.ContactExtensionAddress` (extension fields under `$.addresses[*]._ext.sample`)
 
-## Migration notes
+## Schema validation notes
 
 Extension tables are part of the derived relational model:
-- they are created/diffed by the migrator alongside core tables
 - they are included in the effective schema fingerprint validation (`dms.EffectiveSchemaHash`) because they derive from the same effective ApiSchema set
 
 ## Open questions / decisions to confirm

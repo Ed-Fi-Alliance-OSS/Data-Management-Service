@@ -107,7 +107,7 @@ To keep the mapping deterministic, portable, and validatable, `nameOverrides` mu
 
 2. **Keys must match a derived mapping element**:
    - The key must match a derived column path or collection path for the resource.
-   - Unknown keys are an error (migration/startup fails fast) to prevent “silent typos”.
+   - Unknown keys are an error (startup schema validation fails fast) to prevent “silent typos”.
 
 3. **Meaning depends on whether the key ends with `[*]`**:
    - If the key **ends with `[*]`**, it overrides the **collection table base name** for that array path (e.g., `$.addresses[*].periods[*]` → `SchoolAddressPeriod`).
@@ -116,13 +116,13 @@ To keep the mapping deterministic, portable, and validatable, `nameOverrides` mu
 
 4. **Overrides cannot create collisions**:
    - After applying overrides and the standard identifier normalization/truncation rules, table/column names must still be unique.
-   - Collisions are a compile-time error (migration/startup fails) and must be resolved by adjusting overrides.
+   - Collisions are a compile-time error (startup schema validation fails) and must be resolved by adjusting overrides.
 
 ---
 
 ## 4. Derived Relational Resource Model (What We Compile at Startup)
 
-At startup (or at migrator time), DMS builds a fully explicit internal model:
+At startup, DMS builds a fully explicit internal model:
 
 - Root table name + full column list (scalars + FK columns)
 - Child tables for each array path (and nested arrays)
@@ -641,7 +641,6 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// <summary>
 /// Fully derived relational mapping for a single API resource type.
 /// This is the canonical shape model used by:
-/// - the migrator (DDL generation)
 /// - runtime plan compilation (SQL generation + bindings)
 /// - runtime validation helpers (e.g. expected descriptor resource type)
 /// </summary>
@@ -752,7 +751,7 @@ public sealed record DbColumnModel(
 );
 
 /// <summary>
-/// Logical constraints that the migrator can translate into physical DDL.
+/// Logical constraints that map to physical database constraints.
 /// Names are deterministic so that constraint-violation errors can be mapped back to API concepts.
 /// </summary>
 public abstract record TableConstraint
@@ -1407,11 +1406,9 @@ SQL Server analog:
 - stage into `#reference_edge_stage(ChildDocumentId, IsIdentityComponent)` (or a table-valued parameter)
 - run “insert missing” + “update changed” + “delete stale” with the same shape (avoid `MERGE` unless you have strong operational confidence in it).
 
-### 7.7 Example: Pre-compilation (startup or migrator)
+### 7.7 Example: Pre-compilation (startup)
 
-This shows how the shape model and plans are compiled and cached. The same builder can be used by:
-- the migrator (DDL generation)
-- runtime (plan compilation + caching)
+This shows how the shape model and plans are compiled and cached for runtime use.
 
 ```csharp
 public sealed class RelationalPlanProvider(
@@ -1681,14 +1678,14 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
 - **N+1 writes**: prevented by per-table batched inserts; nested collections avoid identity capture via composite keys.
 - **N+1 reads**: prevented by per-table batched selects; reference identity projection is grouped per target resource type.
 - **Network traffic**: minimized by multi-resultset reads and batching, plus optional L1/L2 caches for identity/descriptor lookups.
-- **Schema complexity**: the model builder must validate supported JSON schema constructs and fail migration/startup for unsupported patterns (only support the subset MetaEd actually emits). `additionalProperties` is not treated as persisted dynamic content because Core prunes overposted properties before extraction.
+- **Schema complexity**: the model builder must validate supported JSON schema constructs and fail startup schema validation for unsupported patterns (only support the subset MetaEd actually emits). `additionalProperties` is not treated as persisted dynamic content because Core prunes overposted properties before extraction.
 
 ---
 
 ## 9. Next Steps (Design → Implementation)
 
-1. Use composite parent+ordinal keys for child tables (as described above) and reflect this in the migrator DDL rules.
+1. Use composite parent+ordinal keys for child tables (as described above) and standardize runtime write/read plans around them.
 2. Define exact `relational` block JSON schema and add it to `JsonSchemaForApiSchema.json`.
-3. Implement a shared `RelationalResourceModelBuilder` (used by both migrator and runtime).
+3. Implement a shared `RelationalResourceModelBuilder` for runtime.
 4. Implement Postgres + SQL Server dialects for paging and bulk insert paths.
 5. Prototype end-to-end on one resource with nested collections (e.g., `School` addresses → periods).
