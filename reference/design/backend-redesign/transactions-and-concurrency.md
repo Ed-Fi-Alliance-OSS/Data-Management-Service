@@ -21,7 +21,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, inclu
 - [Read Path (GET by id / GET query)](#read-path-get-by-id--get-query)
 - [Caching (Low-Complexity Options)](#caching-low-complexity-options)
 - [Delete Path (DELETE by id)](#delete-path-delete-by-id)
-- [Migration Strategy (Schema Changes)](#migration-strategy-schema-changes)
+- [Schema Validation (EffectiveSchema)](#schema-validation-effectiveschema)
 - [Risks / Open Questions](#risks--open-questions)
 - [Suggested Implementation Phases](#suggested-implementation-phases)
 - [Operational Considerations](#operational-considerations)
@@ -357,10 +357,10 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
   - Correctness is enforced by the FK graph (delete cascades or fails with FK violation).
   - For richer “who references me?” diagnostics, use `dms.ReferenceEdge` (and fall back to deterministic FK-name mapping only as a defensive fallback).
 
-- **Schema migration**
-  - Migration + restart remains the operational contract.
-  - If `dms.DocumentCache` is enabled, clear/rebuild it when the effective schema changes.
-  - If a schema change affects reference/descriptor mapping or identity-component classification, rebuild `dms.ReferenceEdge` (or run an auditing/repair job) so stored `IsIdentityComponent` flags remain correct.
+- **Schema validation (`dms.EffectiveSchema`)**
+  - DMS validates database/schema compatibility at startup via `dms.EffectiveSchema`/`dms.SchemaComponent` (see “Schema Validation (EffectiveSchema)” below).
+  - If `dms.DocumentCache` is enabled, treat it as derived data and clear/rebuild it when the effective schema changes.
+  - If the effective schema changes in a way that affects reference/descriptor mapping or identity-component classification, rebuild `dms.ReferenceEdge` (or run an auditing/repair job) so stored `IsIdentityComponent` flags remain correct.
 
 ### Concurrency (ETag)
 
@@ -465,7 +465,7 @@ This design is relational-first (canonical store is relational). `dms.DocumentCa
 1. **Derived relational mapping (from `ApiSchema`)**
    - Cache the derived mapping per `(EffectiveSchemaHash, ProjectName, ResourceName)`.
    - Includes: JsonPath→(table,column), collection table names, query param→column/type plan, and prepared SQL templates.
-   - Invalidation: schema migration + restart (natural).
+   - Invalidation: effective schema change + restart (natural).
 
 2. **`dms.ReferentialIdentity` lookups**
    - Cache `ReferentialId → DocumentId` for identity/reference resolution (all identities, including reference-bearing and abstract/superclass aliases).
@@ -518,11 +518,11 @@ Suggested defaults:
 
 Add Redis as an optional L2 cache:
 - Reduces DB round-trips across nodes for hot lookups.
-- Keep it simple:
-  - cache-aside reads
-  - write-through updates after successful commit
-  - TTL everywhere
-  - versioned keys via `EffectiveSchemaHash` (no “flush all keys” needed on migration)
+  - Keep it simple:
+    - cache-aside reads
+    - write-through updates after successful commit
+    - TTL everywhere
+    - versioned keys via `EffectiveSchemaHash` (no “flush all keys” needed when the effective schema changes)
 
 Invalidation approaches (choose one):
 - **TTL-only** (simplest): acceptable for non-critical caches; for `ReferentialId → DocumentId` under identity updates/cascades, TTL-only staleness can cause incorrect resolution unless you fall back to DB.
@@ -531,10 +531,9 @@ Invalidation approaches (choose one):
 
 ### Invalidation rules (recommended)
 
-- **Schema migration**:
-  - migration writes a new `dms.EffectiveSchema` row (and `dms.SchemaComponent` rows)
+- **Effective schema change**:
   - DMS restart is required; local caches are naturally cleared
-  - Redis keys are automatically isolated by new `EffectiveSchemaHash` prefix
+  - Redis keys are automatically isolated by the new `EffectiveSchemaHash` prefix
 - **Successful write transaction commit**:
   - update local/Redis caches for the touched identity/descriptor/uuid keys
   - do not populate caches before commit
@@ -694,7 +693,7 @@ This spec assumes the DMS resilience policy retries the full write transaction o
 
 ##### Cycle safety (MUST)
 
-The migrator/schema validator must reject ApiSchema identity graphs with cycles at the **resource-type** level (edge `R → T` when `R`’s identity includes an identity-component reference/descriptor that depends on `T`). Cycles make Algorithm 2 unsafe and can lead to deadlocks or non-termination.
+Startup schema validation must reject ApiSchema identity graphs with cycles at the **resource-type** level (edge `R → T` when `R`’s identity includes an identity-component reference/descriptor that depends on `T`). Cycles make Algorithm 2 unsafe and can lead to deadlocks or non-termination.
 
 #### Set-based recompute
 
@@ -856,7 +855,7 @@ Reasons to prefer eventual consistency over strict transactional cache maintenan
 **Write behavior (recommended)**
 - For the document being written: enqueue/mark for background materialization (optionally write-through if the deployment can afford it).
 - For dependent documents (when referenced identities/descriptor URIs change): enqueue/mark for background rebuild instead of rebuilding inside the write transaction.
-- For CDC/backfill: provide an operator-triggered “rebuild all” job (or migrator step) that materializes every `dms.Document` row into `dms.DocumentCache` before enabling Debezium snapshot/streaming.
+- For CDC/backfill: provide an operator-triggered “rebuild all” job that materializes every `dms.Document` row into `dms.DocumentCache` before enabling Debezium snapshot/streaming.
 
 **Read behavior (recommended)**
 - If a projection row exists and is fresh, return it.
@@ -1045,23 +1044,15 @@ catch (DbException ex) when (IsForeignKeyViolation(ex))
 
 
 
-## Migration Strategy (Schema Changes)
+## Schema Validation (EffectiveSchema)
 
-Because schema changes require migration, the contract becomes:
+This redesign treats schema changes as an **operational concern outside DMS**. DMS does not define any in-place schema evolution behavior; instead it validates compatibility at startup:
 
-- DMS loads `ApiSchema.json` at startup; **there is no in-process schema reload** for relational storage.
-- When `ApiSchema.json` changes, the database must be migrated and DMS must be restarted before the new schema is active.
-- A migrator tool (or admin endpoint) performs:
-  1. Load ApiSchema
-  2. Derive required relational model (tables/columns/indexes/FKs)
-  3. Diff against current DB
-  4. Apply DDL changes (or emit a script to be applied)
-  5. Record success in `dms.EffectiveSchema` and `dms.SchemaComponent`
+- DMS loads the configured core + extension `ApiSchema.json` files and computes `EffectiveSchemaHash` (see [data-model.md](data-model.md) “EffectiveSchemaHash Calculation”).
+- DMS reads the database’s recorded schema fingerprint from `dms.EffectiveSchema` + `dms.SchemaComponent`.
+- If the fingerprints (or expected schema components) do not match, DMS refuses to start/serve.
 
-Migration scope:
-- Additive changes (new properties/collections) are straightforward.
-- Renames/removals should require explicit operator intent (drop/rename hints) to avoid destructive surprises.
-- Extension tables are migrated the same way as core tables; they live in extension project schemas and are derived from `_ext` in the effective ApiSchema (see [extensions.md](extensions.md)).
+This makes schema mismatch a **fail-fast** condition and avoids any automatic in-place schema update behavior in the server.
 
 ## Risks / Open Questions
 

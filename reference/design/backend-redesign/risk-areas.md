@@ -91,7 +91,7 @@ Bulk importing large sets where many documents reference the same identity compo
 
 ### Possible actions / mitigations
 - **Cycle safety is mandatory**:
-  - reject identity dependency cycles at the resource-type level at migration/startup (already stated in the draft) and ensure the rule is exhaustive (including transitive cycles).
+  - reject identity dependency cycles at the resource-type level during startup schema validation (already stated in the draft) and ensure the rule is exhaustive (including transitive cycles).
 - **Define a deadlock/serialization retry policy now (not “later”)**:
   - max retry attempts
   - jittered exponential backoff strategy
@@ -149,7 +149,7 @@ Treating `dms.DocumentCache` as “optional” is risky for realistic latency ta
 ### Risk
 Union views for abstract resources (e.g., `EducationOrganization_View`) may scale poorly:
 - performance can degrade with number/size of concrete tables
-- changes require migration + restart
+- changes require updating the database view definition and restarting DMS (and are validated via `dms.EffectiveSchema` on startup)
 
 ### Possible actions / mitigations
 - Benchmark abstract-view usage for high-volume abstract targets (EducationOrganization is pervasive).
