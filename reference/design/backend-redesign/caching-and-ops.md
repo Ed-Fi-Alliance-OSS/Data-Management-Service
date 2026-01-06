@@ -349,6 +349,7 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
   - Apply the update with a set-based statement (same transaction as `dms.ReferentialIdentity` recompute):
     - PostgreSQL: `UPDATE dms.Document SET Etag = Etag + 1, LastModifiedAt = now() WHERE DocumentId IN (...CacheTargets...)`
     - SQL Server: `UPDATE dms.Document SET Etag = Etag + 1, LastModifiedAt = sysutcdatetime() WHERE DocumentId IN (...CacheTargets...)`
+  - Strictness: computing `Parents(IdentityClosure)` must be **phantom-safe** w.r.t. concurrent writes to `dms.ReferenceEdge` so `CacheTargets` is complete; this design uses **SERIALIZABLE semantics** on the edge-scan (PostgreSQL: SERIALIZABLE transaction; SQL Server: SERIALIZABLE key-range locks on the edge scan). See “Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)” below.
   - If `dms.DocumentCache` is enabled, rebuild/refresh cached JSON for `CacheTargets` **eventually** (background projector). The version bump provides a cheap, correct signal that dependent representations changed and drives which rows are stale.
 
 - **Deletes**
@@ -677,16 +678,18 @@ Correctness argument (why fixpoint is phantom-safe):
 
 - Deadlocks are still possible under contention (e.g., overlapping closures). The correct response is to roll back and retry the **entire** identity-affecting transaction.
 - Recommended: bounded retry (e.g., 3 attempts) with jittered backoff.
-- Treat both as retryable:
-  - PostgreSQL: `40P01` (deadlock detected)
-  - SQL Server: `1205` (deadlock victim)
+- Treat these as retryable (identity/URI-changing transactions + strict representation-version cascades):
+  - PostgreSQL: `40P01` (deadlock detected), `40001` (serialization failure)
+  - SQL Server: `1205` (deadlock victim), `1222` (lock request timeout, if configured)
 
 This spec assumes the DMS resilience policy retries the full write transaction on these failures.
 
 ##### Isolation level guidance
 
-- Prefer **READ COMMITTED + explicit `dms.IdentityLock` row locks** for identity-affecting transactions.
-- If using snapshot/serializable semantics, ensure the implementation still observes newly committed `dms.ReferenceEdge` rows for children that are not yet update-locked; otherwise the closure expansion can miss dependents.
+- Default: use **READ COMMITTED + explicit `dms.IdentityLock` row locks** for normal writes and for identity correctness (Algorithms 1–2).
+- For **strict, phantom-safe representation-version cascades** (`Etag`/`LastModifiedAt` over `CacheTargets`), use **SERIALIZABLE semantics** for the `Parents(IdentityClosure)` edge scan so the computed `CacheTargets` set is complete:
+  - PostgreSQL: run the identity/URI-changing write transaction at **SERIALIZABLE** and retry on `40001`.
+  - SQL Server: either run the transaction at **SERIALIZABLE**, or (recommended) keep the transaction `READ COMMITTED` and take **SERIALIZABLE key-range locks** on `dms.ReferenceEdge` during the `Parents(IdentityClosure)` read (via `WITH (HOLDLOCK, SERIALIZABLE)`).
 
 ##### Cycle safety (MUST)
 
@@ -701,6 +704,133 @@ Within the same transaction (and while holding the impacted-set locks):
 3) Stage and replace `dms.ReferentialIdentity` rows for the impacted set (delete-by-`DocumentId`+`{ProjectName, ResourceName}` then insert staged rows). Include superclass/abstract alias rows for subclass resources.
 
 If the recompute fails (identity conflict/unique violation, deadlock without successful retry, etc.), the transaction must roll back (no stale window). Identity conflicts should map to a 409 (same as other natural-key conflicts).
+
+#### Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)
+
+When a document’s identity/URI changes, other documents’ API representations can change without any FK changes (because references are stored as stable `DocumentId`s and reference identity values are reconstituted at read time). To keep representation-sensitive optimistic concurrency correct, DMS must bump `dms.Document(Etag, LastModifiedAt)` not only for the `IdentityClosure`, but also for 1-hop referrers:
+
+- `IdentityClosure`: `Seeds ∪ Parents*(Seeds)` over `dms.ReferenceEdge(IsIdentityComponent=true)`
+- `CacheTargets`: `IdentityClosure ∪ Parents(IdentityClosure)` over **all** `dms.ReferenceEdge` rows
+
+**Phantom problem**
+
+If the transaction computes `Parents(IdentityClosure)` under plain `READ COMMITTED` without any additional protection, it can miss a concurrently-committed `(ParentDocumentId, ChildDocumentId)` edge. That produces a missing bump (stale `_etag` / `_lastModifiedDate`) for a document whose representation changed, breaking the design’s strictness goals.
+
+**Why not “lock every referenced child”**
+
+A fully strict alternative is to extend Invariant A so *every* write that inserts/updates a `dms.ReferenceEdge` row (including non-identity edges) must acquire a shared lock on `dms.IdentityLock(ChildDocumentId)`. That prevents phantoms, but it pushes extra locks onto the hot write path and can create high-fanout lock acquisition (many children per document) and increased deadlock risk.
+
+This design instead uses **SERIALIZABLE semantics** on the `Parents(IdentityClosure)` edge read:
+- PostgreSQL: SERIALIZABLE transaction + retry (SSI detects phantoms and forces a retry via `40001`)
+- SQL Server: SERIALIZABLE key-range locks (blocks concurrent inserts into the scanned key ranges)
+
+This concentrates the coordination cost on the *rarer* identity/URI-changing transactions and on the edge-index ranges that matter, and it benefits directly from the compact `dms.ReferenceEdge` model (one row per `(ParentDocumentId, ChildDocumentId)`).
+
+##### PostgreSQL (SERIALIZABLE transaction + retry)
+
+Run identity/URI-changing writes at `SERIALIZABLE` and retry on `40001`.
+
+**SQL sketch**
+
+```sql
+-- Precondition: IdentityClosure has already been computed/locked (Algorithms 1–2).
+-- Use a temp table so both the edge scan and the update are set-based.
+CREATE TEMP TABLE IF NOT EXISTS identity_closure (
+  DocumentId bigint PRIMARY KEY
+) ON COMMIT DROP;
+
+CREATE TEMP TABLE IF NOT EXISTS cache_targets (
+  DocumentId bigint PRIMARY KEY
+) ON COMMIT DROP;
+
+-- Populate identity_closure (implementation choice: insert as you lock, or bulk insert at the end).
+-- INSERT INTO identity_closure (DocumentId) VALUES (...);
+
+INSERT INTO cache_targets (DocumentId)
+SELECT DocumentId FROM identity_closure
+ON CONFLICT DO NOTHING;
+
+-- Phantom-safe parent-of-closure read under SERIALIZABLE (SSI).
+INSERT INTO cache_targets (DocumentId)
+SELECT DISTINCT e.ParentDocumentId
+FROM dms.ReferenceEdge e
+JOIN identity_closure c
+  ON c.DocumentId = e.ChildDocumentId
+ON CONFLICT DO NOTHING;
+
+-- Representation-version bump for all cache targets (deduped).
+UPDATE dms.Document d
+SET Etag = d.Etag + 1,
+    LastModifiedAt = now()
+FROM cache_targets t
+WHERE d.DocumentId = t.DocumentId;
+```
+
+**C# sketch (retry loop)**
+
+```csharp
+const int maxAttempts = 3;
+
+for (var attempt = 1; attempt <= maxAttempts; attempt++)
+{
+    await using var connection = await dataSource.OpenConnectionAsync(ct);
+    await using var tx = await connection.BeginTransactionAsync(IsolationLevel.Serializable, ct);
+
+    try
+    {
+        // 1) Lock/compute IdentityClosure (Algorithms 1–2).
+        // 2) Recompute dms.ReferentialIdentity for the closure (Set-based recompute).
+        // 3) Compute CacheTargets (Parents(IdentityClosure)) and bump dms.Document(Etag, LastModifiedAt) using the SQL above.
+
+        await tx.CommitAsync(ct);
+        break;
+    }
+    catch (PostgresException ex) when (ex.SqlState is "40001" or "40P01")
+    {
+        await tx.RollbackAsync(ct);
+        if (attempt == maxAttempts) throw;
+        await Task.Delay(JitteredBackoff(attempt), ct);
+    }
+}
+```
+
+Notes:
+- Keep the SERIALIZABLE transaction as short as possible: do not perform network calls or long-running work inside it.
+- Ensure the parent-of-closure edge scan uses `IX_ReferenceEdge_ChildDocumentId` to keep predicate tracking narrow.
+
+##### SQL Server (SERIALIZABLE key-range locks on the edge scan)
+
+SQL Server can apply SERIALIZABLE semantics narrowly to the edge scan using lock hints, avoiding SERIALIZABLE range locking for the entire transaction.
+
+**T-SQL sketch**
+
+```sql
+-- Precondition: #IdentityClosure (DocumentId bigint PRIMARY KEY) is populated.
+CREATE TABLE #CacheTargets (DocumentId bigint NOT NULL PRIMARY KEY);
+
+INSERT INTO #CacheTargets (DocumentId)
+SELECT DocumentId FROM #IdentityClosure;
+
+-- Phantom-safe parent-of-closure read: take key-range locks on the ChildDocumentId ranges we scan.
+INSERT INTO #CacheTargets (DocumentId)
+SELECT DISTINCT e.ParentDocumentId
+FROM dms.ReferenceEdge e WITH (HOLDLOCK, SERIALIZABLE, INDEX(IX_ReferenceEdge_ChildDocumentId))
+JOIN #IdentityClosure c
+  ON c.DocumentId = e.ChildDocumentId
+WHERE NOT EXISTS (
+    SELECT 1 FROM #CacheTargets t WHERE t.DocumentId = e.ParentDocumentId
+);
+
+UPDATE d
+SET d.Etag = d.Etag + 1,
+    d.LastModifiedAt = SYSUTCDATETIME()
+FROM dms.Document d
+JOIN #CacheTargets t ON t.DocumentId = d.DocumentId;
+```
+
+Notes:
+- This blocks concurrent inserts into `dms.ReferenceEdge` for the scanned `ChildDocumentId` ranges until the transaction commits, preventing phantoms without requiring locks on every referenced child document.
+- Under contention, expect deadlocks (`1205`) or lock timeouts (`1222` if configured); treat these as retryable for identity/URI-changing transactions.
 
 ### `dms.DocumentCache` (optional; preferred eventual consistency)
 

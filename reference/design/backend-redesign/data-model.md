@@ -58,6 +58,7 @@ Notes:
   - `Etag` should be incremented (e.g., `Etag = Etag + 1`) at least once per committed transaction for every document whose **representation** changes, including identity/descriptor cascades; dedupe the impacted `DocumentId` set so a document is bumped once per cascade transaction.
   - Concurrency: updates guarded by `If-Match` should use a conditional update (`WHERE DocumentId=@id AND Etag=@expected`) so the bump is atomic and race-safe.
   - Cascades should update `Etag`/`LastModifiedAt` with **set-based writes** over an impacted set (computed using `dms.ReferenceEdge`), rather than reconstituting and hashing large JSON payloads.
+  - Strictness: the impacted-set computation must be **phantom-safe** w.r.t. concurrent `dms.ReferenceEdge` writes; see `caching-and-ops.md` (“Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)”).
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization-related columns are intentionally omitted here. Authorization storage and query filtering is described in [auth.md](auth.md).
 
