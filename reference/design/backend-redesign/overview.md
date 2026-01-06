@@ -34,6 +34,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - Rationale and operational details: see [caching-and-ops.md](caching-and-ops.md) (`dms.DocumentCache` section).
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity/descriptor cascades.
   - Use an **opaque “representation version” token** in `dms.Document` (not a JSON/content hash) and update it with **set-based cascades** (similar to `dms.ReferentialIdentity` recompute) to minimize cascade cost.
+  - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `caching-and-ops.md`).
 - **Schema updates require migration + restart**: Applying a new `ApiSchema.json` requires migrating the relational schema and restarting DMS; in-process schema reload/hot-reload is out of scope for this design.
 - **Authorization companion doc**: Authorization storage and query filtering for this redesign is described in [auth.md](auth.md).
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource”. SQL may still be *produced and executed* by a migrator from metadata, but should not require generated source artifacts to compile/run DMS.
