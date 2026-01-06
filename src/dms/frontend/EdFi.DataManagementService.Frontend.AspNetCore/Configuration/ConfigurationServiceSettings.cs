@@ -13,7 +13,6 @@ public class ConfigurationServiceSettings
     public required string ClientId { get; set; }
     public required string ClientSecret { get; set; }
     public required string Scope { get; set; }
-    public required int CacheExpirationMinutes { get; set; }
 }
 
 public class ConfigurationServiceSettingsValidator : IValidateOptions<ConfigurationServiceSettings>
@@ -40,12 +39,6 @@ public class ConfigurationServiceSettingsValidator : IValidateOptions<Configurat
         if (string.IsNullOrWhiteSpace(options.Scope))
         {
             return ValidateOptionsResult.Fail("Missing required ConfigurationServiceSettings value: Scope");
-        }
-        if (options.CacheExpirationMinutes <= 0)
-        {
-            return ValidateOptionsResult.Fail(
-                "ConfigurationServiceSettings value CacheExpirationMinutes must be greater than 0"
-            );
         }
 
         return ValidateOptionsResult.Success;

@@ -13,6 +13,11 @@ public class TestHttpMessageHandler : HttpMessageHandler
     private readonly HttpStatusCode _httpStatusCode;
     private readonly Dictionary<string, string> _responses = [];
 
+    /// <summary>
+    /// Optional callback invoked on each request, useful for counting HTTP calls in tests.
+    /// </summary>
+    public Action? OnRequest { get; set; }
+
     public TestHttpMessageHandler(HttpStatusCode httpStatusCode, string? responseContent = null)
     {
         _httpStatusCode = httpStatusCode;
@@ -33,6 +38,8 @@ public class TestHttpMessageHandler : HttpMessageHandler
         CancellationToken cancellationToken
     )
     {
+        OnRequest?.Invoke();
+
         if (
             _httpStatusCode.Equals(HttpStatusCode.OK)
             && _responses.TryGetValue(request.RequestUri!.ToString(), out var content)

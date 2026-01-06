@@ -45,7 +45,7 @@ internal class ApiService : IApiService
     private readonly ResourceLoadOrderCalculator _resourceLoadCalculator;
     private readonly IUploadApiSchemaService _apiSchemaUploadService;
     private readonly IServiceProvider _serviceProvider;
-    private readonly ClaimSetsCache _claimSetsCache;
+    private readonly CachedClaimSetProvider _cachedClaimSetProvider;
     private readonly IResourceDependencyGraphMLFactory _resourceDependencyGraphMLFactory;
     private readonly ICompiledSchemaCache _compiledSchemaCache;
 
@@ -98,7 +98,7 @@ internal class ApiService : IApiService
         ResourceLoadOrderCalculator resourceLoadCalculator,
         IUploadApiSchemaService apiSchemaUploadService,
         IServiceProvider serviceProvider,
-        ClaimSetsCache claimSetsCache,
+        CachedClaimSetProvider cachedClaimSetProvider,
         IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
         ICompiledSchemaCache compiledSchemaCache
     )
@@ -116,7 +116,7 @@ internal class ApiService : IApiService
         _resourceLoadCalculator = resourceLoadCalculator;
         _apiSchemaUploadService = apiSchemaUploadService;
         _serviceProvider = serviceProvider;
-        _claimSetsCache = claimSetsCache;
+        _cachedClaimSetProvider = cachedClaimSetProvider;
         _resourceDependencyGraphMLFactory = resourceDependencyGraphMLFactory;
         _compiledSchemaCache = compiledSchemaCache;
 
@@ -713,8 +713,8 @@ internal class ApiService : IApiService
 
         try
         {
-            // Clear the existing cache for this tenant
-            _claimSetsCache.ClearCache(tenant);
+            // Clear the existing cache for this tenant using HybridCache invalidation
+            await _cachedClaimSetProvider.InvalidateCacheAsync(tenant);
             _logger.LogInformation("Claimsets cache cleared successfully");
 
             // Force immediate reload by calling GetAllClaimSets(), which will fetch from CMS and populate the cache

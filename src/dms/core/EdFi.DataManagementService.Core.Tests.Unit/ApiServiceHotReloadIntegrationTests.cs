@@ -149,7 +149,7 @@ public class ApiServiceHotReloadIntegrationTests
             resourceLoadOrderCalculator,
             apiSchemaUploadService,
             serviceProvider,
-            A.Fake<ClaimSetsCache>(),
+            A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             new CompiledSchemaCache()
         );
@@ -399,7 +399,7 @@ public class ApiServiceHotReloadIntegrationTests
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
                 apiSchemaUploadService,
                 new ServiceCollection().BuildServiceProvider(),
-                A.Fake<ClaimSetsCache>(),
+                A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
                 new CompiledSchemaCache()
             );

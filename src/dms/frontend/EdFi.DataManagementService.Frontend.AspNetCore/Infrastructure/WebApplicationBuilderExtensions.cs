@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Serilog;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
@@ -99,8 +98,9 @@ public static class WebApplicationBuilderExtensions
 
         ConfigurationManager config = webAppBuilder.Configuration;
 
-        // For Token handling
+        // For Token handling and HybridCache stampede protection
         webAppBuilder.Services.AddMemoryCache();
+        webAppBuilder.Services.AddHybridCache();
 
         // Access Configuration service
         var configServiceSettings = config
@@ -134,38 +134,28 @@ public static class WebApplicationBuilderExtensions
                 configServiceSettings.Scope
             )
         );
-        webAppBuilder.Services.AddSingleton(serviceProvider =>
-        {
-            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
-            var cacheExpiration = configServiceSettings.CacheExpirationMinutes;
-            var defaultExpiration = TimeSpan.FromMinutes(cacheExpiration);
 
-            return new ClaimSetsCache(memoryCache, defaultExpiration);
-        });
-        webAppBuilder.Services.AddSingleton(serviceProvider =>
-        {
-            var memoryCache = serviceProvider.GetRequiredService<IMemoryCache>();
-            var cacheExpiration = configServiceSettings.CacheExpirationMinutes;
-            var defaultExpiration = TimeSpan.FromMinutes(cacheExpiration);
+        // Bind CacheSettings from configuration
+        var cacheSettings = new CacheSettings();
+        webAppBuilder.Configuration.GetSection("CacheSettings").Bind(cacheSettings);
+        webAppBuilder.Services.AddSingleton(cacheSettings);
 
-            return new ApplicationContextCache(memoryCache, defaultExpiration);
-        });
         webAppBuilder.Services.AddTransient<
             IConfigurationServiceTokenHandler,
             ConfigurationServiceTokenHandler
         >();
 
-        // Register ConfigurationServiceClaimSetProvider as itself for dependency injection
-        webAppBuilder.Services.AddSingleton<ConfigurationServiceClaimSetProvider>();
+        // Register ConfigurationServiceClaimSetProvider as its interface
+        webAppBuilder.Services.AddSingleton<
+            IConfigurationServiceClaimSetProvider,
+            ConfigurationServiceClaimSetProvider
+        >();
 
-        // Register CachedClaimSetProvider as IClaimSetProvider, which decorates ConfigurationServiceClaimSetProvider
+        // Register CachedClaimSetProvider as IClaimSetProvider with HybridCache stampede protection
+        webAppBuilder.Services.AddSingleton<CachedClaimSetProvider>();
         webAppBuilder.Services.AddSingleton<IClaimSetProvider>(serviceProvider =>
-        {
-            var configurationServiceClaimSetProvider =
-                serviceProvider.GetRequiredService<ConfigurationServiceClaimSetProvider>();
-            var claimSetsCache = serviceProvider.GetRequiredService<ClaimSetsCache>();
-            return new CachedClaimSetProvider(configurationServiceClaimSetProvider, claimSetsCache);
-        });
+            serviceProvider.GetRequiredService<CachedClaimSetProvider>()
+        );
 
         // Register DMS Instance services
         webAppBuilder.Services.AddSingleton<IDmsInstanceProvider, ConfigurationServiceDmsInstanceProvider>();

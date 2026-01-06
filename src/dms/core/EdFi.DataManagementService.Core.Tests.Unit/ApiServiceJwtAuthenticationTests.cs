@@ -108,7 +108,7 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<ResourceLoadOrderCalculator>(),
             A.Fake<IUploadApiSchemaService>(),
             serviceProvider,
-            A.Fake<ClaimSetsCache>(),
+            A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             new CompiledSchemaCache()
         );
@@ -157,7 +157,7 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<ResourceLoadOrderCalculator>(),
             A.Fake<IUploadApiSchemaService>(),
             serviceProvider,
-            A.Fake<ClaimSetsCache>(),
+            A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
             new CompiledSchemaCache()
         );

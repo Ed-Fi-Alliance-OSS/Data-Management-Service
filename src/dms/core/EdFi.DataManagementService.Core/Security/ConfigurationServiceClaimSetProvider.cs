@@ -17,7 +17,7 @@ public class ConfigurationServiceClaimSetProvider(
     ConfigurationServiceApiClient configurationServiceApiClient,
     IConfigurationServiceTokenHandler configurationServiceTokenHandler,
     ConfigurationServiceContext configurationServiceContext
-) : IClaimSetProvider
+) : IClaimSetProvider, IConfigurationServiceClaimSetProvider
 {
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
     private const string TenantHeaderName = "Tenant";
