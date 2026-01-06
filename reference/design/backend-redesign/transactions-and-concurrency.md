@@ -11,7 +11,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, inclu
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
 - Authorization: [auth.md](auth.md)
-- Risk areas: [risk-areas.md](risk-areas.md)
+- Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 ## Table of Contents
 

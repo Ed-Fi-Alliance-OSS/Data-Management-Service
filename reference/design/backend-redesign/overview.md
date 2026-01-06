@@ -103,7 +103,7 @@ This redesign is split into focused docs in this directory:
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization (subject model + view-based options): [auth.md](auth.md)
-- Risk areas (operational + correctness + performance): [risk-areas.md](risk-areas.md)
+- Strengths and risks (operational + correctness + performance): [strengths-risks.md](strengths-risks.md)
 
 ## Related Changes Implied by This Redesign
 

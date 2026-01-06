@@ -11,7 +11,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
-- Risk areas: [risk-areas.md](risk-areas.md)
+- Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 This section describes how DMS flattens JSON documents into relational tables on POST/PUT, and how it reconstitutes JSON from those tables on GET/query without code-generating per-resource code.
 

@@ -1,10 +1,10 @@
-# Backend Redesign: Risk Areas (Tables per Resource)
+# Backend Redesign: Strengths and Risks
 
 ## Status
 
 Draft.
 
-This document collects risk areas for `overview.md`.
+This document captures strengths and risks for `overview.md`.
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
@@ -15,23 +15,54 @@ This document collects risk areas for `overview.md`.
 
 ## Purpose
 
-This document captures the highest-risk areas of the relational primary store redesign and the mitigations/actions recommended so far. More radical design changes are also an option 
-
-Authorization-specific risks are out of scope here.
+To get an impartial review of design strengths and risks from Gemini 3.0 Pro and Claude Opus 4.5. This document is a summary of their combined feedback from being given a framing prompt as "a senior .NET/C# architect with deep expertise in building scalable, high-performance server applications and APIs...", the design documents themselves, and a prompt of "Provide a critical review of this redesign of a backend software architecture."
 
 ---
 
-## Top Risks (Executive Summary)
+## Strengths
 
-1. **ReferenceEdge correctness** can silently break identity/ETag cascades if it drifts from actual relational FKs.
-2. **IdentityLock orchestration** (closure expansion + lock ordering) is complex and can create deadlocks/throughput collapse in “hub resource” scenarios.
-3. **Read-path reconstitution cost** may exceed typical API latency targets unless `dms.DocumentCache` is treated as the primary read path.
+### Tables per resource + stable `DocumentId` foreign keys
+
+- This is the correct strategic pivot for Ed-Fi: it embraces relational storage instead of fighting the database with JSONB-first querying.
+- Using stable `BIGINT` surrogate keys for references eliminates relational-level rewrite cascades when natural keys change; only derived artifacts need set-based updates.
+
+### `ReferentialId` retention (uniform natural-identity index)
+
+- Keeping `ReferentialId` avoids either:
+  - per-resource identity resolution queries (cross-engine divergence and N+1/batching risks), or
+  - denormalizing referenced natural keys into referencing tables (reintroducing cascade pressure).
+- UUIDv5 provides a clean, deterministic identity key that supports bulk `ReferentialId → DocumentId` resolution without handwritten per-resource SQL.
+
+### Composite parent+ordinal keys for collections
+
+- Using `(ParentKeyParts..., Ordinal)` keys avoids `INSERT ... RETURNING`/`OUTPUT` identity capture, enabling real batch inserts for nested collections.
+- It also preserves collection ordering deterministically for read-path reconstitution.
+
+### Metadata-driven mapping without code generation
+
+- Deriving relational tables/columns from `ApiSchema.json` and compiling read/write plans at startup is the right boundary: it keeps DMS extensible and avoids “rebuild-to-add-a-field”.
+- The design’s emphasis on precompiled plans is the key guardrail for runtime performance in a “generic ORM built from metadata” approach.
+
+### Reference-resolution optimization for nested collections
+
+- Carrying concrete JSON locations for extracted references (e.g., `$...addresses[2]...`) enables an efficient `DocumentReferenceInstanceIndex` keyed by ordinal path.
+- This is critical to making the no-codegen flattener performant: reference resolution can be bulk and request-scoped, without per-row JSONPath evaluation or per-row hashing.
+
+### Clear separation of required correctness vs optional projections
+
+- The docs clearly separate transactional correctness artifacts (`dms.ReferentialIdentity`, `dms.ReferenceEdge`, representation metadata) from optional eventual projections (`dms.DocumentCache`).
+- That separation makes trade-offs explicit and helps avoid accidentally depending on `dms.DocumentCache` for correctness.
+
+### Authorization alignment with ODS-style views
+
+- Moving away from JSONB authorization arrays and aligning to predictable `auth.*` view shapes is a sound direction.
+- The performance of this approach will hinge on the EdOrg closure/tuple table and having the right covering indexes for the most common joins.
 
 ---
 
-## ReferenceEdge Integrity (Highest Operational Risk)
+## Risks
 
-### Risk
+### ReferenceEdge Integrity (Highest Operational Risk)
 `dms.ReferenceEdge` is treated as a strict derived dependency index for:
 - `dms.ReferentialIdentity` cascade recompute (`IsIdentityComponent=true`)
 - representation-version cascade (`dms.Document(Etag, LastModifiedAt)`)
@@ -43,10 +74,10 @@ If `dms.ReferenceEdge` ever diverges from the actual persisted FK graph (bug in 
 - cache rebuild targeting misses documents (stale JSON returned)
 - delete conflict messages become incomplete
 
-### Why it’s tricky
+#### Why it’s tricky
 The design currently frames verification/validation as “optional/configurable”. For a system depending on derived tables for correctness, **validation should be mandatory** (at least sampling-based) or correctness becomes “best effort in prod”.
 
-### Possible actions / mitigations
+#### Possible actions / mitigations
 - **Consistency Watchdog (production feature)**:
   - background process that continuously samples documents and validates:
     - “resolved outgoing FK targets” == “ReferenceEdge children”
@@ -62,16 +93,14 @@ The design currently frames verification/validation as “optional/configurable�
 - **Fail writes on edge-maintenance failure** (already in design):
   - do not allow “fire-and-forget” edge writes
 
-### Instrumentation ideas
+#### Instrumentation ideas
 - `ReferenceEdgeWriteRows`, `ReferenceEdgeDiffRowsInserted/Deleted`
 - `ReferenceEdgeVerifySampleRate`, `ReferenceEdgeVerifyFailures`
 - watchdog: mismatch count by resource type; repair count; time-to-repair
 
 ---
 
-## IdentityLock / Phantom-Safe Locking (Complexity + Deadlock/Throughput Risk)
-
-### Risk
+### IdentityLock / Phantom-Safe Locking (Complexity + Deadlock/Throughput Risk)
 The `dms.IdentityLock` orchestration (Algorithms 1–2 in `transactions-and-concurrency.md`) is the most complex part of the design:
 - shared locks on identity-component children before parent writes (Invariant A)
 - closure expansion to fixpoint (Algorithm 2)
@@ -82,13 +111,13 @@ Failure modes:
 - **unbounded work** for closure expansion in deep/wide dependency graphs
 - **ingest throughput collapse** if many writers contend on shared “hub” locks
 
-### Specific “hub resource” contention scenario (must benchmark)
+#### Specific “hub resource” contention scenario (must benchmark)
 Bulk importing large sets where many documents reference the same identity component (e.g., 50,000 `StudentSchoolAssociation` rows referencing the same `School`):
 
 - PostgreSQL: `FOR SHARE` is cheap, but high concurrency can contend on lock manager structures for that single hot row.
 - SQL Server: `WITH (HOLDLOCK)` can be aggressive; if write transactions are long, those locks are held longer, compounding contention.
 
-### Possible actions / mitigations
+#### Possible actions / mitigations
 - **Cycle safety**:
   - reject identity dependency cycles at the resource-type level during startup schema validation (already stated in the draft) and ensure the rule is exhaustive (including transitive cycles).
 - **Define a deadlock/serialization retry policy**:
@@ -106,7 +135,7 @@ Bulk importing large sets where many documents reference the same identity compo
   - lock once per batch per hub id (implementation detail depends on ingestion mechanics)
   - ensure batching does not break invariants (especially “child before parent”)
 
-### Instrumentation (minimum)
+#### Instrumentation (minimum)
 - `IdentityLockSharedAcquisitionMs`, `IdentityLockUpdateAcquisitionMs`, `IdentityLockRowsLocked`
 - `IdentityClosureSize`, `IdentityClosureIterations`, `IdentityClosureMs`
 - deadlock/serialization counters + retries exhausted counter
@@ -114,8 +143,6 @@ Bulk importing large sets where many documents reference the same identity compo
 ---
 
 ## Read Latency & Reconstitution Overhead
-
-### Risk
 The redesign moves read complexity from:
 - “fetch 1 JSONB blob”
 to:
@@ -125,18 +152,18 @@ Even with “one command / multiple resultsets”, a deep resource can require m
 - DB CPU cost (joins, sorts by ordinals, projection joins)
 - application allocation pressure (many small row objects, JSON assembly work)
 
-### Guidance / critique
+#### Guidance / critique
 Treating `dms.DocumentCache` as “optional” may not be practical given:
 - standard API latency expectations (example target: <200ms for typical reads)
 - protecting DB CPU from repeated reconstitution work
 
-### Possible actions / mitigations
+#### Possible actions / mitigations
 - **Benchmark read paths early**:
   - representative deep resources (many child tables, nested collections)
   - page sizes matching real clients (25/100/200)
   - both “cache hit” and “cache miss (reconstitution)” 99p latency and CPU
 
-### Instrumentation (minimum)
+#### Instrumentation
 - per-resource `GetByIdLatencyMs`, `QueryLatencyMs`
 - cache hit rate, rebuild rate, rebuild latency
 - per-request result set count and reconstitution CPU time
