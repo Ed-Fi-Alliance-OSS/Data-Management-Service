@@ -31,10 +31,10 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - **Cached JSON is optional (preferred)**: The relational representation is the canonical source of truth. DMS **may** maintain `dms.DocumentCache` as an eventually consistent **projection** for faster GET/query responses and CDC/indexing, but it is not required for correctness.
   - Preferred maintenance: background/write-driven projection (not strict transactional cascades).
   - When enabled, materialize documents independently of API cache misses so CDC consumers see fully materialized documents.
-  - Rationale and operational details: see [caching-and-ops.md](caching-and-ops.md) (`dms.DocumentCache` section).
+  - Rationale and operational details: see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity/descriptor cascades.
   - Use an **opaque “representation version” token** in `dms.Document` (not a JSON/content hash) and update it with **set-based cascades** (similar to `dms.ReferentialIdentity` recompute) to minimize cascade cost.
-  - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `caching-and-ops.md`).
+  - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `transactions-and-concurrency.md`).
 - **Schema updates require migration + restart**: Applying a new `ApiSchema.json` requires migrating the relational schema and restarting DMS; in-process schema reload/hot-reload is out of scope for this design.
 - **Authorization companion doc**: Authorization storage and query filtering for this redesign is described in [auth.md](auth.md).
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource”. SQL may still be *produced and executed* by a migrator from metadata, but should not require generated source artifacts to compile/run DMS.
@@ -103,7 +103,7 @@ This redesign is split into focused docs in this directory:
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
-- Caching & operations (reference validation, transactional cascades, runtime caching, migration): [caching-and-ops.md](caching-and-ops.md)
+- Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching, migration): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization (subject model + view-based options): [auth.md](auth.md)
 
 ## Related Changes Implied by This Redesign

@@ -9,7 +9,7 @@ This document is the extensions deep dive for `overview.md`.
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
-- Caching & operations: [caching-and-ops.md](caching-and-ops.md)
+- Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Authorization: [auth.md](auth.md)
 
 ## Table of Contents

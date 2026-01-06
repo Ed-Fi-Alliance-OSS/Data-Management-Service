@@ -1,10 +1,10 @@
-# Backend Redesign: Caching & Operations
+# Backend Redesign: Transactions, Concurrency, and Cascades
 
 ## Status
 
 Draft.
 
-This document is the caching/ops deep dive for `overview.md`.
+This document is the transactions/concurrency deep dive for `overview.md`, including transactional cascades (ETag/LastModifiedAt) and operational caching/projections.
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
