@@ -10,6 +10,7 @@ This document is the extensions deep dive for `overview.md`.
 - Data model: [data-model.md](data-model.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- DDL Generation: [ddl-generation.md](ddl-generation.md)
 - Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 

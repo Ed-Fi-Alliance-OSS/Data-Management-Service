@@ -10,6 +10,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, inclu
 - Data model: [data-model.md](data-model.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
+- DDL Generation: [ddl-generation.md](ddl-generation.md)
 - Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -1048,6 +1049,7 @@ catch (DbException ex) when (IsForeignKeyViolation(ex))
 
 This redesign treats schema changes as an **operational concern outside DMS**. DMS does not define any in-place schema evolution behavior; instead it validates compatibility at startup:
 
+- Schema creation/updates are performed by a separate DDL generation utility that builds the same derived relational model as runtime and emits/applies dialect-specific DDL (see [ddl-generation.md](ddl-generation.md)).
 - DMS loads the configured core + extension `ApiSchema.json` files and computes `EffectiveSchemaHash` (see [data-model.md](data-model.md) “EffectiveSchemaHash Calculation”).
 - DMS reads the database’s recorded schema fingerprint from `dms.EffectiveSchema` + `dms.SchemaComponent`.
 - If the fingerprints (or expected schema components) do not match, DMS refuses to start/serve.

@@ -11,6 +11,7 @@ This document is the authorization deep dive for `overview.md`:
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Extensions: [extensions.md](extensions.md)
+- DDL Generation: [ddl-generation.md](ddl-generation.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 This document proposes an authorization storage/query design that fits the relational primary store

@@ -10,6 +10,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Data model: [data-model.md](data-model.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- DDL Generation: [ddl-generation.md](ddl-generation.md)
 - Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -134,6 +135,8 @@ At startup, DMS builds a fully explicit internal model:
 - Abstract identity projection plans for abstract targets (via `{AbstractResource}_View` union views derived from `abstractResources`)
 
 This is not code generation; it is compiled metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
+
+The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and apply schema changes (see [ddl-generation.md](ddl-generation.md)).
 
 ### 4.1 Derivation algorithm (high-level)
 

@@ -10,6 +10,7 @@ This document is the data-model deep dive for `overview.md`.
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- DDL Generation: [ddl-generation.md](ddl-generation.md)
 - Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -272,7 +273,6 @@ Important properties:
 Primary uses:
 - **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities/descriptor URIs change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
 - **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity/descriptor URI changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
-- **Delete conflict messaging**: answer “who references me?” without scanning all tables or relying solely on constraint name parsing.
 
 ##### DDL (PostgreSQL)
 
