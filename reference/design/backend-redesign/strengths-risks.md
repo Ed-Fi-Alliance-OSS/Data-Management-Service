@@ -11,6 +11,7 @@ This document captures strengths and risks for `overview.md`.
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- DDL Generation: [ddl-generation.md](ddl-generation.md)
 - Authorization: [auth.md](auth.md)
 
 ## Purpose
