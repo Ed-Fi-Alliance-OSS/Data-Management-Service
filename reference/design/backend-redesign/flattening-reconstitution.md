@@ -326,26 +326,108 @@ Using the compiled `ResourceWritePlan`, materialize:
 
 Important: materialization traverses each JSON array exactly once and does not perform any DB calls.
 
-Pseudocode sketch:
+Code sketch:
+```C#
+public sealed class ResourceFlattener : IResourceFlattener
+  {
+      public FlattenedWriteSet Flatten(
+          ResourceWritePlan plan,
+          long documentId,
+          JsonNode document,
+          IDocumentReferenceInstanceIndex documentReferences,
+          ResolvedReferenceSet resolved)
+      {
+          // pseudocode: edgesByChild = new Dictionary<ChildDocumentId, IsIdentityComponent>()
+          var edgesByChild = new Dictionary<long, bool>();
 
-```text
-Flatten(documentJson, resolvedRefs):
-  edgesByChild = new Dictionary<ChildDocumentId, IsIdentityComponent>()
+          // pseudocode: plan.TableRows[...] = ...
+          var childRows = new Dictionary<DbTableName, IReadOnlyList<RowBuffer>>();
 
-  rootRow = plan.Root.CreateRow(documentId)
-  rootRow.SetScalarsFromJson(documentJson)
-  rootRow.SetFkColumnsFromResolvedRefs(documentJson, resolvedRefs, edgesByChild)
+          // pseudocode: rootRow = plan.Root.CreateRow(documentId) + SetScalars + SetFks
+          var rootTable = plan.Model.Root.Table;
+          var rootTablePlan = plan.TablePlans[rootTable];
 
-  for each childPlan in plan.ChildrenDepthFirst:
-    rows = []
-    for each element in EnumerateArray(documentJson, childPlan.ArrayPath):
-      row = childPlan.CreateRow(parentKey, ordinal)
-      row.SetScalarsFromElement(element)
-      row.SetFkColumnsFromResolvedRefs(element, resolvedRefs, edgesByChild)
-      rows.add(row)
-    plan.TableRows[childPlan.Table] = rows
+          var rootRow = MaterializeRow(
+              tablePlan: rootTablePlan,
+              documentId: documentId,
+              scopeNode: document,                       // root scope "$"
+              parentKeyParts: new[] { documentId },      // not important for root; keeps the signature uniform
+              ordinal: 0,
+              ordinalPath: ReadOnlySpan<int>.Empty,
+              documentReferences: documentReferences,
+              resolved: resolved,
+              edgesByChild: edgesByChild);
 
-  return (plan.TableRows, edgesByChild)
+          // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
+          foreach (var tableModel in plan.Model.TablesInWriteDependencyOrder)
+          {
+              if (tableModel.Table.Equals(rootTable))
+                  continue;
+
+              var tablePlan = plan.TablePlans[tableModel.Table];
+              var rows = new List<RowBuffer>();
+
+              // pseudocode: for each element in EnumerateArray(documentJson, childPlan.ArrayPath)
+              foreach (var scope in EnumerateTableScopeInstances(document, tableModel.JsonScope))
+              {
+                  var ordinalPath = scope.OrdinalPath.AsSpan(); // e.g. [2] or [2,0]
+                  var ordinal = ordinalPath[^1];                // last index is this table row's Ordinal
+                  var parentKeyParts = BuildParentKeyParts(documentId, ordinalPath); // DocumentId + ancestor ordinals
+
+                  // pseudocode: row = childPlan.CreateRow(parentKey, ordinal) + SetScalars + SetFks
+                  rows.Add(MaterializeRow(
+                      tablePlan,
+                      documentId,
+                      scopeNode: scope.ScopeNode,               // the object at this table scope
+                      parentKeyParts: parentKeyParts,
+                      ordinal: ordinal,
+                      ordinalPath: ordinalPath,
+                      documentReferences: documentReferences,
+                      resolved: resolved,
+                      edgesByChild: edgesByChild));
+              }
+
+              // pseudocode: plan.TableRows[childPlan.Table] = rows
+              childRows[tableModel.Table] = rows;
+          }
+
+          // pseudocode: return (plan.TableRows, edgesByChild)
+          var edges = edgesByChild.Select(kvp => new ReferenceEdgeRow(kvp.Key, kvp.Value)).ToArray();
+          return new FlattenedWriteSet(rootTable, rootRow, childRows, edges);
+      }
+
+      private static long[] BuildParentKeyParts(long documentId, ReadOnlySpan<int> ordinalPath)
+      {
+          // PK scheme: (DocumentId, ancestorOrdinal1, ..., ancestorOrdinalN, Ordinal)
+          // ParentKeyParts = everything except this row's Ordinal.
+          var parentKeyParts = new long[1 + Math.Max(0, ordinalPath.Length - 1)];
+          parentKeyParts[0] = documentId;
+
+          for (var i = 0; i < ordinalPath.Length - 1; i++)
+              parentKeyParts[1 + i] = ordinalPath[i];
+
+          return parentKeyParts;
+      }
+
+      private readonly record struct TableScopeInstance(JsonNode ScopeNode, int[] OrdinalPath);
+
+      private static IEnumerable<TableScopeInstance> EnumerateTableScopeInstances(JsonNode root, JsonPathExpression jsonScope)
+      {
+          // This is the C# equivalent of the pseudocode's:
+          //   EnumerateArray(documentJson, childPlan.ArrayPath)
+          //
+          // Examples of what it should yield:
+          // - scope "$.addresses[*]"              -> (addresses[i], [i])
+          // - scope "$.addresses[*].periods[*]"   -> (periods[j],  [i, j])
+          //
+          // Implementation is intentionally omitted here; later code assumes
+          // you avoid JSONPath evaluation in the hot loop and track ordinals as you enumerate.
+          throw new NotImplementedException();
+      }
+
+      // MaterializeRow(...) is the helper shown later in the document.
+  }
+
 ```
 
 ### 5.4 Write execution (single transaction, no N+1)
@@ -397,15 +479,13 @@ The page case must not become “GET by id repeated N times”.
 
 ### 6.1 Fetch strategy (keyset-first, batched hydration)
 
-The API never supplies a “list of `DocumentId`s”. Reconstitution starts from a **page keyset**:
-
 - **GET by id**: resolve `DocumentUuid → DocumentId`, then the keyset is a single `DocumentId`.
 - **GET by query**: compile a parameterized SQL over the **resource root table** that selects the `DocumentId`s in the requested page (filters + `ORDER BY r.DocumentId` + paging).
 
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
 Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same key/ordinal columns (see [extensions.md](extensions.md)).
 
-#### Single round-trip (required): materialize a `page` keyset, then hydrate by join
+#### Single round-trip: materialize a `page` keyset, then hydrate by join
 
 Build one command that:
 1) materializes the page keyset server-side, then
@@ -447,6 +527,61 @@ ORDER BY c.<RootDocumentIdColumn>, c.<ParentOrdinalColumns...>, c.Ordinal;
 ```
 
 This avoids N+1 queries and keeps network round-trips minimal (one command, multiple result sets).
+
+#### Example: what the multi-result response looks like
+
+Conceptual example for `GET /ed-fi/schools?offset=0&limit=2&totalCount=true`, where the page keyset is `DocumentId IN (2001, 2002)` and the derived model has:
+- root table: `edfi.School`
+- child table: `edfi.SchoolAddress`
+- nested child: `edfi.SchoolAddressPeriod`
+
+The single DB command returns *multiple result sets* (read sequentially via `NextResult()`):
+
+**Result set 1 (optional `totalCount`)**
+
+```text
+TotalCount
+---------
+57
+```
+
+**Result set 2 (`dms.Document` joined to the `page` keyset)**
+
+```text
+DocumentId | DocumentUuid                           | Etag | LastModifiedAt
+---------- | -------------------------------------- | ---- | ---------------------------
+2001       | 7c5a4c7e-1b2c-4b3d-9f2e-6d0c8c0f8a11   | 14   | 2026-01-06T18:22:41Z
+2002       | 1a2b3c4d-5e6f-7081-9201-aabbccddeeff   |  2   | 2026-01-05T09:10:00Z
+```
+
+**Result set 3 (root rows: `edfi.School`)**
+
+```text
+DocumentId | SchoolId | NameOfInstitution | SchoolTypeDescriptor_DescriptorId
+---------- | -------- | ----------------- | --------------------------------
+2001       | 255901   | Lincoln HS        | 90012
+2002       | 255902   | Roosevelt MS      | 90012
+```
+
+**Result set 4 (child rows: `edfi.SchoolAddress`)**
+
+```text
+School_DocumentId | Ordinal | AddressTypeDescriptor_DescriptorId | StreetNumberName | City
+----------------- | ------- | --------------------------------- | ---------------- | -----------
+2001              | 0       | 91001                             | 123 Main St      | Springfield
+2001              | 1       | 91002                             | 45 Oak Ave       | Springfield
+2002              | 0       | 91001                             | 9 Pine Rd        | Centerville
+```
+
+**Result set 5 (nested child rows: `edfi.SchoolAddressPeriod`)**
+
+```text
+School_DocumentId | AddressOrdinal | Ordinal | BeginDate   | EndDate
+----------------- | ------------- | ------- | ----------- | ----------
+2001              | 0             | 0       | 2025-08-15  | NULL
+2001              | 0             | 1       | 2026-01-10  | NULL
+2002              | 0             | 0       | 2024-08-15  | 2025-06-30
+```
 
 ### 6.2 Assembly strategy (in-memory)
 
