@@ -172,6 +172,37 @@ else {
 
     if($IdentityProvider -eq "self-contained")
     {
+        # Wait for Config Service to complete EF migrations and create OpenIddict tables
+        Write-Output "Waiting for Config Service database tables to be ready..."
+        $maxAttempts = 30
+        $attempt = 0
+        $ready = $false
+
+        while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Output "Checking if OpenIddictApplication table exists (attempt $attempt/$maxAttempts)..."
+
+            try {
+                $result = docker exec dms-postgresql psql -U postgres -d $envValues.POSTGRES_DB_NAME -t -c "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dmscs' AND table_name = 'openiddictapplication');" 2>&1
+                if ($result -match 't') {
+                    $ready = $true
+                    Write-Output "Config Service database tables are ready!"
+                }
+                else {
+                    Write-Output "Tables not ready yet, waiting..."
+                    Start-Sleep -Seconds 5
+                }
+            }
+            catch {
+                Write-Output "Error checking tables: $_"
+                Start-Sleep -Seconds 5
+            }
+        }
+
+        if (-not $ready) {
+            throw "Config Service database tables did not become ready within the timeout period"
+        }
+
         Write-Output "Starting self-contained initialization script..."
         # Create client with default edfi_admin_api/full_access scope
         ./setup-openiddict.ps1 -EnvironmentFile $EnvironmentFile
