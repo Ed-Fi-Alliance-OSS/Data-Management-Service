@@ -330,7 +330,7 @@ Pseudocode sketch:
 
 ```text
 Flatten(documentJson, resolvedRefs):
-  edgesByChild = new Dictionary<ChildDocumentId, IsIdentityComponent>() // OR by ChildDocumentId
+  edgesByChild = new Dictionary<ChildDocumentId, IsIdentityComponent>()
 
   rootRow = plan.Root.CreateRow(documentId)
   rootRow.SetScalarsFromJson(documentJson)
