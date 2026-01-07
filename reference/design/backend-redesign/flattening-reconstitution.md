@@ -623,10 +623,28 @@ DocumentId | Student_DocumentId | School_DocumentId | EntryDate
 
 1) Collect distinct referenced ids per target type:
 
+```sql
+-- Distinct Student DocumentIds referenced by this page
+SELECT DISTINCT ssa.Student_DocumentId
+FROM edfi.StudentSchoolAssociation ssa
+JOIN page p ON p.DocumentId = ssa.DocumentId
+WHERE ssa.Student_DocumentId IS NOT NULL
+ORDER BY ssa.Student_DocumentId;
+
+-- Distinct School DocumentIds referenced by this page
+SELECT DISTINCT ssa.School_DocumentId
+FROM edfi.StudentSchoolAssociation ssa
+JOIN page p ON p.DocumentId = ssa.DocumentId
+WHERE ssa.School_DocumentId IS NOT NULL
+ORDER BY ssa.School_DocumentId;
+```
+
+Example results:
 ```text
 Student: [3001, 3002]
 School:  [2001]
 ```
+
 
 2) Run one identity projection query per target type (PostgreSQL examples):
 
@@ -1021,7 +1039,6 @@ public sealed record ReferenceFieldMapping(
 /// This is used for:
 /// - write-time validation (descriptor referential id must exist in dms.ReferentialIdentity)
 /// - query-time resolution (descriptor URI → descriptor DocumentId, via referential id)
-/// - optional DB-level enforcement via triggers (later)
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
@@ -1499,7 +1516,7 @@ public interface IBulkInserter
 
 /// <summary>
 /// Writer for dms.ReferenceEdge maintenance (reverse reference index).
-/// Required for strict identity-cascade features; otherwise optional (diagnostics and targeted async cache invalidation/rebuild).
+/// Required for strict identity-cascade features
 /// </summary>
 public interface IReferenceEdgeWriter
 {
@@ -1696,13 +1713,13 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     // 6) Maintain reverse reference index (required for referential-id + representation-version cascades).
     await _referenceEdgeWriter.UpsertEdgesAsync(connection, tx, documentId, writeSet.ReferenceEdges, ct);
 
-    // 7) Optional derived maintenance:
-    //    - If strict referential-id correctness is enabled for reference-bearing identities, compute+lock the impacted identity closure via:
+    // 7) Maintenance:
+    //    - Strict referential-id correctness for reference-bearing identities means compute+lock the impacted identity closure via:
     //        dms.IdentityLock + dms.ReferenceEdge (IsIdentityComponent=true)
     //      and recompute dms.ReferentialIdentity for all impacted documents.
     //
     //    - If dms.DocumentCache is enabled:
-    //        - enqueue/mark this document (and dependents) for background materialization (CDC/indexing); do not rely on API cache misses.
+    //        - enqueue/mark this document (and dependents) for background materialization (CDC/indexing)
 
     await tx.CommitAsync(ct);
 }
@@ -1867,7 +1884,7 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
         ReadTableRows(reader, table); // grouped by (parent key parts..., ordinal)
     }
 
-    // Optional: descriptor + identity projection follow-ups can either be:
+    // descriptor + identity projection follow-ups can either be:
     // - additional result sets in this same command, or
     // - a second command (still batched, page-sized)
     return AssembleJson(plan, documentMetadata /* + tables + lookups */);
