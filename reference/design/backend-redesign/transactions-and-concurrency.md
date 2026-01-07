@@ -44,7 +44,7 @@ This is required because the relational tables store **`DocumentId` foreign keys
 
 #### ApiSchema-derived natural-key resolver
 
-The **natural-key resolver** is the backend service that converts a `{Project, Resource, DocumentIdentity}` into a persisted `DocumentId` **without per-resource code**.
+The **natural-key resolver** is the backend service that converts a `(Project, Resource, DocumentIdentity)` triple into a persisted `DocumentId` **without per-resource code**.
 
 This design keeps `ReferentialId` as the canonical “natural identity key” that the resolver uses for `ReferentialId → DocumentId` lookups; see [overview.md#Why keep ReferentialId](overview.md#why-keep-referentialid).
 
@@ -328,14 +328,14 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
   - Treat `dms.Document.Etag` and `dms.Document.LastModifiedAt` as **representation** metadata: they must change when referenced identity/descriptor URI changes would alter the reconstituted JSON.
   - Use an opaque representation version token for `Etag` (monotonic `bigint`) that supports cheap freshness checks like `dms.DocumentCache.Etag = dms.Document.Etag`
   - `_lastModifiedDate` must be derived from `dms.Document.LastModifiedAt` (formatted as UTC), not generated on reads or from projection timestamps.
-  - When an identity/URI change occurs, update `Etag`/`LastModifiedAt` for the same impacted set used for identity correctness:
-    - `IdentityClosure`: this document plus transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`
-    - `CacheTargets`: the set of DocumentIds whose API representation metadata must be updated (Etag / LastModifiedAt / DocumentCache) when an identity/URI change happens
-      - `IdentityClosure union Parents(IdentityClosure)` where `Parents(...)` is 1-hop over **all** `dms.ReferenceEdge` rows
+- When an identity/URI change occurs, update `Etag`/`LastModifiedAt` for the same impacted set used for identity correctness:
+  - `IdentityClosure`: this document plus transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`
+  - `CacheTargets`: the set of DocumentIds whose API representation metadata must be updated (Etag / LastModifiedAt / DocumentCache) when an identity/URI change happens
+      - includes all documents in `IdentityClosure`, plus any documents that reference a document in `IdentityClosure` (1 hop over **all** `dms.ReferenceEdge` rows)
   - Apply the update with a set-based statement (same transaction as `dms.ReferentialIdentity` recompute):
     - PostgreSQL: `UPDATE dms.Document SET Etag = Etag + 1, LastModifiedAt = now() WHERE DocumentId IN (...CacheTargets...)`
     - SQL Server: `UPDATE dms.Document SET Etag = Etag + 1, LastModifiedAt = sysutcdatetime() WHERE DocumentId IN (...CacheTargets...)`
-  - Strictness: computing `Parents(IdentityClosure)` must be **phantom-safe** w.r.t. concurrent writes to `dms.ReferenceEdge` so `CacheTargets` is complete; this design uses **SERIALIZABLE semantics** on the edge-scan (PostgreSQL: SERIALIZABLE transaction; SQL Server: SERIALIZABLE key-range locks on the edge scan). See [Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)](#set-based-representation-version-bump-etaglastmodifiedat--strict-and-phantom-safe-serializable).
+  - Strictness: computing the 1-hop referrers of `IdentityClosure` must be **phantom-safe** w.r.t. concurrent writes to `dms.ReferenceEdge` so `CacheTargets` is complete; this design uses **SERIALIZABLE semantics** on the edge-scan (PostgreSQL: SERIALIZABLE transaction; SQL Server: SERIALIZABLE key-range locks on the edge scan). See [Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)](#set-based-representation-version-bump-etaglastmodifiedat--strict-and-phantom-safe-serializable).
   - If `dms.DocumentCache` is enabled, rebuild/refresh cached JSON for `CacheTargets` **eventually** (background projector). The version bump provides a cheap, correct signal that dependent representations changed and drives which rows are stale.
 
 - **Deletes**
@@ -551,7 +551,7 @@ Assume:
 
 **Tx B (normal write): write SSA (parent = 300)**
 
-1. Resolve references to `DocumentId`s in bulk → `{ Student=100, School=200 }`.
+1. Resolve references to `DocumentId`s in bulk (for example, Student=100 and School=200).
 2. Acquire shared identity locks on `dms.IdentityLock(100)` and `dms.IdentityLock(200)` (ascending `DocumentId`) **before** acquiring the parent update lock.
 3. Acquire update identity lock on `dms.IdentityLock(300)`.
 4. Write SSA rows + maintain identity component edges, then commit.
@@ -647,8 +647,8 @@ Inputs:
 Procedure:
 1) Acquire update identity locks on `SeedIds` (ascending).
 2) Initialize:
-   - `Impacted = SeedIds`
-   - `Frontier = SeedIds`
+   - set `Impacted` to `SeedIds`
+   - set `Frontier` to `SeedIds`
 3) Repeat until fixpoint:
    1. Query parents of the current frontier:
 
@@ -659,12 +659,12 @@ Procedure:
         AND IsIdentityComponent = true;
       ```
 
-   2. Let `NewParents = Parents - Impacted`.
+   2. Let `NewParents` be any returned parent `DocumentId`s that are not already in `Impacted`.
    3. If `NewParents` is empty, stop.
    4. Acquire update identity locks on `NewParents` (ascending).
-   5. Set:
-      - `Impacted = Impacted ∪ NewParents`
-      - `Frontier = NewParents`
+   5. Update:
+      - add `NewParents` to `Impacted`
+      - set `Frontier` to `NewParents`
 
 Correctness argument (why fixpoint is phantom-safe):
 - While a document `C` is update-locked in `dms.IdentityLock`, any writer that would insert an identity component edge into `C` must first acquire a shared identity lock on `C` (Invariant A), and therefore cannot commit during the cascade. This prevents the impacted set from growing “behind our back”.
@@ -682,9 +682,9 @@ This spec assumes the DMS resilience policy retries the full write transaction o
 ##### Isolation level guidance
 
 - Default: use **READ COMMITTED + explicit `dms.IdentityLock` row locks** for normal writes and for identity correctness (Algorithms 1–2).
-- For **strict, phantom-safe representation-version cascades** (`Etag`/`LastModifiedAt` over `CacheTargets`), use **SERIALIZABLE semantics** for the `Parents(IdentityClosure)` edge scan so the computed `CacheTargets` set is complete:
+- For **strict, phantom-safe representation-version cascades** (`Etag`/`LastModifiedAt` over `CacheTargets`), use **SERIALIZABLE semantics** for the edge scan that finds 1-hop referrers of `IdentityClosure`, so the computed `CacheTargets` set is complete:
   - PostgreSQL: run the identity/URI-changing write transaction at **SERIALIZABLE** and retry on `40001`.
-  - SQL Server: either run the transaction at **SERIALIZABLE**, or (recommended) keep the transaction `READ COMMITTED` and take **SERIALIZABLE key-range locks** on `dms.ReferenceEdge` during the `Parents(IdentityClosure)` read (via `WITH (HOLDLOCK, SERIALIZABLE)`).
+  - SQL Server: either run the transaction at **SERIALIZABLE**, or (recommended) keep the transaction `READ COMMITTED` and take **SERIALIZABLE key-range locks** on `dms.ReferenceEdge` during the edge read that finds 1-hop referrers of `IdentityClosure` (via `WITH (HOLDLOCK, SERIALIZABLE)`).
 
 ##### Cycle safety (MUST)
 
@@ -696,7 +696,7 @@ Within the same transaction (and while holding the impacted-set locks):
 
 1) For each impacted document, compute the identity element values from relational storage using ApiSchema-derived `IdentityProjectionPlan`s (see section 7.5 in [flattening-reconstitution.md](flattening-reconstitution.md)), including joins through FK columns for reference-bearing identities and descriptor URI projection.
 2) Compute new `ReferentialId` values in application code using the existing UUIDv5 algorithm (same canonical identity element ordering and path strings as Core).
-3) Stage and replace `dms.ReferentialIdentity` rows for the impacted set (delete-by-`DocumentId`+`{ProjectName, ResourceName}` then insert staged rows). Include superclass/abstract alias rows for subclass resources.
+3) Stage and replace `dms.ReferentialIdentity` rows for the impacted set (delete by `DocumentId` and `(ProjectName, ResourceName)`, then insert staged rows). Include superclass/abstract alias rows for subclass resources.
 
 If the recompute fails (identity conflict/unique violation, deadlock without successful retry, etc.), the transaction must roll back (no stale window). Identity conflicts should map to a 409 (same as other natural-key conflicts).
 
@@ -704,18 +704,18 @@ If the recompute fails (identity conflict/unique violation, deadlock without suc
 
 When a document’s identity/URI changes, other documents’ API representations can change without any FK changes (because references are stored as stable `DocumentId`s and reference identity values are reconstituted at read time). To keep representation-sensitive optimistic concurrency correct, DMS must bump `dms.Document(Etag, LastModifiedAt)` not only for the `IdentityClosure`, but also for 1-hop referrers:
 
-- `IdentityClosure`: `Seeds ∪ Parents*(Seeds)` over `dms.ReferenceEdge(IsIdentityComponent=true)`
-- `CacheTargets`: `IdentityClosure ∪ Parents(IdentityClosure)` over **all** `dms.ReferenceEdge` rows
+- `IdentityClosure`: the seed document(s) whose identity/URI changed, plus any parent documents whose identities depend on them transitively (follow `dms.ReferenceEdge` where `IsIdentityComponent=true` in the reverse direction `ChildDocumentId → ParentDocumentId` until no new parents are found)
+- `CacheTargets`: all documents in `IdentityClosure`, plus any documents that reference a document in `IdentityClosure` (1 hop over **all** `dms.ReferenceEdge` rows)
 
 **Phantom problem**
 
-If the transaction computes `Parents(IdentityClosure)` under plain `READ COMMITTED` without any additional protection, it can miss a concurrently-committed `(ParentDocumentId, ChildDocumentId)` edge. That produces a missing bump (stale `_etag` / `_lastModifiedDate`) for a document whose representation changed, breaking the design’s strictness goals.
+If the transaction computes the 1-hop referrers of `IdentityClosure` under plain `READ COMMITTED` without any additional protection, it can miss a concurrently-committed `(ParentDocumentId, ChildDocumentId)` edge. That produces a missing bump (stale `_etag` / `_lastModifiedDate`) for a document whose representation changed, breaking the design’s strictness goals.
 
 **Why not “lock every referenced child”**
 
 A fully strict alternative is to extend Invariant A so *every* write that inserts/updates a `dms.ReferenceEdge` row (including non-identity edges) must acquire a shared lock on `dms.IdentityLock(ChildDocumentId)`. That prevents phantoms, but it pushes extra locks onto the hot write path and can create high-fanout lock acquisition (many children per document) and increased deadlock risk.
 
-This design instead uses **SERIALIZABLE semantics** on the `Parents(IdentityClosure)` edge read:
+This design instead uses **SERIALIZABLE semantics** on the edge read that finds 1-hop referrers of `IdentityClosure`:
 - PostgreSQL: SERIALIZABLE transaction + retry (SSI detects phantoms and forces a retry via `40001`)
 - SQL Server: SERIALIZABLE key-range locks (blocks concurrent inserts into the scanned key ranges)
 
@@ -732,7 +732,7 @@ Assume:
 
 1. Update Student (`DocumentId=100`) identity/URI.
 2. Lock the `IdentityClosure` and recompute `dms.ReferentialIdentity` for impacted docs (e.g., `100` and `300`).
-3. Compute `CacheTargets` by scanning `dms.ReferenceEdge` to find 1-hop referrers of the `IdentityClosure` (`Parents(IdentityClosure)`), then bump `dms.Document(Etag, LastModifiedAt)` for `CacheTargets`.
+3. Compute `CacheTargets` by scanning `dms.ReferenceEdge` to find 1-hop referrers of the `IdentityClosure`, then bump `dms.Document(Etag, LastModifiedAt)` for `CacheTargets`.
 
 **Tx B (normal write, adds a new reference edge)**
 
@@ -741,7 +741,7 @@ Assume:
 
 **What can go wrong under READ COMMITTED**
 
-- If Tx B commits the new edge while Tx A is computing `Parents(IdentityClosure)`, Tx A can miss `(400 → 100)` and therefore omit `400` from `CacheTargets`.
+- If Tx B commits the new edge while Tx A is scanning `dms.ReferenceEdge` to find 1-hop referrers of the `IdentityClosure`, Tx A can miss `(400 → 100)` and therefore omit `400` from `CacheTargets`.
 - After both commit, the API representation of `GraduationPlan(400)` changes (its Student reference object now reconstitutes from Student’s new identity/URI), but `400`’s representation metadata may not reflect that extra change (stale `_etag` / `_lastModifiedDate` relative to the returned JSON).
 
 **What SERIALIZABLE changes**
@@ -803,7 +803,7 @@ for (var attempt = 1; attempt <= maxAttempts; attempt++)
     {
         // 1) Lock/compute IdentityClosure (Algorithms 1–2).
         // 2) Recompute dms.ReferentialIdentity for the closure (Set-based recompute).
-        // 3) Compute CacheTargets (Parents(IdentityClosure)) and bump dms.Document(Etag, LastModifiedAt) using the SQL above.
+        // 3) Compute CacheTargets (IdentityClosure and its 1-hop referrers) and bump dms.Document(Etag, LastModifiedAt) using the SQL above.
 
         await tx.CommitAsync(ct);
         break;
@@ -957,32 +957,40 @@ Task OnIdentityUpdateCommitted(Guid oldReferentialId, Guid newReferentialId, lon
 
 ```mermaid
 sequenceDiagram
-  participant Core as DMS Core
-  participant Backend as Backend Store
-  participant L1 as Local Cache (L1)
-  participant Redis as Redis (L2, optional)
-  participant DB as PostgreSQL/SQL Server
+  participant Core
+  participant Backend
+  participant L1
+  participant Redis
+  participant DB
 
-  Core->>Backend: Upsert(resourceJson, extracted Referentials)
-  Backend->>L1: Resolve Referentials/Descriptors?
+  Core->>Backend: Upsert(resourceJson, extracted referentials)
+  Backend->>L1: Resolve referentials and descriptors
+
   alt L1 hit
-    L1-->>Backend: DocumentId/DescriptorId
+    L1-->>Backend: DocumentId and DescriptorId
   else L1 miss
-    Backend->>Redis: GET refid/descriptor (optional)
+    Backend->>Redis: GET refid and descriptor optional
     alt Redis hit
       Redis-->>Backend: value
-      Backend->>L1: SET (ttl)
-    else Redis miss / disabled
-      Backend->>DB: SELECT dms.ReferentialIdentity / dms.Descriptor
+      Backend->>L1: SET TTL
+    else Redis miss or disabled
+      Backend->>DB: SELECT dms.ReferentialIdentity and dms.Descriptor
       DB-->>Backend: ids
-      Backend->>L1: SET (ttl)
-      Backend->>Redis: SET (ttl) (optional)
+      Backend->>L1: SET TTL
+      Backend->>Redis: SET TTL optional
     end
   end
-  Backend->>DB: BEGIN; write dms.Document + resource tables; maintain dms.ReferenceEdge; COMMIT
-  Backend->>DB: (when enabled) enqueue/mark DocumentCache materialization
-  Backend->>L1: write-through identity/uuid/descriptor keys
-  Backend->>Redis: write-through keys (optional)
+
+  Backend->>DB: BEGIN TRANSACTION
+  Backend->>DB: write dms.Document
+  Backend->>DB: upsert dms.ReferentialIdentity (and dms.Descriptor when needed)
+  Backend->>DB: write resource tables
+  Backend->>DB: maintain dms.ReferenceEdge
+  Backend->>DB: enqueue/mark DocumentCache materialization work when enabled (durable)
+  Backend->>DB: COMMIT
+  Note over Backend,DB: Background projector materializes dms.DocumentCache asynchronously (not shown)
+  Backend->>L1: write through identity uuid descriptor keys
+  Backend->>Redis: write through keys optional
   Backend-->>Core: success
 ```
 
@@ -990,21 +998,21 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
-  participant API as API GET
-  participant Backend as Backend Store
-  participant DB as PostgreSQL/SQL Server
+  participant API
+  participant Backend
+  participant DB
 
-  API->>Backend: GET /{resource}/{id}
-  Backend->>DB: SELECT DocumentId, Etag FROM dms.Document WHERE DocumentUuid=@id
-  DB-->>Backend: DocumentId, Etag
+  API->>Backend: GET resource by id
+  Backend->>DB: SELECT DocumentId and Etag from dms.Document by DocumentUuid
+  DB-->>Backend: DocumentId and Etag
 
-  Backend->>DB: SELECT DocumentJson FROM dms.DocumentCache WHERE DocumentId=@DocumentId AND Etag=@Etag (optional)
-  alt projection hit (fresh)
+  Backend->>DB: SELECT DocumentJson from dms.DocumentCache when fresh optional
+  alt projection hit fresh
     DB-->>Backend: DocumentJson
     Backend-->>API: JSON
-  else projection missing/stale / disabled
-    Backend->>DB: hydrate resource tables; reconstitute JSON
-    Backend->>DB: (optional) enqueue/mark DocumentCache materialization
+  else projection miss or stale or disabled
+    Backend->>DB: hydrate resource tables and reconstitute JSON
+    Backend->>DB: enqueue DocumentCache materialization optional
     Backend-->>API: JSON
   end
 ```
