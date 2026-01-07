@@ -152,7 +152,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 3. Backend acquires identity locks:
    - Acquire **shared locks** on `dms.IdentityLock` rows for any **identity-component** referenced `ChildDocumentId`s (from ApiSchema-derived bindings) *before* acquiring the parent document’s update lock. This prevents “stale-at-birth” derived identities and avoids deadlocks with concurrent identity-cascade transactions.
    - Acquire an **update lock** on this document’s `dms.IdentityLock` row (insert the row first for inserts).
-   - See [Phantom-safe impacted-set locking](#phantom-safe-impacted-set-locking-no-global-lock) for the normative lock ordering + algorithms.
+   - See [Phantom-safe impacted-set locking](#phantom-safe-impacted-set-locking) for the normative lock ordering + algorithms.
 4. Backend writes within a single transaction:
    - `dms.Document` insert/update (sets `Etag`, `LastModifiedAt`, etc.)
    - `dms.ReferentialIdentity` upsert (primary + superclass aliases) for all resource identities (self-contained and reference-bearing)
@@ -514,7 +514,7 @@ Because this redesign uses `ReferentialId → DocumentId` resolution for **all**
 
 The dependency graph is `dms.ReferenceEdge` filtered by `IsIdentityComponent=true` (reverse direction: `ChildDocumentId → ParentDocumentId`).
 
-#### Phantom-safe impacted-set locking (no global lock)
+#### Phantom-safe impacted-set locking
 
 This section is a concrete, implementation-ready locking spec for the strict invariants in this redesign:
 - `dms.ReferentialIdentity` is a **strict derived index** (never stale after commit), and
@@ -525,13 +525,46 @@ The system accomplishes this with per-document row locks in `dms.IdentityLock` p
 ##### Definitions
 
 - **Identity component edge**: a `dms.ReferenceEdge` row where `IsIdentityComponent=true`. This is derived from ApiSchema (`identityJsonPaths` + `documentPathsMapping`) and indicates “the parent’s identity depends on the child’s identity/URI”.
-- **Identity closure**: the transitive set of documents that must have their `dms.ReferentialIdentity` recomputed when a seed document’s identity/URI changes:  
-  `Closure = Seeds ∪ Parents*(Seeds)` where `Parents*` follows identity component edges in reverse (`ChildDocumentId → ParentDocumentId`).
 - **Seed**: a `DocumentId` whose identity/URI is changing in the current transaction (the document being written, and any other document whose identity/URI is changed as part of the same transaction).
+- **Identity closure**: the transitive set of documents that must have their `dms.ReferentialIdentity` recomputed when a seed document’s identity/URI changes:  
+  the seed document(s) plus every parent document reachable by repeatedly following identity component edges in reverse (`ChildDocumentId → ParentDocumentId`).
 - **Shared identity lock**: a transaction-held lock on `dms.IdentityLock(DocumentId)` that blocks other transactions from taking an update/exclusive lock on that same row. Used by writers of parents to prevent identity-component children from changing while computing derived identities.
 - **Update identity lock**: a transaction-held lock on `dms.IdentityLock(DocumentId)` used by the transaction that is allowed to change the derived identity (and/or representation-version) for that document.
 
-##### Required invariants (MUST)
+##### Example
+
+Assume:
+- `Student` has `DocumentId=100` and its identity is changing (it's a seed).
+- `School` has `DocumentId=200`
+- `StudentSchoolAssociation` (SSA) has `DocumentId=300` and is in the `IdentityClosure` because its identity depends on Student.
+- SSA’s identity depends on Student + School, so it will maintain identity component edges:
+  - `dms.ReferenceEdge(ParentDocumentId=300, ChildDocumentId=100, IsIdentityComponent=true)`
+  - `dms.ReferenceEdge(ParentDocumentId=300, ChildDocumentId=200, IsIdentityComponent=true)`
+
+**Tx A (identity update): update Student identity (seed = 100)**
+
+1. Acquire update identity lock on `dms.IdentityLock(100)`.
+2. Expand identity closure by querying `dms.ReferenceEdge` for `ChildDocumentId=100 AND IsIdentityComponent=true`:
+   - finds parent `DocumentId=300` (SSA).
+3. Acquire update identity lock on `dms.IdentityLock(300)`.
+4. Recompute and replace `dms.ReferentialIdentity` rows for impacted documents (`100` and `300`) in the same transaction, then commit.
+
+**Tx B (normal write): write SSA (parent = 300)**
+
+1. Resolve references to `DocumentId`s in bulk → `{ Student=100, School=200 }`.
+2. Acquire shared identity locks on `dms.IdentityLock(100)` and `dms.IdentityLock(200)` (ascending `DocumentId`) **before** acquiring the parent update lock.
+3. Acquire update identity lock on `dms.IdentityLock(300)`.
+4. Write SSA rows + maintain identity component edges, then commit.
+
+Optional optimization:
+- If the written resource type is known (from the effective ApiSchema + configuration) to (a) never be in an identity closure and (b) never allow identity/URI updates, the writer may omit the parent update identity lock; and if `IdentityComponentChildren` is empty for this write (no ApiSchema-derived `IsIdentityComponent=true` bindings), the shared identity locks on children can be omitted as well. This does not apply to SSA in this example because SSA participates in identity closures (its identity depends on Student/School).
+
+**Why this avoids deadlocks and is phantom-safe**
+
+- If Tx A is changing `100`, Tx B blocks at step 2 (shared-locking `100`) and therefore never holds the parent update lock while waiting on the child, preventing the deadlock pattern “Tx B holds `300` and waits on `100` while Tx A holds `100` and waits on `300`”.
+- While Tx A holds the update lock on `100`, no other transaction can commit a *new* identity component edge into child `100` (Invariant A requires that writer to hold a shared lock on `dms.IdentityLock(100)`), so Tx A’s closure expansion cannot miss dependents that appear “behind its back”.
+
+##### Required invariants
 
 **Invariant A — child locked before parent identity edge**
 
@@ -599,6 +632,7 @@ This algorithm applies to any write where the document’s identity depends on r
    - insert path: insert `dms.Document`, then insert `dms.IdentityLock(DocumentId)` for the new `DocumentId`
    - update path: lookup `DocumentId` first (by `DocumentUuid` or by referential-id upsert resolution)
 5) Acquire update identity lock on `dms.IdentityLock(DocumentId)` for the document being written.
+   - Optional optimization: if the resource type is known (from the effective ApiSchema + configuration) to (a) never be in an identity closure and (b) never allow identity/URI updates, this update identity lock can be omitted; and if `IdentityComponentChildren` is empty for this write (no ApiSchema-derived `IsIdentityComponent=true` bindings), step 3’s shared child locks can be omitted as well.
 6) Write the relational rows (root + children) and maintain `dms.ReferenceEdge` rows.
 7) Detect whether this write changed the document’s identity/URI.
    - If yes, run Algorithm 2 (closure expansion + locks), then recompute `dms.ReferentialIdentity` (Set-based recompute section).
@@ -686,6 +720,34 @@ This design instead uses **SERIALIZABLE semantics** on the `Parents(IdentityClos
 - SQL Server: SERIALIZABLE key-range locks (blocks concurrent inserts into the scanned key ranges)
 
 This concentrates the coordination cost on the *rarer* identity/URI-changing transactions and on the edge-index ranges that matter, and it benefits directly from the compact `dms.ReferenceEdge` model (one row per `(ParentDocumentId, ChildDocumentId)`).
+
+##### Same example as above but now includes collecting CacheTargets (why SERIALIZABLE matters)
+
+Assume:
+- `Student` has `DocumentId=100` and its identity/URI is changing (it's a seed).
+- `StudentSchoolAssociation` (SSA) has `DocumentId=300` and is in the `IdentityClosure` because its identity depends on Student.
+- `GraduationPlan` has `DocumentId=400` (it exists already) and can reference a Student but its own identity does **not** depend on the Student. However, if Student's identity changes, the `GraduationPlan` document necessarily changes, which needs to be captured by a change to etag/lastModifiedDate.
+
+**Tx A (identity/URI-changing, must bump representation versions)**
+
+1. Update Student (`DocumentId=100`) identity/URI.
+2. Lock the `IdentityClosure` and recompute `dms.ReferentialIdentity` for impacted docs (e.g., `100` and `300`).
+3. Compute `CacheTargets` by scanning `dms.ReferenceEdge` to find 1-hop referrers of the `IdentityClosure` (`Parents(IdentityClosure)`), then bump `dms.Document(Etag, LastModifiedAt)` for `CacheTargets`.
+
+**Tx B (normal write, adds a new reference edge)**
+
+1. Update `GraduationPlan` (`DocumentId=400`) to add a reference to `Student` (`DocumentId=100`).
+2. Maintain `dms.ReferenceEdge(ParentDocumentId=400, ChildDocumentId=100, IsIdentityComponent=false)` and bump `dms.Document(Etag, LastModifiedAt)` for `400`, then commit.
+
+**What can go wrong under READ COMMITTED**
+
+- If Tx B commits the new edge while Tx A is computing `Parents(IdentityClosure)`, Tx A can miss `(400 → 100)` and therefore omit `400` from `CacheTargets`.
+- After both commit, the API representation of `GraduationPlan(400)` changes (its Student reference object now reconstitutes from Student’s new identity/URI), but `400`’s representation metadata may not reflect that extra change (stale `_etag` / `_lastModifiedDate` relative to the returned JSON).
+
+**What SERIALIZABLE changes**
+
+- PostgreSQL: Tx A runs at SERIALIZABLE for the edge scan + bump; if Tx B’s insert would create a phantom in Tx A’s read, PostgreSQL will raise `40001` for one of the transactions and DMS retries. On retry, Tx A sees the new edge and includes `400` in `CacheTargets` (or Tx B retries after Tx A, serializing the outcomes).
+- SQL Server: Tx A’s SERIALIZABLE edge scan takes key-range locks on the relevant `ChildDocumentId` ranges, so Tx B’s insert into those ranges blocks (or times out/deadlocks and retries). The commits serialize so there is no “missed edge” window: either Tx B commits after Tx A (and its own write bumps `400`), or Tx A retries.
 
 ##### PostgreSQL (SERIALIZABLE transaction + retry)
 

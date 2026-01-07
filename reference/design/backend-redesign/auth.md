@@ -456,7 +456,7 @@ Cons:
 - Harder for nested securable element paths (requires joins to child tables).
 - More complexity in query compilation.
 
-### Alternative C: Hybrid (recommended direction)
+### Alternative C: Hybrid
 
 - `dms.DocumentSubject` (generic per-document subject extraction; transactional)
 - EdOrg hierarchy (adjacency + optional closure table)
