@@ -242,6 +242,33 @@ else {
 
     if(-not $NoDmsInstance -or $SchoolYearRange)
     {
+        # Wait for Config Service to be ready before creating DMS Instances
+        Write-Output "Waiting for Config Service to be ready..."
+        $maxAttempts = 30
+        $attempt = 0
+        $ready = $false
+
+        while (-not $ready -and $attempt -lt $maxAttempts) {
+            $attempt++
+            Write-Output "Checking if Config Service is responding (attempt $attempt/$maxAttempts)..."
+
+            try {
+                $response = Invoke-WebRequest -Uri "http://localhost:8081/health" -Method Get -TimeoutSec 5 -ErrorAction Stop
+                if ($response.StatusCode -eq 200) {
+                    $ready = $true
+                    Write-Output "Config Service is ready!"
+                }
+            }
+            catch {
+                Write-Output "Config Service not ready yet: $($_.Exception.Message)"
+                Start-Sleep -Seconds 5
+            }
+        }
+
+        if (-not $ready) {
+            throw "Config Service did not become ready within the timeout period"
+        }
+
         Import-Module ../Dms-Management.psm1 -Force
 
         try {
