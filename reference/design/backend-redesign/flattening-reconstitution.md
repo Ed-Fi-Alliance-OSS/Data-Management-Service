@@ -606,6 +606,71 @@ Execution strategy:
 - For each target resource type, run one batched identity projection query (chunk if needed).
 - Populate a dictionary `(targetType, targetDocumentId) → identity value bag`.
 
+#### Example: reference expansion via batched identity projection
+
+Assume we are reconstituting a page of `edfi.StudentSchoolAssociation` rows, and the relational root table stores:
+- `Student_DocumentId` (FK → `edfi.Student(DocumentId)`)
+- `School_DocumentId` (FK → `edfi.School(DocumentId)`)
+
+Root rows for the page (simplified):
+
+```text
+DocumentId | Student_DocumentId | School_DocumentId | EntryDate
+---------- | ------------------ | ---------------- | ----------
+5001       | 3001               | 2001             | 2025-08-15
+5002       | 3002               | 2001             | 2025-08-15
+```
+
+1) Collect distinct referenced ids per target type:
+
+```text
+Student: [3001, 3002]
+School:  [2001]
+```
+
+2) Run one identity projection query per target type (PostgreSQL examples):
+
+```sql
+-- Students: project the identity fields needed to build studentReference
+SELECT DocumentId, StudentUniqueId
+FROM edfi.Student
+WHERE DocumentId = ANY (@studentDocumentIds);
+
+-- Schools: project the identity fields needed to build schoolReference
+SELECT DocumentId, SchoolId
+FROM edfi.School
+WHERE DocumentId = ANY (@schoolDocumentIds);
+```
+
+Example results:
+
+```text
+-- Student projection results
+DocumentId | StudentUniqueId
+---------- | --------------
+3001       | 604821
+3002       | 604822
+
+-- School projection results
+DocumentId | SchoolId
+---------- | --------
+2001       | 255901
+```
+
+3) Build an in-memory lookup used during JSON writing:
+
+```text
+(Student, 3001) -> { studentUniqueId: "604821" }
+(Student, 3002) -> { studentUniqueId: "604822" }
+(School,  2001) -> { schoolId: 255901 }
+```
+
+During reconstitution for `DocumentId=5001`, DMS writes reference objects by looking up the FK `DocumentId` values:
+- `studentReference` comes from `(Student, 3001)`
+- `schoolReference` comes from `(School, 2001)`
+
+(For polymorphic/abstract targets, the identity projection query is against `{AbstractResource}_View` instead of a concrete table so the same lookup works across concrete types.)
+
 ### 6.4 JSON assembly (fast, shape-safe)
 
 Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
