@@ -1,0 +1,158 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Net;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
+using EdFi.DmsConfigurationService.DataModel.Model;
+using EdFi.DmsConfigurationService.DataModel.Model.Profile;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using FluentValidation;
+using FluentValidation.Results;
+using Microsoft.Extensions.Logging;
+
+namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
+
+public class ProfileModule : IEndpointModule
+{
+    public void MapEndpoints(IEndpointRouteBuilder endpoints)
+    {
+        endpoints.MapSecuredGet("/v2/profiles/", GetAll);
+        endpoints.MapSecuredPost("/v2/profiles/", InsertProfile);
+        endpoints.MapSecuredGet($"/v2/profiles/{{id}}", GetById);
+        endpoints.MapSecuredPut($"/v2/profiles/{{id}}", Update);
+        endpoints.MapSecuredDelete($"/v2/profiles/{{id}}", Delete);
+    }
+
+    private static async Task<IResult> GetAll(
+        IProfileRepository repository,
+        [AsParameters] PagingQuery query,
+        HttpContext httpContext
+    )
+    {
+        var results = await repository.QueryProfiles(query);
+        var profiles = results
+            .OfType<ProfileGetResult.Success>()
+            .Select(r => r.Profile)
+            .ToList();
+        if (profiles.Count > 0)
+        {
+            return Results.Ok(profiles);
+        }
+        if (results.Any(r => r is ProfileGetResult.FailureUnknown unknown))
+        {
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+        return Results.Ok(Array.Empty<ProfileResponse>());
+    }
+
+    private static async Task<IResult> InsertProfile(
+    ProfileInsertCommand command,
+    ProfileInsertCommand.Validator validator,
+    HttpContext httpContext,
+    IProfileRepository repository,
+    ILogger<ProfileModule> logger
+    )
+    {
+        await validator.GuardAsync(command);
+        var result = await repository.InsertProfile(command);
+        var request = httpContext.Request;
+        return result switch
+        {
+            ProfileInsertResult.Success success => Results.Created(
+                $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
+                new { Id = success.Id }
+            ),
+            ProfileInsertResult.FailureDuplicateName duplicate => Results.Json(
+                FailureResponse.ForDataValidation(
+                    new[] { new ValidationFailure("ProfileName", $"Profile '{duplicate.ProfileName}' already exists.") },
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ProfileInsertResult.FailureUnknown failure => FailureResults.Unknown(httpContext.TraceIdentifier),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> GetById(
+        long id,
+        HttpContext httpContext,
+        IProfileRepository repository,
+        ILogger<ProfileModule> logger
+    )
+    {
+        var result = await repository.GetProfile(id);
+        return result switch
+        {
+            ProfileGetResult.Success success => Results.Ok(success.Profile),
+            ProfileGetResult.FailureNotFound => Results.Json(
+                FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ProfileGetResult.FailureUnknown failure => FailureResults.Unknown(httpContext.TraceIdentifier),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> Update(
+    long id,
+    ProfileUpdateCommand command,
+    ProfileUpdateCommand.Validator validator,
+    HttpContext httpContext,
+    IProfileRepository repository,
+    ILogger<ProfileModule> logger
+    )
+    {
+        await validator.GuardAsync(command);
+        if (command.Id != id)
+        {
+            throw new ValidationException(new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") });
+        }
+        var result = await repository.UpdateProfile(command);
+        return result switch
+        {
+            ProfileUpdateResult.Success => Results.NoContent(),
+            ProfileUpdateResult.FailureDuplicateName => Results.Json(
+                FailureResponse.ForDataValidation(
+                    new[] { new ValidationFailure("ProfileName", "A profile with this name already exists.") },
+                    httpContext.TraceIdentifier
+                ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ProfileUpdateResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ProfileUpdateResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+
+    private static async Task<IResult> Delete(
+        long id,
+        HttpContext httpContext,
+        IProfileRepository repository,
+        ILogger<ProfileModule> logger
+    )
+    {
+        var result = await repository.DeleteProfile(id);
+        return result switch
+        {
+            ProfileDeleteResult.Success => Results.NoContent(),
+            ProfileDeleteResult.FailureInUse => Results.Json(
+                FailureResponse.ForBadRequest("Profile is assigned to applications and cannot be deleted.", httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
+            ProfileDeleteResult.FailureNotExists => Results.Json(
+                FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                statusCode: (int)HttpStatusCode.NotFound
+            ),
+            ProfileDeleteResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
+            _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+        };
+    }
+}
