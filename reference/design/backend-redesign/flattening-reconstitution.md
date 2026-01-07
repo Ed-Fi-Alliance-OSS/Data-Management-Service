@@ -1890,22 +1890,3 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
     return AssembleJson(plan, documentMetadata /* + tables + lookups */);
 }
 ```
-
----
-
-## 8. Performance Notes / Failure Modes
-
-- **N+1 writes**: prevented by per-table batched inserts; nested collections avoid identity capture via composite keys.
-- **N+1 reads**: prevented by per-table batched selects; reference identity projection is grouped per target resource type.
-- **Network traffic**: minimized by multi-resultset reads and batching, plus optional L1/L2 caches for identity/descriptor lookups.
-- **Schema complexity**: the model builder must validate supported JSON schema constructs and fail startup schema validation for unsupported patterns (only support the subset MetaEd actually emits). `additionalProperties` is not treated as persisted dynamic content because Core prunes overposted properties before extraction.
-
----
-
-## 9. Next Steps (Design → Implementation)
-
-1. Use composite parent+ordinal keys for child tables (as described above) and standardize runtime write/read plans around them.
-2. Define exact `relational` block JSON schema and add it to `JsonSchemaForApiSchema.json`.
-3. Implement a shared `RelationalResourceModelBuilder` for runtime.
-4. Implement Postgres + SQL Server dialects for paging and bulk insert paths.
-5. Prototype end-to-end on one resource with nested collections (e.g., `School` addresses → periods).
