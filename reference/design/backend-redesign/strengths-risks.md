@@ -168,3 +168,36 @@ Treating `dms.DocumentCache` as “optional” may not be practical given:
 - per-resource `GetByIdLatencyMs`, `QueryLatencyMs`
 - cache hit rate, rebuild rate, rebuild latency
 - per-request result set count and reconstitution CPU time
+
+---
+
+## Scale Risks: 100M Documents / 1B Edges
+
+At the “very large table” scale (e.g., ~100M documents and ~1B edges), several `dms.*` tables become operational concerns beyond the logical model.
+
+### `dms.Document` (~100M rows)
+
+- **Row/index bloat from repeated strings**: `ProjectName`/`ResourceName`/`ResourceVersion` are wide, repeated on every row, and often appear in indexes; this inflates storage and reduces cache locality.
+- **Cascade-driven update churn**: representation-metadata bumps (`Etag`, `LastModifiedAt`) can touch large dependent sets. Even without indexing those columns, high update rates cause Postgres MVCC bloat/autovacuum pressure and SQL Server log volume/fragmentation/lock contention.
+- **Random UUID index insertion**: `DocumentUuid` (and `dms.ReferentialIdentity.ReferentialId`) are effectively random, increasing page splits/fragmentation under sustained ingest unless explicitly managed.
+
+#### Possible actions / mitigations
+
+- Replace `(ProjectName, ResourceName, ResourceVersion)` with small surrogate IDs in large tables (`ProjectId`, `ResourceId`, `ResourceVersionId`) backed by lookup tables; keep names in lookup tables for diagnostics.
+- Keep representation metadata out of hot covering indexes; consider isolating high-churn representation metadata into a separate table if update contention becomes dominant (trade-off: extra join on reads).
+- Plan for UUID index maintenance (engine-appropriate fillfactor settings, tuned autovacuum/rebuild cadence).
+
+### `dms.ReferenceEdge` (~1B rows)
+
+- **Storage and maintenance**: the heap + PK + reverse index are enormous; routine operations (vacuum/reindex/rebuild, backup/restore, replication/log shipping) and accidental large deletes/updates become very expensive.
+- **Churn amplification**: even diff-based edge maintenance still writes to very large B-trees; Postgres deletes/updates create dead tuples requiring vacuum, and SQL Server incurs heavy log + fragmentation.
+- **Fanout/hub contention**: “hub” children can have millions of inbound edges (e.g. Descriptors); strict identity/representation cascades and SERIALIZABLE edge scans over these hubs can drive latency spikes, deadlocks, and retry storms.
+- **`CreatedAt` overhead**: a per-row timestamp is significant storage at this scale if it is not used for query/retention.
+
+#### Possible actions / mitigations
+
+- Make partitioning/compression of `dms.ReferenceEdge` a first-class deployment option (and choose a partitioning key that matches dominant access patterns, e.g., reverse lookups by `ChildDocumentId`).
+- Add a filtered/partial structure for identity edges (`IsIdentityComponent=true`) (filtered index/partial index, or a separate identity-edge table) so identity closure computations don’t pay full “all edges” cost.
+- Add guardrails for high-fanout cascades (configurable bounds, explicit retry/backoff policies, and a fallback mode that degrades representation-metadata/caching cascades to eventual consistency when the impacted set is huge).
+- Re-evaluate `CreatedAt` on `dms.ReferenceEdge` (drop if unused, or move to an optional audit table).
+- Do not include descriptor edges in this table
