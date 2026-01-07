@@ -42,7 +42,7 @@ During POST/PUT processing, the backend:
 
 This is required because the relational tables store **`DocumentId` foreign keys**, and we cannot write those without resolving them.
 
-#### ApiSchema-derived natural-key resolver (design)
+#### ApiSchema-derived natural-key resolver
 
 The **natural-key resolver** is the backend service that converts a `{Project, Resource, DocumentIdentity}` into a persisted `DocumentId` **without per-resource code**.
 
@@ -63,7 +63,7 @@ It is used for:
 - `DocumentId` when found
 - “not found” when no matching row exists (write-time: validation failure; query-time: empty-match behavior)
 
-##### Plan compilation (per resource, per `EffectiveSchemaHash`)
+##### Plan compilation (per resource)
 
 No resource-specific SQL is required for identity resolution: all lookups are via `dms.ReferentialIdentity`.
 
@@ -84,7 +84,7 @@ The resolver uses layered caching:
 - Optional L1/L2 caches (after-commit population only):
   - `ReferentialId → DocumentId`
 
-If identity updates are enabled and `dms.ReferentialIdentity` is maintained synchronously via cascades, any cross-request cache of `ReferentialId → DocumentId` must be updated/evicted for all affected keys after commit (TTL-only staleness can cause incorrect reference resolution).
+When identity updates occur, any cross-request cache of `ReferentialId → DocumentId` must be updated/evicted for all affected keys after commit.
 
 ### 2) Database enforcement (FKs)
 
@@ -96,14 +96,14 @@ Relational tables store references as FKs so the database enforces referential i
   - FK to `dms.Document(DocumentId)` (existence)
   - Application validation uses `{AbstractResource}_View` (a union view derived from `ApiSchema.json` `abstractResources`) to ensure the referenced `DocumentId` is a member of the allowed hierarchy and to obtain a discriminator for diagnostics (see [data-model.md](data-model.md))
 
-Optional (not baseline): add a trigger to enforce the same membership check in the database by validating `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId = <fk>)` on insert/update.
+Optional: add a trigger to enforce the same membership check in the database by validating `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId = <fk>)` on insert/update.
 
 ### Delete conflicts
 
 Deletes rely on the same FK graph:
 - If a document is referenced, `DELETE` fails with an FK violation; DMS maps that to a `409` conflict.
 - Baseline: because FK names are deterministic, DMS can map the violated constraint back to a referencing resource/table to produce a conflict response.
-- Use `dms.ReferenceEdge` for diagnostics:
+- `dms.ReferenceEdge` can optionally be used for diagnostics:
   - `SELECT ParentDocumentId FROM dms.ReferenceEdge WHERE ChildDocumentId = @deletedDocumentId`
   - join `dms.Document` to report referencing resource types
   - this avoids scanning all resource tables and produces more consistent diagnostics across engines.
@@ -149,21 +149,20 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - reference-bearing identities (required; kept current via cascading recompute)
      - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
-3. Backend acquires identity locks (no global lock):
+3. Backend acquires identity locks:
    - Acquire **shared locks** on `dms.IdentityLock` rows for any **identity-component** referenced `ChildDocumentId`s (from ApiSchema-derived bindings) *before* acquiring the parent document’s update lock. This prevents “stale-at-birth” derived identities and avoids deadlocks with concurrent identity-cascade transactions.
    - Acquire an **update lock** on this document’s `dms.IdentityLock` row (insert the row first for inserts).
-   - See **Phantom-safe impacted-set locking** for the normative lock ordering + algorithms.
+   - See [Phantom-safe impacted-set locking](#phantom-safe-impacted-set-locking-no-global-lock) for the normative lock ordering + algorithms.
 4. Backend writes within a single transaction:
    - `dms.Document` insert/update (sets `Etag`, `LastModifiedAt`, etc.)
    - `dms.ReferentialIdentity` upsert (primary + superclass aliases) for all resource identities (self-contained and reference-bearing)
-   - Resource root + child tables (replace strategy for collections)
+   - Resource root + child tables (using replace strategy for collections)
    - `dms.Descriptor` upsert if the resource is a descriptor
    - Maintain `dms.ReferenceEdge` rows for this document (outgoing references and descriptor references):
      - required to drive `dms.ReferentialIdentity` cascades and representation-version (`Etag`/`LastModifiedAt`) cascades
      - used for diagnostics (“who references me?”) and targeted async cache rebuild/invalidation
-   - If `dms.DocumentCache` is enabled, treat it as an eventual-consistent **projection** (CDC/indexing), not only an API cache:
+   - If `dms.DocumentCache` is enabled, treat it as an eventual-consistent **projection** (CDC/indexing):
      - enqueue/mark the written document (and any impacted dependents) for background materialization
-     - do not rely on API cache-miss to create rows (CDC consumers may never read via the API)
 
 #### Maintaining `dms.ReferenceEdge` (identity cascades, diagnostics, cache rebuild; low-churn)
 
@@ -172,24 +171,11 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 - `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
 - delete conflict diagnostics (“who references me?”)
 
-It is intentionally **not** used for referential integrity.
-
-**Inputs for one write**
-- `ParentDocumentId` = the `DocumentId` being inserted/updated
-- a deduplicated set of `(ChildDocumentId, IsIdentityComponent)` derived from the FK columns written for this document:
-  - `..._DocumentId` columns (document references)
-  - `..._DescriptorId` columns (descriptor references; these are also `DocumentId`s)
-
-**Extraction approach (no per-resource codegen)**
-- During flattening/materialization, whenever a `DocumentFk` or `DescriptorFk` value is produced (non-null), merge it into a per-request map keyed by `ChildDocumentId`:
-  - `edges[childDocumentId] = edges[childDocumentId] OR isIdentityComponent`
-- `isIdentityComponent` is derived from ApiSchema (identity definition(s) + `documentPathsMapping`), including superclass/abstract alias identity when present.
-
 **Write strategy**
 
 Two correct approaches:
 
-1) **Simple replace** (higher churn; simplest implementation)
+1) **Simple replace** (initial implementation)
    - `DELETE FROM dms.ReferenceEdge WHERE ParentDocumentId=@parent`
    - bulk insert the current edges
 
@@ -250,7 +236,7 @@ WHERE e.ParentDocumentId = @ParentDocumentId
 
 ##### Correctness requirement: `dms.ReferenceEdge` must be complete
 
-This redesign makes `dms.ReferenceEdge` a **strict** dependency index (even if `dms.DocumentCache` is optional/eventual). Completeness is not a “nice to have”:
+This redesign makes `dms.ReferenceEdge` a **strict** dependency index:
 
 - `dms.ReferenceEdge` is the only reverse index used to compute:
   - the **identity-dependency closure** for `dms.ReferentialIdentity` recompute (`IsIdentityComponent=true`), and
@@ -258,8 +244,6 @@ This redesign makes `dms.ReferenceEdge` a **strict** dependency index (even if `
 - If an outgoing reference is missing an edge, then upstream changes will silently miss dependents:
   - stale `dms.ReferentialIdentity` rows (identity-based upsert/reference resolution becomes incorrect), and
   - stale `_etag` / `_lastModifiedDate` (representation-sensitive optimistic concurrency becomes incorrect).
-
-This is the “strictness collapses” failure mode: the system has no authoritative way to discover *all* dependents without scanning every FK column in every resource table.
 
 **Definition of completeness (for one parent document)**
 
@@ -281,7 +265,7 @@ For a given `ParentDocumentId`, the set of edges in `dms.ReferenceEdge` must equ
    - Plan compilation/startup validation fails fast if:
      - any ApiSchema reference/descriptor path cannot be mapped to exactly one FK column + `IsIdentityComponent` classification.
 
-2) **Optional in-transaction verification (provable correctness mode)**
+2) **Optional in-transaction verification (provable correctness mode, but slow)**
    - In strict environments (or in CI/tests), add a verification step that compares:
      - the staged edge set for this write (what we intend to persist), vs
      - the expected edge set derived from **reading the persisted FK columns** for this `ParentDocumentId`.
@@ -308,7 +292,7 @@ For a given `ParentDocumentId`, the set of edges in `dms.ReferenceEdge` must equ
 
 ### Insert vs update detection
 
-- **Upsert (POST)**: detect an existing row by resolving the request’s `ReferentialId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for **all** identities (self-contained and reference-bearing).
+- **Upsert (POST)**: detect an existing row by resolving the request’s `ReferentialId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
   - The resource root table’s natural-key unique constraint remains a recommended relational guardrail and is still useful for race detection (unique violation → 409) if two writers attempt to create the same natural key concurrently.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.
@@ -321,7 +305,7 @@ If identity changes on update:
   - cascade recompute to any documents whose identities depend on this document (transitively) via `dms.ReferenceEdge` where `IsIdentityComponent=true`.
   - Use `dms.IdentityLock` row-lock orchestration (no global lock) to prevent phantoms and to ensure referential ids are never stale after commit.
 - References stored as FKs (`DocumentId`) remain valid; no cascading rewrite needed.
-  - If `dms.DocumentCache` is enabled, identity/URI changes of *this* document can enqueue or mark dependent documents for eventual cache rebuild (no transactional “no stale window” requirement).
+  - If `dms.DocumentCache` is enabled, identity/URI changes of *this* document can enqueue or mark dependent documents for eventual cache rebuild
 
 ### Cascade scenarios (tables-per-resource)
 
@@ -329,11 +313,11 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
 
 - **Identity/URI change on the document itself** (e.g., `StudentUniqueId` update, descriptor `namespace#codeValue` update)
   - Do not rewrite referencing rows: FKs remain correct.
-  - Compute and lock the **impacted identity set** (this document, plus all transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`) using `dms.IdentityLock` row-lock orchestration (no global lock; expand-and-lock to a fixpoint to prevent phantoms).
+  - Compute and lock the **impacted identity set** (this document, plus all transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`) using `dms.IdentityLock` row-lock orchestration (expand-and-lock to a fixpoint to prevent phantoms).
   - Recompute and upsert `dms.ReferentialIdentity` for every impacted document (primary + superclass/abstract alias rows) in the same transaction, so `ReferentialId → DocumentId` lookups are never stale after commit (even for reference-bearing identities).
   - If `dms.DocumentCache` is enabled, enqueue/mark affected documents for eventual materialization (background projector), rather than performing a transactional cache-update cascade.
   - No rewrite of `dms.ReferenceEdge` rows is required for identity/URI changes: edges store `DocumentId`s and only change when outgoing references change.
-  - Update/evict any in-memory/Redis keys after commit (e.g., `ReferentialId → DocumentId`, `DocumentUuid → DocumentId`, descriptor expansion).
+  - Update/evict any caching after commit (e.g., `ReferentialId → DocumentId`, `DocumentUuid → DocumentId`, descriptor expansion).
 
 - **Outgoing reference set changes on a document** (FK values change)
   - Relational writes update the FK columns as usual.
@@ -342,32 +326,27 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
 
 - **ETag / LastModified semantics under derived reference identities (required)**
   - Treat `dms.Document.Etag` and `dms.Document.LastModifiedAt` as **representation** metadata: they must change when referenced identity/descriptor URI changes would alter the reconstituted JSON.
-  - Use an **opaque “representation version” token** for `Etag` (monotonic `bigint`), not a content hash.
-  - Prefer monotonic `bigint` etags over UUID etags (smaller, index-friendly, and supports cheap freshness checks like `dms.DocumentCache.Etag = dms.Document.Etag`; UUID adds no correctness benefit here).
+  - Use an opaque representation version token for `Etag` (monotonic `bigint`) that supports cheap freshness checks like `dms.DocumentCache.Etag = dms.Document.Etag`
   - `_lastModifiedDate` must be derived from `dms.Document.LastModifiedAt` (formatted as UTC), not generated on reads or from projection timestamps.
   - When an identity/URI change occurs, update `Etag`/`LastModifiedAt` for the same impacted set used for identity correctness:
     - `IdentityClosure`: this document plus transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`
-    - `CacheTargets`: `IdentityClosure ∪ Parents(IdentityClosure)` where `Parents(...)` is 1-hop over **all** `dms.ReferenceEdge` rows
+    - `CacheTargets`: the set of DocumentIds whose API representation metadata must be updated (Etag / LastModifiedAt / DocumentCache) when an identity/URI change happens
+      - `IdentityClosure union Parents(IdentityClosure)` where `Parents(...)` is 1-hop over **all** `dms.ReferenceEdge` rows
   - Apply the update with a set-based statement (same transaction as `dms.ReferentialIdentity` recompute):
     - PostgreSQL: `UPDATE dms.Document SET Etag = Etag + 1, LastModifiedAt = now() WHERE DocumentId IN (...CacheTargets...)`
     - SQL Server: `UPDATE dms.Document SET Etag = Etag + 1, LastModifiedAt = sysutcdatetime() WHERE DocumentId IN (...CacheTargets...)`
-  - Strictness: computing `Parents(IdentityClosure)` must be **phantom-safe** w.r.t. concurrent writes to `dms.ReferenceEdge` so `CacheTargets` is complete; this design uses **SERIALIZABLE semantics** on the edge-scan (PostgreSQL: SERIALIZABLE transaction; SQL Server: SERIALIZABLE key-range locks on the edge scan). See “Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)” below.
+  - Strictness: computing `Parents(IdentityClosure)` must be **phantom-safe** w.r.t. concurrent writes to `dms.ReferenceEdge` so `CacheTargets` is complete; this design uses **SERIALIZABLE semantics** on the edge-scan (PostgreSQL: SERIALIZABLE transaction; SQL Server: SERIALIZABLE key-range locks on the edge scan). See [Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)](#set-based-representation-version-bump-etaglastmodifiedat--strict-and-phantom-safe-serializable).
   - If `dms.DocumentCache` is enabled, rebuild/refresh cached JSON for `CacheTargets` **eventually** (background projector). The version bump provides a cheap, correct signal that dependent representations changed and drives which rows are stale.
 
 - **Deletes**
   - Correctness is enforced by the FK graph (delete cascades or fails with FK violation).
-  - For richer “who references me?” diagnostics, use `dms.ReferenceEdge` (and fall back to deterministic FK-name mapping only as a defensive fallback).
-
-- **Schema validation (`dms.EffectiveSchema`)**
-  - DMS validates database/schema compatibility at startup via `dms.EffectiveSchema`/`dms.SchemaComponent` (see “Schema Validation (EffectiveSchema)” below).
-  - If `dms.DocumentCache` is enabled, treat it as derived data and clear/rebuild it when the effective schema changes.
-  - If the effective schema changes in a way that affects reference/descriptor mapping or identity-component classification, rebuild `dms.ReferenceEdge` (or run an auditing/repair job) so stored `IsIdentityComponent` flags remain correct.
+  - For richer “who references me?” diagnostics, use `dms.ReferenceEdge` (instead of deterministic FK-name mapping).
 
 ### Concurrency (ETag)
 
 - Compare `If-Match` header to `dms.Document.Etag` (representation-version token).
-- `dms.Document.Etag` does **not** need to be a content hash; it is an opaque token (monotonic `bigint`) that changes whenever the representation changes, including due to identity/descriptor cascades.
-- This can cause `If-Match` failures when upstream identity/descriptor changes alter the representation; that is intentional for representation-sensitive optimistic concurrency.
+- `dms.Document.Etag` is an opaque token (monotonic `bigint`) that changes whenever the representation changes, including due to identity cascades.
+- This can cause `If-Match` failures when upstream identity changes alter the representation, which is intentional
 - Implement optimistic concurrency as a conditional update so the bump is atomic (e.g., `... WHERE DocumentId=@id AND Etag=@expected`).
 - Implement row-level locking per engine (`XLOCK`/`HOLDLOCK` in SQL Server, `FOR UPDATE` in PostgreSQL) when needed.
 
@@ -443,7 +422,7 @@ ORDER BY p.DocumentId;
 ```
 
 4. Fetch documents:
-   - Return cached JSON when available (if enabled), otherwise reconstitute (and optionally backfill caches asynchronously).
+   - Return cached JSON when available (if enabled), otherwise reconstitute.
 
 Reference/descriptor resolution is metadata-driven (no per-resource code):
 - For **descriptor** query params: compute the descriptor `ReferentialId` (descriptor resource type from `ApiSchema` + normalized URI) and resolve `DocumentId` via `dms.ReferentialIdentity`.
@@ -458,8 +437,6 @@ Indexing:
 
 
 ## Caching (Low-Complexity Options)
-
-This design is relational-first (canonical store is relational). `dms.DocumentCache` is **optional** and (when enabled) is preferably **eventually consistent**; other caches are optional optimizations.
 
 ### Recommended cache targets
 
@@ -490,30 +467,18 @@ This design is relational-first (canonical store is relational). `dms.DocumentCa
      - optional read-triggered “rebuild hint” (but not the only trigger)
      - no transactional cross-document cache cascades by default
 
-Avoid initially:
-- Query-result caching (authorization filters and paging make invalidation/keying complex).
-- Negative caching for missing identities/descriptors (can cause “false not found” after recent inserts unless TTL is tiny).
 
 ### Cache keying strategy
 
-Prefer **versioned keys** so schema changes do not require distributed invalidation:
-
-- Always include `(DmsInstanceId, EffectiveSchemaHash)` in cache keys.
-- For local caches, treat `EffectiveSchemaHash` as part of the cache namespace.
-- For Redis, prefix keys with `dms:{DmsInstanceId}:{EffectiveSchemaHash}:...`.
+- Always include `(DmsInstanceId)` in cache keys.
+- For Redis, prefix keys with `dms:{DmsInstanceId}:...`.
 
 ### Local-only (per-node) option
 
 Use an in-process `MemoryCache`:
 - Lowest complexity; no network hop.
 - Good for: derived mapping, `ReferentialId → DocumentId` (including descriptor referential ids), descriptor expansion.
-- Multi-node correctness: use TTL + commit-time updates; for `ReferentialId → DocumentId`, do not rely on TTL-only staleness if identity updates/cascades are enabled (either evict/update impacted keys after commit or treat the cache as best-effort and fall back to DB for correctness).
 
-Suggested defaults:
-- derived mapping: no TTL (bounded by schema count; cleared on restart)
-- `ReferentialId → DocumentId`: sliding TTL (e.g., 5–30 minutes)
-- descriptor expansion (`DescriptorDocumentId → Uri`): longer TTL (e.g., 30–120 minutes)
-- `DocumentUuid → DocumentId`: short TTL (e.g., 5–30 minutes)
 
 ### Redis (distributed) option
 
@@ -522,25 +487,20 @@ Add Redis as an optional L2 cache:
   - Keep it simple:
     - cache-aside reads
     - write-through updates after successful commit
-    - TTL everywhere
-    - versioned keys via `EffectiveSchemaHash` (no “flush all keys” needed when the effective schema changes)
 
 Invalidation approaches (choose one):
-- **TTL-only** (simplest): acceptable for non-critical caches; for `ReferentialId → DocumentId` under identity updates/cascades, TTL-only staleness can cause incorrect resolution unless you fall back to DB.
+- **TTL-only** (simplest): acceptable for non-critical caches; for `ReferentialId → DocumentId` TTL-only staleness can cause incorrect resolution due to identity updates/cascades
 - **Best-effort delete on writes**: on identity updates/deletes, delete affected Redis keys after commit.
 - Optional later: pub/sub “invalidate key” messages to reduce staleness for local L1 caches.
 
 ### Invalidation rules (recommended)
 
-- **Effective schema change**:
-  - DMS restart is required; local caches are naturally cleared
-  - Redis keys are automatically isolated by the new `EffectiveSchemaHash` prefix
 - **Successful write transaction commit**:
   - update local/Redis caches for the touched identity/descriptor/uuid keys
   - do not populate caches before commit
 - **Identity updates** (`AllowIdentityUpdates=true`):
   - explicitly evict old `ReferentialId` keys and write new mappings after commit (including any cascade-updated documents’ identities, not just the directly-updated document)
-  - if caching “reference identity fragments” (`DocumentId → natural key values`), evict those for any resource whose identity fields are affected by the cascade, or keep TTL short and skip explicit eviction
+  - if caching “reference identity fragments” (`DocumentId → natural key values`), evict those for any resource whose identity fields are affected by the cascade
 
 ### ReferentialIdentity maintenance via `dms.ReferenceEdge` (transactional cascade; strict)
 

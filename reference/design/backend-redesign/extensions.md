@@ -175,14 +175,3 @@ Core tables:
 Sample extension tables:
 - `sample.ContactExtension` (resource-level extension fields under `$._ext.sample`)
 - `sample.ContactExtensionAddress` (extension fields under `$.addresses[*]._ext.sample`)
-
-## Schema validation notes
-
-Extension tables are part of the derived relational model:
-- they are included in the effective schema fingerprint validation (`dms.EffectiveSchemaHash`) because they derive from the same effective ApiSchema set
-
-## Open questions / decisions to confirm
-
-1. **Canonical `_ext` key token**: choose a single canonical form for `_ext` keys (prefer `ProjectEndpointName`) and enforce/normalize at schema generation time; keep the runtime mapping logic as a defensive fallback.
-2. **Naming overrides**: confirm that `resourceSchema.relational.nameOverrides` (if adopted) applies to extension-derived table/column base names as well as core names.
-3. **Polymorphic references in extensions**: enforcement strategy should match the core approach: FK to `dms.Document` + membership validation via `{AbstractResource}_View` (derived from `ApiSchema.json` `abstractResources`).
