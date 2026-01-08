@@ -4,16 +4,18 @@
 
 Draft. This document extends `reference/design/backend-redesign/DERIVED-TOKEN.md` by adding a DMS `ChangeVersion` design that aligns with Ed-Fi ODS/API Change Queries semantics while keeping the limited locking model (no `CacheTargets` fan-out, no SERIALIZABLE edge scans).
 
+Note: recent ODS versions bump ETag/LastModifiedDate/**and ChangeVersion** for indirect representation changes (e.g., referenced identity/descriptor URI changes). This design accounts for that behavior while still avoiding write-time fan-out.
+
 ## Goals
 
 1. Preserve the derived-token design’s guarantee: `_etag` / `_lastModifiedDate` MUST change when the returned representation changes.
-2. Add an ODS-style, monotonically increasing `ChangeVersion` to support future Change Query endpoints.
-3. Derive `ChangeVersion` from the derived-token design’s existing stored tokens (`ContentVersion`/`IdentityVersion`) so we don’t introduce a second, unrelated versioning scheme.
+2. Add an ODS-style, monotonically increasing `ChangeVersion` that advances for both direct and indirect representation changes.
+3. Derive `ChangeVersion` from the derived-token design’s existing stored tokens (`ContentVersion`/`IdentityVersion`) and dependency identity stamps so we don’t introduce a second, unrelated versioning scheme.
 4. Keep locking limited (same as `DERIVED-TOKEN.md`): no broad referrer scans under SERIALIZABLE for representation metadata maintenance.
 
 ## Non-goals (explicit trade-offs)
 
-- Making `ChangeVersion` *fully representation-sensitive* (i.e., change whenever derived `_etag` changes due solely to upstream identity/descriptor changes on **non-identity** edges) is not a goal. Doing so requires write-time fan-out or phantom-safe referrer scans, which this design intentionally avoids.
+- Exactly matching ODS’s *implementation mechanism* (write-time fan-out bumps) is not a goal; DMS can achieve the same externally-visible semantics using derived tokens.
 - Eliminating strict identity correctness work (`dms.ReferentialIdentity` and `IdentityClosure` recompute/locking) is out of scope; this design assumes those requirements remain.
 
 ## Background: what ChangeVersion is in ODS/API
@@ -24,6 +26,7 @@ In Ed-Fi ODS/API:
 - Each resource row stores its latest `ChangeVersion`, and change queries apply inclusive filtering:
   - `ChangeVersion >= minChangeVersion` (if provided)
   - `ChangeVersion <= maxChangeVersion` (if provided)
+- Recent versions treat `ChangeVersion` (and ETag/LastModifiedDate) as **representation-sensitive**: indirect changes that alter a resource’s representation can also advance the resource’s `ChangeVersion`.
 - Deletes and key changes are returned from separate tracked-change tables, each event assigned its own `ChangeVersion` (also from the global sequence).
 
 This model works because `ChangeVersion` is global and monotonic, and it is cheap to query by range using an index.
@@ -48,7 +51,12 @@ If they are global stamps, then:
 - Adding them produces a value that does not correspond to any real change event (and double-counts when both are set in the same transaction).
 - The correct “latest change” value is the **maximum**, not the sum.
 
-So in this design: `ChangeVersion(P) = max(P.ContentVersion, P.IdentityVersion)`.
+So in this design: `P.LocalChangeVersion = max(P.ContentVersion, P.IdentityVersion)`.
+
+Because ODS semantics include indirect representation changes, DMS defines:
+
+- `P.LocalChangeVersion = max(P.ContentVersion, P.IdentityVersion)` (direct changes to `P`)
+- `P.ChangeVersion = max(P.LocalChangeVersion, max(deps.IdentityVersion))` (direct + indirect representation changes)
 
 ## Data model (conceptual)
 
@@ -74,13 +82,15 @@ Keep the derived-token columns from `DERIVED-TOKEN.md`, but interpret the `*Vers
 - `ContentLastModifiedAt datetime NOT NULL`
 - `IdentityLastModifiedAt datetime NOT NULL`
 
-Add a queryable `ChangeVersion` representation (either computed or materialized):
+Add a queryable `LocalChangeVersion` representation (either computed or materialized):
 
-- Computed definition: `ChangeVersion = max(ContentVersion, IdentityVersion)`
+- Computed definition: `LocalChangeVersion = max(ContentVersion, IdentityVersion)`
 - PostgreSQL index option: expression index on `GREATEST(ContentVersion, IdentityVersion)`
-- SQL Server option: persisted computed column `ChangeVersion AS (CASE WHEN ContentVersion > IdentityVersion THEN ContentVersion ELSE IdentityVersion END) PERSISTED` + index
+- SQL Server option: persisted computed column `LocalChangeVersion AS (CASE WHEN ContentVersion > IdentityVersion THEN ContentVersion ELSE IdentityVersion END) PERSISTED` + index
 
-This yields an ODS-style `ChangeVersion` without introducing a third independent counter.
+`LocalChangeVersion` is indexable and supports efficient “what did this document itself change?” queries.
+
+The API-facing `ChangeVersion` (direct + indirect representation changes) is derived at read/query time (see below). This matches ODS semantics without requiring write-time fan-out bumps.
 
 ## Derived API metadata (unchanged from derived-token design)
 
@@ -99,21 +109,24 @@ All derived-token behavior remains as in `reference/design/backend-redesign/DERI
 For any document `P`:
 
 ```
-P.ChangeVersion = max(P.ContentVersion, P.IdentityVersion)
+P.LocalChangeVersion = max(P.ContentVersion, P.IdentityVersion)
+P.ChangeVersion = max(
+  P.LocalChangeVersion,
+  max(for each representation dependency D of P: D.IdentityVersion)
+)
 ```
 
 ### What causes ChangeVersion to advance?
 
-`ChangeVersion` advances when **this document’s persisted tokens advance**, i.e., when the system updates:
+`ChangeVersion` advances when **either** this document’s tokens advance **or** one of its representation dependencies’ identity stamps advances:
 
 - `ContentVersion` due to an actual persisted content change for `P`, or
 - `IdentityVersion` due to an actual identity projection change for `P` (including identity-closure recompute where `P` is in the closure and its identity projection changes).
+- Any representation dependency `D.IdentityVersion` change (referenced identity/descriptor URI changes that affect `P`’s representation).
 
 ### What does NOT advance ChangeVersion?
 
-`ChangeVersion` does **not** advance merely because `P`’s derived `_etag` changes due to upstream identity/URI changes along **non-identity** reference edges (i.e., “representation dependencies” that are not part of identity closure).
-
-This is the key trade-off that keeps locking limited and avoids write-time fan-out.
+`ChangeVersion` does **not** advance for indirect changes that do not affect representation (e.g., upstream **content-only** changes where `D.IdentityVersion` does not change).
 
 ## Write-path rules (tokens + ChangeVersion)
 
@@ -139,7 +152,7 @@ When a single write transaction updates a single document `P`, allocate at most 
    - if `contentChanged`: set `P.ContentVersion = v`, `P.ContentLastModifiedAt = now()`
    - if `identityChanged`: set `P.IdentityVersion = v`, `P.IdentityLastModifiedAt = now()`, and update `dms.ReferentialIdentity` as required.
 
-This makes `P.ChangeVersion` equal to the single stamp `v`, matching the “latest change version on the row” model from ODS.
+This makes `P.LocalChangeVersion` equal to the single stamp `v`. `P.ChangeVersion` will be at least `v`, and can be greater if any dependency has a higher `IdentityVersion`.
 
 For inserts (POST creating a new document), treat this as `contentChanged=true` and `identityChanged=true` and initialize both `ContentVersion` and `IdentityVersion` from the allocated stamp.
 
@@ -154,7 +167,7 @@ During strict identity recompute (closure locking and recomputation required for
     - set `X.IdentityVersion = v`, `X.IdentityLastModifiedAt = now()`,
     - update `dms.ReferentialIdentity` for `X`.
 
-This produces a monotonic, queryable `ChangeVersion` for identity-driven changes *that are already being updated transactionally for identity correctness*.
+This produces monotonic identity stamps that (a) keep strict identity correctness, and (b) automatically flow into dependent resources’ derived `_etag/_lastModifiedDate/ChangeVersion` on subsequent reads.
 
 ## Dependency depth: is 1 level enough?
 
@@ -167,7 +180,7 @@ So: no precomputed “fan-out dependency sources” are needed for derived token
 
 ## Future Change Query API mapping (DMS)
 
-This design enables an ODS-like change query API without reintroducing representation-version cascades.
+This design enables an ODS-like change query API (including indirect changes) without reintroducing representation-version cascades.
 
 ### 1) `availableChangeVersions`
 
@@ -179,10 +192,18 @@ Return:
 
 ### 2) Resource change queries (GET with `minChangeVersion`/`maxChangeVersion`)
 
-For a resource query that returns a set of `DocumentId`s:
+For a resource change query, DMS must consider both:
 
-- Join to `dms.Document` and filter by `ChangeVersion` (computed as `max(ContentVersion, IdentityVersion)`).
-- Include `changeVersion` in the response payload when change query parameters are supplied.
+- **direct** changes to the resource (`LocalChangeVersion`), and
+- **indirect** representation changes caused by dependency identity/URI changes (`deps.IdentityVersion`).
+
+One approach that stays consistent with derived tokens:
+
+1. Build a candidate set of `DocumentId`s as the union of:
+   - documents where `LocalChangeVersion` is within the requested window, and
+   - documents that reference a dependency `D` whose `IdentityVersion` is within the requested window (requires an inbound lookup; `dms.ReferenceEdge` can serve as the index).
+2. For each candidate document, compute derived `ChangeVersion` using the same dependency set used to compute derived `_etag`, then apply the `minChangeVersion/maxChangeVersion` bounds to the derived value.
+3. Return the *current representation* plus `changeVersion`.
 
 This matches ODS behavior: return the *current representation* of resources whose latest `ChangeVersion` is within the requested window.
 
@@ -237,13 +258,11 @@ Using the same scenario as `DERIVED-TOKEN.md` Example 1:
 Results:
 
 - `G._etag` changes (derived from `S.IdentityVersion`), so caching/concurrency metadata remains representation-correct.
-- `G.ChangeVersion` does **not** change, because `G.ContentVersion`/`G.IdentityVersion` did not advance.
-
-This is intentional: DMS avoids write-time fan-out for representation dependency changes and keeps `ChangeVersion` aligned with ODS’s “row changed” semantics.
+- `G.ChangeVersion` also changes (derived from `S.IdentityVersion`), matching ODS semantics for indirect representation changes without updating `G`.
 
 ## Summary of differences vs `DERIVED-TOKEN.md`
 
 - Adds a global `dms.ChangeVersionSequence`.
 - Interprets `ContentVersion` and `IdentityVersion` as stamps allocated from that global sequence.
-- Defines `ChangeVersion` as `max(ContentVersion, IdentityVersion)` for ODS-style change queries.
+- Defines `ChangeVersion` as `max(LocalChangeVersion, max(deps.IdentityVersion))` to align with ODS’s “indirect changes advance ChangeVersion” semantics.
 - Introduces tracked delete/key-change event tables (future-facing) using the same global sequence.
