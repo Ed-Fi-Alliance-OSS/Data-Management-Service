@@ -357,77 +357,48 @@ function Start-DockerEnvironment {
 
 function E2ETests {
     Invoke-Step { Start-DockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider }
-    Invoke-Step { Wait-ForConfigServiceAndClients }
     Invoke-Step { RunE2E }
 }
 
 function Wait-ForConfigServiceAndClients {
-    Write-Host "Waiting for config service to be ready..." -ForegroundColor Cyan
+    Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
     $maxAttempts = 60
     $attempt = 0
     $ready = $false
 
-    # First, wait for Config Service to respond to health checks
     while (-not $ready -and $attempt -lt $maxAttempts) {
         $attempt++
-        Write-Host "Checking if Config Service is responding (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
+        Write-Host "Checking if CMSAuthMetadataReadOnlyAccess client is registered (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
 
         try {
-            $response = Invoke-WebRequest -Uri "http://localhost:8081/health" -Method Get -TimeoutSec 5 -ErrorAction Stop
-            if ($response.StatusCode -eq 200) {
+            # Try to get a token using the CMSAuthMetadataReadOnlyAccess client
+            $tokenEndpoint = "http://localhost:8081/connect/token"
+            $body = @{
+                client_id = "CMSAuthMetadataReadOnlyAccess"
+                client_secret = "s3creT@09"
+                grant_type = "client_credentials"
+                scope = "edfi_admin_api/authMetadata_readonly_access"
+            }
+
+            $response = Invoke-RestMethod -Uri $tokenEndpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
+
+            if ($response.access_token) {
                 $ready = $true
-                Write-Host "Config Service is responding!" -ForegroundColor Green
+                Write-Host "Config service is ready and clients are registered!" -ForegroundColor Green
             }
         }
         catch {
-            Write-Host "Config Service not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Config service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
+        }
+
+        if (-not $ready) {
             Start-Sleep -Seconds 2
         }
     }
 
     if (-not $ready) {
-        throw "Config Service did not become ready within the timeout period"
+        throw "Config service did not become ready with registered clients within the timeout period"
     }
-
-    # For self-contained identity provider, also verify clients are registered
-    if ($IdentityProvider -eq "self-contained") {
-        Write-Host "Verifying OpenIddict clients are registered..." -ForegroundColor Cyan
-        $attempt = 0
-        $ready = $false
-
-        while (-not $ready -and $attempt -lt $maxAttempts) {
-            $attempt++
-            Write-Host "Checking if CMSAuthMetadataReadOnlyAccess client is registered (attempt $attempt/$maxAttempts)..." -ForegroundColor Yellow
-
-            try {
-                # Try to get a token using the CMSAuthMetadataReadOnlyAccess client
-                $tokenEndpoint = "http://localhost:8081/connect/token"
-                $body = @{
-                    client_id = "CMSAuthMetadataReadOnlyAccess"
-                    client_secret = "s3creT@09"
-                    grant_type = "client_credentials"
-                    scope = "edfi_admin_api/authMetadata_readonly_access"
-                }
-
-                $response = Invoke-RestMethod -Uri $tokenEndpoint -Method Post -Body $body -ContentType "application/x-www-form-urlencoded" -ErrorAction Stop
-
-                if ($response.access_token) {
-                    $ready = $true
-                    Write-Host "OpenIddict clients are registered!" -ForegroundColor Green
-                }
-            }
-            catch {
-                Write-Host "Clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
-                Start-Sleep -Seconds 2
-            }
-        }
-
-        if (-not $ready) {
-            throw "OpenIddict clients did not become ready within the timeout period"
-        }
-    }
-
-    Write-Host "Config service is fully ready!" -ForegroundColor Green
 }
 
 function Restart-DmsContainer {
