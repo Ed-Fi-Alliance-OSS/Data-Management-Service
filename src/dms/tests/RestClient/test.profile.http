@@ -1,0 +1,160 @@
+@configPort=8080
+@configPort=5126
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+
+### Step 1: Get a token from the config API
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&scope=edfi_admin_api/full_access
+
+### Step 2: Extract the token from the response
+@configToken={{configTokenRequest.response.body.access_token}}
+@timestamp={{$datetime 'yyyyMMddHHmm'}}
+@timestampDuplicated={{$datetime 'yyyyMMddHH'}}
+@timestamp3d={{$datetime 'yyyyMMddHHmmss'}}
+@timestamp3e={{$datetime 'yyyyMMddHHmmss'}}
+@timestamp3f={{$datetime 'yyyyMMddHHmmss'}}
+@timestamp3g={{$datetime 'yyyyMMddHHmmss'}}
+@timestamp6={{$datetime 'yyyyMMddHHmmss'}}
+@timestamp9={{$datetime 'yyyyMMddHHmmss'}}
+
+
+### Step 3: Create Profile (valid)
+# @name createProfile
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestamp}}",
+  "definition": "<Profile name=\"TestProfile_{{timestamp}}\"><Resource name=\"Resource1\"></Resource></Profile>"
+}
+### Read the newly-created profile ID from the Location header
+@profileId={{createProfile.response.headers.Location}}
+
+### Step 3a: Create Profile with missing name (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "",
+  "definition": "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>"
+}
+
+### Step 3b: Create Profile with duplicate name (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestampDuplicated}}",
+  "definition": "<Profile name=\"TestProfile_{{timestampDuplicated}}\"><Resource name=\"Resource1\"></Resource></Profile>"
+}
+####
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestampDuplicated}}",
+  "definition": "<Profile name=\"TestProfile_{{timestampDuplicated}}\"><Resource name=\"Resource1\"></Resource></Profile>"
+}
+### Step 3c: Create Profile with mismatched XML name (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestamp}}",
+  "definition": "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>"
+}
+
+### Step 3d: Create Profile with invalid XML (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestamp3d}}",
+  "definition": "<Profile name=\"TestProfile_{{timestamp3d}}\"><Resource name=\"Resource1\"></Resource>"
+}
+
+### Step 3e: Create Profile with no resource (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestamp3e}}",
+  "definition": "<Profile name=\"TestProfile_{{timestamp3e}}\"></Profile>"
+}
+
+### Step 3f: Create Profile with resource missing name (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestamp3f}}",
+  "definition": "<Profile name=\"TestProfile_{{timestamp3f}}\"><Resource></Resource></Profile>"
+}
+
+### Step 3g: Create Profile with duplicate resource names (should fail)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "TestProfile_{{timestamp3g}}",
+  "definition": "<Profile name=\"TestProfile_{{timestamp3g}}\"><Resource name=\"Resource1\"></Resource><Resource name=\"Resource1\"></Resource></Profile>"
+}
+
+### Step 4: Get All Profiles
+GET http://localhost:{{configPort}}/v2/profiles/?limit=10&offset=0
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+### Step 5: Get Profile by Id
+# @name getProfile
+GET http://localhost:{{configPort}}/v2/profiles/{{profileId}}
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+### Step 6: Update Profile (valid)
+PUT http://localhost:{{configPort}}/v2/profiles/{{profileId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "id": {{profileId}},
+  "name": "UpdatedProfile_{{timestamp6}}",
+  "definition": "<Profile name=\"UpdatedProfile_{{timestamp6}}\"><Resource name=\"Resource1\"></Resource></Profile>"
+}
+
+### Step 7: Delete Profile
+DELETE http://localhost:{{configPort}}/v2/profiles/{{profileId}}
+Authorization: bearer {{configToken}}
+
+### Step 8: Try to Get deleted Profile (404)
+# @name getProfile
+GET http://localhost:{{configPort}}/v2/profiles/{{profileId}}
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+
+### Step 9: Create Profile with complex definition (School resource example)
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "School-Profile-{{timestamp9}}",
+  "definition": "<Profile name=\"School-Profile-{{timestamp9}}\"><Resource name=\"School\"><ReadContentType memberSelection=\"ExcludeOnly\"><Property name=\"NameOfInstitution\" /><Property name=\"OperationalStatusDescriptor\" /><Property name=\"CharterApprovalSchoolYearTypeReference\" /><Property name=\"SchoolType\" /><Property name=\"AdministrativeFundingControlDescriptor\" /><Collection name=\"EducationOrganizationAddresses\" memberSelection=\"IncludeAll\" /><Collection name=\"SchoolCategories\" memberSelection=\"IncludeAll\" /></ReadContentType></Resource><Resource name=\"School\"><ReadContentType memberSelection=\"ExcludeOnly\"></Resource></Profile>"
+}

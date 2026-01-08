@@ -9,15 +9,23 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Profile;
 
 public class ProfileInsertCommand
 {
-    public string ProfileName { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
 
     public class Validator : AbstractValidator<ProfileInsertCommand>
     {
         public Validator()
         {
-            RuleFor(x => x.ProfileName).NotEmpty().MaximumLength(255);
-            RuleFor(x => x.Definition).NotEmpty();
+            RuleFor(x => x.Name)
+                .NotEmpty().WithMessage("Profile name is required.")
+                .MaximumLength(255).WithMessage("Profile name must be 255 characters or less.");
+
+            RuleFor(x => x.Definition)
+                .NotEmpty().WithMessage("Profile definition is required.")
+                .Must((cmd, xml) => ProfileValidationUtils.XmlProfileNameMatches(cmd.Name, xml)).WithMessage("Name must match the name attribute in the XML definition.")
+                .Must(ProfileValidationUtils.IsValidProfileXml).WithMessage("Profile definition XML is invalid or does not match the XSD.")
+                .Must(ProfileValidationUtils.HasAtLeastOneResource).WithMessage("Profile XML must contain at least one <Resource> element.")
+                .Must(ProfileValidationUtils.AllResourcesHaveNameAttribute).WithMessage("All <Resource> elements must have a name attribute.");
         }
     }
 }

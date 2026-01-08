@@ -30,14 +30,14 @@ public abstract record ProfileGetResult
 public abstract record ProfileInsertResult
 {
     public record Success(long Id) : ProfileInsertResult;
-    public record FailureDuplicateName(string ProfileName) : ProfileInsertResult;
+    public record FailureDuplicateName(string Name) : ProfileInsertResult;
     public record FailureUnknown(string Message) : ProfileInsertResult;
 }
 
 public abstract record ProfileUpdateResult
 {
     public record Success : ProfileUpdateResult;
-    public record FailureDuplicateName(string ProfileName) : ProfileUpdateResult;
+    public record FailureDuplicateName(string Name) : ProfileUpdateResult;
     public record FailureNotExists(long Id) : ProfileUpdateResult;
     public record FailureUnknown(string Message) : ProfileUpdateResult;
 }

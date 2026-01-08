@@ -27,12 +27,12 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"INSERT INTO dmscs.Profile (ProfileName, Definition, CreatedBy) VALUES (@ProfileName, @Definition, @CreatedBy) RETURNING Id;";
+            string sql = @"INSERT INTO dmscs.Profile (ProfileName, Definition, CreatedBy) VALUES (@Name, @Definition, @CreatedBy) RETURNING Id;";
             var id = await connection.ExecuteScalarAsync<long>(
                 sql,
                 new
                 {
-                    command.ProfileName,
+                    command.Name,
                     command.Definition,
                     CreatedBy = auditContext.GetCurrentUser(),
                 }
@@ -41,12 +41,12 @@ public class ProfileRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
         {
-            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", command.ProfileName);
-            return new ProfileInsertResult.FailureDuplicateName(command.ProfileName);
+            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", command.Name);
+            return new ProfileInsertResult.FailureDuplicateName(command.Name);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Insert profile failure");
+            logger.LogError(ex, "Insert profile failure for ProfileName={ProfileName}", command.Name);
             return new ProfileInsertResult.FailureUnknown(ex.Message);
         }
     }
@@ -57,13 +57,13 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"UPDATE dmscs.Profile SET ProfileName=@ProfileName, Definition=@Definition, LastModifiedAt=NOW(), ModifiedBy=@ModifiedBy WHERE Id=@Id;";
+            string sql = @"UPDATE dmscs.Profile SET ProfileName=@Name, Definition=@Definition, LastModifiedAt=NOW(), ModifiedBy=@ModifiedBy WHERE Id=@Id;";
             int affected = await connection.ExecuteAsync(
                 sql,
                 new
                 {
                     command.Id,
-                    command.ProfileName,
+                    command.Name,
                     command.Definition,
                     ModifiedBy = auditContext.GetCurrentUser(),
                 }
@@ -76,12 +76,12 @@ public class ProfileRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
         {
-            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", command.ProfileName);
-            return new ProfileUpdateResult.FailureDuplicateName(command.ProfileName);
+            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", command.Name);
+            return new ProfileUpdateResult.FailureDuplicateName(command.Name);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Update profile failure");
+            logger.LogError(ex, "Update profile failure for ProfileId={ProfileId}, ProfileName={ProfileName}", command.Id, command.Name);
             return new ProfileUpdateResult.FailureUnknown(ex.Message);
         }
     }
@@ -93,7 +93,7 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"SELECT Id, ProfileName, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile WHERE Id=@Id;";
+            string sql = @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile WHERE Id=@Id;";
             var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(sql, new { Id = id });
             if (profile == null)
             {
@@ -116,7 +116,7 @@ public class ProfileRepository(
         var results = new List<ProfileGetResult>();
         try
         {
-            string sql = @"SELECT Id, ProfileName, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
+            string sql = @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
             var profiles = await connection.QueryAsync<ProfileResponse>(sql, new { Limit = query.Limit, Offset = query.Offset });
             foreach (var profile in profiles)
             {
@@ -125,7 +125,7 @@ public class ProfileRepository(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Query profiles failure");
+            logger.LogError(ex, "Query profiles failure with Limit={Limit}, Offset={Offset}", query.Limit, query.Offset);
             results.Add(new ProfileGetResult.FailureUnknown(ex.Message));
         }
         return results;

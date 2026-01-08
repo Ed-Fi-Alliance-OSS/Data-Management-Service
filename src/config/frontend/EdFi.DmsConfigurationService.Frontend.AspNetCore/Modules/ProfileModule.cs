@@ -36,7 +36,7 @@ public class ProfileModule : IEndpointModule
         var results = await repository.QueryProfiles(query);
         var profiles = results
             .OfType<ProfileGetResult.Success>()
-            .Select(r => r.Profile)
+            .Select(r => new ProfileListResponse { Id = r.Profile.Id, Name = r.Profile.Name })
             .ToList();
         if (profiles.Count > 0)
         {
@@ -46,7 +46,7 @@ public class ProfileModule : IEndpointModule
         {
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
-        return Results.Ok(Array.Empty<ProfileResponse>());
+        return Results.Ok(Array.Empty<ProfileListResponse>());
     }
 
     private static async Task<IResult> InsertProfile(
@@ -64,11 +64,11 @@ public class ProfileModule : IEndpointModule
         {
             ProfileInsertResult.Success success => Results.Created(
                 $"{request.Scheme}://{request.Host}{request.PathBase}{request.Path.Value?.TrimEnd('/')}/{success.Id}",
-                new { Id = success.Id }
+                null
             ),
             ProfileInsertResult.FailureDuplicateName duplicate => Results.Json(
                 FailureResponse.ForDataValidation(
-                    new[] { new ValidationFailure("ProfileName", $"Profile '{duplicate.ProfileName}' already exists.") },
+                    new[] { new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.") },
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest
@@ -118,7 +118,7 @@ public class ProfileModule : IEndpointModule
             ProfileUpdateResult.Success => Results.NoContent(),
             ProfileUpdateResult.FailureDuplicateName => Results.Json(
                 FailureResponse.ForDataValidation(
-                    new[] { new ValidationFailure("ProfileName", "A profile with this name already exists.") },
+                    new[] { new ValidationFailure("Name", "A profile with this name already exists.") },
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest
@@ -146,7 +146,7 @@ public class ProfileModule : IEndpointModule
             ProfileDeleteResult.FailureInUse => Results.Json(
                 FailureResponse.ForBadRequest("Profile is assigned to applications and cannot be deleted.", httpContext.TraceIdentifier),
                 statusCode: (int)HttpStatusCode.BadRequest
-            ),
+                ),
             ProfileDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
                 statusCode: (int)HttpStatusCode.NotFound

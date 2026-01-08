@@ -5,13 +5,18 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Profile;
 
-public class ProfileResponse
+/// <summary>
+/// Represents a summary of a profile for list operations, containing only Id and Name.
+/// </summary>
+public class ProfileListResponse
 {
+    /// <summary>
+    /// Gets or sets the unique identifier for the profile.
+    /// </summary>
     public long Id { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of the profile.
+    /// </summary>
     public string Name { get; set; } = string.Empty;
-    public string Definition { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-    public DateTime? LastModifiedAt { get; set; }
-    public string? ModifiedBy { get; set; }
 }
