@@ -133,7 +133,7 @@ function GenerateSdk {
     --model-package $ModelPackage `
     -o $OutputFolder `
     --operation-id-name-mappings $mappings `
-    --additional-properties "packageName=$PackageName,targetFramework=net10.0,netCoreProjectFile=true" `
+    --additional-properties "packageName=$PackageName,targetFramework=net8.0,netCoreProjectFile=true" `
     --global-property modelTests=false `
     --global-property apiTests=false `
     --global-property apiDocs=false `
