@@ -361,7 +361,6 @@ Since `G` depends only on `S.IdentityVersion`, `G._etag` does not change (correc
 - **No `CacheTargets`** for representation metadata.
 - **No cross-document `UPDATE dms.Document SET Etag=Etag+1, LastModifiedAt=...`** driven by identity/descriptor changes.
 - **No SERIALIZABLE / key-range locks** for phantom-safe “1-hop referrers of IdentityClosure” scans.
-- `dms.ReferenceEdge` is no longer required for correctness of `_etag/_lastModifiedDate` (could be shrunk down to `dms.IdentityEdge` for identity edges only).
 
 ### What remains (unchanged hard requirements)
 
