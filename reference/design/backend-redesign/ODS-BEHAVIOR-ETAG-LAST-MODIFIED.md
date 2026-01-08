@@ -192,6 +192,70 @@ There is an analogous SQL Server script:
 
 - `Ed-Fi-ODS/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Structure/Ods/Changes/0230-CreateIndirectUpdateCascadeTriggers.sql`
 
+## Cascading natural-key updates (“fan-out”) and `ETag`/`LastModifiedDate`
+
+ODS supports *cascading natural key updates* for some resources. This is the closest analog to a DMS “fan-out”, because updating one resource’s key can cause the database to update key/foreign-key columns in other tables to preserve referential integrity.
+
+### How ODS performs key-update cascades
+
+At the application layer, ODS uses a post-update event listener to issue a **direct SQL `UPDATE`** to apply new identifier values (and optionally `AggregateData`) to the aggregate root table by `Id`:
+
+Source: `Ed-Fi-ODS/Application/EdFi.Ods.Common/Infrastructure/Listeners/EdFiOdsPostUpdateEventListener.cs`
+
+```csharp
+// Build the UPDATE sql query
+string sql = $@"UPDATE {tableName} SET {setClause} WHERE Id = :id";
+...
+// Build the SET clause (identifier columns + optional AggregateData)
+string setClause = GetSetClause(updateTargetColumnNames, valueSourceColumnNames, aggregateData != null);
+```
+
+Notably, this SQL does **not** assign `LastModifiedDate` (and therefore does not itself “touch” the row for `ETag` purposes). For the aggregate root being updated, `LastModifiedDate` may already have been advanced by the NHibernate-managed update that triggered this listener; the concern is primarily about rows updated indirectly via `ON UPDATE CASCADE`, which are not NHibernate-managed updates.
+
+At the database layer, ODS enables propagation of key changes using foreign keys with `ON UPDATE CASCADE`.
+
+Example (Session key changes cascading into CourseOffering/Section):
+
+Source: `Ed-Fi-ODS/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1030-AddSessionCascadeSupport.sql`
+
+```sql
+ALTER TABLE edfi.CourseOffering
+    ADD CONSTRAINT FK_CourseOffering_Session FOREIGN KEY (SchoolId, SchoolYear, SessionName)
+    REFERENCES edfi.Session (SchoolId, SchoolYear, SessionName) ON UPDATE CASCADE;
+
+ALTER TABLE edfi.Section
+    ADD CONSTRAINT FK_Section_CourseOffering FOREIGN KEY (LocalCourseCode, SchoolId, SchoolYear, SessionName)
+    REFERENCES edfi.CourseOffering (LocalCourseCode, SchoolId, SchoolYear, SessionName) ON UPDATE CASCADE;
+```
+
+### Implication: no general mechanism to bump `LastModifiedDate` for cascaded updates
+
+Because `ETag` is derived from `LastModifiedDate`, the critical question for these cascades is:
+
+- when a row is **updated indirectly** by `ON UPDATE CASCADE` (i.e., only its key/FK columns change due to a parent key change), does ODS also bump the row’s `LastModifiedDate`?
+
+Based on code and artifact inspection:
+
+- The key-update SQL executed by `EdFiOdsPostUpdateEventListener` does not set `LastModifiedDate` (see above).
+- In the generated database artifacts for standard ODS, the only explicit “bump `LastModifiedDate`” logic we found is the small set of *indirect update cascade* triggers in:
+  - `Ed-Fi-ODS/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/Changes/0230-CreateIndirectUpdateCascadeTriggers.sql` (PostgreSQL)
+  - `Ed-Fi-ODS/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/MsSql/Structure/Ods/Changes/0230-CreateIndirectUpdateCascadeTriggers.sql` (SQL Server)
+
+These triggers cover a limited set of *within-aggregate* child-table updates (often volatile FK values), and are not a general “any update bumps `LastModifiedDate`” mechanism.
+
+Taken together, this indicates ODS makes **no general best-effort** to ensure that *indirectly cascaded updates* (e.g., key/FK changes caused by an upstream key update) always update `_lastModifiedDate`/`ETag` for the indirectly affected resource.
+
+### Test coverage note (ODS)
+
+In ODS source we did **not** find automated tests that assert `_etag` or `_lastModifiedDate` behavior specifically for cascading natural-key updates on *dependent* resources.
+
+What we did find:
+
+- Unit tests that validate the `ETagProvider` is a pure function of `LastModifiedDate`:
+  - `Ed-Fi-ODS/Application/EdFi.Ods.Tests/EdFi.Ods.Api/Providers/ETagProviderTests.cs`
+- Postman collections that validate an `ETag` header changes for direct update operations, but do not validate fan-out/cascade behavior to other resources:
+  - `Ed-Fi-ODS/Postman Test Suite/Ed-Fi ODS-API Integration Test Suite ResponseTests.postman_collection.json`
+
 ## What this means for “representation sensitivity”
 
 ODS/API frequently reconstitutes responses by joining or translating values from other tables (e.g., resolving `studentUniqueId` from a stored `StudentUSI`).
@@ -210,4 +274,3 @@ ODS’s design choice is consistent with its concurrency model: `If-Match` prote
 - **Client caching**: an ODS consumer can observe the representation changing without seeing a new `ETag` for the referencing resource. This is a consequence of row-based versioning.
 - **Concurrency**: ODS `ETag` is reliable for preventing lost updates on the resource being written, but it does not provide “representation-sensitive” concurrency across referenced resources.
 - **DMS redesign context**: if DMS requires `_etag/_lastModifiedDate` to change when *representation* changes (including reference-identity/descriptor changes), DMS must implement additional semantics beyond ODS (e.g., derived-token/representation-sensitive `_etag`), and should treat ODS behavior as a different (weaker) contract rather than an exact precedent.
-

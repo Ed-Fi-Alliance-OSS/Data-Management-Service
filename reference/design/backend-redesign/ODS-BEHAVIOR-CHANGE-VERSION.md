@@ -219,6 +219,75 @@ Practical note: because both the row update trigger and the key-change tracking 
 - one assigned to the updated resource row’s `ChangeVersion` (via `UpdateChangeVersion BEFORE UPDATE`), and
 - a later one assigned to the tracked key change event row (via `HandleKeyChanges AFTER UPDATE OF ...`).
 
+## Cascading natural-key updates (“fan-out”) and `ChangeVersion`
+
+ODS supports *cascading natural key updates* for some resources. This is the closest analog to a DMS “fan-out”, because updating one resource’s key can cause the database to update key/foreign-key columns in other tables to preserve referential integrity.
+
+### How ODS performs key-update cascades
+
+At the application layer, ODS uses a post-update event listener to issue a **direct SQL `UPDATE`** to apply new identifier values (and optionally `AggregateData`) to the aggregate root table by `Id`:
+
+Source: `Ed-Fi-ODS/Application/EdFi.Ods.Common/Infrastructure/Listeners/EdFiOdsPostUpdateEventListener.cs`
+
+```csharp
+// Build the UPDATE sql query
+string sql = $@"UPDATE {tableName} SET {setClause} WHERE Id = :id";
+```
+
+This SQL does not explicitly assign `ChangeVersion`; it relies on the database’s `UpdateChangeVersion` trigger (described above) to assign a new value whenever an `UPDATE` occurs.
+
+At the database layer, ODS enables propagation of key changes using foreign keys with `ON UPDATE CASCADE`.
+
+Example (Session key changes cascading into CourseOffering/Section):
+
+Source: `Ed-Fi-ODS/Application/EdFi.Ods.Standard/Standard/5.2.0/Artifacts/PgSql/Structure/Ods/1030-AddSessionCascadeSupport.sql`
+
+```sql
+ALTER TABLE edfi.CourseOffering
+    ADD CONSTRAINT FK_CourseOffering_Session FOREIGN KEY (SchoolId, SchoolYear, SessionName)
+    REFERENCES edfi.Session (SchoolId, SchoolYear, SessionName) ON UPDATE CASCADE;
+
+ALTER TABLE edfi.Section
+    ADD CONSTRAINT FK_Section_CourseOffering FOREIGN KEY (LocalCourseCode, SchoolId, SchoolYear, SessionName)
+    REFERENCES edfi.CourseOffering (LocalCourseCode, SchoolId, SchoolYear, SessionName) ON UPDATE CASCADE;
+```
+
+### ChangeVersion behavior for cascades: only rows that are actually updated
+
+ODS does **not** have a “derived dependency graph” that increments a resource’s `ChangeVersion` when only its *representation inputs* (joined/looked-up values) change.
+
+Instead, ODS’s behavior is strictly row-update-driven:
+
+- If a row is **not updated**, its `ChangeVersion` does **not** change (even if a GET could render differently due to joins/lookups).
+- If a row **is updated** (including because a key/foreign-key update cascades into it), the `UpdateChangeVersion` trigger is intended to assign it a new `ChangeVersion` value (see “Updates” above).
+
+This distinction matters for DMS alignment:
+
+- DMS “fan-out” for representation-sensitive tokens is not an ODS concept.
+- ODS “fan-out” exists primarily for referential integrity (key cascades), and it only affects resources whose own stored rows are physically updated.
+
+### Test coverage note (ODS)
+
+In ODS source we did **not** find automated unit/integration tests that assert how *dependent resources’* `ChangeVersion` behaves under cascading natural-key updates (e.g., “SessionName changed, therefore CourseOffering/Section rows were updated and have new ChangeVersion values”).
+
+What we did find:
+
+- Unit tests that validate SQL generation and filtering behavior for `ChangeVersion` query parameters (not cascade semantics):
+  - `Ed-Fi-ODS/Application/EdFi.Ods.Tests/EdFi.Ods.Common/Database/Querying/QueryBuilderTests.cs`
+- Postman collections that validate `changeVersion` behavior for change query endpoints and for the `keyChanges` stream, but do not validate fan-out/cascade behavior to other resources:
+  - `Ed-Fi-ODS/Postman Test Suite/Ed-Fi ODS-API ChangeQueries Test Suite.postman_collection.json`
+  - `Ed-Fi-ODS/Postman Test Suite/Ed-Fi ODS-API ChangeQueries Key Changes and Deletes Test Suite.postman_collection.json`
+
+Example (Postman assertion that the *keyChanges* stream’s `changeVersion` increases across multiple key updates to the same resource):
+
+Source: `Ed-Fi-ODS/Postman Test Suite/Ed-Fi ODS-API ChangeQueries Key Changes and Deletes Test Suite.postman_collection.json`
+
+```javascript
+pm.environment.set('known:'+scenarioId+':classPeriod:initialChangeVersion', item.changeVersion);
+...
+pm.expect(item.changeVersion).to.be.above(intermediateUpdateChangeVersion);
+```
+
 ## What this means for “representation sensitivity”
 
 In ODS, `ChangeVersion` is about **write events**, not about “the JSON representation would be different if reconstituted now”.
