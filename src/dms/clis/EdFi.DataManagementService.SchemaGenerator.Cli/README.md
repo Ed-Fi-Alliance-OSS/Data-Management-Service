@@ -55,7 +55,7 @@ dotnet build src\dms\clis\EdFi.DataManagementService.SchemaGenerator.Cli
 The executable will be available at:
 
 ```
-src\dms\clis\EdFi.DataManagementService.SchemaGenerator.Cli\bin\Debug\net8.0\EdFi.DataManagement.Service.SchemaGenerator.Cli.exe
+src\dms\clis\EdFi.DataManagementService.SchemaGenerator.Cli\bin\Debug\net10.0\EdFi.DataManagement.Service.SchemaGenerator.Cli.exe
 ```
 
 ### Using the Build Script
@@ -435,7 +435,7 @@ param(
     [string]$Provider = "all"
 )
 
-$cliPath = "src\dms\clis\EdFi.DataManagementService.SchemaGenerator.Cli\bin\Debug\net8.0\EdFi.DataManagementService.SchemaGenerator.Cli.exe"
+$cliPath = "src\dms\clis\EdFi.DataManagementService.SchemaGenerator.Cli\bin\Debug\net10.0\EdFi.DataManagementService.SchemaGenerator.Cli.exe"
 
 if ($SchemaFile) {
     & $cliPath --input $SchemaFile --output $OutputDir --provider $Provider --extensions
