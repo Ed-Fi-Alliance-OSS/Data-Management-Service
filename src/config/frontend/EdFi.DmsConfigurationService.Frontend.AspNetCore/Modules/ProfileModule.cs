@@ -73,7 +73,7 @@ public class ProfileModule : IEndpointModule
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest
             ),
-            ProfileInsertResult.FailureUnknown failure => FailureResults.Unknown(httpContext.TraceIdentifier),
+            ProfileInsertResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
@@ -93,7 +93,7 @@ public class ProfileModule : IEndpointModule
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            ProfileGetResult.FailureUnknown failure => FailureResults.Unknown(httpContext.TraceIdentifier),
+            ProfileGetResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }

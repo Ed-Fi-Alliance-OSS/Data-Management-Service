@@ -32,10 +32,12 @@ public class ProfileModuleTests
 {
     private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
+    private WebApplicationFactory<Program>? _factory;
 
-    private HttpClient SetUpClient()
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
     {
-        var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+        _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureServices(
@@ -65,7 +67,17 @@ public class ProfileModuleTests
                 }
             );
         });
-        var client = factory.CreateClient();
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        _factory?.Dispose();
+    }
+
+    private HttpClient SetUpClient()
+    {
+        var client = _factory!.CreateClient();
         client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
         return client;
     }
@@ -77,7 +89,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
             .Returns(new ProfileInsertResult.Success(1));
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(validProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(validProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
@@ -89,7 +101,7 @@ public class ProfileModuleTests
     {
         var invalidProfile = new { Name = "", definition = "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(invalidProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(invalidProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -106,7 +118,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
             .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(duplicateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(duplicateProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -121,7 +133,7 @@ public class ProfileModuleTests
     {
         var mismatchedProfile = new { Name = "TestProfile", definition = "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(mismatchedProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(mismatchedProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -136,7 +148,7 @@ public class ProfileModuleTests
     {
         var invalidXmlProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(invalidXmlProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(invalidXmlProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -151,7 +163,7 @@ public class ProfileModuleTests
     {
         var noResourceProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(noResourceProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(noResourceProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -166,7 +178,7 @@ public class ProfileModuleTests
     {
         var missingResourceNameProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource></Resource></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(missingResourceNameProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(missingResourceNameProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -213,7 +225,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.Success());
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/1", content);
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
@@ -223,7 +235,7 @@ public class ProfileModuleTests
     {
         var invalidUpdate = new { id = 1, Name = "", definition = "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(invalidUpdate), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(invalidUpdate), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -273,7 +285,7 @@ public class ProfileModuleTests
     {
         var updateProfile = new { id = 999, Name = "UpdatedProfile", definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -290,7 +302,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.FailureDuplicateName("ExistingProfile"));
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -307,7 +319,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.FailureNotExists(999));
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/999", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -318,7 +330,7 @@ public class ProfileModuleTests
     {
         var invalidUpdate = new { id = 1, Name = "UpdatedProfile", definition = "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>" };
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(invalidUpdate), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(invalidUpdate), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
@@ -403,7 +415,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
             .Returns(new ProfileInsertResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(validProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(validProfile), Encoding.UTF8, "application/json");
         var response = await client.PostAsync("/v2/profiles", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -416,7 +428,7 @@ public class ProfileModuleTests
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
-        var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
