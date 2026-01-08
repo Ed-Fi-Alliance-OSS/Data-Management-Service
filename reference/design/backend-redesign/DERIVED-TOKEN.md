@@ -19,6 +19,8 @@ This document describes a different approach (“derived tokens”) that:
 - keeps `dms.ReferentialIdentity` strict and transactional (identity correctness remains the hard requirement),
 - shifts work from “fan-out writes” to “read-time derivation” using stable per-document tokens.
 
+Compatibility note: recent Ed-Fi ODS/API versions also bump ETag/LastModifiedDate (and `ChangeVersion` for Change Queries) on indirect representation changes (e.g., referenced identity/descriptor URI changes). Derived tokens target the same externally-visible semantics without write-time fan-out; see `reference/design/backend-redesign/DERIVED-TOKEN-CHANGE-VERSION.md` for the `ChangeVersion` mapping.
+
 ## Requirements and non-goals
 
 ### Requirements
