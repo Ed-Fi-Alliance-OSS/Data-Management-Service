@@ -10,6 +10,7 @@ services:
       ASPNETCORE_HTTP_PORTS: ${DMS_HTTP_PORTS:-8080}
       AppSettings__AuthenticationService: ${OAUTH_TOKEN_ENDPOINT:-http://host.docker.internal:8080/oauth/token}
       NEED_DATABASE_SETUP: ${NEED_DATABASE_SETUP:-true}
+      AppSettings__DeployDatabaseOnStartup: ${DMS_DEPLOY_DATABASE_ON_STARTUP:-false}
       AppSettings__BypassStringTypeCoercion: ${BYPASS_STRING_COERCION:-false}
       AppSettings__AllowIdentityUpdateOverrides: ${ALLOW_IDENTITY_UPDATE_OVERRIDES:-}
       Serilog__MinimumLevel__Default: ${LOG_LEVEL:-DEBUG}
@@ -43,7 +44,7 @@ services:
       AppSettings__EnableManagementEndpoints: ${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}
       AppSettings__EnableClaimsetReload: ${DMS_ENABLE_CLAIMSET_RELOAD:-false}
       AppSettings__DomainsExcludedFromOpenApi: ${DOMAINS_EXCLUDED_FROM_OPEN_API:-}
-      ppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
+      AppSettings__RouteQualifierSegments: ${ROUTE_QUALIFIER_SEGMENTS:-}
       SCHEMA_PACKAGES: ${SCHEMA_PACKAGES}
       # JWT Authentication
       JwtAuthentication__Authority: ${DMS_JWT_AUTHORITY:-}
