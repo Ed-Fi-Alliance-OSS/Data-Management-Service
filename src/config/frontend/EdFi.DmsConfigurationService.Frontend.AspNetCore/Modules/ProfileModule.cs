@@ -68,7 +68,7 @@ public class ProfileModule : IEndpointModule
             ),
             ProfileInsertResult.FailureDuplicateName duplicate => Results.Json(
                 FailureResponse.ForDataValidation(
-                    new[] { new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.") },
+                    [new ValidationFailure("Name", $"Profile '{duplicate.Name}' already exists.")],
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest
@@ -110,9 +110,9 @@ public class ProfileModule : IEndpointModule
         await validator.GuardAsync(command);
         if (command.Id != id)
         {
-            throw new ValidationException(
-                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
-            );
+            throw new ValidationException([
+                new ValidationFailure("Id", "Request body id must match the id in the url."),
+            ]);
         }
         var result = await repository.UpdateProfile(command);
         return result switch
@@ -120,7 +120,7 @@ public class ProfileModule : IEndpointModule
             ProfileUpdateResult.Success => Results.NoContent(),
             ProfileUpdateResult.FailureDuplicateName => Results.Json(
                 FailureResponse.ForDataValidation(
-                    new[] { new ValidationFailure("Name", "A profile with this name already exists.") },
+                    [new ValidationFailure("Name", "A profile with this name already exists.")],
                     httpContext.TraceIdentifier
                 ),
                 statusCode: (int)HttpStatusCode.BadRequest
