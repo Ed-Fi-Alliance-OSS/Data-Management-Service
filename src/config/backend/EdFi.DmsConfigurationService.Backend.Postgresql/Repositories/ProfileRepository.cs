@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Profile;
@@ -41,12 +42,12 @@ public class ProfileRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
         {
-            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", command.Name);
+            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", LoggingUtility.SanitizeForLog(command.Name));
             return new ProfileInsertResult.FailureDuplicateName(command.Name);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Insert profile failure for ProfileName={ProfileName}", command.Name);
+            logger.LogError(ex, "Insert profile failure for ProfileName={ProfileName}", LoggingUtility.SanitizeForLog(command.Name));
             return new ProfileInsertResult.FailureUnknown(ex.Message);
         }
     }
@@ -76,12 +77,12 @@ public class ProfileRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
         {
-            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", command.Name);
+            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", LoggingUtility.SanitizeForLog(command.Name));
             return new ProfileUpdateResult.FailureDuplicateName(command.Name);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Update profile failure for ProfileId={ProfileId}, ProfileName={ProfileName}", command.Id, command.Name);
+            logger.LogError(ex, "Update profile failure for ProfileId={ProfileId}, ProfileName={ProfileName}", command.Id, LoggingUtility.SanitizeForLog(command.Name));
             return new ProfileUpdateResult.FailureUnknown(ex.Message);
         }
     }

@@ -99,32 +99,4 @@ public static class ProfileValidationUtils
         }
         catch { return false; }
     }
-
-    /// <summary>
-    /// Validates that the Profile XML does not contain duplicate Resource names (case-insensitive).
-    /// </summary>
-    /// <param name="xml">The XML string to validate.</param>
-    /// <returns>True if all Resource names are unique; otherwise, false.</returns>
-    public static bool NoDuplicateResourceNames(string xml)
-    {
-        try
-        {
-            var doc = new XmlDocument();
-            doc.LoadXml(xml);
-            var resources = doc.DocumentElement?.GetElementsByTagName("Resource");
-            if (resources == null)
-            { return true; }
-            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (XmlNode node in resources)
-            {
-                var name = node.Attributes?["name"]?.Value;
-                if (string.IsNullOrWhiteSpace(name))
-                { continue; }
-                if (!names.Add(name))
-                { return false; }
-            }
-            return true;
-        }
-        catch { return false; }
-    }
 }

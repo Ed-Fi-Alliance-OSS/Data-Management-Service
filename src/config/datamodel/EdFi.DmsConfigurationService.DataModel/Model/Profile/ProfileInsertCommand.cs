@@ -18,7 +18,7 @@ public class ProfileInsertCommand
         {
             RuleFor(x => x.Name)
                 .NotEmpty().WithMessage("Profile name is required.")
-                .MaximumLength(255).WithMessage("Profile name must be 255 characters or less.");
+                .MaximumLength(500).WithMessage("Profile name must be 500 characters or less.");
 
             RuleFor(x => x.Definition)
                 .NotEmpty().WithMessage("Profile definition is required.")

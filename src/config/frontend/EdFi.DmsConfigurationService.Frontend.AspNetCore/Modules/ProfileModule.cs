@@ -42,7 +42,7 @@ public class ProfileModule : IEndpointModule
         {
             return Results.Ok(profiles);
         }
-        if (results.Any(r => r is ProfileGetResult.FailureUnknown unknown))
+        if (results.Any(r => r is ProfileGetResult.FailureUnknown))
         {
             return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
