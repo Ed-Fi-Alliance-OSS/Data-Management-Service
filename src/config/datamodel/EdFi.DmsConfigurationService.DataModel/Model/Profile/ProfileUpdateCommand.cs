@@ -19,15 +19,22 @@ public class ProfileUpdateCommand
         {
             RuleFor(x => x.Id).GreaterThan(0).WithMessage("Profile Id must be greater than zero.");
             RuleFor(x => x.Name)
-                .NotEmpty().WithMessage("Profile name is required.")
-                .MaximumLength(500).WithMessage("Profile name must be 500 characters or less.");
+                .NotEmpty()
+                .WithMessage("Profile name is required.")
+                .MaximumLength(500)
+                .WithMessage("Profile name must be 500 characters or less.");
 
             RuleFor(x => x.Definition)
-                .NotEmpty().WithMessage("Profile definition is required.")
-                .Must((cmd, xml) => ProfileValidationUtils.XmlProfileNameMatches(cmd.Name, xml)).WithMessage("Name must match the name attribute in the XML definition.")
-                .Must(ProfileValidationUtils.IsValidProfileXml).WithMessage("Profile definition XML is invalid or does not match the XSD.")
-                .Must(ProfileValidationUtils.HasAtLeastOneResource).WithMessage("Profile XML must contain at least one <Resource> element.")
-                .Must(ProfileValidationUtils.AllResourcesHaveNameAttribute).WithMessage("All <Resource> elements must have a name attribute.");
+                .NotEmpty()
+                .WithMessage("Profile definition is required.")
+                .Must((cmd, xml) => ProfileValidationUtils.XmlProfileNameMatches(cmd.Name, xml))
+                .WithMessage("Name must match the name attribute in the XML definition.")
+                .Must(ProfileValidationUtils.IsValidProfileXml)
+                .WithMessage("Profile definition XML is invalid or does not match the XSD.")
+                .Must(ProfileValidationUtils.HasAtLeastOneResource)
+                .WithMessage("Profile XML must contain at least one <Resource> element.")
+                .Must(ProfileValidationUtils.AllResourcesHaveNameAttribute)
+                .WithMessage("All <Resource> elements must have a name attribute.");
         }
     }
 }

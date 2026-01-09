@@ -93,7 +93,8 @@ public class ProfileValidationUtilsTests
         public void Should_Return_True_For_Valid_Profile_Xml()
         {
             // Arrange
-            string xml = "<Profile name=\"TestProfile\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>";
+            string xml =
+                "<Profile name=\"TestProfile\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>";
 
             // Act
             bool result = ProfileValidationUtils.IsValidProfileXml(xml);
@@ -132,7 +133,8 @@ public class ProfileValidationUtilsTests
         public void Should_Return_True_For_Complex_Valid_Profile()
         {
             // Arrange
-            string xml = @"<Profile name=""TestProfile"">
+            string xml =
+                @"<Profile name=""TestProfile"">
                 <Resource name=""School"">
                     <ReadContentType memberSelection=""ExcludeOnly"">
                         <Property name=""NameOfInstitution"" />
@@ -183,7 +185,8 @@ public class ProfileValidationUtilsTests
         public void Should_Return_True_When_Profile_Has_Multiple_Resources()
         {
             // Arrange
-            string xml = "<Profile name=\"TestProfile\"><Resource name=\"School\"></Resource><Resource name=\"Student\"></Resource></Profile>";
+            string xml =
+                "<Profile name=\"TestProfile\"><Resource name=\"School\"></Resource><Resource name=\"Student\"></Resource></Profile>";
 
             // Act
             bool result = ProfileValidationUtils.HasAtLeastOneResource(xml);
@@ -226,7 +229,8 @@ public class ProfileValidationUtilsTests
         public void Should_Return_True_When_All_Resources_Have_Name_Attribute()
         {
             // Arrange
-            string xml = "<Profile name=\"TestProfile\"><Resource name=\"School\"></Resource><Resource name=\"Student\"></Resource></Profile>";
+            string xml =
+                "<Profile name=\"TestProfile\"><Resource name=\"School\"></Resource><Resource name=\"Student\"></Resource></Profile>";
 
             // Act
             bool result = ProfileValidationUtils.AllResourcesHaveNameAttribute(xml);
@@ -239,7 +243,8 @@ public class ProfileValidationUtilsTests
         public void Should_Return_False_When_One_Resource_Missing_Name_Attribute()
         {
             // Arrange
-            string xml = "<Profile name=\"TestProfile\"><Resource name=\"School\"></Resource><Resource></Resource></Profile>";
+            string xml =
+                "<Profile name=\"TestProfile\"><Resource name=\"School\"></Resource><Resource></Resource></Profile>";
 
             // Act
             bool result = ProfileValidationUtils.AllResourcesHaveNameAttribute(xml);

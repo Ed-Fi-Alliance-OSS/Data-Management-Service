@@ -32,7 +32,10 @@ public static class ProfileValidationUtils
             var node = doc.DocumentElement;
             return node != null && node.Name == "Profile" && node.GetAttribute("name") == profileName;
         }
-        catch { return false; }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -51,10 +54,18 @@ public static class ProfileValidationUtils
             schemas.Add("", Path.Combine(path, "Schema", "Ed-Fi-ODS-API-Profile.xsd"));
             bool valid = true;
             doc.Schemas.Add(schemas);
-            doc.Validate((o, e) => { valid = false; });
+            doc.Validate(
+                (o, e) =>
+                {
+                    valid = false;
+                }
+            );
             return valid;
         }
-        catch { return false; }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -71,7 +82,10 @@ public static class ProfileValidationUtils
             var resources = doc.DocumentElement?.GetElementsByTagName("Resource");
             return resources != null && resources.Count > 0;
         }
-        catch { return false; }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>
@@ -87,16 +101,24 @@ public static class ProfileValidationUtils
             doc.LoadXml(xml);
             var resources = doc.DocumentElement?.GetElementsByTagName("Resource");
             if (resources == null)
-            { return false; }
+            {
+                return false;
+            }
             foreach (XmlNode node in resources)
             {
-                if (node.Attributes?["name"] == null || string.IsNullOrWhiteSpace(node?.Attributes?["name"]?.Value ?? string.Empty))
+                if (
+                    node.Attributes?["name"] == null
+                    || string.IsNullOrWhiteSpace(node?.Attributes?["name"]?.Value ?? string.Empty)
+                )
                 {
                     return false;
                 }
             }
             return true;
         }
-        catch { return false; }
+        catch
+        {
+            return false;
+        }
     }
 }

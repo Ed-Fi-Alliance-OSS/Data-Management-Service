@@ -15,7 +15,6 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
-
 public class ProfileRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ILogger<ProfileRepository> logger,
@@ -28,7 +27,8 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"INSERT INTO dmscs.Profile (ProfileName, Definition, CreatedBy) VALUES (@Name, @Definition, @CreatedBy) RETURNING Id;";
+            string sql =
+                @"INSERT INTO dmscs.Profile (ProfileName, Definition, CreatedBy) VALUES (@Name, @Definition, @CreatedBy) RETURNING Id;";
             var id = await connection.ExecuteScalarAsync<long>(
                 sql,
                 new
@@ -42,12 +42,20 @@ public class ProfileRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
         {
-            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", LoggingUtility.SanitizeForLog(command.Name));
+            logger.LogWarning(
+                ex,
+                "Profile name must be unique: {ProfileName}",
+                LoggingUtility.SanitizeForLog(command.Name)
+            );
             return new ProfileInsertResult.FailureDuplicateName(command.Name);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Insert profile failure for ProfileName={ProfileName}", LoggingUtility.SanitizeForLog(command.Name));
+            logger.LogError(
+                ex,
+                "Insert profile failure for ProfileName={ProfileName}",
+                LoggingUtility.SanitizeForLog(command.Name)
+            );
             return new ProfileInsertResult.FailureUnknown(ex.Message);
         }
     }
@@ -58,7 +66,8 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"UPDATE dmscs.Profile SET ProfileName=@Name, Definition=@Definition, LastModifiedAt=NOW(), ModifiedBy=@ModifiedBy WHERE Id=@Id;";
+            string sql =
+                @"UPDATE dmscs.Profile SET ProfileName=@Name, Definition=@Definition, LastModifiedAt=NOW(), ModifiedBy=@ModifiedBy WHERE Id=@Id;";
             int affected = await connection.ExecuteAsync(
                 sql,
                 new
@@ -77,16 +86,24 @@ public class ProfileRepository(
         }
         catch (PostgresException ex) when (ex.SqlState == "23505" && ex.Message.Contains("uq_profile_name"))
         {
-            logger.LogWarning(ex, "Profile name must be unique: {ProfileName}", LoggingUtility.SanitizeForLog(command.Name));
+            logger.LogWarning(
+                ex,
+                "Profile name must be unique: {ProfileName}",
+                LoggingUtility.SanitizeForLog(command.Name)
+            );
             return new ProfileUpdateResult.FailureDuplicateName(command.Name);
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Update profile failure for ProfileId={ProfileId}, ProfileName={ProfileName}", command.Id, LoggingUtility.SanitizeForLog(command.Name));
+            logger.LogError(
+                ex,
+                "Update profile failure for ProfileId={ProfileId}, ProfileName={ProfileName}",
+                command.Id,
+                LoggingUtility.SanitizeForLog(command.Name)
+            );
             return new ProfileUpdateResult.FailureUnknown(ex.Message);
         }
     }
-
 
     public async Task<ProfileGetResult> GetProfile(long id)
     {
@@ -94,7 +111,8 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql = @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile WHERE Id=@Id;";
+            string sql =
+                @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile WHERE Id=@Id;";
             var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(sql, new { Id = id });
             if (profile == null)
             {
@@ -109,7 +127,6 @@ public class ProfileRepository(
         }
     }
 
-
     public async Task<IEnumerable<ProfileGetResult>> QueryProfiles(PagingQuery query)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -117,8 +134,12 @@ public class ProfileRepository(
         var results = new List<ProfileGetResult>();
         try
         {
-            string sql = @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
-            var profiles = await connection.QueryAsync<ProfileResponse>(sql, new { Limit = query.Limit, Offset = query.Offset });
+            string sql =
+                @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
+            var profiles = await connection.QueryAsync<ProfileResponse>(
+                sql,
+                new { Limit = query.Limit, Offset = query.Offset }
+            );
             foreach (var profile in profiles)
             {
                 results.Add(new ProfileGetResult.Success(profile));
@@ -126,12 +147,16 @@ public class ProfileRepository(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Query profiles failure with Limit={Limit}, Offset={Offset}", query.Limit, query.Offset);
+            logger.LogError(
+                ex,
+                "Query profiles failure with Limit={Limit}, Offset={Offset}",
+                query.Limit,
+                query.Offset
+            );
             results.Add(new ProfileGetResult.FailureUnknown(ex.Message));
         }
         return results;
     }
-
 
     public async Task<ProfileDeleteResult> DeleteProfile(long id)
     {
@@ -147,9 +172,14 @@ public class ProfileRepository(
             }
             return new ProfileDeleteResult.Success();
         }
-        catch (PostgresException ex) when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
         {
-            logger.LogWarning(ex, "Cannot delete profile Id={ProfileId} because it is assigned to applications", id);
+            logger.LogWarning(
+                ex,
+                "Cannot delete profile Id={ProfileId} because it is assigned to applications",
+                id
+            );
             return new ProfileDeleteResult.FailureInUse(id);
         }
         catch (Exception ex)

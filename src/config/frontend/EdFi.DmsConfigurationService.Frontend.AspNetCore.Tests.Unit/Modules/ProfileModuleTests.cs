@@ -61,9 +61,7 @@ public class ProfileModuleTests
                         );
                         AuthorizationScopePolicies.Add(options);
                     });
-                    collection
-                        .AddTransient((_) => _httpContext)
-                        .AddTransient((_) => _profileRepository);
+                    collection.AddTransient((_) => _httpContext).AddTransient((_) => _profileRepository);
                 }
             );
         });
@@ -85,11 +83,19 @@ public class ProfileModuleTests
     [Test]
     public async Task CreateProfile_Valid_ShouldReturnCreated()
     {
-        var validProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var validProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
             .Returns(new ProfileInsertResult.Success(1));
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(validProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(validProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
         response.StatusCode.Should().Be(HttpStatusCode.Created);
         response.Headers.Location.Should().NotBeNull();
@@ -99,93 +105,154 @@ public class ProfileModuleTests
     [Test]
     public async Task CreateProfile_MissingName_ShouldReturnBadRequest()
     {
-        var invalidProfile = new { Name = "", definition = "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>" };
+        var invalidProfile = new
+        {
+            Name = "",
+            definition = "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(invalidProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(invalidProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!.GetValue<string>()
-            .Should().Contain("Profile name is required.");
+        actualResponse!["validationErrors"]!["Name"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile name is required.");
     }
 
     [Test]
     public async Task CreateProfile_DuplicateName_ShouldReturnBadRequest()
     {
-        var duplicateProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource></Profile>" };
+        var duplicateProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
             .Returns(new ProfileInsertResult.FailureDuplicateName("TestProfile"));
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(duplicateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(duplicateProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!.GetValue<string>()
-            .Should().Contain("Profile 'TestProfile' already exists");
+        actualResponse!["validationErrors"]!["Name"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile 'TestProfile' already exists");
     }
 
     [Test]
     public async Task CreateProfile_MismatchedXmlName_ShouldReturnBadRequest()
     {
-        var mismatchedProfile = new { Name = "TestProfile", definition = "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>" };
+        var mismatchedProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(mismatchedProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(mismatchedProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!.GetValue<string>()
-            .Should().Contain("Name must match the name attribute in the XML definition");
+        actualResponse!["validationErrors"]!["Definition"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Name must match the name attribute in the XML definition");
     }
 
     [Test]
     public async Task CreateProfile_InvalidXml_ShouldReturnBadRequest()
     {
-        var invalidXmlProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource>" };
+        var invalidXmlProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(invalidXmlProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(invalidXmlProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         actualResponse!["validationErrors"]!["Definition"].Should().NotBeNull();
-        actualResponse["validationErrors"]!["Definition"]![0]!.GetValue<string>().Should().Contain("Name must match the name attribute in the XML definition.");
+        actualResponse["validationErrors"]!["Definition"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Name must match the name attribute in the XML definition.");
     }
 
     [Test]
     public async Task CreateProfile_NoResource_ShouldReturnBadRequest()
     {
-        var noResourceProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"></Profile>" };
+        var noResourceProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"TestProfile\"></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(noResourceProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(noResourceProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!.GetValue<string>()
-            .Should().Contain("Profile definition XML is invalid or does not match the XSD.");
+        actualResponse!["validationErrors"]!["Definition"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile definition XML is invalid or does not match the XSD.");
     }
 
     [Test]
     public async Task CreateProfile_ResourceMissingName_ShouldReturnBadRequest()
     {
-        var missingResourceNameProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource></Resource></Profile>" };
+        var missingResourceNameProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"TestProfile\"><Resource></Resource></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(missingResourceNameProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(missingResourceNameProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!.GetValue<string>()
-            .Should().Contain("Profile definition XML is invalid or does not match the XSD.");
+        actualResponse!["validationErrors"]!["Definition"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile definition XML is invalid or does not match the XSD.");
     }
 
     [Test]
@@ -221,11 +288,20 @@ public class ProfileModuleTests
     [Test]
     public async Task UpdateProfile_Valid_ShouldReturnNoContent()
     {
-        var updateProfile = new { id = 1, Name = "UpdatedProfile", definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var updateProfile = new
+        {
+            id = 1,
+            Name = "UpdatedProfile",
+            definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.Success());
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(updateProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/1", content);
         response.StatusCode.Should().Be(HttpStatusCode.NoContent);
     }
@@ -233,16 +309,27 @@ public class ProfileModuleTests
     [Test]
     public async Task UpdateProfile_Invalid_ShouldReturnBadRequest()
     {
-        var invalidUpdate = new { id = 1, Name = "", definition = "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>" };
+        var invalidUpdate = new
+        {
+            id = 1,
+            Name = "",
+            definition = "<Profile name=\"\"><Resource name=\"Resource1\"></Resource></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(invalidUpdate), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(invalidUpdate),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!.GetValue<string>()
-            .Should().Contain("Profile name is required.");
+        actualResponse!["validationErrors"]!["Name"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile name is required.");
     }
 
     [Test]
@@ -276,50 +363,83 @@ public class ProfileModuleTests
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["detail"]!.GetValue<string>()
-            .Should().Contain("Profile is assigned to applications and cannot be deleted");
+        actualResponse!["detail"]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Profile is assigned to applications and cannot be deleted");
     }
 
     [Test]
     public async Task UpdateProfile_IdMismatch_ShouldReturnBadRequest()
     {
-        var updateProfile = new { id = 999, Name = "UpdatedProfile", definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var updateProfile = new
+        {
+            id = 999,
+            Name = "UpdatedProfile",
+            definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(updateProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Id"]![0]!.GetValue<string>()
-            .Should().Contain("Request body id must match the id in the url");
+        actualResponse!["validationErrors"]!["Id"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Request body id must match the id in the url");
     }
 
     [Test]
     public async Task UpdateProfile_DuplicateName_ShouldReturnBadRequest()
     {
-        var updateProfile = new { id = 1, Name = "ExistingProfile", definition = "<Profile name=\"ExistingProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var updateProfile = new
+        {
+            id = 1,
+            Name = "ExistingProfile",
+            definition = "<Profile name=\"ExistingProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.FailureDuplicateName("ExistingProfile"));
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(updateProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Name"]![0]!.GetValue<string>()
-            .Should().Contain("A profile with this name already exists");
+        actualResponse!["validationErrors"]!["Name"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("A profile with this name already exists");
     }
 
     [Test]
     public async Task UpdateProfile_NotFound_ShouldReturnNotFound()
     {
-        var updateProfile = new { id = 999, Name = "UpdatedProfile", definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var updateProfile = new
+        {
+            id = 999,
+            Name = "UpdatedProfile",
+            definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.FailureNotExists(999));
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(updateProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/999", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
@@ -328,16 +448,27 @@ public class ProfileModuleTests
     [Test]
     public async Task UpdateProfile_InvalidXml_ShouldReturnBadRequest()
     {
-        var invalidUpdate = new { id = 1, Name = "UpdatedProfile", definition = "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>" };
+        var invalidUpdate = new
+        {
+            id = 1,
+            Name = "UpdatedProfile",
+            definition = "<Profile name=\"OtherName\"><Resource name=\"Resource1\"></Resource></Profile>",
+        };
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(invalidUpdate), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(invalidUpdate),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        actualResponse!["validationErrors"]!["Definition"]![0]!.GetValue<string>()
-            .Should().Contain("Name must match the name attribute in the XML definition");
+        actualResponse!["validationErrors"]!["Definition"]![0]!
+            .GetValue<string>()
+            .Should()
+            .Contain("Name must match the name attribute in the XML definition");
     }
 
     [Test]
@@ -350,10 +481,9 @@ public class ProfileModuleTests
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
-        var profiles = JsonSerializer.Deserialize<ProfileListResponse[]>(content, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        }
+        var profiles = JsonSerializer.Deserialize<ProfileListResponse[]>(
+            content,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
         );
 
         profiles.Should().BeEmpty();
@@ -363,21 +493,22 @@ public class ProfileModuleTests
     public async Task GetAllProfiles_MultipleProfiles_ShouldReturnOk()
     {
         A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
-            .Returns(new[]
-            {
-                new ProfileGetResult.Success(new ProfileResponse { Id = 1, Name = "Profile1" }),
-                new ProfileGetResult.Success(new ProfileResponse { Id = 2, Name = "Profile2" }),
-                new ProfileGetResult.Success(new ProfileResponse { Id = 3, Name = "Profile3" })
-            });
+            .Returns(
+                new[]
+                {
+                    new ProfileGetResult.Success(new ProfileResponse { Id = 1, Name = "Profile1" }),
+                    new ProfileGetResult.Success(new ProfileResponse { Id = 2, Name = "Profile2" }),
+                    new ProfileGetResult.Success(new ProfileResponse { Id = 3, Name = "Profile3" }),
+                }
+            );
         using var client = SetUpClient();
         var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         var content = await response.Content.ReadAsStringAsync();
-        var profiles = JsonSerializer.Deserialize<ProfileListResponse[]>(content, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true
-        }
+        var profiles = JsonSerializer.Deserialize<ProfileListResponse[]>(
+            content,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
         );
 
         profiles.Should().HaveCount(3);
@@ -411,11 +542,19 @@ public class ProfileModuleTests
     [Test]
     public async Task CreateProfile_FailureUnknown_ShouldReturnInternalServerError()
     {
-        var validProfile = new { Name = "TestProfile", definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var validProfile = new
+        {
+            Name = "TestProfile",
+            definition = "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.InsertProfile(A<ProfileInsertCommand>.Ignored))
             .Returns(new ProfileInsertResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(validProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(validProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PostAsync("/v2/profiles", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
@@ -424,11 +563,20 @@ public class ProfileModuleTests
     [Test]
     public async Task UpdateProfile_FailureUnknown_ShouldReturnInternalServerError()
     {
-        var updateProfile = new { id = 1, Name = "UpdatedProfile", definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>" };
+        var updateProfile = new
+        {
+            id = 1,
+            Name = "UpdatedProfile",
+            definition = "<Profile name=\"UpdatedProfile\"><Resource name=\"Resource1\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>",
+        };
         A.CallTo(() => _profileRepository.UpdateProfile(A<ProfileUpdateCommand>.Ignored))
             .Returns(new ProfileUpdateResult.FailureUnknown("Database error"));
         using var client = SetUpClient();
-        using var content = new StringContent(JsonSerializer.Serialize(updateProfile), Encoding.UTF8, "application/json");
+        using var content = new StringContent(
+            JsonSerializer.Serialize(updateProfile),
+            Encoding.UTF8,
+            "application/json"
+        );
         var response = await client.PutAsync("/v2/profiles/1", content);
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);

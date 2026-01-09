@@ -50,11 +50,11 @@ public class ProfileModule : IEndpointModule
     }
 
     private static async Task<IResult> InsertProfile(
-    ProfileInsertCommand command,
-    ProfileInsertCommand.Validator validator,
-    HttpContext httpContext,
-    IProfileRepository repository,
-    ILogger<ProfileModule> logger
+        ProfileInsertCommand command,
+        ProfileInsertCommand.Validator validator,
+        HttpContext httpContext,
+        IProfileRepository repository,
+        ILogger<ProfileModule> logger
     )
     {
         await validator.GuardAsync(command);
@@ -99,18 +99,20 @@ public class ProfileModule : IEndpointModule
     }
 
     private static async Task<IResult> Update(
-    long id,
-    ProfileUpdateCommand command,
-    ProfileUpdateCommand.Validator validator,
-    HttpContext httpContext,
-    IProfileRepository repository,
-    ILogger<ProfileModule> logger
+        long id,
+        ProfileUpdateCommand command,
+        ProfileUpdateCommand.Validator validator,
+        HttpContext httpContext,
+        IProfileRepository repository,
+        ILogger<ProfileModule> logger
     )
     {
         await validator.GuardAsync(command);
         if (command.Id != id)
         {
-            throw new ValidationException(new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") });
+            throw new ValidationException(
+                new[] { new ValidationFailure("Id", "Request body id must match the id in the url.") }
+            );
         }
         var result = await repository.UpdateProfile(command);
         return result switch
@@ -144,9 +146,12 @@ public class ProfileModule : IEndpointModule
         {
             ProfileDeleteResult.Success => Results.NoContent(),
             ProfileDeleteResult.FailureInUse => Results.Json(
-                FailureResponse.ForBadRequest("Profile is assigned to applications and cannot be deleted.", httpContext.TraceIdentifier),
-                statusCode: (int)HttpStatusCode.BadRequest
+                FailureResponse.ForBadRequest(
+                    "Profile is assigned to applications and cannot be deleted.",
+                    httpContext.TraceIdentifier
                 ),
+                statusCode: (int)HttpStatusCode.BadRequest
+            ),
             ProfileDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
                 statusCode: (int)HttpStatusCode.NotFound
