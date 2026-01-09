@@ -30,6 +30,8 @@ This document is the data-model deep dive for `overview.md`.
 
 Canonical metadata per persisted resource instance. One row per document, regardless of resource type.
 
+Update tracking note: `reference/design/backend-redesign/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using derived tokens and journals (no write-time representation fan-out). This table stores the required per-document token columns used for read-time derivation.
+
 **PostgreSQL**
 
 ```sql
@@ -39,9 +41,43 @@ CREATE TABLE dms.Document (
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(64) NOT NULL,
-    Etag bigint NOT NULL DEFAULT 1,
+
+    -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
+    ContentVersion bigint NOT NULL DEFAULT 1,
+    IdentityVersion bigint NOT NULL DEFAULT 1,
+    ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
+    IdentityLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
+
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-    LastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
+
+    CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
+);
+
+CREATE INDEX IX_Document_ProjectName_ResourceName_DocumentId
+    ON dms.Document (ProjectName, ResourceName, DocumentId);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.Document (
+    DocumentId bigint IDENTITY(1,1) NOT NULL
+        CONSTRAINT PK_Document PRIMARY KEY CLUSTERED,
+
+    DocumentUuid uniqueidentifier NOT NULL,
+
+    ProjectName nvarchar(256) NOT NULL,
+    ResourceName nvarchar(256) NOT NULL,
+    ResourceVersion nvarchar(64) NOT NULL,
+
+    -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
+    ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (1),
+    IdentityVersion bigint NOT NULL CONSTRAINT DF_Document_IdentityVersion DEFAULT (1),
+    ContentLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_ContentLastModifiedAt DEFAULT (sysutcdatetime()),
+    IdentityLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_IdentityLastModifiedAt DEFAULT (sysutcdatetime()),
+
+    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT (sysutcdatetime()),
+
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
 );
 
@@ -51,18 +87,112 @@ CREATE INDEX IX_Document_ProjectName_ResourceName_DocumentId
 
 Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
-- `Etag` and `LastModifiedAt` are **representation** metadata: they change whenever the API representation would change, including when referenced identities/descriptor URIs change values that are embedded in reference objects/descriptor strings.
-  - `Etag` is an **opaque “representation version” token** (stored as a monotonically increasing `bigint`), not a hash of JSON.
-  - Prefer monotonic `bigint` etags over UUID etags:
-    - smaller storage and indexes,
-    - cheap equality comparisons (e.g., `dms.DocumentCache.Etag = dms.Document.Etag`),
-    - provides ordering/debuggability without affecting correctness (the value is still “opaque” to clients).
-  - `Etag` should be incremented (e.g., `Etag = Etag + 1`) at least once per committed transaction for every document whose **representation** changes, including identity/descriptor cascades; dedupe the impacted `DocumentId` set so a document is bumped once per cascade transaction.
-  - Concurrency: updates guarded by `If-Match` should use a conditional update (`WHERE DocumentId=@id AND Etag=@expected`) so the bump is atomic and race-safe.
-  - Cascades should update `Etag`/`LastModifiedAt` with **set-based writes** over an impacted set (computed using `dms.ReferenceEdge`), rather than reconstituting and hashing large JSON payloads.
-  - Strictness: the impacted-set computation must be **phantom-safe** w.r.t. concurrent `dms.ReferenceEdge` writes; see `transactions-and-concurrency.md` (“Set-based representation-version bump (ETag/LastModifiedAt) — strict and phantom-safe (SERIALIZABLE)”).
+- Update tracking columns (brief semantics; see `reference/design/backend-redesign/update-tracking.md` for the normative rules):
+  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s own persisted content changes.
+  - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (including strict identity closure recompute impacts).
+  - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are derived at read time from these tokens plus dependency tokens.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization-related columns are intentionally omitted here. Authorization storage and query filtering is described in [auth.md](auth.md).
+
+##### 1a) `dms.ChangeVersionSequence`
+
+Global monotonic `bigint` sequence used to allocate update tracking stamps (for `ContentVersion`, `IdentityVersion`, and journal `ChangeVersion`). See `reference/design/backend-redesign/update-tracking.md` for stamping rules.
+
+**PostgreSQL**
+
+```sql
+CREATE SEQUENCE dms.ChangeVersionSequence AS bigint START WITH 1 INCREMENT BY 1;
+```
+
+**SQL Server**
+
+```sql
+CREATE SEQUENCE dms.ChangeVersionSequence
+    AS bigint
+    START WITH 1
+    INCREMENT BY 1;
+```
+
+##### 1b) `dms.DocumentChangeEvent` (append-only journal)
+
+Append-only journal of per-document representation-affecting changes (local content and/or identity/URI projection). Used to support future Change Query APIs. See `reference/design/backend-redesign/update-tracking.md` for the selection algorithm and retention guidance.
+
+Columns:
+- `ChangeVersion`: derived per-document “local change” stamp (recommended: `max(ContentVersion, IdentityVersion)`).
+- `DocumentId`: changed document.
+- `(ProjectName, ResourceName, ResourceVersion)`: resource key for filtering change queries.
+- `CreatedAt`: journal insert time (operational/auditing).
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentChangeEvent (
+    ChangeVersion bigint NOT NULL,
+    DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    ProjectName varchar(256) NOT NULL,
+    ResourceName varchar(256) NOT NULL,
+    ResourceVersion varchar(64) NOT NULL,
+    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
+);
+
+CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
+    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentChangeEvent (
+    ChangeVersion bigint NOT NULL,
+    DocumentId bigint NOT NULL,
+    ProjectName nvarchar(256) NOT NULL,
+    ResourceName nvarchar(256) NOT NULL,
+    ResourceVersion nvarchar(64) NOT NULL,
+    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
+    CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
+    CONSTRAINT FK_DocumentChangeEvent_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+
+CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
+    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
+```
+
+Recommended population: enforce journal insertion with database triggers on `dms.Document` when token columns change (to avoid “forgotten journal write” bugs and to naturally cover bulk/closure updates); see `reference/design/backend-redesign/update-tracking.md`.
+
+##### 1c) `dms.IdentityChangeEvent` (append-only journal)
+
+Append-only journal of identity/URI projection changes for a document. Used to find indirectly impacted parents via `dms.ReferenceEdge` during Change Query selection and for targeted projection rebuilds.
+
+Columns:
+- `ChangeVersion`: the new `IdentityVersion` stamp for the changed document.
+- `DocumentId`: the document whose identity/URI projection changed.
+- `CreatedAt`: journal insert time.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.IdentityChangeEvent (
+    ChangeVersion bigint NOT NULL,
+    DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT PK_IdentityChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
+);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.IdentityChangeEvent (
+    ChangeVersion bigint NOT NULL,
+    DocumentId bigint NOT NULL,
+    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_IdentityChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
+    CONSTRAINT PK_IdentityChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
+    CONSTRAINT FK_IdentityChangeEvent_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+);
+```
 
 ##### 2) `dms.ReferentialIdentity`
 
@@ -258,14 +388,14 @@ effectiveSchemaHash = sha256hex(utf8(manifest))
 A small, relational reverse index of **“this document references that document”**, maintained on writes.
 
 Important properties:
-- **Required for derived-artifact cascades**:
-  - `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
-  - `dms.Document` representation-metadata cascades (`Etag`, `LastModifiedAt`) so `_etag`/`_lastModifiedDate` change when the representation changes
-  - JSON document cascade when `dms.DocumentCache` is enabled
+- **Required for derived artifacts and reverse lookups**:
+  - strict `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
+  - outbound dependency enumeration for derived `_etag/_lastModifiedDate` and Change Query processing (see `reference/design/backend-redesign/update-tracking.md`)
+  - JSON projection rebuild targeting when `dms.DocumentCache` is enabled (optional)
 - **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
 - **Coverage requirement is correctness-critical**:
   - DMS must record **all** outgoing document references and descriptor references, including those inside nested collections/child tables.
-  - If edge maintenance fails, the write must fail (otherwise dependent referential-id and representation-metadata cascades can become incorrect).
+  - If edge maintenance fails, the write must fail (otherwise strict identity maintenance and update tracking can become incorrect).
 - **Collapsed edge granularity**:
   - This design stores **one row per `(ParentDocumentId, ChildDocumentId)`** (not “per reference site/path”) to reduce write amplification and index churn.
   - The `IsIdentityComponent` flag is the **OR** of all reference sites in the parent document that reference the same `ChildDocumentId`.
@@ -273,6 +403,7 @@ Important properties:
 Primary uses:
 - **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities/descriptor URIs change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
 - **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity/descriptor URI changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
+- **Update tracking / Change Queries**: expand changed dependencies (`ChildDocumentId → ParentDocumentId`) and scan outbound dependencies (`ParentDocumentId → ChildDocumentId`) when computing derived representation metadata and selecting Change Query candidates (see `reference/design/backend-redesign/update-tracking.md`).
 
 ##### DDL (PostgreSQL)
 
@@ -298,6 +429,7 @@ CREATE INDEX IX_ReferenceEdge_ChildDocumentId
 Notes on `IsIdentityComponent`:
 - Compute it from ApiSchema as “this reference contributes to any stored identity for the parent”, including superclass/abstract alias identity (for `isSubclass=true` resources where DMS stores an alias row in `dms.ReferentialIdentity`).
 - When a parent document references the same child document in multiple places, the stored value is `true` if **any** of those reference sites is an identity component.
+- Update tracking uses **all** edges as representation dependencies (not just `IsIdentityComponent=true`) when deriving `_etag/_lastModifiedDate` and selecting Change Query candidates; see `reference/design/backend-redesign/update-tracking.md`.
 
 ##### DDL (SQL Server)
 
@@ -381,6 +513,8 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
+Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the **derived** `_etag/_lastModifiedDate` values computed at materialization time, and cache reads should validate freshness by recomputing the current derived `_etag` from dependency tokens (see `reference/design/backend-redesign/update-tracking.md`).
+
 **PostgreSQL**
 
 ```sql
@@ -391,7 +525,7 @@ CREATE TABLE dms.DocumentCache (
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(64) NOT NULL,
-    Etag bigint NOT NULL,
+    Etag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
     ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
@@ -412,7 +546,7 @@ CREATE TABLE dms.DocumentCache (
     ProjectName nvarchar(256) NOT NULL,
     ResourceName nvarchar(256) NOT NULL,
     ResourceVersion nvarchar(64) NOT NULL,
-    Etag bigint NOT NULL,
+    Etag nvarchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
