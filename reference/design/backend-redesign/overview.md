@@ -102,6 +102,7 @@ This redesign is split into focused docs in this directory:
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
+- Update tracking (derived `_etag/_lastModifiedDate`, `ChangeVersion`, change journals): [update-tracking.md](update-tracking.md)
 - DDL Generation (builds the relational model and emits/applies DDL): [ddl-generation.md](ddl-generation.md)
 - Authorization (subject model + view-based options): [auth.md](auth.md)
 - Strengths and risks (operational + correctness + performance): [strengths-risks.md](strengths-risks.md)
