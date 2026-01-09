@@ -19,7 +19,7 @@ This document describes a different approach (“derived tokens”) that:
 - keeps `dms.ReferentialIdentity` strict and transactional (identity correctness remains the hard requirement),
 - shifts work from “fan-out writes” to “read-time derivation” using stable per-document tokens.
 
-Compatibility note: recent Ed-Fi ODS/API versions also bump ETag/LastModifiedDate (and `ChangeVersion` for Change Queries) on indirect representation changes (e.g., referenced identity/descriptor URI changes). Derived tokens target the same externally-visible semantics without write-time fan-out; see `reference/design/backend-redesign/DERIVED-TOKEN-CHANGE-VERSION.md` for the `ChangeVersion` mapping.
+Compatibility note: recent Ed-Fi ODS/API versions also bump ETag/LastModifiedDate (and `ChangeVersion` for Change Queries) on indirect representation changes (e.g., referenced identity/descriptor URI changes). Derived tokens target the same externally-visible semantics without write-time fan-out; see `reference/design/backend-redesign/change-version-support.md` for the `ChangeVersion` approach.
 
 ## Requirements and non-goals
 
@@ -103,7 +103,7 @@ Notes:
 
 - `ContentVersion` is bumped when the persisted relational content for that `DocumentId` changes.
 - `IdentityVersion` is bumped when the identity projection changes (for the document itself, and for identity-closure dependents during strict identity recompute).
-- Either “version” can be replaced with a hash if preferred (`bytea`/`varbinary(32)`), but versions are often easier to index/inspect.
+- Either “version” can be replaced with a hash if preferred (`bytea`/`varbinary(32)`) when the only requirement is `_etag/_lastModifiedDate`. If DMS also needs Ed-Fi-style Change Queries (`ChangeVersion`), these tokens must be **globally comparable monotonic stamps** (not hashes); see `reference/design/backend-redesign/change-version-support.md`.
 - Best-effort minimization is achieved by *only bumping* when an actual change is detected (see “Best-effort minimization” below).
 
 ## Derived API metadata
@@ -322,7 +322,7 @@ Assume:
 - GraduationPlan `G` has `DocumentId=400`, `ContentVersion=5`, `IdentityVersion=2`, `ContentLastModifiedAt=T0`, `IdentityLastModifiedAt=T0i`.
 - `G` references `S`, and that reference is **not** an identity component edge (`IsIdentityComponent=false`), so `G` is not in `S`’s `IdentityClosure`.
 
-Derived tokens:
+Derived tokens (before the identity change):
 
 ```
 G._etag = Hash(G.ContentVersion=5, G.IdentityVersion=2, deps=[(100, 10)])
@@ -336,7 +336,7 @@ Now `S` has an identity update (e.g., `studentUniqueId` changes), and strict ide
 
 No updates occur to `G`.
 
-Next GET of `G`:
+Next GET of `G` (after `S.IdentityVersion` changes):
 
 ```
 G._etag = Hash(G.ContentVersion=5, G.IdentityVersion=2, deps=[(100, 11)]) // changed
