@@ -163,7 +163,7 @@ public class DmsInstanceRouteContextModule : IEndpointModule
                 "Instance route context not found",
                 httpContext.TraceIdentifier
             ),
-            InstanceRouteContextDeleteResult.FailureUnknown unknown => FailureResults.Unknown(
+            InstanceRouteContextDeleteResult.FailureUnknown => FailureResults.Unknown(
                 httpContext.TraceIdentifier
             ),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),

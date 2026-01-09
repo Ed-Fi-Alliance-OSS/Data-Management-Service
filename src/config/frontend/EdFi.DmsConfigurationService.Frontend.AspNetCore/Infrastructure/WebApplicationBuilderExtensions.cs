@@ -113,6 +113,7 @@ public static class WebApplicationBuilderExtensions
             IDmsInstanceDerivativeRepository,
             DmsInstanceDerivativeRepository
         >();
+        webApplicationBuilder.Services.AddTransient<IProfileRepository, ProfileRepository>();
         webApplicationBuilder.Services.AddSingleton<
             IConnectionStringEncryptionService,
             ConnectionStringEncryptionService
