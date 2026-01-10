@@ -99,7 +99,9 @@ Pack contains:
   - `IdentityProjectionPlan` entries required by reconstitution
 - any additional metadata needed to execute those plans without re-deriving/compiling from `ApiSchema.json`.
 
-Plan packs are keyed by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.
+Logical plan pack identity is `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.
+
+For file distribution, the lookup key is typically `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` (directory + filename), and `PackFormatVersion` is validated from the envelope after reading.
 
 ---
 
