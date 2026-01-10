@@ -11,7 +11,6 @@ using EdFi.DmsConfigurationService.Backend.AuthorizationMetadata;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
-using EdFi.DmsConfigurationService.Backend.Introspection;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.OpenIddict;
@@ -121,13 +120,6 @@ public static class WebApplicationBuilderExtensions
         >();
         webApplicationBuilder.Services.AddTransient<ITenantRepository, TenantRepository>();
         webApplicationBuilder.Services.AddScoped<ITenantContextProvider, TenantContextProvider>();
-
-        // Token introspection services
-        webApplicationBuilder.Services.AddTransient<ITokenInfoProvider, TokenInfoProvider>();
-        webApplicationBuilder.Services.AddTransient<
-            IEducationOrganizationRepository,
-            EducationOrganizationRepository
-        >();
 
         // Register audit context as transient to allow resolution from both singleton and scoped services
         // Each repository will get a fresh instance that captures the current HTTP context (if available)
