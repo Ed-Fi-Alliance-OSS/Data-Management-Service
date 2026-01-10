@@ -120,7 +120,7 @@ Append-only journal of per-document representation-affecting changes (local cont
 Columns:
 - `ChangeVersion`: derived per-document “local change” stamp (recommended: `max(ContentVersion, IdentityVersion)`).
 - `DocumentId`: changed document.
-- `(ProjectName, ResourceName, ResourceVersion)`: resource key for filtering change queries.
+- `(ProjectName, ResourceName)`: resource key for filtering change queries.
 - `CreatedAt`: journal insert time (operational/auditing).
 
 **PostgreSQL**
@@ -131,13 +131,12 @@ CREATE TABLE dms.DocumentChangeEvent (
     DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
-    ResourceVersion varchar(64) NOT NULL,
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
 );
 
 CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
-    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
+    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ChangeVersion, DocumentId);
 ```
 
 **SQL Server**
@@ -148,7 +147,6 @@ CREATE TABLE dms.DocumentChangeEvent (
     DocumentId bigint NOT NULL,
     ProjectName nvarchar(256) NOT NULL,
     ResourceName nvarchar(256) NOT NULL,
-    ResourceVersion nvarchar(64) NOT NULL,
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
     CONSTRAINT FK_DocumentChangeEvent_Document FOREIGN KEY (DocumentId)
@@ -156,7 +154,7 @@ CREATE TABLE dms.DocumentChangeEvent (
 );
 
 CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
-    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
+    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ChangeVersion, DocumentId);
 ```
 
 Recommended population: enforce journal insertion with database triggers on `dms.Document` when token columns change (to avoid “forgotten journal write” bugs and to naturally cover bulk/closure updates); see `reference/design/backend-redesign/update-tracking.md`.
