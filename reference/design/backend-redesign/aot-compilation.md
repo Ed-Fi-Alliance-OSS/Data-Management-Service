@@ -467,15 +467,17 @@ public static class MappingPackLoader
 
 ### 11.5 `dms.ResourceKey` validation (required)
 
-After loading a mapping pack for a database, DMS should validate that the database’s seeded `dms.ResourceKey` table matches the pack’s `resource_keys` list exactly (fail fast on mismatch).
+After loading a mapping set for a database, DMS should validate that the database’s seeded `dms.ResourceKey` mapping matches the mapping set (fail fast on mismatch).
 
 Recommended validation (once per database/connection string, cached):
-1. Read: `SELECT ResourceKeyId, ProjectName, ResourceName, ResourceVersion FROM dms.ResourceKey ORDER BY ResourceKeyId;`
-2. Compare to `payload.resource_keys`:
-   - same row count
-   - ids are a dense 1..N set (no gaps/dupes)
-   - `(ProjectName, ResourceName, ResourceVersion)` match exactly at each id
-3. Build and cache:
+- Fast path: compare a stored seed fingerprint without reading the full table:
+  1. Read: `SELECT ResourceKeyCount, ResourceKeySeedHash FROM dms.EffectiveSchema ...` for the selected `EffectiveSchemaHash`.
+  2. Compare to the expected `(ResourceKeyCount, ResourceKeySeedHash)` derived from the mapping set’s embedded `resource_keys` list (same canonicalization as the DDL generator).
+- Slow path (diagnostics on mismatch):
+  1. Read: `SELECT ResourceKeyId, ProjectName, ResourceName, ResourceVersion FROM dms.ResourceKey ORDER BY ResourceKeyId;`
+  2. Diff vs. `payload.resource_keys` and fail fast with a detailed mismatch error.
+
+After validation, build and cache:
    - `QualifiedResourceName -> ResourceKeyId` (for writes / change-query params)
    - `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` (for background tasks, diagnostics, and materializing denormalized metadata)
 
