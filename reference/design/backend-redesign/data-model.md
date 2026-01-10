@@ -26,6 +26,41 @@ This document is the data-model deep dive for `overview.md`.
 
 ### Core tables (schema: `dms`)
 
+##### 0) `dms.ResourceKey`
+
+Lookup table mapping `(ProjectName, ResourceName)` to a small surrogate id (`ResourceKeyId`) used in high-churn core tables.
+
+This reduces row width and index bloat (especially in `dms.Document`, `dms.ReferentialIdentity`, and change journals) while keeping names available via join when needed for diagnostics.
+
+Population/seeding:
+- This table is provisioned and **seeded deterministically** by the DDL generation utility from the effective `ApiSchema.json` set (core + extensions).
+- `ResourceKeyId` assignments must be stable for a given `EffectiveSchemaHash` (the mapping is part of the relational mapping contract).
+- DMS loads and caches the mapping per database and fails fast if it does not match the expected mapping for that `EffectiveSchemaHash`.
+- `ResourceKeyId` uses `smallint` across engines (expected cardinality is far below 32k); schema provisioning should fail fast if the effective schema ever exceeds that bound.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.ResourceKey (
+    ResourceKeyId smallint NOT NULL PRIMARY KEY,
+    ProjectName varchar(256) NOT NULL,
+    ResourceName varchar(256) NOT NULL,
+    CONSTRAINT UX_ResourceKey_ProjectName_ResourceName UNIQUE (ProjectName, ResourceName)
+);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.ResourceKey (
+    ResourceKeyId smallint NOT NULL
+        CONSTRAINT PK_ResourceKey PRIMARY KEY CLUSTERED,
+    ProjectName nvarchar(256) NOT NULL,
+    ResourceName nvarchar(256) NOT NULL,
+    CONSTRAINT UX_ResourceKey_ProjectName_ResourceName UNIQUE (ProjectName, ResourceName)
+);
+```
+
 ##### 1) `dms.Document`
 
 Canonical metadata per persisted resource instance. One row per document, regardless of resource type.
@@ -38,8 +73,7 @@ Update tracking note: `reference/design/backend-redesign/update-tracking.md` def
 CREATE TABLE dms.Document (
     DocumentId bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     DocumentUuid uuid NOT NULL,
-    ProjectName varchar(256) NOT NULL,
-    ResourceName varchar(256) NOT NULL,
+    ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
     ResourceVersion varchar(64) NOT NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
@@ -53,8 +87,8 @@ CREATE TABLE dms.Document (
     CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_Document_ProjectName_ResourceName_DocumentId
-    ON dms.Document (ProjectName, ResourceName, DocumentId);
+CREATE INDEX IX_Document_ResourceKeyId_DocumentId
+    ON dms.Document (ResourceKeyId, DocumentId);
 ```
 
 **SQL Server**
@@ -66,8 +100,7 @@ CREATE TABLE dms.Document (
 
     DocumentUuid uniqueidentifier NOT NULL,
 
-    ProjectName nvarchar(256) NOT NULL,
-    ResourceName nvarchar(256) NOT NULL,
+    ResourceKeyId smallint NOT NULL,
     ResourceVersion nvarchar(64) NOT NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
@@ -78,15 +111,18 @@ CREATE TABLE dms.Document (
 
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_CreatedAt DEFAULT (sysutcdatetime()),
 
-    CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid)
+    CONSTRAINT UX_Document_DocumentUuid UNIQUE (DocumentUuid),
+    CONSTRAINT FK_Document_ResourceKey FOREIGN KEY (ResourceKeyId)
+        REFERENCES dms.ResourceKey (ResourceKeyId)
 );
 
-CREATE INDEX IX_Document_ProjectName_ResourceName_DocumentId
-    ON dms.Document (ProjectName, ResourceName, DocumentId);
+CREATE INDEX IX_Document_ResourceKeyId_DocumentId
+    ON dms.Document (ResourceKeyId, DocumentId);
 ```
 
 Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
+- `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s own persisted content changes.
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (including strict identity closure recompute impacts).
@@ -120,7 +156,7 @@ Append-only journal of per-document representation-affecting changes (local cont
 Columns:
 - `ChangeVersion`: derived per-document “local change” stamp (recommended: `max(ContentVersion, IdentityVersion)`).
 - `DocumentId`: changed document.
-- `(ProjectName, ResourceName)`: resource key for filtering change queries.
+- `ResourceKeyId`: resource key for filtering change queries.
 - `CreatedAt`: journal insert time (operational/auditing).
 
 **PostgreSQL**
@@ -129,14 +165,13 @@ Columns:
 CREATE TABLE dms.DocumentChangeEvent (
     ChangeVersion bigint NOT NULL,
     DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    ProjectName varchar(256) NOT NULL,
-    ResourceName varchar(256) NOT NULL,
+    ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
 );
 
-CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
-    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ChangeVersion, DocumentId);
+CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
+    ON dms.DocumentChangeEvent (ResourceKeyId, ChangeVersion, DocumentId);
 ```
 
 **SQL Server**
@@ -145,16 +180,17 @@ CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
 CREATE TABLE dms.DocumentChangeEvent (
     ChangeVersion bigint NOT NULL,
     DocumentId bigint NOT NULL,
-    ProjectName nvarchar(256) NOT NULL,
-    ResourceName nvarchar(256) NOT NULL,
+    ResourceKeyId smallint NOT NULL,
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
     CONSTRAINT FK_DocumentChangeEvent_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_DocumentChangeEvent_ResourceKey FOREIGN KEY (ResourceKeyId)
+        REFERENCES dms.ResourceKey (ResourceKeyId)
 );
 
-CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
-    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ChangeVersion, DocumentId);
+CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
+    ON dms.DocumentChangeEvent (ResourceKeyId, ChangeVersion, DocumentId);
 ```
 
 Recommended population: enforce journal insertion with database triggers on `dms.Document` when token columns change (to avoid “forgotten journal write” bugs and to naturally cover bulk/closure updates); see `reference/design/backend-redesign/update-tracking.md`.
@@ -204,12 +240,11 @@ Rationale for retaining `ReferentialId` in this redesign: see [overview.md#Why k
 CREATE TABLE dms.ReferentialIdentity (
     ReferentialId uuid NOT NULL,
     DocumentId bigint NOT NULL,
-    ProjectName varchar(256) NOT NULL,
-    ResourceName varchar(256) NOT NULL,
+    ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
     CONSTRAINT PK_ReferentialIdentity PRIMARY KEY (ReferentialId),
     CONSTRAINT FK_ReferentialIdentity_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_ReferentialIdentity_DocumentId_Resource UNIQUE (DocumentId, ProjectName, ResourceName)
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKey UNIQUE (DocumentId, ResourceKeyId)
 );
 
 CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (DocumentId);
@@ -221,23 +256,24 @@ CREATE INDEX IX_ReferentialIdentity_DocumentId ON dms.ReferentialIdentity (Docum
 CREATE TABLE dms.ReferentialIdentity (
     ReferentialId uniqueidentifier NOT NULL,
     DocumentId bigint NOT NULL,
-    ProjectName nvarchar(256) NOT NULL,
-    ResourceName nvarchar(256) NOT NULL,
+    ResourceKeyId smallint NOT NULL,
     CONSTRAINT PK_ReferentialIdentity PRIMARY KEY NONCLUSTERED (ReferentialId),
     CONSTRAINT FK_ReferentialIdentity_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT UX_ReferentialIdentity_DocumentId_Resource UNIQUE CLUSTERED (DocumentId, ProjectName, ResourceName)
+    CONSTRAINT FK_ReferentialIdentity_ResourceKey FOREIGN KEY (ResourceKeyId)
+        REFERENCES dms.ResourceKey (ResourceKeyId),
+    CONSTRAINT UX_ReferentialIdentity_DocumentId_ResourceKey UNIQUE CLUSTERED (DocumentId, ResourceKeyId)
 );
 ```
 
 Database Specific Differences:
-- The logical shape is identical across engines (UUID `ReferentialId` → `DocumentId` + `{ProjectName, ResourceName}`).
+- The logical shape is identical across engines (UUID `ReferentialId` → `DocumentId` + `ResourceKeyId`).
 - The physical DDL will differ slightly for performance: SQL Server should not cluster on a randomly-distributed UUID.
 
 Operational considerations:
 - `ReferentialId` is a deterministic UUIDv5 and is effectively randomly distributed for index insertion. The primary operational concern is **write amplification** (page splits, fragmentation/bloat), not point-lookup speed.
 - **SQL Server**:
-  - Keep the UUID key as **NONCLUSTERED** (as shown) and use a sequential clustered key (e.g., `(DocumentId, ProjectName, ResourceName)`).
+  - Keep the UUID key as **NONCLUSTERED** (as shown) and use a sequential clustered key (e.g., `(DocumentId, ResourceKeyId)`).
   - Consider a lower `FILLFACTOR` (e.g., 80–90) on the UUID index to reduce page splits; monitor fragmentation and rebuild/reorganize as needed.
 - **PostgreSQL**:
   - B-tree point lookups on UUID are fine; manage bloat under high write rates with index/table `fillfactor` (e.g., 80–90), healthy autovacuum settings/monitoring, and periodic `REINDEX` when warranted.
@@ -248,8 +284,8 @@ Critical invariants:
 - **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document” for **all** identities (self-contained identities, reference-bearing identities, and descriptor URIs). This requires `dms.ReferentialIdentity` to be maintained transactionally on identity changes, including cascading recompute when upstream identity components change.
 - The resource root table’s natural-key unique constraint (FK `..._DocumentId` columns + scalar identity parts) remains a recommended relational guardrail, but identity-based resolution/upsert uses `dms.ReferentialIdentity`.
 - A document has **at most 2** referential ids:
-  - the **primary** referential id for the document’s concrete `{ProjectName, ResourceName}`
-  - an optional **superclass/abstract alias** referential id for polymorphic references (when `isSubclass: true`)
+  - the **primary** referential id for the document’s concrete `ResourceKeyId` (`(ProjectName, ResourceName)` in `dms.ResourceKey`)
+  - an optional **superclass/abstract alias** referential id for polymorphic references (when `isSubclass: true`) using the superclass/abstract `ResourceKeyId`
 - Subclass writes insert both:
   - primary `ReferentialId` (subclass resource name)
   - superclass alias `ReferentialId` (superclass resource name)
@@ -341,7 +377,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relational-mapping:v1`)
+   - a constant mapping version (e.g., `relational-mapping:v2`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -349,7 +385,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "relational-mapping:v1"
+const RelationalMappingVersion = "relational-mapping:v2"
 
 projects = []
 apiSchemaFormatVersion = null
@@ -518,6 +554,10 @@ Prefer **eventual consistency** (background/write-driven projection) where rows 
 
 Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the **derived** `_etag/_lastModifiedDate` values computed at materialization time, and cache reads should validate freshness by recomputing the current derived `_etag` from dependency tokens (see `reference/design/backend-redesign/update-tracking.md`).
 
+Denormalized resource naming:
+- `ResourceKeyId` is the canonical resource-type key for `dms.DocumentCache` filtering and indexing.
+- `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
+
 **PostgreSQL**
 
 ```sql
@@ -525,6 +565,7 @@ CREATE TABLE dms.DocumentCache (
     DocumentId bigint PRIMARY KEY
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     DocumentUuid uuid NOT NULL,
+    ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
     ResourceVersion varchar(64) NOT NULL,
@@ -536,8 +577,8 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
+CREATE INDEX IX_DocumentCache_ResourceKeyId_LastModifiedAt
+    ON dms.DocumentCache (ResourceKeyId, LastModifiedAt, DocumentId);
 ```
 
 **SQL Server**
@@ -546,6 +587,7 @@ CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
 CREATE TABLE dms.DocumentCache (
     DocumentId bigint NOT NULL,
     DocumentUuid uniqueidentifier NOT NULL,
+    ResourceKeyId smallint NOT NULL,
     ProjectName nvarchar(256) NOT NULL,
     ResourceName nvarchar(256) NOT NULL,
     ResourceVersion nvarchar(64) NOT NULL,
@@ -556,12 +598,14 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT FK_DocumentCache_ResourceKey FOREIGN KEY (ResourceKeyId)
+        REFERENCES dms.ResourceKey (ResourceKeyId),
     CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
+CREATE INDEX IX_DocumentCache_ResourceKeyId_LastModifiedAt
+    ON dms.DocumentCache (ResourceKeyId, LastModifiedAt, DocumentId);
 ```
 
 Uses:

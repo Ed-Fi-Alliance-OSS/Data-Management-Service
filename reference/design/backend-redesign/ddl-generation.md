@@ -30,7 +30,7 @@ This redesign therefore requires a separate utility (“DDL generation utility�
 
 The DDL generation utility is responsible for database objects derived from the effective schema:
 
-- Core `dms.*` tables (e.g., `dms.Document`, `dms.ReferentialIdentity`, `dms.ReferenceEdge`, `dms.IdentityLock`, `dms.DocumentCache`, `dms.EffectiveSchema`).
+- Core `dms.*` tables (e.g., `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.ReferenceEdge`, `dms.IdentityLock`, `dms.DocumentCache`, `dms.EffectiveSchema`).
 - Per-project schemas (derived from `ProjectEndpointName`) and per-resource tables (root + child tables).
 - Extension project schemas and extension tables derived from `_ext` (see [extensions.md](extensions.md)).
 - Abstract union views (e.g., `{schema}.{AbstractResource}_View`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)).
@@ -46,6 +46,7 @@ Authorization-specific objects (e.g., `auth.*` views) may be in scope for the DD
 **Outputs**
 - A deterministic SQL script (recommended even when applying directly)
   - All schemas, tables, views
+  - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName)`)
   - Insert statements into `dms.EffectiveSchema`/`dms.SchemaComponent` rows matching the computed `EffectiveSchemaHash`.
 
 ## High-level workflow
@@ -54,8 +55,24 @@ Authorization-specific objects (e.g., `auth.*` views) may be in scope for the DD
 2. Compute `EffectiveSchemaHash` (as defined in [data-model.md](data-model.md)).
 3. Derive the relational resource models and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md) and [data-model.md](data-model.md)).
 4. Generate “desired state” DDL for all required objects (tables, FKs, unique constraints, indexes, views).
+   - Derive the `dms.ResourceKey` seed set from the effective schema and emit deterministic `INSERT` statements with explicit `ResourceKeyId` values.
 5. Generate the applied schema fingerprint (`dms.EffectiveSchema` and `dms.SchemaComponent`) insert statements.
 6. Emit SQL.
+
+## Deterministic `dms.ResourceKey` seeding
+
+Because `ResourceKeyId` is persisted in core tables and indexes, `ResourceKeyId` assignments must be deterministic for a given `EffectiveSchemaHash`.
+
+Recommended derivation:
+- Build the set of `(ProjectName, ResourceName)` pairs from the effective schema (core + extensions):
+  - include all concrete `resourceSchemas[*].resourceName` (including descriptors),
+  - include all `abstractResources[*]` names (used for polymorphic/superclass alias rows in `dms.ReferentialIdentity`).
+- Sort pairs by `(ProjectName, ResourceName)` using **ordinal** (culture-invariant) string ordering.
+- Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts:
+  - `INSERT INTO dms.ResourceKey(ResourceKeyId, ProjectName, ResourceName) VALUES ...`
+- Fail fast if `N` exceeds the maximum representable `ResourceKeyId` (`smallint`).
+
+DMS runtime should validate and cache this mapping per database (fail fast on mismatch) as part of the schema fingerprint check.
 
 ## Integration points (implementation-facing)
 

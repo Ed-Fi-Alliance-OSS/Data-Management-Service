@@ -89,7 +89,7 @@ DMS already has schema-derived authorization metadata:
 
 From the relational primary store redesign we additionally have:
 
-- Stable `dms.Document(DocumentId, DocumentUuid, ProjectName, ResourceName, ...)`.
+- Stable `dms.Document(DocumentId, DocumentUuid, ResourceKeyId, ...)` (resource type via `dms.ResourceKey`).
 - Referential resolution via `dms.ReferentialIdentity(ReferentialId → DocumentId)` including polymorphic superclass alias rows (e.g., `School` as `EducationOrganization`).
 - Resource data stored in per-resource tables with FK columns storing `..._DocumentId` for references.
 - Optional `dms.DocumentCache` which must not be used as an authorization source of truth.

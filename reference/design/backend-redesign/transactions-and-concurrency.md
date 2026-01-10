@@ -695,7 +695,7 @@ Within the same transaction (and while holding the impacted-set locks):
 
 1) For each impacted document, compute the identity element values from relational storage using ApiSchema-derived `IdentityProjectionPlan`s (see section 7.5 in [flattening-reconstitution.md](flattening-reconstitution.md)), including joins through FK columns for reference-bearing identities and descriptor URI projection.
 2) Compute new `ReferentialId` values in application code using the existing UUIDv5 algorithm (same canonical identity element ordering and path strings as Core).
-3) Stage and replace `dms.ReferentialIdentity` rows for the impacted set (delete by `DocumentId` and `(ProjectName, ResourceName)`, then insert staged rows). Include superclass/abstract alias rows for subclass resources.
+3) Stage and replace `dms.ReferentialIdentity` rows for the impacted set (delete by `DocumentId`, then insert staged rows). Include superclass/abstract alias rows for subclass resources.
 
 If the recompute fails (identity conflict/unique violation, deadlock without successful retry, etc.), the transaction must roll back (no stale window). Identity conflicts should map to a 409 (same as other natural-key conflicts).
 
@@ -739,10 +739,10 @@ Reasons to prefer eventual consistency over strict transactional cache maintenan
 #### DocumentCache rebuilder (relational → JSON → upsert)
 
 Whether invoked by a background worker (preferred) or by a read-triggered rebuild hint, the rebuilder:
-1. Loads `(DocumentId, ProjectName, ResourceName)` for the target set from `dms.Document` and groups by `(ProjectName, ResourceName)`.
+1. Loads `(DocumentId, ResourceKeyId)` for the target set from `dms.Document` and groups by `ResourceKeyId` (mapping `ResourceKeyId → (ProjectName, ResourceName)` via `dms.ResourceKey` when selecting compiled plans and when materializing CDC metadata).
 2. Uses compiled `ResourceReadPlan`s to hydrate root/child tables and reconstitute JSON in-memory.
 3. Upserts `dms.DocumentCache` rows for the target set, including:
-   - `DocumentUuid`, `ProjectName`, `ResourceName`, `ResourceVersion` (copied from `dms.Document`)
+   - `DocumentUuid`, `ResourceKeyId`, `ProjectName`, `ResourceName` (from `dms.ResourceKey`), `ResourceVersion` (from `dms.Document`)
    - cached derived `_etag/_lastModifiedDate` (computed at materialization time; see [update-tracking.md](update-tracking.md))
    - optional cached derived per-item `ChangeVersion` (if/when Change Queries are implemented)
    - `DocumentJson` (reconstituted API JSON including `id`, `_etag`, `_lastModifiedDate`)
@@ -881,13 +881,15 @@ Example (PostgreSQL) conflict diagnostic query:
 ```sql
 SELECT
   p.DocumentUuid         AS ReferencingDocumentUuid,
-  p.ProjectName          AS ReferencingProjectName,
-  p.ResourceName         AS ReferencingResourceName
+  rk.ProjectName         AS ReferencingProjectName,
+  rk.ResourceName        AS ReferencingResourceName
 FROM dms.ReferenceEdge e
 JOIN dms.Document p
   ON p.DocumentId = e.ParentDocumentId
+JOIN dms.ResourceKey rk
+  ON rk.ResourceKeyId = p.ResourceKeyId
 WHERE e.ChildDocumentId = @DeletedDocumentId
-ORDER BY p.ProjectName, p.ResourceName, p.DocumentUuid;
+ORDER BY rk.ProjectName, rk.ResourceName, p.DocumentUuid;
 ```
 
 Example (C#) mapping to today’s `DeleteFailureReference` shape:
@@ -896,10 +898,12 @@ Example (C#) mapping to today’s `DeleteFailureReference` shape:
 catch (DbException ex) when (IsForeignKeyViolation(ex))
 {
     const string sql = @"
-        SELECT DISTINCT p.ResourceName
+        SELECT DISTINCT rk.ResourceName
         FROM dms.ReferenceEdge e
         JOIN dms.Document p
           ON p.DocumentId = e.ParentDocumentId
+        JOIN dms.ResourceKey rk
+          ON rk.ResourceKeyId = p.ResourceKeyId
         WHERE e.ChildDocumentId = @DeletedDocumentId;";
 
     var resourceNames = (await connection.QueryAsync<string>(
@@ -940,7 +944,7 @@ This keeps schema mismatch a **fail-fast** condition while avoiding “one mis-p
 `ReferentialId` is a UUID (deterministic UUIDv5) and is effectively randomly distributed for index insertion. The primary concern is **write amplification** (page splits, fragmentation/bloat), not point-lookup speed.
 
 **SQL Server guidance**
-- Use a sequential clustered key (recommended above: cluster on `(DocumentId, ProjectName, ResourceName)`), and keep the UUID key as a **NONCLUSTERED** PK/unique index.
+- Use a sequential clustered key (recommended above: cluster on `(DocumentId, ResourceKeyId)`), and keep the UUID key as a **NONCLUSTERED** PK/unique index.
 - Consider a lower `FILLFACTOR` on the UUID index (e.g., 80–90) to reduce page splits; monitor fragmentation and rebuild/reorganize as needed.
 
 **PostgreSQL guidance**

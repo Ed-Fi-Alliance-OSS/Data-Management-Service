@@ -42,9 +42,13 @@ Source documents:
 
 `reference/design/backend-redesign/data-model.md` defines the baseline core tables, with update tracking extended by `reference/design/backend-redesign/update-tracking.md`:
 
+- `dms.ResourceKey`
+  - Lookup table mapping `(ProjectName, ResourceName)` to `ResourceKeyId` (small surrogate id).
+  - Seeded deterministically by the DDL generation utility for a given `EffectiveSchemaHash` and validated/cached by DMS.
+
 - `dms.Document`
   - One row per persisted resource instance.
-  - Holds `DocumentId`, `DocumentUuid`, `(ProjectName, ResourceName, ResourceVersion)`, and update-tracking token columns (see below).
+  - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), `ResourceVersion` (informational), and update-tracking token columns (see below).
   - `DocumentUuid` is unique and stable across identity updates.
 
 - `dms.ReferentialIdentity`
@@ -53,7 +57,7 @@ Source documents:
     - reference-bearing identities (kept correct via strict recompute),
     - descriptor identities (resource type + normalized URI),
     - polymorphic/abstract reference support via superclass/abstract alias rows (documents have ≤ 2 referential ids: primary + optional superclass alias).
-  - Physical guidance: do not cluster on random UUID in SQL Server; cluster on a sequential key like `(DocumentId, ProjectName, ResourceName)`.
+  - Physical guidance: do not cluster on random UUID in SQL Server; cluster on a sequential key like `(DocumentId, ResourceKeyId)`.
 
 - `dms.Descriptor` (unified)
   - Unified descriptor table keyed by the descriptor document’s `DocumentId` so descriptor references can FK to `dms.Descriptor(DocumentId)` without per-descriptor tables.
@@ -77,6 +81,7 @@ Source documents:
   - Materialized JSON projection for read performance and CDC/indexing.
   - Preferred mode is eventual consistency via a background/write-driven projector (no transactional cross-document cache cascades).
   - Freshness is validated via derived `_etag` (not by comparing stored etag columns).
+  - Stores `ResourceKeyId` for filtering/indexing and keeps denormalized `ProjectName`/`ResourceName` for CDC/streaming consumers.
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
@@ -91,7 +96,7 @@ Source documents:
   - `ContentVersion`, `IdentityVersion` (global monotonic stamps).
   - `ContentLastModifiedAt`, `IdentityLastModifiedAt`.
 - Journals (append-only):
-  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName, CreatedAt)`
+  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId, CreatedAt)`
   - `dms.IdentityChangeEvent(ChangeVersion, DocumentId, CreatedAt)`
 - Derived at read time:
   - `_etag = Base64(SHA-256(EncodeV1(ContentVersion, IdentityVersion, sorted(deps: (DocumentId, IdentityVersion)))))`
@@ -259,5 +264,5 @@ Open questions called out in the auth doc include EdOrg hierarchy derivation (ha
   - Reconstitution can be expensive for deep resources (many child tables/result sets); `dms.DocumentCache` may be practically required for latency and DB CPU protection in many deployments.
 
 - **Very large scale tables**
-  - `dms.Document` bloat from repeated `(ProjectName, ResourceName, ResourceVersion)` strings; consider surrogate ids for these dimensions at extreme scale.
+  - `dms.Document` scale: avoid wide repeated strings in hot tables (use `ResourceKeyId` for `(ProjectName, ResourceName)`; consider `ResourceVersionId` only if `ResourceVersion` becomes a measurable cost driver).
   - `dms.ReferenceEdge` at ~1B rows drives partitioning/maintenance concerns; consider partitioning, filtered/partial structures for identity edges, and re-evaluating per-row `CreatedAt` if unused.
