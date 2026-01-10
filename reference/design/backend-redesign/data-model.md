@@ -45,6 +45,7 @@ CREATE TABLE dms.ResourceKey (
     ResourceKeyId smallint NOT NULL PRIMARY KEY,
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
+    ResourceVersion varchar(32) NOT NULL,
     CONSTRAINT UX_ResourceKey_ProjectName_ResourceName UNIQUE (ProjectName, ResourceName)
 );
 ```
@@ -57,6 +58,7 @@ CREATE TABLE dms.ResourceKey (
         CONSTRAINT PK_ResourceKey PRIMARY KEY CLUSTERED,
     ProjectName nvarchar(256) NOT NULL,
     ResourceName nvarchar(256) NOT NULL,
+    ResourceVersion nvarchar(32) NOT NULL,
     CONSTRAINT UX_ResourceKey_ProjectName_ResourceName UNIQUE (ProjectName, ResourceName)
 );
 ```
@@ -74,7 +76,6 @@ CREATE TABLE dms.Document (
     DocumentId bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     DocumentUuid uuid NOT NULL,
     ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
-    ResourceVersion varchar(64) NOT NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
     ContentVersion bigint NOT NULL DEFAULT 1,
@@ -101,7 +102,6 @@ CREATE TABLE dms.Document (
     DocumentUuid uniqueidentifier NOT NULL,
 
     ResourceKeyId smallint NOT NULL,
-    ResourceVersion nvarchar(64) NOT NULL,
 
     -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
     ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (1),
@@ -348,7 +348,7 @@ CREATE TABLE dms.SchemaComponent (
         REFERENCES dms.EffectiveSchema (EffectiveSchemaId) ON DELETE CASCADE,
     ProjectEndpointName varchar(128) NOT NULL,
     ProjectName varchar(256) NOT NULL,
-    ProjectVersion varchar(64) NOT NULL,
+    ProjectVersion varchar(32) NOT NULL,
     IsExtensionProject boolean NOT NULL,
     CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaId, ProjectEndpointName)
 );
@@ -377,7 +377,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relational-mapping:v2`)
+   - a constant mapping version (e.g., `relational-mapping:v3`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -385,7 +385,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "relational-mapping:v2"
+const RelationalMappingVersion = "relational-mapping:v3"
 
 projects = []
 apiSchemaFormatVersion = null
@@ -555,8 +555,8 @@ Prefer **eventual consistency** (background/write-driven projection) where rows 
 Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the **derived** `_etag/_lastModifiedDate` values computed at materialization time, and cache reads should validate freshness by recomputing the current derived `_etag` from dependency tokens (see `reference/design/backend-redesign/update-tracking.md`).
 
 Denormalized resource naming:
-- `ResourceKeyId` is the canonical resource-type key for `dms.DocumentCache` filtering and indexing.
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
+- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
 
 **PostgreSQL**
 
@@ -565,10 +565,9 @@ CREATE TABLE dms.DocumentCache (
     DocumentId bigint PRIMARY KEY
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     DocumentUuid uuid NOT NULL,
-    ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
-    ResourceVersion varchar(64) NOT NULL,
+    ResourceVersion varchar(32) NOT NULL,
     Etag varchar(64) NOT NULL,
     LastModifiedAt timestamp with time zone NOT NULL,
     DocumentJson jsonb NOT NULL,
@@ -577,8 +576,8 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_DocumentCache_ResourceKeyId_LastModifiedAt
-    ON dms.DocumentCache (ResourceKeyId, LastModifiedAt, DocumentId);
+CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
+    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
 **SQL Server**
@@ -587,10 +586,9 @@ CREATE INDEX IX_DocumentCache_ResourceKeyId_LastModifiedAt
 CREATE TABLE dms.DocumentCache (
     DocumentId bigint NOT NULL,
     DocumentUuid uniqueidentifier NOT NULL,
-    ResourceKeyId smallint NOT NULL,
     ProjectName nvarchar(256) NOT NULL,
     ResourceName nvarchar(256) NOT NULL,
-    ResourceVersion nvarchar(64) NOT NULL,
+    ResourceVersion nvarchar(32) NOT NULL,
     Etag nvarchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     DocumentJson nvarchar(max) NOT NULL,
@@ -598,14 +596,12 @@ CREATE TABLE dms.DocumentCache (
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_DocumentCache_ResourceKey FOREIGN KEY (ResourceKeyId)
-        REFERENCES dms.ResourceKey (ResourceKeyId),
     CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
     CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
 );
 
-CREATE INDEX IX_DocumentCache_ResourceKeyId_LastModifiedAt
-    ON dms.DocumentCache (ResourceKeyId, LastModifiedAt, DocumentId);
+CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
+    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
 ```
 
 Uses:

@@ -93,6 +93,9 @@ Design invariant:
 The pack is the ahead-of-time equivalent of the plan compilation/caching described in `flattening-reconstitution.md`.
 
 Pack contains:
+- the deterministic `dms.ResourceKey` seed mapping for this effective schema:
+  - ordered list of `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)` entries (ids are `smallint`, typically 1..N),
+  - used by DMS runtime to validate `dms.ResourceKey` and to translate between `ResourceKeyId` (stored in core tables) and `QualifiedResourceName` (plan cache key),
 - per-resource compiled plans:
   - `ResourceWritePlan` (including `TableWritePlan` SQL and bindings)
   - `ResourceReadPlan` (including `TableReadPlan` SQL and bindings)
@@ -242,6 +245,15 @@ message MappingPackEnvelope {
 message MappingPackPayload {
   // The payload schema can evolve independently, but should remain compatible.
   repeated ResourcePack resources = 1;
+  repeated ResourceKeyEntry resource_keys = 2;
+}
+
+message ResourceKeyEntry {
+  // Deterministic id (seeded by DDL generator) used in core tables.
+  uint32 resource_key_id = 1; // must fit in SQL smallint
+  string project_name = 2;
+  string resource_name = 3;
+  string resource_version = 4; // SemVer from ApiSchema projectSchema.projectVersion
 }
 
 message ResourcePack {
@@ -453,7 +465,21 @@ public static class MappingPackLoader
 }
 ```
 
-### 11.5 Mapping set provider (single-flight load + fallback)
+### 11.5 `dms.ResourceKey` validation (required)
+
+After loading a mapping pack for a database, DMS should validate that the database’s seeded `dms.ResourceKey` table matches the pack’s `resource_keys` list exactly (fail fast on mismatch).
+
+Recommended validation (once per database/connection string, cached):
+1. Read: `SELECT ResourceKeyId, ProjectName, ResourceName, ResourceVersion FROM dms.ResourceKey ORDER BY ResourceKeyId;`
+2. Compare to `payload.resource_keys`:
+   - same row count
+   - ids are a dense 1..N set (no gaps/dupes)
+   - `(ProjectName, ResourceName, ResourceVersion)` match exactly at each id
+3. Build and cache:
+   - `QualifiedResourceName -> ResourceKeyId` (for writes / change-query params)
+   - `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` (for background tasks, diagnostics, and materializing denormalized metadata)
+
+### 11.6 Mapping set provider (single-flight load + fallback)
 
 ```csharp
 public sealed class MappingSetProvider : IMappingSetProvider
