@@ -921,14 +921,15 @@ catch (DbException ex) when (IsForeignKeyViolation(ex))
 
 ## Schema Validation (EffectiveSchema)
 
-This redesign treats schema changes as an **operational concern outside DMS**. DMS does not define any in-place schema evolution behavior; instead it validates compatibility at startup:
+This redesign treats schema changes as an **operational concern outside DMS**. DMS does not define any in-place schema evolution behavior; instead it validates compatibility **per database** on **first use** of that database connection string:
 
 - Schema creation/updates are performed by a separate DDL generation utility that builds the same derived relational model as runtime and emits/applies dialect-specific DDL (see [ddl-generation.md](ddl-generation.md)).
-- DMS loads the configured core + extension `ApiSchema.json` files and computes `EffectiveSchemaHash` (see [data-model.md](data-model.md) “EffectiveSchemaHash Calculation”).
-- DMS reads the database’s recorded schema fingerprint from `dms.EffectiveSchema` + `dms.SchemaComponent`.
-- If the fingerprints (or expected schema components) do not match, DMS refuses to start/serve.
+- Each provisioned database records its schema fingerprint in `dms.EffectiveSchema` + `dms.SchemaComponent`.
+- When a request is routed to a `DmsInstance`/connection string, DMS reads that database’s recorded fingerprint **once** (cached per connection string), and uses `EffectiveSchemaHash` to select the matching compiled mapping set.
+  - Perform this immediately after instance routing and before any schema-dependent work (plan compilation, SQL generation, or relational reads/writes).
+- If no mapping set is available for that `EffectiveSchemaHash`, DMS rejects requests for that database (other databases can still be served).
 
-This makes schema mismatch a **fail-fast** condition and avoids any automatic in-place schema update behavior in the server.
+This keeps schema mismatch a **fail-fast** condition while avoiding “one mis-provisioned instance prevents the server from starting” in multi-instance deployments.
 
 ## Operational Considerations
 

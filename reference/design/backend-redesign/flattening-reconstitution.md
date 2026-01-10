@@ -1673,10 +1673,12 @@ Key points:
 
 ### 7.8 Example: POST/PUT execution (flatten + write)
 
+Assume `EffectiveSchemaHash` is sourced from the selected database’s `dms.EffectiveSchema` fingerprint (cached per connection string; see `transactions-and-concurrency.md`), and is available via a request-scoped context.
+
 ```csharp
 public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
 {
-    var effectiveSchemaHash = _effectiveSchemaProvider.EffectiveSchemaHash;
+    var effectiveSchemaHash = _effectiveSchemaContext.EffectiveSchemaHash;
     var resource = new QualifiedResourceName(request.ResourceInfo.ProjectName.Value, request.ResourceInfo.ResourceName.Value);
 
     // 1) Compile-or-get the write plan for this resource.
@@ -1813,7 +1815,7 @@ private static void AddOrUpdateEdge(
 ```csharp
 public async Task<byte[]?> GetByIdAsync(Guid documentUuid, CancellationToken ct)
 {
-    var effectiveSchemaHash = _effectiveSchemaProvider.EffectiveSchemaHash;
+    var effectiveSchemaHash = _effectiveSchemaContext.EffectiveSchemaHash;
     var resource = new QualifiedResourceName("EdFi", "Student");
     var readPlan = _planProvider.GetReadPlan(effectiveSchemaHash, resource);
 
@@ -1831,7 +1833,7 @@ public async Task<byte[]?> GetByIdAsync(Guid documentUuid, CancellationToken ct)
 ```csharp
 public async Task<ReconstitutedPage> QueryAsync(IQueryRequest request, CancellationToken ct)
 {
-    var effectiveSchemaHash = _effectiveSchemaProvider.EffectiveSchemaHash;
+    var effectiveSchemaHash = _effectiveSchemaContext.EffectiveSchemaHash;
     var resource = new QualifiedResourceName(request.ResourceInfo.ProjectName.Value, request.ResourceInfo.ResourceName.Value);
     var readPlan = _planProvider.GetReadPlan(effectiveSchemaHash, resource);
 
