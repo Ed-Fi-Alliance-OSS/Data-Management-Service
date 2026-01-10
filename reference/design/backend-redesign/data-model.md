@@ -288,6 +288,10 @@ Descriptor references (recommended base design):
 
 If DB-level enforcement of “descriptor must be of type X” becomes necessary later we can add checks that the referenced `dms.Descriptor.Discriminator` is the expected type for that FK column (derived from `ApiSchema`).
 
+Descriptor immutability (assumption for this redesign):
+- Descriptor documents are treated as **immutable reference data** after creation (no identity/URI updates, and no representation-affecting updates).
+- Because descriptors cannot change, descriptor FK dependencies do **not** participate in any reverse-index-driven cascade, and are **excluded** from `dms.ReferenceEdge` by design.
+
 ##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
 Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database schema is provisioned for, and records the **exact project versions** present in that effective schema. At startup, DMS will use this to validate consistency between the loaded ApiSchema.json files and the database (see **EffectiveSchemaHash Calculation** below).
@@ -393,16 +397,17 @@ Important properties:
   - outbound dependency enumeration for derived `_etag/_lastModifiedDate` and Change Query processing (see `reference/design/backend-redesign/update-tracking.md`)
   - JSON projection rebuild targeting when `dms.DocumentCache` is enabled (optional)
 - **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
+- **Excludes descriptor references**: this table indexes outgoing **document** references only (`..._DocumentId` FKs). Descriptor FKs (`..._DescriptorId`) are excluded because descriptor documents are immutable (see `dms.Descriptor` above).
 - **Coverage requirement is correctness-critical**:
-  - DMS must record **all** outgoing document references and descriptor references, including those inside nested collections/child tables.
+  - DMS must record **all** outgoing document references, including those inside nested collections/child tables.
   - If edge maintenance fails, the write must fail (otherwise strict identity maintenance and update tracking can become incorrect).
 - **Collapsed edge granularity**:
   - This design stores **one row per `(ParentDocumentId, ChildDocumentId)`** (not “per reference site/path”) to reduce write amplification and index churn.
   - The `IsIdentityComponent` flag is the **OR** of all reference sites in the parent document that reference the same `ChildDocumentId`.
 
 Primary uses:
-- **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities/descriptor URIs change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
-- **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity/descriptor URI changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
+- **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
+- **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
 - **Update tracking / Change Queries**: expand changed dependencies (`ChildDocumentId → ParentDocumentId`) and scan outbound dependencies (`ParentDocumentId → ChildDocumentId`) when computing derived representation metadata and selecting Change Query candidates (see `reference/design/backend-redesign/update-tracking.md`).
 
 ##### DDL (PostgreSQL)
@@ -472,7 +477,7 @@ We can use a similar *concept* (stage + diff) to avoid churn, but it is far simp
 
 `dms.DocumentCache` stores **fully reconstituted JSON**, including:
 - reference objects expanded from the *current* identity values of referenced resources, and
-- descriptor URI strings (often derived from current descriptor fields).
+- descriptor URI strings (reconstituted from `dms.Descriptor`, which is treated as immutable in this redesign).
 
 If a referenced document’s identity/URI changes, the JSON that referencing documents should return changes as well. This is a *cache/projection refresh cascade*, not a relational data cascade:
 - relational FK columns remain stable (`..._DocumentId` still points to the same row),

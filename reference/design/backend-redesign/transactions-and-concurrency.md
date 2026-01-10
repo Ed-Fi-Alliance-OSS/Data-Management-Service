@@ -106,6 +106,7 @@ Deletes rely on the same FK graph:
   - `SELECT ParentDocumentId FROM dms.ReferenceEdge WHERE ChildDocumentId = @deletedDocumentId`
   - join `dms.Document` to report referencing resource types
   - this avoids scanning all resource tables and produces more consistent diagnostics across engines.
+  - note: `dms.ReferenceEdge` excludes descriptor FKs in this redesign (descriptors are treated as immutable), so it is not a complete “who references this descriptor?” index.
 
 
 
@@ -149,7 +150,8 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - polymorphic/abstract identities via superclass/abstract alias rows in `dms.ReferentialIdentity`
    - Descriptor refs additionally require a `dms.Descriptor` existence/type check (for “is a descriptor” enforcement)
 3. Backend acquires identity locks:
-   - Acquire **shared locks** on `dms.IdentityLock` rows for any **identity-component** referenced `ChildDocumentId`s (from ApiSchema-derived bindings) *before* acquiring the parent document’s update lock. This prevents “stale-at-birth” derived identities and avoids deadlocks with concurrent identity-cascade transactions.
+   - Acquire **shared locks** on `dms.IdentityLock` rows for any **identity-component** referenced `ChildDocumentId`s from **document references** (from ApiSchema-derived bindings) *before* acquiring the parent document’s update lock. This prevents “stale-at-birth” derived identities and avoids deadlocks with concurrent identity-cascade transactions.
+     - Descriptor identity components do not require locks because descriptor documents are treated as immutable in this redesign.
    - Acquire an **update lock** on this document’s `dms.IdentityLock` row (insert the row first for inserts).
    - See [Phantom-safe impacted-set locking](#phantom-safe-impacted-set-locking) for the normative lock ordering + algorithms.
 4. Backend writes within a single transaction:
@@ -157,7 +159,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - `dms.ReferentialIdentity` upsert (primary + superclass aliases) for all resource identities (self-contained and reference-bearing)
    - Resource root + child tables (using replace strategy for collections)
    - `dms.Descriptor` upsert if the resource is a descriptor
-   - Maintain `dms.ReferenceEdge` rows for this document (outgoing references and descriptor references):
+   - Maintain `dms.ReferenceEdge` rows for this document (outgoing non-descriptor references only; descriptors are treated as immutable and excluded):
      - required to drive `dms.ReferentialIdentity` cascades (`IsIdentityComponent=true`)
      - required for update tracking / Change Queries (see [update-tracking.md](update-tracking.md))
      - used for diagnostics (“who references me?”) and targeted async cache rebuild/invalidation (when enabled)
@@ -249,21 +251,22 @@ This redesign makes `dms.ReferenceEdge` a **strict** dependency index:
 
 For a given `ParentDocumentId`, the set of edges in `dms.ReferenceEdge` must equal the set implied by relational storage:
 
-- For every distinct non-null referenced `ChildDocumentId` produced by any document-reference or descriptor FK column in any root/child table row belonging to the parent document, there exists a corresponding `(ParentDocumentId, ChildDocumentId)` row.
-- No extras: `dms.ReferenceEdge` must not contain a `(ParentDocumentId, ChildDocumentId)` row where `ChildDocumentId` does not appear in any FK column for the parent document.
+- For every distinct non-null referenced `ChildDocumentId` produced by any document-reference FK column (`..._DocumentId`) in any root/child table row belonging to the parent document, there exists a corresponding `(ParentDocumentId, ChildDocumentId)` row.
+- No extras: `dms.ReferenceEdge` must not contain a `(ParentDocumentId, ChildDocumentId)` row where `ChildDocumentId` does not appear in any document-reference FK column (`..._DocumentId`) for the parent document (descriptor FK columns are intentionally excluded).
 - `IsIdentityComponent` must match the ApiSchema-derived classification **aggregated by child**:
-  - it is `true` iff at least one FK binding that produced this `ChildDocumentId` is an identity component.
+  - it is `true` iff at least one document-reference FK binding that produced this `ChildDocumentId` is an identity component.
 
 **Design ideas to make completeness provable**
 
 1) **By-construction edge extraction (preferred default)**
    - Make edge extraction *structural*: derive edges from the same `ResourceWritePlan` column bindings used to populate FK columns.
-   - Avoid ad-hoc `edges.Add(...)` calls scattered across code paths.
-   - Recommended implementation pattern:
-     - Each `DocumentFk` / `DescriptorFk` column in the compiled model carries `IsIdentityComponent`.
-     - During row materialization, when a FK column value is produced (non-null), merge an edge keyed by `ChildDocumentId`, OR-ing `IsIdentityComponent` when multiple FK sites reference the same child.
-   - Plan compilation/startup validation fails fast if:
-     - any ApiSchema reference/descriptor path cannot be mapped to exactly one FK column + `IsIdentityComponent` classification.
+	   - Avoid ad-hoc `edges.Add(...)` calls scattered across code paths.
+	   - Recommended implementation pattern:
+	     - Each `DocumentFk` column in the compiled model carries `IsIdentityComponent` (descriptor FK columns do not participate in `dms.ReferenceEdge` in this redesign).
+	     - During row materialization, when a document FK column value is produced (non-null), merge an edge keyed by `ChildDocumentId`, OR-ing `IsIdentityComponent` when multiple FK sites reference the same child.
+	   - Plan compilation/startup validation fails fast if:
+	     - any ApiSchema reference path cannot be mapped to exactly one document FK column + `IsIdentityComponent` classification.
+	     - any ApiSchema descriptor path cannot be mapped to exactly one descriptor FK column + expected descriptor resource type.
 
 2) **Optional in-transaction verification (provable correctness mode, but slow)**
    - In strict environments (or in CI/tests), add a verification step that compares:
@@ -311,7 +314,7 @@ If identity changes on update:
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change, because relationships are stored as stable `DocumentId` FKs. Cascades still exist for **derived artifacts** (identity keys, caches, diagnostics), and should be handled explicitly:
 
-- **Identity/URI change on the document itself** (e.g., `StudentUniqueId` update, descriptor `namespace#codeValue` update)
+- **Identity/URI change on the document itself** (e.g., `StudentUniqueId` update)
   - Do not rewrite referencing rows: FKs remain correct.
   - Compute and lock the **impacted identity set** (this document, plus all transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`) using `dms.IdentityLock` row-lock orchestration (expand-and-lock to a fixpoint to prevent phantoms).
   - Recompute and upsert `dms.ReferentialIdentity` for every impacted document (primary + superclass/abstract alias rows) in the same transaction, so `ReferentialId → DocumentId` lookups are never stale after commit (even for reference-bearing identities).
@@ -319,9 +322,9 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
   - No rewrite of `dms.ReferenceEdge` rows is required for identity/URI changes: edges store `DocumentId`s and only change when outgoing references change.
   - Update/evict any caching after commit (e.g., `ReferentialId → DocumentId`, `DocumentUuid → DocumentId`, descriptor expansion).
 
-- **Outgoing reference set changes on a document** (FK values change)
+- **Outgoing document-reference set changes on a document** (`..._DocumentId` FK values change)
   - Relational writes update the FK columns as usual.
-  - Maintain edges for the parent with a diff-based upsert (avoid churn on no-op updates).
+  - Maintain `dms.ReferenceEdge` for the parent with a diff-based upsert (avoid churn on no-op updates).
   - If `dms.DocumentCache` is enabled, refresh the parent’s cached JSON (sync write-through or async rebuild); dependent rebuild remains eventual.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, ChangeVersion)**
@@ -521,6 +524,7 @@ The system accomplishes this with per-document row locks in `dms.IdentityLock` p
 ##### Definitions
 
 - **Identity component edge**: a `dms.ReferenceEdge` row where `IsIdentityComponent=true`. This is derived from ApiSchema (`identityJsonPaths` + `documentPathsMapping`) and indicates “the parent’s identity depends on the child’s identity/URI”.
+  - In this redesign, identity component edges are produced from **document references only** (`..._DocumentId` FKs). Descriptor FKs (`..._DescriptorId`) are excluded because descriptor documents are treated as immutable.
 - **Seed**: a `DocumentId` whose identity/URI is changing in the current transaction (the document being written, and any other document whose identity/URI is changed as part of the same transaction).
 - **Identity closure**: the transitive set of documents that must have their `dms.ReferentialIdentity` recomputed when a seed document’s identity/URI changes:  
   the seed document(s) plus every parent document reachable by repeatedly following identity component edges in reverse (`ChildDocumentId → ParentDocumentId`).
@@ -621,7 +625,7 @@ This algorithm applies to any write where the document’s identity depends on r
 
 1) Resolve references → `DocumentId`s in bulk (via `dms.ReferentialIdentity`).
 2) Compute `IdentityComponentChildren`:
-   - the set of referenced `ChildDocumentId`s whose bindings are `IsIdentityComponent=true` for this resource (including descriptor references when the descriptor URI participates in identity).
+   - the set of referenced `ChildDocumentId`s whose document-reference bindings are `IsIdentityComponent=true` for this resource.
 3) Acquire shared identity locks on `IdentityComponentChildren` (ascending `DocumentId`).  
    - If this blocks, it is because an identity-affecting transaction is in progress for one of the children; wait (or let the DB deadlock detector choose a victim).
 4) Resolve / allocate this document’s `DocumentId`:
@@ -682,7 +686,7 @@ This spec assumes the DMS resilience policy retries the full write transaction o
 
 ##### Cycle safety (MUST)
 
-Startup schema validation must reject ApiSchema identity graphs with cycles at the **resource-type** level (edge `R → T` when `R`’s identity includes an identity-component reference/descriptor that depends on `T`). Cycles make Algorithm 2 unsafe and can lead to deadlocks or non-termination.
+Startup schema validation must reject ApiSchema identity graphs with cycles at the **resource-type** level (edge `R → T` when `R`’s identity includes an identity-component document reference that depends on `T`). Cycles make Algorithm 2 unsafe and can lead to deadlocks or non-termination.
 
 #### Set-based recompute
 
@@ -708,7 +712,7 @@ One primary purpose is **CDC streaming** (e.g., Debezium → Kafka) of fully mat
 - Projection rows may be missing or stale and can be rebuilt asynchronously by a background projector (reads may also enqueue a rebuild hint, but should not be the only trigger).
 
 Reasons to prefer eventual consistency over strict transactional cache maintenance:
-1. Avoids high-fanout write-time work on identity/descriptor changes.
+1. Avoids high-fanout write-time work on identity changes.
 2. Reduces deadlocks/lock contention (bounded write transactions).
 3. Decouples JSON projection from cache/edge strictness: cache rebuild can be throttled/retried independently because the canonical store is relational.
 4. Simplifies operations: caches can be dropped/rebuilt and throttled independently.
@@ -716,7 +720,7 @@ Reasons to prefer eventual consistency over strict transactional cache maintenan
 
 **Write behavior (recommended)**
 - For the document being written: enqueue/mark for background materialization (optionally write-through if the deployment can afford it).
-- For dependent documents (when referenced identities/descriptor URIs change): enqueue/mark for background rebuild instead of rebuilding inside the write transaction.
+- For dependent documents (when referenced identities change): enqueue/mark for background rebuild instead of rebuilding inside the write transaction.
 - For CDC/backfill: provide an operator-triggered “rebuild all” job that materializes every `dms.Document` row into `dms.DocumentCache` before enabling Debezium snapshot/streaming.
 
 **Read behavior (recommended)**

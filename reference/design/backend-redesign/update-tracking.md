@@ -11,7 +11,7 @@ Draft. This document is the unified “update tracking” design that combines:
 
 The backend redesign needs representation-sensitive metadata:
 
-- `_etag` and `_lastModifiedDate` MUST change when the returned resource representation changes, including when referenced identity values or descriptor URIs change.
+- `_etag` and `_lastModifiedDate` MUST change when the returned resource representation changes, including when referenced identity values change (descriptor rows are treated as immutable in this redesign).
 - DMS is also expected to implement Ed-Fi “Change Query” APIs in the future, which depend on a global monotonic `ChangeVersion` (also representation-sensitive in current ODS behavior).
 
 The earlier redesign draft in `reference/design/backend-redesign/transactions-and-concurrency.md` achieves representation sensitivity by:
@@ -51,9 +51,9 @@ Compatibility note: recent Ed-Fi ODS/API versions bump ETag/LastModifiedDate (an
 For a document `P` (parent), the API representation embeds values from references:
 
 - **Resource references** embed identity projection values of referenced resource documents (e.g., `studentReference.studentUniqueId`).
-- **Descriptor references** embed the descriptor URI string.
+- **Descriptor references** embed the descriptor URI string. In this redesign, descriptors are treated as immutable reference data, so descriptor rows do not participate in representation-change cascades and are excluded from dependency tracking (`dms.ReferenceEdge`, derived tokens).
 
-So `P`’s representation depends on the **identity/URI projection** of the documents it references in its JSON representation.
+So `P`’s representation depends on the **identity projection** of the non-descriptor documents it references in its JSON representation.
 
 Important: representation dependencies are **1 hop** (the referenced documents themselves). DMS does *not* need multi-hop “fan-out” for representation tracking because:
 
@@ -147,7 +147,7 @@ Change Queries need:
 
 The `IsIdentityComponent` flag is used for strict identity closure recompute, but **is not used** for representation dependencies (representation depends on all references, not just identity components).
 
-Coverage is correctness-critical: DMS must record **all** outgoing resource and descriptor references (including nested collections) or change queries and identity closure recompute can become incorrect.
+Coverage is correctness-critical: DMS must record **all** outgoing non-descriptor resource references (including nested collections) or change queries and identity closure recompute can become incorrect.
 
 See `reference/design/backend-redesign/data-model.md` for the full `dms.ReferenceEdge` definition and its indexes.
 
@@ -206,9 +206,9 @@ CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
     ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
 ```
 
-### 5) `dms.IdentityChangeEvent` (identity / descriptor URI changes)
+### 5) `dms.IdentityChangeEvent` (identity changes)
 
-Records identity projection changes (including descriptor URI changes). Used by change queries to find indirectly impacted parents via `dms.ReferenceEdge`.
+Records identity projection changes. Used by change queries to find indirectly impacted parents via `dms.ReferenceEdge`.
 
 **PostgreSQL**
 
@@ -257,7 +257,7 @@ Properties:
 
 - Local content change ⇒ `ContentVersion` changes ⇒ `_etag` changes.
 - Local identity projection change ⇒ `IdentityVersion` changes ⇒ `_etag` changes.
-- Upstream identity/descriptor URI change ⇒ dependency `IdentityVersion` changes ⇒ `_etag` changes.
+- Upstream identity change ⇒ dependency `IdentityVersion` changes ⇒ `_etag` changes.
 - No cross-document writes are required to make a referencing document’s `_etag` change.
 
 ### Derived `_lastModifiedDate`
@@ -443,15 +443,15 @@ END;
 
 ### How to find “representation dependencies”
 
-Representation dependencies are the set of referenced `DocumentId`s whose identity/URI values are embedded into the returned JSON representation.
+Representation dependencies are the set of referenced **non-descriptor** `DocumentId`s whose identity values are embedded into the returned JSON representation (via resource reference objects). Descriptor URIs are projected into the representation, but descriptor rows are treated as immutable in this redesign and are excluded from dependency tracking.
 
 Practical sources:
 
 1. **From the reconstitution read (cache miss)**:
-   - reconstitution already resolves/project reference identities and descriptor URIs;
-   - collect the referenced `DocumentId`s as you go.
+   - reconstitution already projects reference identities (and descriptor URIs);
+   - collect referenced `DocumentId`s for **document references** as you go.
 2. **From a dependency projection query (cache hit / metadata-only)**:
-   - compile a plan from ApiSchema that `UNION ALL`s all FK columns that represent document/descriptor references (root + children) for a given parent `DocumentId`,
+   - compile a plan from ApiSchema that `UNION ALL`s all FK columns that represent **document references** (`..._DocumentId`) (root + children) for a given parent `DocumentId`,
    - return distinct dependency `DocumentId`s.
 3. **From `dms.ReferenceEdge` (recommended when enabled)**:
    - treat `dms.ReferenceEdge(ParentDocumentId → ChildDocumentId)` as an outbound-dependency index,
@@ -462,7 +462,7 @@ This design already needs `dms.ReferenceEdge` for change queries, so option (3) 
 ### GET by id (cache miss: reconstitute)
 
 1. Reconstitute JSON from relational tables.
-2. While projecting reference identities and descriptor URIs, also collect dependency `DocumentId`s.
+2. While projecting reference identities, also collect dependency `DocumentId`s (document references only).
 3. Batch load dependency tokens:
    - `SELECT DocumentId, IdentityVersion, IdentityLastModifiedAt FROM dms.Document WHERE DocumentId IN (...)`
 4. Compute:
@@ -473,7 +473,7 @@ This design already needs `dms.ReferenceEdge` for change queries, so option (3) 
 
 ### Cache hit (`dms.DocumentCache` present)
 
-If `dms.DocumentCache` stores materialized JSON (including projected reference identities and descriptor URIs), cached JSON can become stale when any dependency identity/URI changes.
+If `dms.DocumentCache` stores materialized JSON (including projected reference identities and descriptor URIs), cached JSON can become stale when any dependency identity changes (descriptor rows are treated as immutable in this redesign).
 
 With derived tokens, “freshness check = `cache.Etag == document.Etag`” no longer applies. Correct options:
 

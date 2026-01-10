@@ -178,7 +178,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - For each descriptor path:
      - create a `..._DescriptorId` FK column at the table scope that owns that path
      - suppress the raw descriptor string scalar column at that JSON path; reconstitute the string from `dms.Descriptor` during reads.
-     - record a `DescriptorEdgeSource` (expected descriptor resource type, used for resolution/validation and `dms.ReferenceEdge` maintenance)
+     - record a `DescriptorEdgeSource` (expected descriptor resource type, used for resolution/validation and read-time descriptor reconstitution)
        - compute and persist `DescriptorEdgeSource.IsIdentityComponent` as `true` when the descriptor value path is present in `identityJsonPaths`
 
 4. Apply `identityJsonPaths`:
@@ -881,8 +881,8 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// Each edge source declares: which JSON reference object it came from, which table stores the FK, and how to reconstitute the identity object.
 /// </param>
 /// <param name="DescriptorEdgeSources">
-/// The set of descriptor-reference edge sources derived from documentPathsMapping (descriptor paths).
-/// Each edge source declares: which JSON descriptor string path it came from, which table stores the FK, and which descriptor resource type is expected.
+/// The set of descriptor-reference sources derived from documentPathsMapping (descriptor paths).
+/// Each source declares: which JSON descriptor string path it came from, which table stores the FK, and which descriptor resource type is expected.
 /// </param>
 public sealed record RelationalResourceModel(
     QualifiedResourceName Resource,
@@ -1042,7 +1042,7 @@ public sealed record ReferenceFieldMapping(
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
-/// Used for referential-id and representation-version cascade closure, and for targeted projection rebuild when <c>dms.DocumentCache</c> is enabled.
+/// Used when projecting identity values from relational storage for referential-id computation (note: descriptor rows are treated as immutable and do not participate in <c>dms.ReferenceEdge</c> cascades in this redesign).
 /// </param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,
@@ -1755,7 +1755,7 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.Scalar(var relPath, var type) => JsonValueReader.Read(scopeNode, relPath, type),
 
             WriteValueSource.DescriptorReference(var edgeSource, var relPath)
-                => ResolveDescriptorId(scopeNode, edgeSource, relPath, resolved, edgesByChild),
+                => ResolveDescriptorId(scopeNode, edgeSource, relPath, resolved),
 
             WriteValueSource.DocumentReference(var edgeSource)
                 => ResolveReferencedDocumentId(edgeSource, ordinalPath, documentReferences, edgesByChild),
@@ -1771,12 +1771,10 @@ private static long ResolveDescriptorId(
     JsonNode scopeNode,
     DescriptorEdgeSource edgeSource,
     JsonPathExpression relPath,
-    ResolvedReferenceSet resolved,
-    Dictionary<long, bool> edgesByChild)
+    ResolvedReferenceSet resolved)
 {
     var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
     var id = resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, edgeSource.DescriptorResource)];
-    AddOrUpdateEdge(edgesByChild, id, edgeSource.IsIdentityComponent);
     return id;
 }
 

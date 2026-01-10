@@ -30,7 +30,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - Preferred maintenance: background/write-driven projection (not strict transactional cascades).
   - When enabled, materialize documents independently of API cache misses so CDC consumers see fully materialized documents.
   - Rationale and operational details: see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
-- **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity/descriptor cascades.
+- **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity cascades (descriptor rows are treated as immutable in this redesign).
   - Use an **opaque “representation version” token** in `dms.Document` (not a JSON/content hash) and update it with **set-based cascades** (similar to `dms.ReferentialIdentity` recompute) to minimize cascade cost.
   - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `transactions-and-concurrency.md`).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes; it validates on startup that the database matches the configured effective `ApiSchema.json` fingerprint (see `dms.EffectiveSchema`) and refuses to start/serve if it does not. In-process schema reload/hot-reload is out of scope for this design.
