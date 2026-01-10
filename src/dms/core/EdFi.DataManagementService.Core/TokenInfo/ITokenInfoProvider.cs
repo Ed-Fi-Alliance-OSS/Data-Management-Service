@@ -3,19 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.DataModel.Model.Token;
+using EdFi.DataManagementService.Core.Model;
 
-namespace EdFi.DmsConfigurationService.Backend.Introspection;
+namespace EdFi.DataManagementService.Core.TokenInfo;
 
 /// <summary>
-/// Provides token introspection functionality for OAuth tokens
+/// Provides token introspection functionality for JWT tokens
 /// </summary>
 public interface ITokenInfoProvider
 {
     /// <summary>
-    /// Retrieves detailed information about a JWT token including authorized resources and education organizations
+    /// Introspects a JWT token and returns information about its claims and authorization
     /// </summary>
     /// <param name="token">The JWT token to introspect</param>
-    /// <returns>Token information including active status, client details, and authorizations</returns>
+    /// <returns>Token information response if valid, null if invalid</returns>
     Task<TokenInfoResponse?> GetTokenInfoAsync(string token);
 }

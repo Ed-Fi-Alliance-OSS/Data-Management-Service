@@ -44,4 +44,7 @@
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
     </ItemGroup>
+    <ItemGroup>
+      <Folder Include="TokenInfo\" />
+    </ItemGroup>
 </Project>

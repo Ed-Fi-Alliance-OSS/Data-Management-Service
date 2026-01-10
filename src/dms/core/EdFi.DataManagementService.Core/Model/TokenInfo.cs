@@ -5,7 +5,7 @@
 
 using System.Text.Json.Serialization;
 
-namespace EdFi.DmsConfigurationService.DataModel.Model.Token;
+namespace EdFi.DataManagementService.Core.Model;
 
 /// <summary>
 /// Response model for OAuth token introspection endpoint
@@ -146,4 +146,15 @@ public class TokenInfoService
     /// </summary>
     [JsonPropertyName("operations")]
     public required IReadOnlyList<string> Operations { get; set; }
+}
+
+/// <summary>
+/// Request model for OAuth token introspection endpoint
+/// </summary>
+public class TokenInfoRequest
+{
+    /// <summary>
+    /// The token to introspect
+    /// </summary>
+    public string? Token { get; set; }
 }

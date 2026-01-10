@@ -29,7 +29,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
         public string JwksUri { get; set; } = string.Empty;
         public string RegistrationEndpoint { get; set; } = string.Empty;
         public string IntrospectionEndpoint { get; set; } = string.Empty;
-        public string TokenInfoEndpoint { get; set; } = string.Empty;
         public string RevocationEndpoint { get; set; } = string.Empty;
         public string EndSessionEndpoint { get; set; } = string.Empty;
 
@@ -102,7 +101,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration
                 RegistrationEndpoint = $"{baseUrl}/connect/register",
                 JwksUri = $"{baseUrl}/.well-known/jwks.json",
                 IntrospectionEndpoint = $"{baseUrl}/connect/introspect",
-                TokenInfoEndpoint = $"{baseUrl}/oauth/token_info",
                 RevocationEndpoint = $"{baseUrl}/connect/revoke",
 
                 // Supported grant types (OAuth 2.0 / OpenID Connect)

@@ -12,6 +12,7 @@ using System.Threading;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Model;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -1370,5 +1371,91 @@ public partial class SqlAction() : ISqlAction
             },
         };
         return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<TokenInfoEducationOrganization>> GetEducationOrganizationsAsync(
+        IEnumerable<long> ids,
+        NpgsqlConnection connection
+    )
+    {
+        var idList = ids.ToList();
+        if (!idList.Any())
+        {
+            return Array.Empty<TokenInfoEducationOrganization>();
+        }
+        await using NpgsqlCommand command = new(
+            @"WITH EdOrgBase AS (
+                    SELECT
+                        eoh.EducationOrganizationId,
+                        d.ResourceName as OrganizationType,
+                        d.EdfiDoc->>'nameOfInstitution' as NameOfInstitution,
+                        eoh.ParentId
+                    FROM dms.EducationOrganizationHierarchy eoh
+                    INNER JOIN dms.Document d
+                        ON eoh.DocumentId = d.Id
+                        AND eoh.DocumentPartitionKey = d.DocumentPartitionKey
+                    WHERE eoh.EducationOrganizationId = ANY($1)
+                ),
+                ParentData AS (
+                    SELECT
+                        child.EducationOrganizationId as ChildEdOrgId,
+                        parent_eoh.EducationOrganizationId as ParentEdOrgId,
+                        parent_doc.ResourceName as ParentType
+                    FROM EdOrgBase child
+                    INNER JOIN dms.EducationOrganizationHierarchy parent_eoh
+                        ON child.ParentId = parent_eoh.Id
+                    LEFT JOIN dms.Document parent_doc
+                        ON parent_eoh.DocumentId = parent_doc.Id
+                        AND parent_eoh.DocumentPartitionKey = parent_doc.DocumentPartitionKey
+                )
+                SELECT
+                    eb.EducationOrganizationId,
+                    eb.NameOfInstitution,
+                    'edfi.' || eb.OrganizationType as Type,
+                    CASE
+                        WHEN eb.OrganizationType = 'School' THEN
+                            (SELECT ParentEdOrgId FROM ParentData WHERE ChildEdOrgId = eb.EducationOrganizationId AND ParentType = 'LocalEducationAgency')
+                        ELSE NULL
+                    END as LocalEducationAgencyId,
+                    CASE
+                        WHEN eb.OrganizationType = 'LocalEducationAgency' THEN
+                            (SELECT ParentEdOrgId FROM ParentData WHERE ChildEdOrgId = eb.EducationOrganizationId AND ParentType = 'EducationServiceCenter')
+                        ELSE NULL
+                    END as EducationServiceCenterId
+                FROM EdOrgBase eb
+                ORDER BY eb.EducationOrganizationId;",
+            connection
+        )
+        {
+            Parameters = { new() { Value = idList.ToArray() } },
+        };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        var organizations = new List<TokenInfoEducationOrganization>();
+
+        while (await reader.ReadAsync())
+        {
+            var nameOfInstitutionOrdinal = reader.GetOrdinal("NameOfInstitution");
+            var localEducationAgencyIdOrdinal = reader.GetOrdinal("LocalEducationAgencyId");
+            var educationServiceCenterIdOrdinal = reader.GetOrdinal("EducationServiceCenterId");
+
+            organizations.Add(
+                new TokenInfoEducationOrganization
+                {
+                    EducationOrganizationId = reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")),
+                    NameOfInstitution = await reader.IsDBNullAsync(nameOfInstitutionOrdinal)
+                        ? string.Empty
+                        : reader.GetString(nameOfInstitutionOrdinal),
+                    Type = reader.GetString(reader.GetOrdinal("Type")),
+                    LocalEducationAgencyId = await reader.IsDBNullAsync(localEducationAgencyIdOrdinal)
+                        ? null
+                        : reader.GetInt64(localEducationAgencyIdOrdinal),
+                    EducationServiceCenterId = await reader.IsDBNullAsync(educationServiceCenterIdOrdinal)
+                        ? null
+                        : reader.GetInt64(educationServiceCenterIdOrdinal),
+                }
+            );
+        }
+        return organizations;
     }
 }
