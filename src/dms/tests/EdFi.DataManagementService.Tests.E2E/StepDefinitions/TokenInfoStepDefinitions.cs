@@ -18,6 +18,7 @@ public sealed class TokenInfoStepDefinitions
     private readonly PlaywrightContext _playwrightContext;
     private readonly TestLogger _logger;
     private readonly ScenarioContext _scenarioContext;
+    private readonly StepDefinitions _sharedSteps;
 
     private IAPIResponse _apiResponse = null!;
     private JsonNode? _responseBody;
@@ -26,19 +27,23 @@ public sealed class TokenInfoStepDefinitions
     public TokenInfoStepDefinitions(
         PlaywrightContext playwrightContext,
         TestLogger logger,
-        ScenarioContext scenarioContext
+        ScenarioContext scenarioContext,
+        StepDefinitions sharedSteps
     )
     {
         _playwrightContext = playwrightContext;
         _logger = logger;
         _scenarioContext = scenarioContext;
+        _sharedSteps = sharedSteps;
     }
 
     [When("a POST request is made to {string} with the current bearer token")]
     public async Task WhenPostRequestWithCurrentToken(string endpoint)
     {
         // Get the current token from scenario context (set by authorization step)
-        _currentToken = _scenarioContext.Get<string>("token");
+        var dmsToken = _scenarioContext.Get<string>("dmsToken");
+        // Extract the bearer token (remove "Bearer " prefix)
+        _currentToken = dmsToken.Replace("Bearer ", "");
 
         var requestBody = new { token = _currentToken };
         var json = JsonSerializer.Serialize(requestBody);
@@ -51,6 +56,9 @@ public sealed class TokenInfoStepDefinitions
                 Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
             }
         );
+
+        // Set the response in the shared steps via reflection so "Then it should respond with" works
+        SetSharedApiResponse(_apiResponse);
 
         var responseText = await _apiResponse.TextAsync();
         if (!string.IsNullOrEmpty(responseText))
@@ -69,7 +77,9 @@ public sealed class TokenInfoStepDefinitions
     [When("a POST request is made to {string} with form-encoded token")]
     public async Task WhenPostRequestWithFormEncodedToken(string endpoint)
     {
-        _currentToken = _scenarioContext.Get<string>("token");
+        var dmsToken = _scenarioContext.Get<string>("dmsToken");
+        // Extract the bearer token (remove "Bearer " prefix)
+        _currentToken = dmsToken.Replace("Bearer ", "");
 
         var formData = new Dictionary<string, string> { ["token"] = _currentToken };
         var content = new FormUrlEncodedContent(formData);
@@ -85,6 +95,8 @@ public sealed class TokenInfoStepDefinitions
                 },
             }
         );
+
+        SetSharedApiResponse(_apiResponse);
 
         var responseText = await _apiResponse.TextAsync();
         if (!string.IsNullOrEmpty(responseText))
@@ -114,6 +126,8 @@ public sealed class TokenInfoStepDefinitions
                 Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
             }
         );
+
+        SetSharedApiResponse(_apiResponse);
     }
 
     [When("a POST request is made to {string} with an invalid token")]
@@ -131,6 +145,8 @@ public sealed class TokenInfoStepDefinitions
                 Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
             }
         );
+
+        SetSharedApiResponse(_apiResponse);
 
         var responseText = await _apiResponse.TextAsync();
         if (!string.IsNullOrEmpty(responseText))
@@ -161,6 +177,8 @@ public sealed class TokenInfoStepDefinitions
             }
         );
 
+        SetSharedApiResponse(_apiResponse);
+
         var responseText = await _apiResponse.TextAsync();
         if (!string.IsNullOrEmpty(responseText))
         {
@@ -183,6 +201,8 @@ public sealed class TokenInfoStepDefinitions
             endpoint,
             new APIRequestContextOptions { Data = string.Empty }
         );
+
+        SetSharedApiResponse(_apiResponse);
     }
 
     [Then("the token info response should contain {string}")]
@@ -190,6 +210,30 @@ public sealed class TokenInfoStepDefinitions
     {
         _responseBody.Should().NotBeNull();
         _responseBody![propertyName].Should().NotBeNull($"{propertyName} should be present in response");
+    }
+
+    [Then("the token info response body is")]
+    public void ThenTokenInfoResponseBodyIs(string expectedResponse)
+    {
+        _responseBody.Should().NotBeNull();
+
+        var expectedJson = JsonNode.Parse(expectedResponse);
+        expectedJson.Should().NotBeNull();
+
+        // Check that the response contains at least the expected fields with expected values
+        foreach (var property in expectedJson!.AsObject())
+        {
+            _responseBody![property.Key].Should().NotBeNull($"{property.Key} should be present in response");
+
+            // For simple values, check equality
+            if (property.Value is JsonValue)
+            {
+                _responseBody![property.Key]!
+                    .ToJsonString()
+                    .Should()
+                    .Be(property.Value.ToJsonString(), $"{property.Key} should have the expected value");
+            }
+        }
     }
 
     [Then("the token info response should have at least {int} education organization")]
@@ -247,5 +291,15 @@ public sealed class TokenInfoStepDefinitions
         var active = _responseBody!["active"];
         active.Should().NotBeNull();
         active!.GetValue<bool>().Should().BeFalse("invalid tokens should be marked as inactive");
+    }
+
+    private void SetSharedApiResponse(IAPIResponse response)
+    {
+        // Use reflection to set the _apiResponse field in the shared StepDefinitions class
+        var apiResponseField = typeof(StepDefinitions).GetField(
+            "_apiResponse",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        apiResponseField?.SetValue(_sharedSteps, response);
     }
 }
