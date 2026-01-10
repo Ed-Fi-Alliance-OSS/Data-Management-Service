@@ -18,6 +18,8 @@ This document is the DDL Generation deep dive for `overview.md`:
 
 DMS compiles a derived relational resource model from each configured effective `ApiSchema.json` set (core + extensions) (see “Derived Relational Resource Model” in [flattening-reconstitution.md](flattening-reconstitution.md)). DMS treats schema changes as an operational concern outside the server process and validates compatibility per database using the recorded schema fingerprint (see “Schema Validation (EffectiveSchema)” in [transactions-and-concurrency.md](transactions-and-concurrency.md)).
 
+Optionally, the same derived model and dialect-specific plans could be compiled **ahead-of-time** into redistributable mapping packs keyed by `EffectiveSchemaHash` (see [aot-compilation.md](aot-compilation.md)).
+
 This redesign therefore requires a separate utility (“DDL generation utility”) that:
 
 - Builds the same derived relational model as runtime (no separate metadata source).
@@ -62,6 +64,7 @@ The DDL generation utility should reuse the same compilation pipeline as runtime
 - Relational model derivation (resource → tables/columns/constraints).
 - Dialect-specific DDL generation (`ISqlDialect`-style boundary).
 - View generation for abstract resources.
+- (Optional) mapping pack output for the same derived models/plans (see [aot-compilation.md](aot-compilation.md)).
 
 DMS runtime should remain “validate-only”:
 
@@ -71,6 +74,7 @@ DMS runtime should remain “validate-only”:
 ## Suggested deliverables
 
 - A CLI entrypoint (e.g., `dms-ddl`) that emits the full SQL script
+- (Optional) a mapping pack builder/emit mode that produces redistributable mapping packs keyed by `EffectiveSchemaHash` (see [aot-compilation.md](aot-compilation.md)).
 - A test harness that runs the DDL generation utility against empty PostgreSQL/SQL Server instances and verifies:
   - stable naming,
   - DDL success,

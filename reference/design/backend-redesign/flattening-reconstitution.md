@@ -11,6 +11,7 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
+- AOT compilation (optional mapping pack distribution): [aot-compilation.md](aot-compilation.md)
 - Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -23,7 +24,7 @@ It also defines the minimal `ApiSchema.json` metadata needed (beyond what alread
 - [1. Requirements & Constraints (Restated)](#1-requirements--constraints-restated)
 - [2. Why “Derived Mapping” Can Be Enough (vs Full Flattening Metadata)](#2-why-derived-mapping-can-be-enough-vs-full-flattening-metadata)
 - [3. Minimal `ApiSchema.json` Additions (Relational Block)](#3-minimal-apischemajson-additions-relational-block)
-- [4. Derived Relational Resource Model (What We Compile at Startup)](#4-derived-relational-resource-model-what-we-compile-at-startup)
+- [4. Derived Relational Resource Model (Runtime Compilation or AOT Pack)](#4-derived-relational-resource-model-runtime-compilation-or-aot-pack)
 - [5. Flattening (POST/PUT) Design](#5-flattening-postput-design)
 - [6. Reconstitution (GET by id / GET by query) Design](#6-reconstitution-get-by-id--get-by-query-design)
 - [7. Concrete C# Shapes (No Per-Resource Codegen)](#7-concrete-c-shapes-no-per-resource-codegen)
@@ -61,7 +62,7 @@ So the only metadata that truly must be added is:
 - deterministic naming overrides (collisions/length/reserved words)
 - optional naming tweaks for deeply nested collections/objects
 
-Everything else can be derived and compiled once at startup into a resource-specific plan.
+Everything else can be derived and compiled once per schema version into a resource-specific plan (either at runtime with caching, or ahead-of-time into a mapping pack; see [aot-compilation.md](aot-compilation.md)).
 
 ---
 
@@ -121,9 +122,9 @@ To keep the mapping deterministic, portable, and validatable, `nameOverrides` mu
 
 ---
 
-## 4. Derived Relational Resource Model (What We Compile at Startup)
+## 4. Derived Relational Resource Model (Runtime Compilation or AOT Pack)
 
-At startup, DMS builds a fully explicit internal model:
+For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an AOT mapping pack) a fully explicit internal model:
 
 - Root table name + full column list (scalars + FK columns)
 - Child tables for each array path (and nested arrays)
@@ -134,7 +135,7 @@ At startup, DMS builds a fully explicit internal model:
 - Identity projection plans (for references in responses)
 - Abstract identity projection plans for abstract targets (via `{AbstractResource}_View` union views derived from `abstractResources`)
 
-This is not code generation; it is compiled metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
+This is not code generation; it is compiled (or deserialized) metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
 The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and apply schema changes (see [ddl-generation.md](ddl-generation.md)).
 
@@ -1626,9 +1627,9 @@ SQL Server analog:
 - stage into `#reference_edge_stage(ChildDocumentId, IsIdentityComponent)` (or a table-valued parameter)
 - run “insert missing” + “update changed” + “delete stale” with the same shape (avoid `MERGE` unless you have strong operational confidence in it).
 
-### 7.7 Example: Pre-compilation (startup)
+### 7.7 Example: Plan compilation and caching (runtime)
 
-This shows how the shape model and plans are compiled and cached for runtime use.
+This shows how the shape model and plans are compiled and cached for runtime use when DMS is not loading ahead-of-time mapping packs. In AOT mode, the same compilation work is performed by the pack builder and DMS deserializes the resulting models/plans (see [aot-compilation.md](aot-compilation.md)).
 
 ```csharp
 public sealed class RelationalPlanProvider(

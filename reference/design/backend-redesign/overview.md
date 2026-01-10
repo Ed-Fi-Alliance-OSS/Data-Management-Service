@@ -100,6 +100,7 @@ This redesign is split into focused docs in this directory:
 
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
+- AOT compilation (optional mapping pack distribution keyed by `EffectiveSchemaHash`): [aot-compilation.md](aot-compilation.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Update tracking (derived `_etag/_lastModifiedDate`, `ChangeVersion`, change journals): [update-tracking.md](update-tracking.md)
