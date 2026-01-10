@@ -180,10 +180,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
         public static string[] GetScopes(this ClaimsPrincipal principal)
         {
             var scopesClaim = principal.FindFirst("uri://myuri.org/scopes")?.Value;
-            if (string.IsNullOrEmpty(scopesClaim))
-            {
-                return Array.Empty<string>();
-            }
+            if (string.IsNullOrEmpty(scopesClaim)) { }
 
             try
             {
@@ -192,7 +189,7 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
             }
             catch
             {
-                return Array.Empty<string>();
+                return [];
             }
         }
 
