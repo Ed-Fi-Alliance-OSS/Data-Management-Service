@@ -38,6 +38,13 @@ public static class PostgresqlServiceExtensions
         services.AddScoped<IUpsertDocument, UpsertDocument>();
         services.AddScoped<IDeleteDocumentById, DeleteDocumentById>();
         services.AddScoped<ISqlAction, SqlAction>();
+
+        // Register Token Info repository (uses current tenant DMS database)
+        services.AddScoped<
+            Core.TokenInfo.IEducationOrganizationRepository,
+            TokenInfo.PostgresqlEducationOrganizationRepository
+        >();
+
         return services;
     }
 

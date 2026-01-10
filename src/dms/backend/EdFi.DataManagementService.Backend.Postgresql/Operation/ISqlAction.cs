@@ -9,6 +9,7 @@ using System.Threading;
 using EdFi.DataManagementService.Backend.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Model;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Operation;
@@ -249,5 +250,10 @@ public interface ISqlAction
         short documentPartitionKey,
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
+    );
+
+    public Task<IReadOnlyList<TokenInfoEducationOrganization>> GetEducationOrganizationsAsync(
+        IEnumerable<long> ids,
+        NpgsqlConnection connection
     );
 }
