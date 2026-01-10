@@ -177,13 +177,13 @@ At the “very large table” scale (e.g., ~100M documents and ~1B edges), sever
 
 ### `dms.Document` (~100M rows)
 
-- **Row/index bloat from repeated strings**: `ProjectName`/`ResourceName`/`ResourceVersion` are wide, repeated on every row, and often appear in indexes; this inflates storage and reduces cache locality.
+- **Row/index bloat from repeated strings**: wide strings in hot tables inflate storage and reduce cache locality; mitigate by using small surrogate keys (e.g., `ResourceKeyId` instead of `ProjectName`/`ResourceName`) and only denormalizing names where required (e.g., CDC metadata).
 - **Cascade-driven update churn**: representation-metadata bumps (`Etag`, `LastModifiedAt`) can touch large dependent sets. Even without indexing those columns, high update rates cause Postgres MVCC bloat/autovacuum pressure and SQL Server log volume/fragmentation/lock contention.
 - **Random UUID index insertion**: `DocumentUuid` (and `dms.ReferentialIdentity.ReferentialId`) are effectively random, increasing page splits/fragmentation under sustained ingest unless explicitly managed.
 
 #### Possible actions / mitigations
 
-- Replace `(ProjectName, ResourceName, ResourceVersion)` with small surrogate IDs in large tables (`ProjectId`, `ResourceId`, `ResourceVersionId`) backed by lookup tables; keep names in lookup tables for diagnostics.
+- Replace repeated `(ProjectName, ResourceName)` strings in hot tables with a small surrogate id (e.g., `dms.ResourceKey(ResourceKeyId)`); consider `ResourceVersionId` only if `ResourceVersion` becomes a measurable size/cost driver.
 - Keep representation metadata out of hot covering indexes; consider isolating high-churn representation metadata into a separate table if update contention becomes dominant (trade-off: extra join on reads).
 - Plan for UUID index maintenance (engine-appropriate fillfactor settings, tuned autovacuum/rebuild cadence).
 
