@@ -16,7 +16,7 @@ This document is the DDL Generation deep dive for `overview.md`:
 
 ## Purpose
 
-DMS compiles a derived relational resource model from the effective `ApiSchema.json` set at startup (see “Derived Relational Resource Model” in [flattening-reconstitution.md](flattening-reconstitution.md)). DMS also treats schema changes as an operational concern outside the server process (see “Schema Validation (EffectiveSchema)” in [transactions-and-concurrency.md](transactions-and-concurrency.md)).
+DMS compiles a derived relational resource model from each configured effective `ApiSchema.json` set (core + extensions) (see “Derived Relational Resource Model” in [flattening-reconstitution.md](flattening-reconstitution.md)). DMS treats schema changes as an operational concern outside the server process and validates compatibility per database using the recorded schema fingerprint (see “Schema Validation (EffectiveSchema)” in [transactions-and-concurrency.md](transactions-and-concurrency.md)).
 
 This redesign therefore requires a separate utility (“DDL generation utility”) that:
 
@@ -63,10 +63,10 @@ The DDL generation utility should reuse the same compilation pipeline as runtime
 - Dialect-specific DDL generation (`ISqlDialect`-style boundary).
 - View generation for abstract resources.
 
-DMS runtime startup should remain “validate-only”:
+DMS runtime should remain “validate-only”:
 
-- DMS computes `EffectiveSchemaHash` and compares it to the recorded value in the database.
 - Schema creation/update is the DDL generation utility’s responsibility, not the server’s.
+- On first use of a given database connection string, DMS reads the database’s recorded `EffectiveSchemaHash` and selects the matching compiled mapping set (or rejects the request if none is available).
 
 ## Suggested deliverables
 

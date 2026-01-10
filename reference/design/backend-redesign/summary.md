@@ -25,7 +25,7 @@ Source documents:
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
 - `dms.DocumentCache` is optional and treated as an eventually consistent projection (preferred) for read performance and CDC/indexing.
-- DMS does not hot-reload or auto-migrate schemas in-process; it validates schema compatibility at startup via an effective schema fingerprint and fails fast on mismatch.
+- DMS does not hot-reload or auto-migrate schemas in-process; it validates schema compatibility per database on first use of that database connection string (cached) via an effective schema fingerprint and fails fast if no matching mapping is available.
 
 ## Core concepts and terms
 
@@ -79,7 +79,7 @@ Source documents:
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
-  - DMS validates this on startup and refuses to serve if mismatched.
+  - On first use of a given database connection string, DMS reads the database fingerprint, caches it, and selects the matching mapping set (rejecting requests for that database if mismatched/unsupported).
 
 ### Update tracking additions (unified design)
 
@@ -241,7 +241,7 @@ Open questions called out in the auth doc include EdOrg hierarchy derivation (ha
     - extension schemas/tables,
     - abstract union views,
   - records `dms.EffectiveSchema`/`dms.SchemaComponent` rows for the applied schema.
-- DMS runtime remains validate-only and fails fast on schema mismatch (no in-process migration/hot reload).
+- DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
 
 ## Key risks and mitigations (from the docs)
 

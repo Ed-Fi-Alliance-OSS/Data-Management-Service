@@ -33,7 +33,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity cascades (descriptor rows are treated as immutable in this redesign).
   - Use an **opaque “representation version” token** in `dms.Document` (not a JSON/content hash) and update it with **set-based cascades** (similar to `dms.ReferentialIdentity` recompute) to minimize cascade cost.
   - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `transactions-and-concurrency.md`).
-- **Schema updates are validated, not applied**: DMS does not perform in-place schema changes; it validates on startup that the database matches the configured effective `ApiSchema.json` fingerprint (see `dms.EffectiveSchema`) and refuses to start/serve if it does not. In-process schema reload/hot-reload is out of scope for this design.
+- **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (`dms.EffectiveSchema`/`dms.SchemaComponent`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authorization companion doc**: Authorization storage and query filtering for this redesign is described in [auth.md](auth.md).
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
 - **Polymorphic references use union views**: For abstract reference targets (e.g., `EducationOrganization`), store `..._DocumentId` as an FK to `dms.Document(DocumentId)` for existence and standardize membership validation + identity projection on `{AbstractResource}_View` (derived from `ApiSchema.json` `abstractResources`; see [data-model.md](data-model.md)).
@@ -109,9 +109,9 @@ This redesign is split into focused docs in this directory:
 
 ## Related Changes Implied by This Redesign
 
- - **Remove schema reload/hot-reload**: The current reload behavior exists primarily for testing convenience. With relational-first storage, DMS uses startup schema validation (`dms.EffectiveSchema`) instead of runtime schema toggles.
+ - **Remove schema reload/hot-reload**: The current reload behavior exists primarily for testing convenience. With relational-first storage, DMS uses per-database schema fingerprint validation (`dms.EffectiveSchema`) instead of runtime schema toggles.
  - **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
- - **Fail-fast on schema mismatch**: DMS should verify on startup that the database schema matches the configured effective `ApiSchema.json` set (core + extensions) fingerprint (see `dms.EffectiveSchema`) and refuse to start/serve if it does not.
+ - **Fail-fast on schema mismatch**: DMS should verify on first use of a given database connection string that the database schema matches an available effective `ApiSchema.json` mapping set (see `dms.EffectiveSchema`) and reject requests for that database if it does not.
 
 ## Risks / Open Questions
 
