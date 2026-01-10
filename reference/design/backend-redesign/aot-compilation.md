@@ -64,7 +64,10 @@ At runtime, after a request is routed to a database instance and DMS reads that 
 - **Dialect**: the target SQL engine (e.g., PostgreSQL vs SQL Server).
 - **Relational mapping version**: a DMS-controlled constant that forces a mismatch when mapping rules change even if `ApiSchema.json` content is unchanged.
 - **Mapping pack**: a redistributable artifact containing precompiled mapping objects for a single effective schema hash (and dialect).
-- **Pack format version**: a binary format version for the pack serialization itself.
+- **Pack format version**: a binary format/protocol version for the mapping pack serialization itself.
+  - Purpose: allow the DMS consumer to detect “I do/do not know how to decode this pack” independent of `EffectiveSchemaHash`.
+  - Bump this only for **breaking changes** to the envelope/payload representation (e.g., incompatible protobuf schema changes, field renames/removals, semantic changes to how plans are encoded, or changes to the compression/encryption/signing envelope behavior).
+  - Do not use this for schema/mapping evolution: those are handled by `EffectiveSchemaHash` and the relational mapping version.
 
 ---
 
@@ -202,6 +205,8 @@ The pack must embed at least:
 - `dialect` (enum)
 - `relational_mapping_version` (string)
 - `pack_format_version` (int)
+
+`pack_format_version` exists so the consumer can reject packs it cannot decode even if the `EffectiveSchemaHash` matches; it should be treated as a strict protocol/version gate and only bumped for breaking serialization/envelope changes.
 
 ### 9.2 Suggested protobuf schema (high level)
 
@@ -521,4 +526,3 @@ Operational model:
 - DMS reads the pack from the target database on first use (self-contained DB).
 
 Again: this is only a storage mechanism; the `.mpack` bytes are unchanged.
-
