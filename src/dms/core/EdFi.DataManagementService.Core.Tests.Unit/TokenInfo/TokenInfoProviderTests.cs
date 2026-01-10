@@ -91,41 +91,46 @@ public class TokenInfoProviderTests
                     {
                         new JsonObject
                         {
-                            ["claimId"] = 1,
-                            ["claimName"] = "http://ed-fi.org/ods/identity/claims/ed-fi/student",
+                            ["name"] = "http://ed-fi.org/ods/identity/claims/ed-fi/student",
+                            ["authorizationId"] = 1,
                         },
                         new JsonObject
                         {
-                            ["claimId"] = 2,
-                            ["claimName"] = "http://ed-fi.org/ods/identity/claims/ed-fi/school",
+                            ["name"] = "http://ed-fi.org/ods/identity/claims/ed-fi/school",
+                            ["authorizationId"] = 2,
+                        },
+                        new JsonObject
+                        {
+                            ["name"] = "http://ed-fi.org/identity/claims/services/sis",
+                            ["authorizationId"] = 3,
                         },
                     },
                     ["authorizations"] = new JsonArray
                     {
                         new JsonObject
                         {
-                            ["claimId"] = 1,
-                            ["actions"] = new JsonArray
-                            {
-                                new JsonObject
-                                {
-                                    ["actionName"] = "Read",
-                                    ["authorizationStrategies"] = new JsonArray
-                                    {
-                                        new JsonObject
-                                        {
-                                            ["authorizationStrategyName"] = "NoFurtherAuthorizationRequired",
-                                        },
-                                    },
-                                },
-                            },
+                            ["id"] = 1,
+                            ["actions"] = new JsonArray { new JsonObject { ["name"] = "Read" } },
+                        },
+                        new JsonObject
+                        {
+                            ["id"] = 2,
+                            ["actions"] = new JsonArray { new JsonObject { ["name"] = "Read" } },
+                        },
+                        new JsonObject
+                        {
+                            ["id"] = 3,
+                            ["actions"] = new JsonArray { new JsonObject { ["name"] = "true" } },
                         },
                     },
                 },
             };
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
-            _handler.SetResponse("https://api.example.com/authorizationMetadata", authMetadata);
+            _handler.SetResponse(
+                "https://api.example.com/authorizationMetadata?claimSetName=EdFiSandbox",
+                authMetadata
+            );
 
             var configServiceHandler = new ConfigurationServiceResponseHandler(
                 NullLogger<ConfigurationServiceResponseHandler>.Instance
@@ -143,7 +148,7 @@ public class TokenInfoProviderTests
                 .Returns("valid-token");
 
             // Setup education organizations
-            A.CallTo(() => fakeEdOrgRepo.GetEducationOrganizationsAsync(A<long[]>._))
+            A.CallTo(() => fakeEdOrgRepo.GetEducationOrganizationsAsync(A<IEnumerable<long>>._))
                 .Returns(
                     Task.FromResult<IReadOnlyList<TokenInfoEducationOrganization>>(
                         new List<TokenInfoEducationOrganization>
@@ -392,7 +397,10 @@ public class TokenInfoProviderTests
             };
 
             var _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
-            _handler.SetResponse("https://api.example.com/authorizationMetadata", authMetadata);
+            _handler.SetResponse(
+                "https://api.example.com/authorizationMetadata?claimSetName=EdFiSandbox",
+                authMetadata
+            );
 
             var configServiceHandler = new ConfigurationServiceResponseHandler(
                 NullLogger<ConfigurationServiceResponseHandler>.Instance
@@ -489,7 +497,7 @@ public class TokenInfoProviderTests
         }
 
         [Test]
-        public void Should_Throw_Exception_When_Config_Service_Fails()
+        public async Task Should_Return_Null_When_Config_Service_Fails()
         {
             // Arrange - Create a valid JWT token
             var tokenHandler = new JwtSecurityTokenHandler();
@@ -512,10 +520,11 @@ public class TokenInfoProviderTests
             var token = tokenHandler.CreateToken(tokenDescriptor);
             var jwtToken = tokenHandler.WriteToken(token);
 
-            // Act & Assert
-            Assert.ThrowsAsync<HttpRequestException>(async () =>
-                await _tokenInfoProvider!.GetTokenInfoAsync(jwtToken)
-            );
+            // Act
+            var result = await _tokenInfoProvider!.GetTokenInfoAsync(jwtToken);
+
+            // Assert
+            result.Should().BeNull();
         }
     }
 }

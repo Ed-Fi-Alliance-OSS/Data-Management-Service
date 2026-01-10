@@ -49,8 +49,8 @@ public class TokenInfoProvider(
             var claims = jwtToken.Claims.ToList();
 
             // Extract token data
-            var clientId = GetClaimValue(claims, "client_id") ?? string.Empty;
-            var claimSetName = GetClaimValue(claims, "scope") ?? string.Empty;
+            var clientId = GetClaimValue(claims, "client_id") ?? "";
+            var claimSetName = GetClaimValue(claims, "scope") ?? "";
             var namespacePrefixes = GetClaimValues(claims, "namespacePrefixes");
             var educationOrganizationIds = GetEducationOrganizationIds(claims);
             var dmsInstanceIds = GetDmsInstanceIds(claims);
@@ -303,7 +303,7 @@ public class TokenInfoProvider(
                 // Check if service or resource claim
                 if (claimName.StartsWith(ServicesClaimPrefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    var serviceName = claimName[ServicesClaimPrefix.Length..];
+                    var serviceName = claimName![ServicesClaimPrefix.Length..];
                     if (!string.IsNullOrEmpty(serviceName))
                     {
                         services.Add(new TokenInfoService { Service = serviceName, Operations = operations });
@@ -341,7 +341,7 @@ public class TokenInfoProvider(
         var value = GetClaimValue(claims, claimType);
         if (string.IsNullOrWhiteSpace(value))
         {
-            return Array.Empty<string>();
+            return [];
         }
 
         return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);

@@ -55,7 +55,7 @@ public class PostgresqlEducationOrganizationRepository(
                 "Error retrieving education organizations from tenant database for IDs: {EducationOrganizationIds}",
                 string.Join(",", idList)
             );
-            return Array.Empty<TokenInfoEducationOrganization>();
+            return [];
         }
     }
 }
