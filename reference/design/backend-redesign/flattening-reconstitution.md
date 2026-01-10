@@ -143,12 +143,14 @@ The same derived model is also built by the DDL generation utility to generate d
 
 Core tables store resource type as `ResourceKeyId` (see `dms.ResourceKey` in [data-model.md](data-model.md)), while compiled plans are keyed by `QualifiedResourceName(ProjectName, ResourceName)`.
 
-In AOT mode, the mapping pack **embeds** the deterministic `dms.ResourceKey` seed list for that `EffectiveSchemaHash` (ordered `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)`).
+In AOT mode, the mapping pack **embeds** the deterministic `dms.ResourceKey` seed list for that `EffectiveSchemaHash` (ordered `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)`), and DDL provisioning records a matching `ResourceKeySeedHash` in `dms.EffectiveSchema` for fast runtime validation.
 
 On first use of a database (after reading its recorded `EffectiveSchemaHash` and selecting/loading the mapping pack), DMS must:
-1. Read the database’s `dms.ResourceKey` rows ordered by `ResourceKeyId`.
-2. Compare to the pack’s embedded list (same count, dense ids, exact field matches).
-3. Cache bidirectional maps for the lifetime of the mapping set:
+1. Read `ResourceKeyCount` and `ResourceKeySeedHash` from `dms.EffectiveSchema` (for the selected `EffectiveSchemaHash`).
+2. Compare to the expected fingerprint from the mapping set (derived from the embedded seed list).
+3. If the fingerprint matches, accept without reading `dms.ResourceKey` (fast path).
+4. If the fingerprint mismatches (or the columns are missing), fall back to reading `dms.ResourceKey` ordered by `ResourceKeyId` and diffing against the embedded list for diagnostics, then fail fast.
+5. Cache bidirectional maps for the lifetime of the mapping set:
    - `QualifiedResourceName -> ResourceKeyId` (writes, change-query parameters)
    - `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` (background tasks, diagnostics, denormalized metadata materialization)
 
