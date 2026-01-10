@@ -191,7 +191,7 @@ At the “very large table” scale (e.g., ~100M documents and ~1B edges), sever
 
 - **Storage and maintenance**: the heap + PK + reverse index are enormous; routine operations (vacuum/reindex/rebuild, backup/restore, replication/log shipping) and accidental large deletes/updates become very expensive.
 - **Churn amplification**: even diff-based edge maintenance still writes to very large B-trees; Postgres deletes/updates create dead tuples requiring vacuum, and SQL Server incurs heavy log + fragmentation.
-- **Fanout/hub contention**: “hub” children can have millions of inbound edges (e.g. Descriptors); strict identity/representation cascades and SERIALIZABLE edge scans over these hubs can drive latency spikes, deadlocks, and retry storms.
+- **Fanout/hub contention**: “hub” children can have millions of inbound edges (e.g. `School` / `EducationOrganization`); strict identity/representation cascades and SERIALIZABLE edge scans over these hubs can drive latency spikes, deadlocks, and retry storms.
 - **`CreatedAt` overhead**: a per-row timestamp is significant storage at this scale if it is not used for query/retention.
 
 #### Possible actions / mitigations
@@ -200,4 +200,4 @@ At the “very large table” scale (e.g., ~100M documents and ~1B edges), sever
 - Add a filtered/partial structure for identity edges (`IsIdentityComponent=true`) (filtered index/partial index, or a separate identity-edge table) so identity closure computations don’t pay full “all edges” cost.
 - Add guardrails for high-fanout cascades (configurable bounds, explicit retry/backoff policies, and a fallback mode that degrades representation-metadata/caching cascades to eventual consistency when the impacted set is huge).
 - Re-evaluate `CreatedAt` on `dms.ReferenceEdge` (drop if unused, or move to an optional audit table).
-- Do not include descriptor edges in this table
+- Already assumed: descriptor edges are excluded from this table

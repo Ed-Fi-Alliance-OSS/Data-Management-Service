@@ -32,8 +32,8 @@ Source documents:
 - `DocumentUuid`: stable external identifier for API `id` (does not change on identity updates).
 - `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
 - `ReferentialId`: deterministic UUIDv5 used as the canonical “natural identity key”; stored in `dms.ReferentialIdentity`.
-- **Identity component**: a reference/descriptor whose projected value participates in a document’s identity (`identityJsonPaths`); used for strict identity-cascade correctness.
-- **Representation dependency** (1 hop): any referenced document whose identity/URI values are embedded in the returned JSON representation; used for derived `_etag/_lastModifiedDate` and Change Queries (not filtered to identity components).
+- **Identity component**: a document reference whose projected identity participates in a document’s identity (`identityJsonPaths`); used for strict identity-cascade correctness (`dms.ReferenceEdge.IsIdentityComponent=true`). Descriptor values can participate in identity, but descriptors are treated as immutable and do not participate in `dms.ReferenceEdge` closure/cascades.
+- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the returned JSON representation; used for derived `_etag/_lastModifiedDate` and Change Queries (not filtered to identity components). Descriptor URIs are projected into the representation, but descriptors are treated as immutable and excluded from dependency tracking.
 
 ## Data model summary
 
@@ -61,7 +61,7 @@ Source documents:
 - `dms.ReferenceEdge`
   - Reverse index of “parent references child”, stored as one row per `(ParentDocumentId, ChildDocumentId)` (collapsed granularity; not per-path).
   - `IsIdentityComponent` is the OR of all reference sites from the parent to that child that are identity components.
-  - Correctness-critical: must cover all outgoing resource and descriptor references, including those stored in child tables / nested collections.
+  - Correctness-critical: must cover all outgoing non-descriptor resource references, including those stored in child tables / nested collections (descriptor rows are treated as immutable and are excluded from this table).
   - Used for:
     - strict identity closure expansion (`IsIdentityComponent=true`) for `dms.ReferentialIdentity` recompute,
     - outbound dependency enumeration for derived `_etag/_lastModifiedDate` and `If-Match` checks,
@@ -172,7 +172,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - Write root table row (insert/update).
    - Write child tables using a baseline replace strategy (delete by parent key, bulk insert rows), with batching to respect SQL Server parameter limits.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
-   - Maintain `dms.ReferenceEdge` for the document (diff-based upsert recommended; fail the write if edge maintenance fails).
+   - Maintain `dms.ReferenceEdge` for the document’s outgoing non-descriptor references (diff-based upsert recommended; fail the write if edge maintenance fails).
 
 5. **Strict identity maintenance**
    - If the write changes identity/URI projection:
@@ -259,4 +259,3 @@ Open questions called out in the auth doc include EdOrg hierarchy derivation (ha
 - **Very large scale tables**
   - `dms.Document` bloat from repeated `(ProjectName, ResourceName, ResourceVersion)` strings; consider surrogate ids for these dimensions at extreme scale.
   - `dms.ReferenceEdge` at ~1B rows drives partitioning/maintenance concerns; consider partitioning, filtered/partial structures for identity edges, and re-evaluating per-row `CreatedAt` if unused.
-
