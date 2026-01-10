@@ -178,13 +178,12 @@ CREATE TABLE dms.DocumentChangeEvent (
     DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     ProjectName varchar(256) NOT NULL,
     ResourceName varchar(256) NOT NULL,
-    ResourceVersion varchar(64) NOT NULL,
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
 );
 
 CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
-    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
+    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ChangeVersion, DocumentId);
 ```
 
 **SQL Server**
@@ -195,7 +194,6 @@ CREATE TABLE dms.DocumentChangeEvent (
     DocumentId bigint NOT NULL,
     ProjectName nvarchar(256) NOT NULL,
     ResourceName nvarchar(256) NOT NULL,
-    ResourceVersion nvarchar(64) NOT NULL,
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
     CONSTRAINT FK_DocumentChangeEvent_Document FOREIGN KEY (DocumentId)
@@ -203,7 +201,7 @@ CREATE TABLE dms.DocumentChangeEvent (
 );
 
 CREATE INDEX IX_DocumentChangeEvent_Resource_ChangeVersion
-    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId);
+    ON dms.DocumentChangeEvent (ProjectName, ResourceName, ChangeVersion, DocumentId);
 ```
 
 ### 5) `dms.IdentityChangeEvent` (identity changes)
@@ -370,8 +368,8 @@ BEGIN
   IF (TG_OP = 'INSERT') THEN
     localChangeVersion := GREATEST(NEW.ContentVersion, NEW.IdentityVersion);
 
-    INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName, ResourceVersion)
-    VALUES (localChangeVersion, NEW.DocumentId, NEW.ProjectName, NEW.ResourceName, NEW.ResourceVersion);
+    INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName)
+    VALUES (localChangeVersion, NEW.DocumentId, NEW.ProjectName, NEW.ResourceName);
 
     INSERT INTO dms.IdentityChangeEvent(ChangeVersion, DocumentId)
     VALUES (NEW.IdentityVersion, NEW.DocumentId);
@@ -383,8 +381,8 @@ BEGIN
     IF (NEW.ContentVersion <> OLD.ContentVersion OR NEW.IdentityVersion <> OLD.IdentityVersion) THEN
       localChangeVersion := GREATEST(NEW.ContentVersion, NEW.IdentityVersion);
 
-      INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName, ResourceVersion)
-      VALUES (localChangeVersion, NEW.DocumentId, NEW.ProjectName, NEW.ResourceName, NEW.ResourceVersion);
+      INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName)
+      VALUES (localChangeVersion, NEW.DocumentId, NEW.ProjectName, NEW.ResourceName);
     END IF;
 
     IF (NEW.IdentityVersion <> OLD.IdentityVersion) THEN
@@ -414,13 +412,12 @@ BEGIN
     SET NOCOUNT ON;
 
     -- Local changes (content and/or identity): insert one row per affected document
-    INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName, ResourceVersion)
+    INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName)
     SELECT
         CASE WHEN i.ContentVersion > i.IdentityVersion THEN i.ContentVersion ELSE i.IdentityVersion END AS ChangeVersion,
         i.DocumentId,
         i.ProjectName,
-        i.ResourceName,
-        i.ResourceVersion
+        i.ResourceName
     FROM inserted i
     LEFT JOIN deleted d ON d.DocumentId = i.DocumentId
     WHERE d.DocumentId IS NULL
@@ -554,7 +551,7 @@ The journal-driven query shape assumes:
 
 - `dms.DocumentChangeEvent`:
   - `PK (ChangeVersion, DocumentId)`
-  - `IX (ProjectName, ResourceName, ResourceVersion, ChangeVersion, DocumentId)`
+  - `IX (ProjectName, ResourceName, ChangeVersion, DocumentId)`
 - `dms.IdentityChangeEvent`:
   - `PK (ChangeVersion, DocumentId)`
 - `dms.ReferenceEdge`:
@@ -565,7 +562,7 @@ On SQL Server, keep `dms.Document` access by `DocumentId` cheap (ideally cluster
 
 ### Resource change query algorithm (high level)
 
-Given resource key `R = (ProjectName, ResourceName, ResourceVersion)` and window `[min,max]`:
+Given resource key `R = (ProjectName, ResourceName)` and window `[min,max]`:
 
 1. **Direct contributor scan**:
    - from `dms.DocumentChangeEvent` for `R` in `[min,max]`, collect `DocumentId`s.
@@ -594,7 +591,7 @@ Client guidance (ODS-style):
 
 Parameters:
 
-- `@ProjectName`, `@ResourceName`, `@ResourceVersion`
+- `@ProjectName`, `@ResourceName`
 - `@MinChangeVersion`, `@MaxChangeVersion`
 - `@AfterChangeVersion`, `@AfterDocumentId` (cursor; use `0,0` for first page)
 - `@Limit`
@@ -605,7 +602,6 @@ WITH direct AS (
     FROM dms.DocumentChangeEvent e
     WHERE e.ProjectName = @ProjectName
       AND e.ResourceName = @ResourceName
-      AND e.ResourceVersion = @ResourceVersion
       AND e.ChangeVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
 ),
 deps_in_window AS (
@@ -628,7 +624,6 @@ candidates AS (
       ON d.DocumentId = i.DocumentId
     WHERE d.ProjectName = @ProjectName
       AND d.ResourceName = @ResourceName
-      AND d.ResourceVersion = @ResourceVersion
 ),
 dep_max AS (
     SELECT re.ParentDocumentId AS DocumentId,
@@ -654,7 +649,6 @@ computed AS (
       ON dm.DocumentId = d.DocumentId
     WHERE d.ProjectName = @ProjectName
       AND d.ResourceName = @ResourceName
-      AND d.ResourceVersion = @ResourceVersion
 )
 SELECT DocumentId, ChangeVersion
 FROM computed
@@ -675,7 +669,6 @@ WITH direct AS (
     FROM dms.DocumentChangeEvent e
     WHERE e.ProjectName = @ProjectName
       AND e.ResourceName = @ResourceName
-      AND e.ResourceVersion = @ResourceVersion
       AND e.ChangeVersion BETWEEN @MinChangeVersion AND @MaxChangeVersion
 ),
 deps_in_window AS (
@@ -698,7 +691,6 @@ candidates AS (
       ON d.DocumentId = i.DocumentId
     WHERE d.ProjectName = @ProjectName
       AND d.ResourceName = @ResourceName
-      AND d.ResourceVersion = @ResourceVersion
 ),
 dep_max AS (
     SELECT re.ParentDocumentId AS DocumentId,
@@ -729,7 +721,6 @@ computed AS (
       ON dm.DocumentId = d.DocumentId
     WHERE d.ProjectName = @ProjectName
       AND d.ResourceName = @ResourceName
-      AND d.ResourceVersion = @ResourceVersion
 )
 SELECT TOP (@Limit) DocumentId, ChangeVersion
 FROM computed
@@ -776,7 +767,7 @@ and the expensive `dep_max` group-by can be avoided for change queries.
 
 #### B) Denormalize parent resource key onto `dms.ReferenceEdge`
 
-If indirect expansion frequently joins `ReferenceEdge → Document` only to filter parents by `(ProjectName, ResourceName, ResourceVersion)`, consider storing those parent fields on `dms.ReferenceEdge` (maintained on parent writes).
+If indirect expansion frequently joins `ReferenceEdge → Document` only to filter parents by `(ProjectName, ResourceName)`, consider storing those parent fields on `dms.ReferenceEdge` (maintained on parent writes).
 
 This can remove a join from the candidate-building step when expanding indirect impacts.
 

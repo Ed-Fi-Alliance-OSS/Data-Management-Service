@@ -91,7 +91,7 @@ Source documents:
   - `ContentVersion`, `IdentityVersion` (global monotonic stamps).
   - `ContentLastModifiedAt`, `IdentityLastModifiedAt`.
 - Journals (append-only):
-  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName, ResourceVersion, CreatedAt)`
+  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ProjectName, ResourceName, CreatedAt)`
   - `dms.IdentityChangeEvent(ChangeVersion, DocumentId, CreatedAt)`
 - Derived at read time:
   - `_etag = Base64(SHA-256(EncodeV1(ContentVersion, IdentityVersion, sorted(deps: (DocumentId, IdentityVersion)))))`
