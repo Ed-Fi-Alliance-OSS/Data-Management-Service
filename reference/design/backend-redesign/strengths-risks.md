@@ -183,7 +183,7 @@ At the “very large table” scale (e.g., ~100M documents and ~1B edges), sever
 
 #### Possible actions / mitigations
 
-- Replace repeated `(ProjectName, ResourceName)` strings in hot tables with a small surrogate id (e.g., `dms.ResourceKey(ResourceKeyId)`); consider `ResourceVersionId` only if `ResourceVersion` becomes a measurable size/cost driver.
+- Replace repeated `(ProjectName, ResourceName)` strings in hot tables with a small surrogate id (e.g., `dms.ResourceKey(ResourceKeyId)`); keep version metadata on `dms.ResourceKey` and only denormalize where required for CDC/streaming.
 - Keep representation metadata out of hot covering indexes; consider isolating high-churn representation metadata into a separate table if update contention becomes dominant (trade-off: extra join on reads).
 - Plan for UUID index maintenance (engine-appropriate fillfactor settings, tuned autovacuum/rebuild cadence).
 

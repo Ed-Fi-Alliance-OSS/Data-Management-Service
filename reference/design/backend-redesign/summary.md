@@ -48,7 +48,7 @@ Source documents:
 
 - `dms.Document`
   - One row per persisted resource instance.
-  - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), `ResourceVersion` (informational), and update-tracking token columns (see below).
+  - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), and update-tracking token columns (see below).
   - `DocumentUuid` is unique and stable across identity updates.
 
 - `dms.ReferentialIdentity`
@@ -81,7 +81,7 @@ Source documents:
   - Materialized JSON projection for read performance and CDC/indexing.
   - Preferred mode is eventual consistency via a background/write-driven projector (no transactional cross-document cache cascades).
   - Freshness is validated via derived `_etag` (not by comparing stored etag columns).
-  - Stores `ResourceKeyId` for filtering/indexing and keeps denormalized `ProjectName`/`ResourceName` for CDC/streaming consumers.
+  - Keeps denormalized `ProjectName`/`ResourceName`/`ResourceVersion` for CDC/streaming consumers.
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
@@ -264,5 +264,5 @@ Open questions called out in the auth doc include EdOrg hierarchy derivation (ha
   - Reconstitution can be expensive for deep resources (many child tables/result sets); `dms.DocumentCache` may be practically required for latency and DB CPU protection in many deployments.
 
 - **Very large scale tables**
-  - `dms.Document` scale: avoid wide repeated strings in hot tables (use `ResourceKeyId` for `(ProjectName, ResourceName)`; consider `ResourceVersionId` only if `ResourceVersion` becomes a measurable cost driver).
+  - `dms.Document` scale: avoid wide repeated strings in hot tables (use `ResourceKeyId` for `(ProjectName, ResourceName)` and store `ResourceVersion` on `dms.ResourceKey`, denormalizing only where needed for CDC/streaming).
   - `dms.ReferenceEdge` at ~1B rows drives partitioning/maintenance concerns; consider partitioning, filtered/partial structures for identity edges, and re-evaluating per-row `CreatedAt` if unused.

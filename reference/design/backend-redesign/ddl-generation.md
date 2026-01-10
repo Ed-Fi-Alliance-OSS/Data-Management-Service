@@ -46,7 +46,7 @@ Authorization-specific objects (e.g., `auth.*` views) may be in scope for the DD
 **Outputs**
 - A deterministic SQL script (recommended even when applying directly)
   - All schemas, tables, views
-  - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName)`)
+  - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
   - Insert statements into `dms.EffectiveSchema`/`dms.SchemaComponent` rows matching the computed `EffectiveSchemaHash`.
 
 ## High-level workflow
@@ -68,8 +68,8 @@ Recommended derivation:
   - include all concrete `resourceSchemas[*].resourceName` (including descriptors),
   - include all `abstractResources[*]` names (used for polymorphic/superclass alias rows in `dms.ReferentialIdentity`).
 - Sort pairs by `(ProjectName, ResourceName)` using **ordinal** (culture-invariant) string ordering.
-- Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts:
-  - `INSERT INTO dms.ResourceKey(ResourceKeyId, ProjectName, ResourceName) VALUES ...`
+- Assign `ResourceKeyId` sequentially from 1..N and emit seed inserts (deriving `ResourceVersion` from the owning `projectSchema.projectVersion`):
+  - `INSERT INTO dms.ResourceKey(ResourceKeyId, ProjectName, ResourceName, ResourceVersion) VALUES ...`
 - Fail fast if `N` exceeds the maximum representable `ResourceKeyId` (`smallint`).
 
 DMS runtime should validate and cache this mapping per database (fail fast on mismatch) as part of the schema fingerprint check.

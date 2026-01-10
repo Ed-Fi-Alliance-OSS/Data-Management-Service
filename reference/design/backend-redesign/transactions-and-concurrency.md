@@ -742,7 +742,7 @@ Whether invoked by a background worker (preferred) or by a read-triggered rebuil
 1. Loads `(DocumentId, ResourceKeyId)` for the target set from `dms.Document` and groups by `ResourceKeyId` (mapping `ResourceKeyId → (ProjectName, ResourceName)` via `dms.ResourceKey` when selecting compiled plans and when materializing CDC metadata).
 2. Uses compiled `ResourceReadPlan`s to hydrate root/child tables and reconstitute JSON in-memory.
 3. Upserts `dms.DocumentCache` rows for the target set, including:
-   - `DocumentUuid`, `ResourceKeyId`, `ProjectName`, `ResourceName` (from `dms.ResourceKey`), `ResourceVersion` (from `dms.Document`)
+   - `DocumentUuid`, `ProjectName`, `ResourceName`, `ResourceVersion` (from `dms.ResourceKey`)
    - cached derived `_etag/_lastModifiedDate` (computed at materialization time; see [update-tracking.md](update-tracking.md))
    - optional cached derived per-item `ChangeVersion` (if/when Change Queries are implemented)
    - `DocumentJson` (reconstituted API JSON including `id`, `_etag`, `_lastModifiedDate`)

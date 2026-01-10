@@ -139,6 +139,21 @@ This is not code generation; it is compiled (or deserialized) metadata cached by
 
 The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and apply schema changes (see [ddl-generation.md](ddl-generation.md)).
 
+### 4.0 `dms.ResourceKey` validation and `ResourceKeyId` mapping (AOT pack)
+
+Core tables store resource type as `ResourceKeyId` (see `dms.ResourceKey` in [data-model.md](data-model.md)), while compiled plans are keyed by `QualifiedResourceName(ProjectName, ResourceName)`.
+
+In AOT mode, the mapping pack **embeds** the deterministic `dms.ResourceKey` seed list for that `EffectiveSchemaHash` (ordered `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)`).
+
+On first use of a database (after reading its recorded `EffectiveSchemaHash` and selecting/loading the mapping pack), DMS must:
+1. Read the database’s `dms.ResourceKey` rows ordered by `ResourceKeyId`.
+2. Compare to the pack’s embedded list (same count, dense ids, exact field matches).
+3. Cache bidirectional maps for the lifetime of the mapping set:
+   - `QualifiedResourceName -> ResourceKeyId` (writes, change-query parameters)
+   - `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` (background tasks, diagnostics, denormalized metadata materialization)
+
+Fail fast if the table does not match the pack (schema mismatch / mis-provisioned database).
+
 ### 4.1 Derivation algorithm (high-level)
 
 Inputs:
@@ -724,6 +739,8 @@ Think of these objects in **three layers**:
 3. **Execution layer** (`IResourceFlattener`, `IBulkInserter`, `IResourceReconstituter`): runtime services that consume the plans.
 
 All three layers are cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)` so the per-request cost is only: reference resolution + row materialization + SQL execution + JSON writing.
+
+Note: when runtime work starts from `ResourceKeyId` (e.g., Change Query filters or background projection rebuild batches), DMS uses the cached `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` map (validated above) to locate the correct cached plans (via `QualifiedResourceName`) and to materialize denormalized metadata (via `ResourceVersion`).
 
 ### 7.1 Value and naming primitives
 
