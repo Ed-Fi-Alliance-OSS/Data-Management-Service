@@ -8,6 +8,7 @@ Source documents:
 - Overview: `reference/design/backend-redesign/overview.md`
 - Data model: `reference/design/backend-redesign/data-model.md`
 - Flattening & reconstitution: `reference/design/backend-redesign/flattening-reconstitution.md`
+- AOT compilation (optional mapping pack distribution): `reference/design/backend-redesign/aot-compilation.md`
 - Extensions (`_ext`): `reference/design/backend-redesign/extensions.md`
 - Transactions & concurrency: `reference/design/backend-redesign/transactions-and-concurrency.md`
 - Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/update-tracking.md`
@@ -241,6 +242,7 @@ Open questions called out in the auth doc include EdOrg hierarchy derivation (ha
     - extension schemas/tables,
     - abstract union views,
   - records `dms.EffectiveSchema`/`dms.SchemaComponent` rows for the applied schema.
+- (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
 
 ## Key risks and mitigations (from the docs)

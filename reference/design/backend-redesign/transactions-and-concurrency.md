@@ -12,6 +12,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
+- AOT compilation (optional mapping pack distribution): [aot-compilation.md](aot-compilation.md)
 - Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -927,6 +928,7 @@ This redesign treats schema changes as an **operational concern outside DMS**. D
 - Each provisioned database records its schema fingerprint in `dms.EffectiveSchema` + `dms.SchemaComponent`.
 - When a request is routed to a `DmsInstance`/connection string, DMS reads that database’s recorded fingerprint **once** (cached per connection string), and uses `EffectiveSchemaHash` to select the matching compiled mapping set.
   - Perform this immediately after instance routing and before any schema-dependent work (plan compilation, SQL generation, or relational reads/writes).
+- The compiled mapping set can be produced by runtime compilation or loaded from an ahead-of-time mapping pack (see [aot-compilation.md](aot-compilation.md)).
 - If no mapping set is available for that `EffectiveSchemaHash`, DMS rejects requests for that database (other databases can still be served).
 
 This keeps schema mismatch a **fail-fast** condition while avoiding “one mis-provisioned instance prevents the server from starting” in multi-instance deployments.
