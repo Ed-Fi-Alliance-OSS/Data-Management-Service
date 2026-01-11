@@ -147,9 +147,9 @@ client_id={{clientId}}
 
 ### Call token_info endpoint with JSON body
 # @name tokenInfoJson
-POST http://localhost:{{configPort}}/oauth/token_info
+POST http://localhost:{{dmsPort}}/oauth/token_info
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: bearer {{clientToken}}
 
 {
     "token": "{{clientToken}}"
@@ -161,9 +161,9 @@ Authorization: bearer {{configToken}}
 
 ### Call token_info endpoint with form-encoded body (RFC 7662 standard)
 # @name tokenInfoForm
-POST http://localhost:{{configPort}}/oauth/token_info
+POST http://localhost:{{dmsPort}}/oauth/token_info
 Content-Type: application/x-www-form-urlencoded
-Authorization: bearer {{configToken}}
+Authorization: bearer {{clientToken}}
 
 token={{clientToken}}
 
