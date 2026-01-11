@@ -7,6 +7,7 @@ This document defines an **optional** alternative to runtime compilation of the 
 - `reference/design/backend-redesign/flattening-reconstitution.md`
 - `reference/design/backend-redesign/data-model.md` (EffectiveSchemaHash)
 - `reference/design/backend-redesign/transactions-and-concurrency.md` (per-database schema fingerprint selection)
+- `reference/design/backend-redesign/mpack-format-v1.md` (**normative** `.mpack` wire format for PackFormatVersion=1)
 
 The goal is to support **ahead-of-time compilation** into a redistributable artifact (“mapping pack”) that is keyed by `EffectiveSchemaHash`, so a single DMS server can efficiently serve many databases where not all databases share the same effective schema.
 
@@ -62,6 +63,7 @@ At runtime, after a request is routed to a database instance and DMS reads that 
 - **Effective schema**: the *core + extension* `ApiSchema.json` set as it affects relational mapping.
 - **`EffectiveSchemaHash`**: deterministic SHA-256 fingerprint of the effective schema set and mapping-version constants (see `data-model.md`).
 - **Dialect**: the target SQL engine (e.g., PostgreSQL vs SQL Server).
+  - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 - **Relational mapping version**: a DMS-controlled constant that forces a mismatch when mapping rules change even if `ApiSchema.json` content is unchanged.
 - **Mapping pack**: a redistributable artifact containing precompiled mapping objects for a single effective schema hash (and dialect).
 - **Pack format version**: a binary format/protocol version for the mapping pack serialization itself.
@@ -105,6 +107,40 @@ Pack contains:
 Logical plan pack identity is `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.
 
 For file distribution, the lookup key is typically `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)` (directory + filename), and `PackFormatVersion` is validated from the envelope after reading.
+
+### Determinism scope (`.mpack` files)
+
+Mapping pack determinism is defined at the mapping-set level, not as byte-for-byte file identity:
+
+- **Required (PackFormatVersion=1)**: byte-for-byte stable **payload bytes** (deterministic protobuf serialization + deterministic ordering), and stable SQL text, for a fixed `(EffectiveSchemaHash, dialect, relational mapping version, pack format version)`.
+- **Not required**: byte-for-byte identical `.mpack` file contents (envelope metadata and compression can vary).
+
+Recommended equivalence check:
+- validate keying fields from the envelope,
+- decompress and parse the payload,
+- (if present) validate `payload_sha256`,
+- compare the parsed payload content (or a deterministic fingerprint of it).
+
+### Deterministic ordering (pack reproducibility)
+
+Pack builders must emit repeated fields and nested plan/model structures in a deterministic order so that a given `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)` produces reproducible payload semantics.
+
+Recommended ordering rules: see `reference/design/backend-redesign/ddl-generation.md` (“Deterministic output ordering (DDL + packs)”).
+
+Minimum requirements:
+- `resource_keys`: ordered by `resource_key_id` ascending.
+- `resources`: ordered by `(project_name, resource_name)` using ordinal string ordering.
+- Any per-resource lists (tables, columns, constraints, indexes, views) follow the same deterministic ordering rules used by the DDL generator.
+
+### SQL text canonicalization (pack reproducibility)
+
+Mapping packs embed compiled SQL strings (read/write/projection plans). For reproducible packs and stable golden-file tests, pack builders MUST ensure that compiled SQL text is canonicalized:
+
+- stable whitespace/formatting (`\n` line endings, stable indentation, no trailing whitespace, stable keyword casing),
+- stable alias naming, and
+- stable parameter naming derived deterministically from the compiled model/bindings.
+
+These requirements are normative for both runtime compilation and AOT pack compilation (see `reference/design/backend-redesign/flattening-reconstitution.md` “SQL text canonicalization (required)”).
 
 ---
 
@@ -202,6 +238,10 @@ Implementation approach:
 
 ## 9. Wire format and envelopes
 
+Normative PackFormatVersion=1 `.mpack` bytes (envelope/payload schema + validation requirements) are defined in:
+
+- `reference/design/backend-redesign/mpack-format-v1.md`
+
 ### 9.1 Keying fields that must be embedded
 
 The pack must embed at least:
@@ -215,7 +255,7 @@ The pack must embed at least:
 
 ### 9.2 Suggested protobuf schema (high level)
 
-The contracts package would define a schema like:
+The contracts package would define a schema like (high level only; see the normative `.proto` in `reference/design/backend-redesign/mpack-format-v1.md`):
 
 ```proto
 syntax = "proto3";
@@ -471,7 +511,7 @@ After loading a mapping set for a database, DMS should validate that the databas
 
 Recommended validation (once per database/connection string, cached):
 - Fast path: compare a stored seed fingerprint without reading the full table:
-  1. Read: `SELECT ResourceKeyCount, ResourceKeySeedHash FROM dms.EffectiveSchema ...` for the selected `EffectiveSchemaHash`.
+  1. Read: `SELECT ResourceKeyCount, ResourceKeySeedHash FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1`.
   2. Compare to the expected `(ResourceKeyCount, ResourceKeySeedHash)` derived from the mapping set’s embedded `resource_keys` list (same canonicalization as the DDL generator).
 - Slow path (diagnostics on mismatch):
   1. Read: `SELECT ResourceKeyId, ProjectName, ResourceName, ResourceVersion FROM dms.ResourceKey ORDER BY ResourceKeyId;`

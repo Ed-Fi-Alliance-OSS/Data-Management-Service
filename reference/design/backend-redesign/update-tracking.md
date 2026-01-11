@@ -347,14 +347,13 @@ Concretely, during the closure recompute transaction:
      - allocate a stamp `v` and set `X.IdentityVersion = v`, `X.IdentityLastModifiedAt = now()`,
      - update `dms.ReferentialIdentity` rows for `X`,
      - journal emission:
-       - recommended: rely on `dms.Document` triggers (the `IdentityVersion` update emits both `dms.IdentityChangeEvent` and `dms.DocumentChangeEvent`),
-       - otherwise: insert `dms.IdentityChangeEvent(ChangeVersion=v, DocumentId=X)` and `dms.DocumentChangeEvent(ChangeVersion=max(X.ContentVersion, X.IdentityVersion), DocumentId=X, ...)`.
+       - rely on `dms.Document` triggers (the `IdentityVersion` update emits both `dms.IdentityChangeEvent` and `dms.DocumentChangeEvent`).
 
 This makes the documents whose identities actually changed “emit” an identity-change stamp; dependents observe the new `IdentityVersion` at read time.
 
-### Recommended: database triggers (enforcing journal writes)
+### Required: database triggers (enforcing journal writes)
 
-Recommended: enforce journaling in the database. Triggers on `dms.Document` insert into the journal tables when token columns change. This keeps the write path honest (journal rows can’t be “forgotten” in application code), and it naturally covers bulk/closure updates that already touch `dms.Document` token columns.
+This redesign requires DB-enforced journaling. Triggers on `dms.Document` insert into the journal tables when token columns change. Application code should treat the journal tables as derived artifacts and **not** write to them directly.
 
 #### PostgreSQL (sketch)
 
@@ -466,19 +465,6 @@ This design already needs `dms.ReferenceEdge` for change queries, so option (3) 
    - derived `_lastModifiedDate`
    - derived `ChangeVersion` (per-item)
 5. Inject into the response.
-
-### Cache hit (`dms.DocumentCache` present)
-
-If `dms.DocumentCache` stores materialized JSON (including projected reference identities and descriptor URIs), cached JSON can become stale when any dependency identity changes (descriptor rows are treated as immutable in this redesign).
-
-With derived tokens, “freshness check = `cache.Etag == document.Etag`” no longer applies. Correct options:
-
-1. **Verify-by-dependencies**:
-   - compute current derived `_etag` and compare to cached `_etag`.
-2. **Use `dms.ReferenceEdge` as outbound-dependency index**:
-   - fetch dependency ids from `dms.ReferenceEdge` and compute current derived `_etag`.
-
-Operational note: if `dms.DocumentCache` is enabled, it should store the **derived** `_etag/_lastModifiedDate` values that were computed at cache materialization time (not a copy of `dms.Document` columns from the original redesign draft). Cache reads validate by recomputing the derived `_etag` from current dependency tokens and comparing.
 
 ### Query paging
 

@@ -4,7 +4,7 @@
 
 Draft.
 
-This document is the transactions/concurrency deep dive for `overview.md`, focusing on identity-correctness locking, derived-index maintenance (`dms.ReferentialIdentity`), and operational caching/projections.
+This document is the transactions/concurrency deep dive for `overview.md`, focusing on identity-correctness locking, derived-index maintenance (`dms.ReferentialIdentity`), and operational caching.
 
 - Overview: [overview.md](overview.md)
 - Update tracking: [update-tracking.md](update-tracking.md)
@@ -13,7 +13,6 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - Extensions: [extensions.md](extensions.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
 - AOT compilation (optional mapping pack distribution): [aot-compilation.md](aot-compilation.md)
-- Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 ## Table of Contents
@@ -163,14 +162,11 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - Maintain `dms.ReferenceEdge` rows for this document (outgoing non-descriptor references only; descriptors are treated as immutable and excluded):
      - required to drive `dms.ReferentialIdentity` cascades (`IsIdentityComponent=true`)
      - required for update tracking / Change Queries (see [update-tracking.md](update-tracking.md))
-     - used for diagnostics (“who references me?”) and targeted async cache rebuild/invalidation (when enabled)
-   - If `dms.DocumentCache` is enabled, treat it as an eventual-consistent **projection** (CDC/indexing):
-     - enqueue/mark the written document (and any impacted dependents) for background materialization
+     - used for diagnostics (“who references me?”)
 
-#### Maintaining `dms.ReferenceEdge` (identity cascades, diagnostics, cache rebuild; low-churn)
+#### Maintaining `dms.ReferenceEdge` (identity cascades and diagnostics; low-churn)
 
 `dms.ReferenceEdge` is maintained as a **reverse lookup index** for:
-- targeted async cache rebuild/invalidation (when `dms.DocumentCache` is enabled)
 - `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
 - delete conflict diagnostics (“who references me?”)
 
@@ -291,7 +287,7 @@ For a given `ParentDocumentId`, the set of edges in `dms.ReferenceEdge` must equ
 3) **Background auditing + repair tooling**
    - Provide an admin job/tool that can:
      - recompute `dms.ReferenceEdge` from relational FK columns for a document (or for all documents), and
-     - optionally trigger corresponding recompute of derived artifacts (e.g., `dms.ReferentialIdentity`) and projection rebuilds for impacted documents.
+     - optionally trigger corresponding recompute of derived artifacts (e.g., `dms.ReferentialIdentity`) for impacted documents.
    - This is essential as a recovery mechanism if a bug ever shipped that produced incomplete edges.
 
 ### Insert vs update detection
@@ -309,7 +305,6 @@ If identity changes on update:
   - cascade recompute to any documents whose identities depend on this document (transitively) via `dms.ReferenceEdge` where `IsIdentityComponent=true`.
   - Use `dms.IdentityLock` row-lock orchestration (no global lock) to prevent phantoms and to ensure referential ids are never stale after commit.
 - References stored as FKs (`DocumentId`) remain valid; no cascading rewrite needed.
-  - If `dms.DocumentCache` is enabled, identity/URI changes of *this* document can enqueue or mark dependent documents for eventual cache rebuild
 
 ### Cascade scenarios (tables-per-resource)
 
@@ -319,14 +314,12 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
   - Do not rewrite referencing rows: FKs remain correct.
   - Compute and lock the **impacted identity set** (this document, plus all transitive parents over `dms.ReferenceEdge` where `IsIdentityComponent=true`) using `dms.IdentityLock` row-lock orchestration (expand-and-lock to a fixpoint to prevent phantoms).
   - Recompute and upsert `dms.ReferentialIdentity` for every impacted document (primary + superclass/abstract alias rows) in the same transaction, so `ReferentialId → DocumentId` lookups are never stale after commit (even for reference-bearing identities).
-  - If `dms.DocumentCache` is enabled, enqueue/mark affected documents for eventual materialization (background projector), rather than performing a transactional cache-update cascade.
   - No rewrite of `dms.ReferenceEdge` rows is required for identity/URI changes: edges store `DocumentId`s and only change when outgoing references change.
   - Update/evict any caching after commit (e.g., `ReferentialId → DocumentId`, `DocumentUuid → DocumentId`, descriptor expansion).
 
 - **Outgoing document-reference set changes on a document** (`..._DocumentId` FK values change)
   - Relational writes update the FK columns as usual.
   - Maintain `dms.ReferenceEdge` for the parent with a diff-based upsert (avoid churn on no-op updates).
-  - If `dms.DocumentCache` is enabled, refresh the parent’s cached JSON (sync write-through or async rebuild); dependent rebuild remains eventual.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, ChangeVersion)**
   - DMS derives representation metadata at read time from per-document tokens plus dependency identity tokens (no write-time fan-out bump cascades).
@@ -353,9 +346,7 @@ Deep dive on reconstitution execution and read-planning: [flattening-reconstitut
 ### GET by id
 
 1. Resolve `DocumentUuid` → `DocumentId` via `dms.Document`.
-2. If `dms.DocumentCache` is enabled and a row exists **and is fresh**, return it.
-   - Freshness rule (recommended): recompute derived `_etag` from current dependency identity tokens and compare to the cached derived `_etag` (see [update-tracking.md](update-tracking.md)).
-3. Otherwise, reconstitute JSON from relational tables and return it (and optionally enqueue/mark for background materialization).
+2. Reconstitute JSON from relational tables and return it.
 
 The returned JSON representation must preserve:
 - Array order (via `Ordinal`)
@@ -374,8 +365,8 @@ Ordering/paging contract:
 - Collection GET results are ordered by the **resource root table’s** `DocumentId` (ascending).
 - This is an acceptable ordering contract because `DocumentId` is a monotonic identity value allocated at insert time and therefore roughly correlates with created order.
 - Pagination applies to that ordering (`offset` skips N rows in `DocumentId` order; `limit` bounds the page size).
-- Paging queries are executed against the **resource root table** (and any required authorization joins), not against `dms.Document`.
-- Response materialization joins the page’s `DocumentId`s to `dms.Document` to obtain `id` (`DocumentUuid`), then derives `_etag/_lastModifiedDate` per [update-tracking.md](update-tracking.md) (or uses validated cached projections when enabled).
+- Paging queries are executed against the **resource root table**, not against `dms.Document`.
+- Response materialization joins the page’s `DocumentId`s to `dms.Document` to obtain `id` (`DocumentUuid`), then derives `_etag/_lastModifiedDate` per [update-tracking.md](update-tracking.md).
 
 1. Translate query parameters to typed filters using Core’s canonicalization rules (`ValidateQueryMiddleware` → `QueryElement[]`).
 2. Build a SQL predicate plan from `ApiSchema`:
@@ -398,7 +389,7 @@ OFFSET 50
 LIMIT @Limit;
 ```
 
-Then join the page to `dms.Document` (for `id` / local tokens). Representation metadata (`_etag/_lastModifiedDate`) is derived per [update-tracking.md](update-tracking.md), optionally using `dms.DocumentCache` as a validated projection.
+Then join the page to `dms.Document` (for `id` / local tokens). Representation metadata (`_etag/_lastModifiedDate`) is derived per [update-tracking.md](update-tracking.md).
 
 ```sql
 WITH page AS (
@@ -422,7 +413,7 @@ ORDER BY p.DocumentId;
 ```
 
 4. Fetch documents:
-   - Return cached JSON when available (if enabled), otherwise reconstitute.
+   - Reconstitute from relational tables (page-based hydration; see [flattening-reconstitution.md](flattening-reconstitution.md)).
 
 Reference/descriptor resolution is metadata-driven (no per-resource code):
 - For **descriptor** query params: compute the descriptor `ReferentialId` (descriptor resource type from `ApiSchema` + normalized URI) and resolve `DocumentId` via `dms.ReferentialIdentity`.
@@ -431,7 +422,7 @@ Reference/descriptor resolution is metadata-driven (no per-resource code):
   - If only a subset is present, resolve a *set* of referenced `DocumentId`s by filtering the referenced root table using the available identity components (including resolving any referenced identity components that are present), then filter the FK column with `IN (subquery)` (or an equivalent join).
 
 Indexing:
-- Create B-tree indexes on the resource root columns used by `queryFieldMapping` (scalar columns and FK columns).
+- Ensure a supporting index exists for every foreign key (including composite parent/child FKs and `..._DocumentId` / `..._DescriptorId` FKs). See [ddl-generation.md](ddl-generation.md) (“FK index policy”).
 - Rely on existing unique/identity indexes on referenced resource natural-key columns (and on `dms.ReferentialIdentity.ReferentialId`) to make reference resolution fast.
 
 
@@ -459,14 +450,6 @@ Indexing:
 4. **`DocumentUuid → DocumentId`**
    - Cache GET/PUT/DELETE resolution.
    - Invalidation: add on insert, remove on delete (or rely on TTL).
-
-5. **`dms.DocumentCache` (optional materialization; preferred eventual consistency)**
-   - Materialize API JSON as a convenience projection for faster reads and CDC/indexing integrations (e.g., Debezium → Kafka).
-   - Maintenance (preferred):
-     - write-driven/background projector (queue or sweep) so rows exist for CDC consumers
-     - optional read-triggered “rebuild hint” (but not the only trigger)
-     - no transactional cross-document cache cascades by default
-
 
 ### Cache keying strategy
 
@@ -699,57 +682,6 @@ Within the same transaction (and while holding the impacted-set locks):
 
 If the recompute fails (identity conflict/unique violation, deadlock without successful retry, etc.), the transaction must roll back (no stale window). Identity conflicts should map to a 409 (same as other natural-key conflicts).
 
-### `dms.DocumentCache` (optional; preferred eventual consistency)
-
-`dms.DocumentCache` is a convenience **projection** of the API JSON representation. The canonical store is relational; correctness does not depend on this table.
-
-One primary purpose is **CDC streaming** (e.g., Debezium → Kafka) of fully materialized documents:
-- when enabled, documents should be materialized here via a write-driven/background projector, not only on API reads
-- a document may never be read via the API, but downstream consumers still need it to appear in `dms.DocumentCache`
-
-**Preferred maintenance mode: eventual consistency**
-
-- No transactional cross-document cache cascades.
-- Projection rows may be missing or stale and can be rebuilt asynchronously by a background projector (reads may also enqueue a rebuild hint, but should not be the only trigger).
-
-Reasons to prefer eventual consistency over strict transactional cache maintenance:
-1. Avoids high-fanout write-time work on identity changes.
-2. Reduces deadlocks/lock contention (bounded write transactions).
-3. Decouples JSON projection from cache/edge strictness: cache rebuild can be throttled/retried independently because the canonical store is relational.
-4. Simplifies operations: caches can be dropped/rebuilt and throttled independently.
-5. Enables deployment-specific tuning (disable during bulk ingest; enable for read-heavy/indexing).
-
-**Write behavior (recommended)**
-- For the document being written: enqueue/mark for background materialization (optionally write-through if the deployment can afford it).
-- For dependent documents (when referenced identities change): enqueue/mark for background rebuild instead of rebuilding inside the write transaction.
-- For CDC/backfill: provide an operator-triggered “rebuild all” job that materializes every `dms.Document` row into `dms.DocumentCache` before enabling Debezium snapshot/streaming.
-
-**Read behavior (recommended)**
-- If a projection row exists and is fresh, return it.
-  - Freshness rule (recommended): recompute the current derived `_etag` from current dependency identity tokens and compare to the cached derived `_etag` (see [update-tracking.md](update-tracking.md)).
-- On projection miss/stale (or when projection is disabled), reconstitute from relational tables; optionally enqueue/mark for background materialization.
-
-**Targeted rebuild (recommended)**
-- Drive background materialization off the same change journals described in [update-tracking.md](update-tracking.md) (document-local changes + identity/URI changes).
-- For identity/URI changes, enqueue the changed document and 1-hop referrers over `dms.ReferenceEdge(ChildDocumentId → ParentDocumentId)`; transitive effects are handled because identity closure recompute bumps the `IdentityVersion` of impacted documents, producing additional identity-change events.
-
-**Strict mode (optional; not preferred)**
-- A strict, transactional “no stale window” cache cascade is possible, but it intentionally is not the baseline because it can reintroduce large fanout and deadlock risk.
-
-#### DocumentCache rebuilder (relational → JSON → upsert)
-
-Whether invoked by a background worker (preferred) or by a read-triggered rebuild hint, the rebuilder:
-1. Loads `(DocumentId, ResourceKeyId)` for the target set from `dms.Document` and groups by `ResourceKeyId` (mapping `ResourceKeyId → (ProjectName, ResourceName)` via `dms.ResourceKey` when selecting compiled plans and when materializing CDC metadata).
-2. Uses compiled `ResourceReadPlan`s to hydrate root/child tables and reconstitute JSON in-memory.
-3. Upserts `dms.DocumentCache` rows for the target set, including:
-   - `DocumentUuid`, `ProjectName`, `ResourceName`, `ResourceVersion` (from `dms.ResourceKey`)
-   - cached derived `_etag/_lastModifiedDate` (computed at materialization time; see [update-tracking.md](update-tracking.md))
-   - optional cached derived per-item `ChangeVersion` (if/when Change Queries are implemented)
-   - `DocumentJson` (reconstituted API JSON including `id`, `_etag`, `_lastModifiedDate`)
-   - `ComputedAt` (projection timestamp)
-
-Rebuild failures should be retried (with backoff) and should not fail unrelated writes in eventual mode.
-
 ### Pseudocode (versioned cache keys)
 
 ```csharp
@@ -831,9 +763,7 @@ sequenceDiagram
   Backend->>DB: upsert dms.ReferentialIdentity (and dms.Descriptor when needed)
   Backend->>DB: write resource tables
   Backend->>DB: maintain dms.ReferenceEdge
-  Backend->>DB: enqueue/mark DocumentCache materialization work when enabled (durable)
   Backend->>DB: COMMIT
-  Note over Backend,DB: Background projector materializes dms.DocumentCache asynchronously (not shown)
   Backend->>L1: write through identity uuid descriptor keys
   Backend->>Redis: write through keys optional
   Backend-->>Core: success
@@ -851,15 +781,8 @@ sequenceDiagram
   Backend->>DB: SELECT DocumentId and local tokens from dms.Document by DocumentUuid
   DB-->>Backend: DocumentId and tokens
 
-  Backend->>DB: SELECT DocumentJson from dms.DocumentCache (validate by derived _etag) optional
-  alt projection hit fresh
-    DB-->>Backend: DocumentJson
-    Backend-->>API: JSON
-  else projection miss or stale or disabled
-    Backend->>DB: hydrate resource tables and reconstitute JSON
-    Backend->>DB: enqueue DocumentCache materialization optional
-    Backend-->>API: JSON
-  end
+  Backend->>DB: hydrate resource tables and reconstitute JSON
+  Backend-->>API: JSON
 ```
 
 
@@ -928,8 +851,9 @@ catch (DbException ex) when (IsForeignKeyViolation(ex))
 
 This redesign treats schema changes as an **operational concern outside DMS**. DMS does not define any in-place schema evolution behavior; instead it validates compatibility **per database** on **first use** of that database connection string:
 
-- Schema creation/updates are performed by a separate DDL generation utility that builds the same derived relational model as runtime and emits/applies dialect-specific DDL (see [ddl-generation.md](ddl-generation.md)).
+- Schema provisioning is performed by a separate DDL generation utility that builds the same derived relational model as runtime and emits/applies dialect-specific DDL (see [ddl-generation.md](ddl-generation.md)).
 - Each provisioned database records its schema fingerprint in `dms.EffectiveSchema` + `dms.SchemaComponent`.
+- `dms.EffectiveSchema` is a singleton current-state row; DMS reads `EffectiveSchemaHash` (and seed fingerprint columns) from that row.
 - When a request is routed to a `DmsInstance`/connection string, DMS reads that database’s recorded fingerprint **once** (cached per connection string), and uses `EffectiveSchemaHash` to select the matching compiled mapping set.
   - Perform this immediately after instance routing and before any schema-dependent work (plan compilation, SQL generation, or relational reads/writes).
 - The compiled mapping set can be produced by runtime compilation or loaded from an ahead-of-time mapping pack (see [aot-compilation.md](aot-compilation.md)).

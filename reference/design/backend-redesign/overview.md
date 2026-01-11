@@ -21,20 +21,16 @@ Draft. This is an initial design proposal for replacing the current three-table 
 1. **Relational-first storage**: Store resources in traditional relational tables (one root table per resource, plus child tables for collections).
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
-4. **Minimize cascade impact**: Use stable surrogate keys (`DocumentId`) and FK relationships so natural-key changes do not require rewriting referencing resource rows. Cascades still exist for derived artifacts (`ReferentialId`, API `_etag` / `_lastModifiedDate`, optional cached JSON), but should be bounded and set-based.
+4. **Minimize cascade impact**: Use stable surrogate keys (`DocumentId`) and FK relationships so natural-key changes do not require rewriting referencing resource rows. Cascades still exist for derived artifacts (`ReferentialId`, API `_etag` / `_lastModifiedDate`), but should be bounded and set-based.
 5. **SQL Server + PostgreSQL parity**: The design must be implementable (DDL + CRUD + query) on both engines.
+   - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
 ### Constraints / Explicit Decisions
 
-- **Cached JSON is optional (preferred)**: The relational representation is the canonical source of truth. DMS **may** maintain `dms.DocumentCache` as an eventually consistent **projection** for faster GET/query responses and CDC/indexing, but it is not required for correctness.
-  - Preferred maintenance: background/write-driven projection (not strict transactional cascades).
-  - When enabled, materialize documents independently of API cache misses so CDC consumers see fully materialized documents.
-  - Rationale and operational details: see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity cascades (descriptor rows are treated as immutable in this redesign).
-  - Use an **opaque “representation version” token** in `dms.Document` (not a JSON/content hash) and update it with **set-based cascades** (similar to `dms.ReferentialIdentity` recompute) to minimize cascade cost.
-  - Strictness: `CacheTargets` computation (1-hop referrers over `dms.ReferenceEdge`) must be phantom-safe; this design uses SERIALIZABLE semantics on the edge scan (see `transactions-and-concurrency.md`).
-- **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (`dms.EffectiveSchema`/`dms.SchemaComponent`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
-- **Authorization companion doc**: Authorization storage and query filtering for this redesign is described in [auth.md](auth.md).
+  - This redesign uses derived update tracking tokens (`ContentVersion` / `IdentityVersion`) and read-time derivation of `_etag/_lastModifiedDate` to avoid write-time fan-out. See [update-tracking.md](update-tracking.md).
+- **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
+- **Authorization is out of scope**: authorization storage and query filtering is intentionally deferred and not part of this redesign phase.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
 - **Polymorphic references use union views**: For abstract reference targets (e.g., `EducationOrganization`), store `..._DocumentId` as an FK to `dms.Document(DocumentId)` for existence and standardize membership validation + identity projection on `{AbstractResource}_View` (derived from `ApiSchema.json` `abstractResources`; see [data-model.md](data-model.md)).
 
@@ -50,8 +46,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - responses reconstitute reference identity values from current referenced rows at read time (no rewrite of referencing rows).
 - Identity/URI changes do not require rewriting relational data. Cascades still exist for **derived artifacts** (set-based; made concurrency-correct via `dms.IdentityLock`):
   - `dms.ReferentialIdentity` (required; transactional recompute so `ReferentialId → DocumentId` is never stale after commit)
-  - `dms.Document` representation metadata (`Etag`, `LastModifiedAt`) which drives API `_etag` / `_lastModifiedDate`
-  - optional cached JSON (`dms.DocumentCache`) rebuild/refresh (eventual)
+  - update tracking tokens and journals (`dms.Document` token columns + `dms.DocumentChangeEvent` / `dms.IdentityChangeEvent`) used to derive API `_etag` / `_lastModifiedDate` and future Change Queries (see [update-tracking.md](update-tracking.md))
 - Identity uniqueness is enforced by:
   - `dms.ReferentialIdentity` (for all identities, including reference-bearing), and
   - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a relational guardrail.
@@ -101,11 +96,12 @@ This redesign is split into focused docs in this directory:
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
 - AOT compilation (optional mapping pack distribution keyed by `EffectiveSchemaHash`): [aot-compilation.md](aot-compilation.md)
+- Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Update tracking (derived `_etag/_lastModifiedDate`, `ChangeVersion`, change journals): [update-tracking.md](update-tracking.md)
 - DDL Generation (builds the relational model and emits/applies DDL): [ddl-generation.md](ddl-generation.md)
-- Authorization (subject model + view-based options): [auth.md](auth.md)
+- DDL generator verification harness (goldens, apply smoke, pack validation): [ddl-generator-testing.md](ddl-generator-testing.md)
 - Strengths and risks (operational + correctness + performance): [strengths-risks.md](strengths-risks.md)
 
 ## Related Changes Implied by This Redesign
@@ -116,10 +112,8 @@ This redesign is split into focused docs in this directory:
 
 ## Risks / Open Questions
 
-1. **Strict materialization cost (if enabled)**: strict transactional `dms.DocumentCache` maintenance (including identity/URI cascades) can add write-time work and fan out.
-   - Mitigation: prefer eventual cache mode; reserve strict mode for deployments that explicitly require representation-sensitive cascades.
-2. **Edge correctness**: referential-id and representation-version cascades depend on complete `dms.ReferenceEdge` coverage (including nested collection refs).
+1. **Edge correctness**: strict identity maintenance, derived representation metadata, and Change Queries depend on complete `dms.ReferenceEdge` coverage (including nested collection refs).
    - Mitigation: add invariant checks/audits and build high-coverage tests around derived bindings; fail writes on edge maintenance failures.
-3. **ReferenceEdge operational load**: required edge maintenance adds overhead; naive “delete-all then insert-all” can churn.
+2. **ReferenceEdge operational load**: required edge maintenance adds overhead; naive “delete-all then insert-all” can churn.
    - Mitigation: diff-based upsert (stage + insert missing + delete stale) and careful indexing.
-4. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).
+3. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).

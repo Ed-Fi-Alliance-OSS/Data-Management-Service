@@ -11,13 +11,13 @@ This document is the data-model deep dive for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
-- Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 ## Table of Contents
 
 - [Proposed Database Model](#proposed-database-model)
 - [Naming Rules (Deterministic, Cross-DB Safe)](#naming-rules-deterministic-cross-db-safe)
+- [Type Mapping Defaults (Deterministic, Cross-DB Safe)](#type-mapping-defaults-deterministic-cross-db-safe)
 - [Other Notes (Design Guardrails)](#other-notes-design-guardrails)
 
 ---
@@ -128,7 +128,7 @@ Notes:
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (including strict identity closure recompute impacts).
   - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are derived at read time from these tokens plus dependency tokens.
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
-- Authorization-related columns are intentionally omitted here. Authorization storage and query filtering is described in [auth.md](auth.md).
+- Authorization is intentionally out of scope for this redesign phase.
 
 ##### 1a) `dms.ChangeVersionSequence`
 
@@ -330,33 +330,41 @@ Descriptor immutability (assumption for this redesign):
 
 Tracks which **effective schema** (core `ApiSchema.json` + extension `ApiSchema.json` files) the database schema is provisioned for, and records the **exact project versions** present in that effective schema. On first use of a given database connection string, DMS uses this to validate that it has a matching mapping set for the database’s recorded fingerprint (cached per connection string; see **EffectiveSchemaHash Calculation** below).
 
+Design decision for this redesign:
+- `dms.EffectiveSchema` is a **single-row current-state** table (not an append-only history table).
+- `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash` to allow deterministic inserts without needing to look up a surrogate `EffectiveSchemaId`.
+
 **PostgreSQL**
 
 ```sql
 CREATE TABLE dms.EffectiveSchema (
-    EffectiveSchemaId bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    EffectiveSchemaSingletonId smallint NOT NULL PRIMARY KEY,
     ApiSchemaFormatVersion varchar(64) NOT NULL,
     EffectiveSchemaHash varchar(64) NOT NULL,
-    AppliedAt timestamp with time zone NOT NULL DEFAULT now()
+    ResourceKeyCount smallint NOT NULL,
+    ResourceKeySeedHash varchar(64) NOT NULL,
+    AppliedAt timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT CK_EffectiveSchema_Singleton CHECK (EffectiveSchemaSingletonId = 1),
+    CONSTRAINT UX_EffectiveSchema_EffectiveSchemaHash UNIQUE (EffectiveSchemaHash)
 );
 
-CREATE UNIQUE INDEX UX_EffectiveSchema_EffectiveSchemaHash
-    ON dms.EffectiveSchema (EffectiveSchemaHash);
-
 CREATE TABLE dms.SchemaComponent (
-    EffectiveSchemaId bigint NOT NULL
-        REFERENCES dms.EffectiveSchema (EffectiveSchemaId) ON DELETE CASCADE,
+    EffectiveSchemaHash varchar(64) NOT NULL
+        REFERENCES dms.EffectiveSchema (EffectiveSchemaHash) ON DELETE CASCADE,
     ProjectEndpointName varchar(128) NOT NULL,
     ProjectName varchar(256) NOT NULL,
     ProjectVersion varchar(32) NOT NULL,
     IsExtensionProject boolean NOT NULL,
-    CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaId, ProjectEndpointName)
+    CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaHash, ProjectEndpointName)
 );
 ```
 
 ##### EffectiveSchemaHash Calculation
 
 `EffectiveSchemaHash` is a deterministic fingerprint of the configured schema set (core + extensions) as it affects relational mapping. It must be stable across file ordering, whitespace, and JSON property ordering.
+
+Determinism contract:
+- For a fixed effective schema set and relational mapping version, the computed `EffectiveSchemaHash` string (lowercase hex, 64 chars) is **byte-for-byte stable** across runs and environments.
 
 Recommendations:
 - Use `SHA-256` and store as lowercase hex (64 chars).
@@ -365,6 +373,7 @@ Recommendations:
 - Exclude OpenAPI payloads from hashing to avoid churn and reduce input size:
   - `projectSchema.openApiBaseDocuments`
   - `projectSchema.resourceSchemas[*].openApiFragments`
+  - `projectSchema.abstractResources[*].openApiFragment`
 - Keep arrays in-order (many arrays are semantically ordered), but sort objects by property name recursively.
 - Include a DMS-controlled constant “relational mapping version” so that a breaking change in mapping conventions forces a mismatch even if ApiSchema content is unchanged.
 
@@ -429,7 +438,6 @@ Important properties:
 - **Required for derived artifacts and reverse lookups**:
   - strict `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
   - outbound dependency enumeration for derived `_etag/_lastModifiedDate` and Change Query processing (see `reference/design/backend-redesign/update-tracking.md`)
-  - JSON projection rebuild targeting when `dms.DocumentCache` is enabled (optional)
 - **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
 - **Excludes descriptor references**: this table indexes outgoing **document** references only (`..._DocumentId` FKs). Descriptor FKs (`..._DescriptorId`) are excluded because descriptor documents are immutable (see `dms.Descriptor` above).
 - **Coverage requirement is correctness-critical**:
@@ -440,7 +448,6 @@ Important properties:
   - The `IsIdentityComponent` flag is the **OR** of all reference sites in the parent document that reference the same `ChildDocumentId`.
 
 Primary uses:
-- **`dms.DocumentCache` invalidation/refresh** (optional): when referenced identities change, enqueue or mark cached documents for rebuild instead of doing an in-transaction “no stale window” cascade.
 - **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
 - **Update tracking / Change Queries**: expand changed dependencies (`ChildDocumentId → ParentDocumentId`) and scan outbound dependencies (`ParentDocumentId → ChildDocumentId`) when computing derived representation metadata and selecting Change Query candidates (see `reference/design/backend-redesign/update-tracking.md`).
 
@@ -497,7 +504,7 @@ CREATE INDEX IX_ReferenceEdge_ChildDocumentId
 Key differences:
 - It stores **resolved `DocumentId` pairs**, so there is no `ReferentialId → DocumentId` join (no Alias-equivalent lookup), and no partition keys.
 - It can be maintained with a **low-churn diff** so “update that does not change references” performs **0 row writes** to this table.
-- It is not used for referential integrity; it exists for reverse lookups, identity/version cascades (`IsIdentityComponent=true`), and optional cache rebuild/invalidation.
+- It is not used for referential integrity; it exists for reverse lookups and for identity/version cascades (`IsIdentityComponent=true`).
 
 **Doesn’t this require the same InsertReferences pattern?**
 
@@ -506,18 +513,6 @@ We can use a similar *concept* (stage + diff) to avoid churn, but it is far simp
 - there is no partition-routing logic,
 - the table is keyed by the parent `DocumentId` (single delete scope), and
 - the diff is between two small sets of `ChildDocumentId`s (with associated `IsIdentityComponent` flags, aggregated by OR when a parent references the same child multiple times).
-
-**Why does `dms.DocumentCache` need an update cascade?**
-
-`dms.DocumentCache` stores **fully reconstituted JSON**, including:
-- reference objects expanded from the *current* identity values of referenced resources, and
-- descriptor URI strings (reconstituted from `dms.Descriptor`, which is treated as immutable in this redesign).
-
-If a referenced document’s identity/URI changes, the JSON that referencing documents should return changes as well. This is a *cache/projection refresh cascade*, not a relational data cascade:
-- relational FK columns remain stable (`..._DocumentId` still points to the same row),
-- only cached JSON requires recomputation/upsert.
-
-In the preferred eventual-cache mode, this is handled as an **async rebuild cascade** (enqueue/mark dependents for rebuild) rather than an in-transaction “no stale window” rewrite. Targeting rules are described in the Caching section.
 
 ##### 6) `dms.IdentityLock` (lock orchestration for strict identity correctness)
 
@@ -541,72 +536,6 @@ Rules:
 
 Notes:
 - See [transactions-and-concurrency.md](transactions-and-concurrency.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
-
-##### 7) `dms.DocumentCache` (optional, eventually consistent projection)
-
-Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
-
-This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
-- it is not purely a “cache-aside” optimization
-- when enabled, DMS should materialize documents into this table via a write-driven/background projector
-
-Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
-
-Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the **derived** `_etag/_lastModifiedDate` values computed at materialization time, and cache reads should validate freshness by recomputing the current derived `_etag` from dependency tokens (see `reference/design/backend-redesign/update-tracking.md`).
-
-Denormalized resource naming:
-- `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
-- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
-
-**PostgreSQL**
-
-```sql
-CREATE TABLE dms.DocumentCache (
-    DocumentId bigint PRIMARY KEY
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    DocumentUuid uuid NOT NULL,
-    ProjectName varchar(256) NOT NULL,
-    ResourceName varchar(256) NOT NULL,
-    ResourceVersion varchar(32) NOT NULL,
-    Etag varchar(64) NOT NULL,
-    LastModifiedAt timestamp with time zone NOT NULL,
-    DocumentJson jsonb NOT NULL,
-    ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
-);
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.DocumentCache (
-    DocumentId bigint NOT NULL,
-    DocumentUuid uniqueidentifier NOT NULL,
-    ProjectName nvarchar(256) NOT NULL,
-    ResourceName nvarchar(256) NOT NULL,
-    ResourceVersion nvarchar(32) NOT NULL,
-    Etag nvarchar(64) NOT NULL,
-    LastModifiedAt datetime2(7) NOT NULL,
-    DocumentJson nvarchar(max) NOT NULL,
-    ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
-    CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
-    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
-);
-
-CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
-    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
-```
-
-Uses:
-- Faster GET/query responses (skip reconstitution)
-- Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
 
 ### Resource tables (schema per project)
 
@@ -673,7 +602,7 @@ This design uses a narrow **union view per abstract resource**:
 - Source of truth is `ApiSchema.json`:
   - `projectSchema.abstractResources[A].identityPathOrder` defines the abstract identity field names and order.
   - `resourceSchema.isSubclass` + `superclass*` fields define which concrete resources belong to `A` and how identity renames map.
-- DMS chooses a canonical SQL type for each abstract identity field (from `abstractResources[A].openApiFragment` when present, otherwise from the participating concrete resources) and casts each `SELECT` accordingly to keep the union portable across engines.
+- DMS chooses a canonical SQL type for each abstract identity field from the participating concrete resources’ derived identity column types and casts each `SELECT` accordingly to keep the union portable across engines. (`abstractResources[A].openApiFragment` is excluded from `EffectiveSchemaHash` and must not affect schema derivation.)
 - For each concrete resource `R` in the hierarchy, DMS derives, per abstract identity field:
   - If `R.identityJsonPaths` contains `$.{fieldName}`, use the corresponding root-table column directly.
   - Else, if `R.isSubclass=true` and `R.superclassIdentityJsonPath == $.{fieldName}`, use the concrete identity column(s) from `R.identityJsonPaths` (identity rename case; e.g., `$.schoolId` → `EducationOrganizationId`).
@@ -854,15 +783,131 @@ See [extensions.md](extensions.md) for the normative mapping rules for `_ext` (r
 
 To keep schema management tractable and avoid rename cascades, physical names must be deterministic:
 
-- Schema name: derived from `ProjectEndpointName` (`ed-fi` → `edfi`, non-alphanumerics removed/normalized).
-- Table names: PascalCase resource names (MetaEd `resourceName`), plus deterministic suffixes for collections.
-- Column names: PascalCase of JSON property names, with suffixes:
-  - `..._DocumentId` for non-descriptor references
-  - `..._DescriptorId` for descriptor references
-  - `Ordinal` for the current collection level, and `<ParentCollectionBaseName>Ordinal` for ancestor ordinals in nested collections (e.g., `AddressOrdinal`)
-- Max identifier length handling:
-  - PostgreSQL: 63 bytes; SQL Server: 128 chars
-  - When exceeding, apply deterministic truncation + short hash suffix.
+- **PascalCase everywhere**: table/column/view/constraint/index names are PascalCase (with `_` separators where required by suffix conventions) across both PostgreSQL and SQL Server. Table names are **not pluralized**.
+
+### 1) Schema names
+
+- Fixed schemas:
+  - `dms` (core tables)
+  - `auth` (authorization companion objects; not fully specified in this redesign)
+- Project schemas (core + extensions): derived from `projectSchema.projectEndpointName`:
+  - `lowercase`
+  - remove all non-alphanumerics
+  - if the result does not start with a letter, prefix with `p`
+  - example: `ed-fi` → `edfi`
+- Validation:
+  - schema names must be unique after normalization; fail fast if two projects collapse to the same schema name
+
+### 2) Identifier quoting (required for PostgreSQL PascalCase)
+
+- PostgreSQL: always emit quoted identifiers (double quotes) so names are stored exactly as generated:
+  - `"edfi"."School"`, `"StudentUniqueId"`, `"IX_SSA_StudentDocumentId"`
+- SQL Server: always emit bracketed identifiers:
+  - `[edfi].[School]`, `[StudentUniqueId]`, `[IX_SSA_StudentDocumentId]`
+
+Always-quote is the simplest cross-engine rule:
+- preserves PascalCase in PostgreSQL
+- avoids reserved-word edge cases without maintaining a reserved-word list
+
+Note: SQL examples in this directory may omit quoting for readability. The DDL generator and compiled SQL plans must follow the quoting rules above.
+
+### 3) Table names (no pluralization)
+
+- Root table:
+  - base name: `resourceSchema.relational.rootTableNameOverride` when present, otherwise MetaEd `resourceName` (PascalCase)
+  - physical: `{ProjectSchema}.{BaseName}`
+- Child collection tables:
+  - base name: `{RootBaseName}{CollectionSuffix}`
+  - suffix derives from the array property path in JSON order (root to leaf), with one segment per collection:
+    - default segment base name: PascalCase of the array property name after deterministic singularization:
+      - if ends with `ies`, replace with `y` (`categories` → `category`)
+      - else if ends with `ches`/`shes`/`xes`/`zes`/`ses`, remove the trailing `es` (`statuses` → `status`)
+      - else if ends with `s` (but not `ss`), remove the trailing `s` (`addresses` → `address`)
+      - else leave unchanged
+      - irregular/ambiguous cases must use `nameOverrides` (below)
+    - override: `resourceSchema.relational.nameOverrides["$.path.to.array[*]"]`
+  - example: `School` + `addresses[*]` + `periods[*]` → `SchoolAddressPeriod`
+- Extensions:
+  - tables live in the **extension project schema** derived from that `_ext` key’s resolved `ProjectEndpointName`
+  - naming follows `extensions.md`:
+    - extension root table: `{ResourceBaseName}Extension`
+    - extension collection tables: `{ResourceBaseName}Extension{CollectionSuffix}`
+- Abstract union views:
+  - `{ProjectSchema}.{AbstractResource}_View`
+
+### 4) Column names (PascalCase + stable suffixes)
+
+**Primary keys**
+- Root tables: `DocumentId` (PK + FK → `dms.Document(DocumentId)`)
+- Child tables use composite keys (see `flattening-reconstitution.md`):
+  - key column order is stable: parent key parts first, then `Ordinal`
+  - parent key parts include:
+    - the root `DocumentId`, plus
+    - any ancestor ordinals (in root-to-leaf order)
+
+**Parent key part columns (child tables)**
+- Root document id key part: `{RootBaseName}_DocumentId` (e.g., `School_DocumentId`)
+- Ancestor ordinals:
+  - `{ParentCollectionBaseName}Ordinal` (e.g., `AddressOrdinal`)
+
+**Reference and descriptor FK columns**
+- Resource references: `{ReferenceBaseName}_DocumentId`
+  - `ReferenceBaseName` comes from the reference-object JSON path (e.g., `$.studentReference` → `Student`)
+  - override: `resourceSchema.relational.nameOverrides["$.studentReference"]`
+- Descriptor references: `{DescriptorBaseName}_DescriptorId`
+  - `DescriptorBaseName` comes from the descriptor value JSON path (e.g., `$.schoolTypeDescriptor` → `SchoolTypeDescriptor`)
+  - override: `resourceSchema.relational.nameOverrides["$.schoolTypeDescriptor"]`
+
+**Scalar columns**
+- Scalars are derived from JSON property names under the table’s JSON scope (PascalCase).
+- Inlined objects contribute a stable prefix based on the object property path within the scope (PascalCase concatenation).
+- `resourceSchema.relational.nameOverrides["$.path.to.property"]` can override the **base name** for a scalar column at that JSON path.
+
+### 5) Constraint, index, and trigger names (stable)
+
+Object names are deterministic and derived from the owning table and column names:
+- Primary key constraints: `PK_{TableName}`
+- Unique constraints: `UX_{TableName}_{Column1}_{Column2}_...` (columns in key order)
+- Foreign keys: `FK_{TableName}_{ColumnName}` (or `FK_{TableName}_{Column1}_{Column2}` for composite FKs)
+- Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)
+
+If a name exceeds the dialect identifier limit, apply truncation + hash as below.
+
+### 6) Max identifier length handling (truncation + hash)
+
+When an identifier exceeds the maximum for the target dialect:
+- PostgreSQL: 63 **bytes** (UTF-8)
+- SQL Server: 128 **characters**
+
+Apply deterministic shortening:
+1. Compute `hash = sha256hex(utf8(fullIdentifier))` (lowercase hex).
+2. Replace the identifier with: `prefix + "_" + hash[0..10]`
+   - `prefix` is the longest leading portion that allows the final name to fit within the dialect limit.
+3. Validate uniqueness after shortening; if a collision still occurs, fail fast and require a `nameOverrides` fix.
+
+## Type Mapping Defaults (Deterministic, Cross-DB Safe)
+
+The DDL generator derives physical scalar column types deterministically from:
+- `resourceSchema.jsonSchemaForInsert` (types + formats + `maxLength`), and
+- `resourceSchema.decimalPropertyValidationInfos` (precision/scale for `type: "number"`).
+
+Alignment note:
+- SQL Server scalar types intentionally match Ed-Fi ODS SQL Server conventions (authoritative DDL uses `NVARCHAR`, `DATETIME2(7)`, `TIME(7)`, and `DATE`).
+
+Rules:
+- Scalar strings must have `maxLength`; missing `maxLength` is an error.
+- Decimals must have `(totalDigits, decimalPlaces)` from `decimalPropertyValidationInfos`; missing info is an error.
+- `date-time` values are treated as UTC instants at the application boundary. SQL Server storage uses `datetime2(7)` (no offset), so any incoming offset is normalized to UTC at write time.
+
+| ApiSchema JSON schema | PostgreSQL type | SQL Server type |
+| --- | --- | --- |
+| `type: "string"` (no `format`) | `varchar(n)` | `nvarchar(n)` |
+| `type: "string", format: "date"` | `date` | `date` |
+| `type: "string", format: "time"` | `time` | `time(7)` |
+| `type: "string", format: "date-time"` | `timestamp with time zone` | `datetime2(7)` |
+| `type: "integer"` | `integer` | `int` |
+| `type: "number"` + `decimalPropertyValidationInfos` | `numeric(p,s)` | `decimal(p,s)` |
+| `type: "boolean"` | `boolean` | `bit` |
 
 
 ## Other Notes (Design Guardrails)
