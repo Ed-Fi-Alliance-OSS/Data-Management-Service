@@ -82,7 +82,7 @@ public sealed class TokenInfoStepDefinitions
         _currentToken = dmsToken.Replace("Bearer ", "");
 
         var formData = new Dictionary<string, string> { ["token"] = _currentToken };
-        var content = new FormUrlEncodedContent(formData);
+        using var content = new FormUrlEncodedContent(formData);
 
         _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
             endpoint,
@@ -256,9 +256,10 @@ public sealed class TokenInfoStepDefinitions
         resources!.AsArray().Should().NotBeEmpty();
 
         // Check that resource paths end with 's' (pluralized)
-        foreach (var resource in resources.AsArray())
+        var resourcePaths = resources.AsArray().Select(r => r!["resource"]!.GetValue<string>());
+
+        foreach (var resourcePath in resourcePaths)
         {
-            var resourcePath = resource!["resource"]!.GetValue<string>();
             resourcePath.Should().NotBeNullOrEmpty();
             // Most Ed-Fi resources should be pluralized (ending with 's')
             // Examples: /ed-fi/students, /ed-fi/schools, /ed-fi/academicWeeks
@@ -276,9 +277,10 @@ public sealed class TokenInfoStepDefinitions
         resources.Should().NotBeNull();
         resources!.AsArray().Should().NotBeEmpty();
 
-        foreach (var resource in resources.AsArray())
+        var resourceOperations = resources.AsArray().Select(r => r!["operations"]);
+
+        foreach (var operations in resourceOperations)
         {
-            var operations = resource!["operations"];
             operations.Should().NotBeNull();
             operations!.AsArray().Should().NotBeEmpty("each resource should have at least one operation");
         }
