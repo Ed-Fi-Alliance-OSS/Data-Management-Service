@@ -4,7 +4,9 @@
 
 Draft.
 
-This document is the authorization deep dive for `overview.md`:
+Out of scope for this redesign phase. This file is retained as a placeholder for future authorization design work, and the DDL generator produces **no** authorization objects (`auth.*`, `dms.DocumentSubject`, etc.).
+
+This document was originally written as the authorization deep dive for `overview.md`:
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)

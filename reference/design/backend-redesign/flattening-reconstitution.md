@@ -12,7 +12,6 @@ This document is the flattening/reconstitution deep dive for `overview.md`.
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
 - AOT compilation (optional mapping pack distribution): [aot-compilation.md](aot-compilation.md)
-- Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 This section describes how DMS flattens JSON documents into relational tables on POST/PUT, and how it reconstitutes JSON from those tables on GET/query without code-generating per-resource code.
@@ -73,6 +72,9 @@ Everything else can be derived and compiled once per schema version into a resou
 - Keep `ApiSchema.json` authoritative but not bloated.
 - Provide stable physical naming and a small escape hatch for “bad cases”.
 - Avoid enumerating tables/columns explicitly.
+
+Normative physical identifier rules (schema/table/column naming, quoting, truncation, and constraint/index naming) are defined in:
+- `reference/design/backend-redesign/data-model.md` (`Naming Rules (Deterministic, Cross-DB Safe)`)
 
 ### 3.2 Proposed shape
 
@@ -139,6 +141,11 @@ This is not code generation; it is compiled (or deserialized) metadata cached by
 
 The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and apply schema changes (see [ddl-generation.md](ddl-generation.md)).
 
+Determinism requirement:
+- The derived model and compiled plans must be reproducible for a given effective schema and mapping version.
+- Do not depend on JSON file order, JSON property order, or dictionary iteration order when building `RelationalResourceModel` or compiling SQL/plans.
+- Use the deterministic ordering rules defined in [ddl-generation.md](ddl-generation.md) (“Deterministic output ordering (DDL + packs)”) for tables, columns, constraints, indexes, and views.
+
 ### 4.0 `dms.ResourceKey` validation and `ResourceKeyId` mapping (AOT pack)
 
 Core tables store resource type as `ResourceKeyId` (see `dms.ResourceKey` in [data-model.md](data-model.md)), while compiled plans are keyed by `QualifiedResourceName(ProjectName, ResourceName)`.
@@ -146,7 +153,7 @@ Core tables store resource type as `ResourceKeyId` (see `dms.ResourceKey` in [da
 In AOT mode, the mapping pack **embeds** the deterministic `dms.ResourceKey` seed list for that `EffectiveSchemaHash` (ordered `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)`), and DDL provisioning records a matching `ResourceKeySeedHash` in `dms.EffectiveSchema` for fast runtime validation.
 
 On first use of a database (after reading its recorded `EffectiveSchemaHash` and selecting/loading the mapping pack), DMS must:
-1. Read `ResourceKeyCount` and `ResourceKeySeedHash` from `dms.EffectiveSchema` (for the selected `EffectiveSchemaHash`).
+1. Read `ResourceKeyCount` and `ResourceKeySeedHash` from the singleton `dms.EffectiveSchema` row.
 2. Compare to the expected fingerprint from the mapping set (derived from the embedded seed list).
 3. If the fingerprint matches, accept without reading `dms.ResourceKey` (fast path).
 4. If the fingerprint mismatches (or the columns are missing), fall back to reading `dms.ResourceKey` ordered by `ResourceKeyId` and diffing against the embedded list for diagnostics, then fail fast.
@@ -461,7 +468,7 @@ Within a single transaction:
    - 1:1 extension root table rows (keyed by `DocumentId`)
    - extension scope/collection rows keyed to the same composite keys as the base scope they extend (document id + ordinals)
    - use the same baseline “replace” strategy as core collections (delete existing, insert current)
-5. Maintain `dms.ReferenceEdge` for this document (diff-based upsert recommended; see Write Path) so referential-id cascades, representation-version cascades, and targeted async projection rebuilds are possible without scanning all tables.
+5. Maintain `dms.ReferenceEdge` for this document (diff-based upsert recommended; see Write Path) so strict referential-id cascades and derived update tracking (representation metadata + Change Queries) can be computed without scanning all tables.
 
 Bulk insert options (non-codegen):
 - **Multi-row INSERT** with parameters (good default)
@@ -527,7 +534,13 @@ SELECT DocumentId FROM page_ids;
 -- Optional (if totalCount=true): add a result set that uses the same filters without paging.
 -- SELECT COUNT(*) AS TotalCount FROM ... WHERE ...;
 
-SELECT d.DocumentId, d.DocumentUuid, d.Etag, d.LastModifiedAt
+SELECT
+  d.DocumentId,
+  d.DocumentUuid,
+  d.ContentVersion,
+  d.IdentityVersion,
+  d.ContentLastModifiedAt,
+  d.IdentityLastModifiedAt
 FROM dms.Document d
 JOIN page p ON p.DocumentId = d.DocumentId;
 
@@ -566,10 +579,10 @@ TotalCount
 **Result set 2 (`dms.Document` joined to the `page` keyset)**
 
 ```text
-DocumentId | DocumentUuid                           | Etag | LastModifiedAt
----------- | -------------------------------------- | ---- | ---------------------------
-2001       | 7c5a4c7e-1b2c-4b3d-9f2e-6d0c8c0f8a11   | 14   | 2026-01-06T18:22:41Z
-2002       | 1a2b3c4d-5e6f-7081-9201-aabbccddeeff   |  2   | 2026-01-05T09:10:00Z
+DocumentId | DocumentUuid                           | ContentVersion | IdentityVersion | ContentLastModifiedAt       | IdentityLastModifiedAt
+---------- | -------------------------------------- | -------------- | -------------- | --------------------------- | ---------------------------
+2001       | 7c5a4c7e-1b2c-4b3d-9f2e-6d0c8c0f8a11   | 14             | 14             | 2026-01-06T18:22:41Z        | 2026-01-06T18:22:41Z
+2002       | 1a2b3c4d-5e6f-7081-9201-aabbccddeeff   |  2             |  2             | 2026-01-05T09:10:00Z        | 2026-01-05T09:10:00Z
 ```
 
 **Result set 3 (root rows: `edfi.School`)**
@@ -715,8 +728,8 @@ Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
 - write references by looking up identity value bags
 - write descriptor strings by looking up `dms.Descriptor.Uri`
 - write `_ext` blocks from extension tables (only when at least one extension value is present at that scope)
-- inject DMS envelope fields (`id`, `_etag`, `_lastModifiedDate`) from `dms.Document`
-  - `_lastModifiedDate` is derived from `dms.Document.LastModifiedAt` (formatted as UTC) and must not be generated at read/materialization time.
+- inject `id` from `dms.Document.DocumentUuid`
+- derive `_etag` and `_lastModifiedDate` from persisted `dms.Document` token columns plus dependency tokens (see [update-tracking.md](update-tracking.md)); these values must not be generated as “now” at read/materialization time.
 
 Array presence rule (recommended):
 - If the array has rows, write it.
@@ -831,6 +844,29 @@ public sealed record RelationalScalarType(
     (int Precision, int Scale)? Decimal = null
 );
 ```
+
+#### Scalar type mapping (dialect defaults)
+
+These mappings are a determinism contract for both:
+- the DDL generation utility (DDL emitted/applied), and
+- the runtime plan compiler (parameter types, casts, and view definitions).
+
+Rules:
+- `ScalarKind.String` requires `maxLength` in `jsonSchemaForInsert`; missing `maxLength` is a schema compilation error.
+  - Descriptor URI strings are not stored as strings; they are stored as `..._DescriptorId` FKs, so this rule applies to scalar columns only.
+- `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
+- `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
+
+| `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server type |
+| --- | --- | --- | --- |
+| `String` | `type: "string"` (no `format`) | `varchar(n)` | `nvarchar(n)` |
+| `Int32` | `type: "integer"` | `integer` | `int` |
+| `Int64` | (not typical in Ed-Fi, reserved) | `bigint` | `bigint` |
+| `Decimal` | `type: "number"` + `decimalPropertyValidationInfos` | `numeric(p,s)` | `decimal(p,s)` |
+| `Boolean` | `type: "boolean"` | `boolean` | `bit` |
+| `Date` | `type: "string", format: "date"` | `date` | `date` |
+| `DateTime` | `type: "string", format: "date-time"` | `timestamp with time zone` | `datetime2(7)` |
+| `Time` | `type: "string", format: "time"` | `time` | `time(7)` |
 
 ### 7.2 JSON path compilation (avoid parsing JSONPath per value)
 
@@ -1027,7 +1063,7 @@ public abstract record TableConstraint
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this edge source contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
-/// Used for referential-id and representation-version cascade closure, and for targeted projection rebuild when <c>dms.DocumentCache</c> is enabled.
+/// Used for strict identity-closure recompute of <c>dms.ReferentialIdentity</c> (via <c>dms.ReferenceEdge</c> filtering by <c>IsIdentityComponent=true</c>).
 /// </param>
 public sealed record DocumentReferenceEdgeSource(
     bool IsIdentityComponent,
@@ -1085,6 +1121,17 @@ Plans contain:
 - SQL strings (parameterized)
 - binding rules (column order, batching limits, expected keyset shape)
 - *no* per-resource code; only metadata + generic executors
+
+#### SQL text canonicalization (required)
+
+All SQL strings emitted into compiled plans (runtime caches and/or AOT mapping packs) MUST be **byte-for-byte stable** for a fixed `(EffectiveSchemaHash, dialect, relational mapping version)`:
+
+- **Whitespace/formatting**: use `\n` line endings, stable indentation, no trailing whitespace, and stable keyword casing per dialect.
+- **Clause ordering**: emit stable select-list order, stable join order, stable predicate order, and stable `IN (...)`/TVP/array patterns for the same logical query.
+- **Alias naming**: generate stable table/column aliases deterministically from the plan/model (no randomized suffixes).
+- **Parameter naming**: generate parameter names deterministically from the binding model (no GUIDs, no hash-map iteration order). When duplicates are possible, use a deterministic de-duplication scheme.
+
+This is required to support golden-file tests for compiled SQL, stable AOT pack output, and reliable diagnostics.
 
 ```csharp
 /// <summary>
@@ -1732,16 +1779,13 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     // 5) Execute root + child table writes in plan order (set-based).
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
-    // 6) Maintain reverse reference index (required for referential-id + representation-version cascades).
+    // 6) Maintain reverse reference index (required for strict referential-id maintenance and update tracking).
     await _referenceEdgeWriter.UpsertEdgesAsync(connection, tx, documentId, writeSet.ReferenceEdges, ct);
 
     // 7) Maintenance:
     //    - Strict referential-id correctness for reference-bearing identities means compute+lock the impacted identity closure via:
     //        dms.IdentityLock + dms.ReferenceEdge (IsIdentityComponent=true)
     //      and recompute dms.ReferentialIdentity for all impacted documents.
-    //
-    //    - If dms.DocumentCache is enabled:
-    //        - enqueue/mark this document (and dependents) for background materialization (CDC/indexing)
 
     await tx.CommitAsync(ct);
 }

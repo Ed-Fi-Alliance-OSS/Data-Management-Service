@@ -12,7 +12,6 @@ This document captures strengths and risks for `overview.md`.
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
-- Authorization: [auth.md](auth.md)
 
 ## Purpose
 
@@ -49,16 +48,6 @@ To get an impartial review of design strengths and risks from Gemini 3.0 Pro and
 - Carrying concrete JSON locations for extracted references (e.g., `$...addresses[2]...`) enables an efficient `DocumentReferenceInstanceIndex` keyed by ordinal path.
 - This is critical to making the no-codegen flattener performant: reference resolution can be bulk and request-scoped, without per-row JSONPath evaluation or per-row hashing.
 
-### Clear separation of required correctness vs optional projections
-
-- The docs clearly separate transactional correctness artifacts (`dms.ReferentialIdentity`, `dms.ReferenceEdge`, representation metadata) from optional eventual projections (`dms.DocumentCache`).
-- That separation makes trade-offs explicit and helps avoid accidentally depending on `dms.DocumentCache` for correctness.
-
-### Authorization alignment with ODS-style views
-
-- Moving away from JSONB authorization arrays and aligning to predictable `auth.*` view shapes is a sound direction.
-- The performance of this approach will hinge on the EdOrg closure/tuple table and having the right covering indexes for the most common joins.
-
 ---
 
 ## Risks
@@ -66,13 +55,12 @@ To get an impartial review of design strengths and risks from Gemini 3.0 Pro and
 ### ReferenceEdge Integrity (Highest Operational Risk)
 `dms.ReferenceEdge` is treated as a strict derived dependency index for:
 - `dms.ReferentialIdentity` cascade recompute (`IsIdentityComponent=true`)
-- representation-version cascade (`dms.Document(Etag, LastModifiedAt)`)
-- optional `dms.DocumentCache` rebuild targeting
+- derived representation metadata and Change Query processing (see `update-tracking.md`)
 - delete diagnostics (“who references me?”)
 
 If `dms.ReferenceEdge` ever diverges from the actual persisted FK graph (bug in diff logic, manual DB edits, partial failures), the system can become **silently incorrect**:
-- cascades miss documents (stale referential ids / stale etags)
-- cache rebuild targeting misses documents (stale JSON returned)
+- cascades miss documents (stale referential ids)
+- derived `_etag/_lastModifiedDate` and Change Query selection becomes incorrect/incomplete
 - delete conflict messages become incomplete
 
 #### Why it’s tricky
@@ -105,7 +93,7 @@ The design currently frames verification/validation as “optional/configurable�
 The `dms.IdentityLock` orchestration (Algorithms 1–2 in `transactions-and-concurrency.md`) is the most complex part of the design:
 - shared locks on identity-component children before parent writes (Invariant A)
 - closure expansion to fixpoint (Algorithm 2)
-- SERIALIZABLE semantics for phantom-safe parent-of-closure scans
+- explicit row-locking to prevent closure phantoms (no SERIALIZABLE scans required)
 
 Failure modes:
 - **deadlocks under load** (especially if cycles exist or lock ordering is violated in any edge case)
@@ -154,19 +142,18 @@ Even with “one command / multiple resultsets”, a deep resource can require m
 - application allocation pressure (many small row objects, JSON assembly work)
 
 #### Guidance / critique
-Treating `dms.DocumentCache` as “optional” may not be practical given:
-- standard API latency expectations (example target: <200ms for typical reads)
-- protecting DB CPU from repeated reconstitution work
+Treat reconstitution cost as a first-class performance concern:
+- deep resources can require many result sets per page
+- read-time derived metadata requires batching dependency token loads
 
 #### Possible actions / mitigations
 - **Benchmark read paths early**:
   - representative deep resources (many child tables, nested collections)
   - page sizes matching real clients (25/100/200)
-  - both “cache hit” and “cache miss (reconstitution)” 99p latency and CPU
+  - 99p latency and CPU (end-to-end)
 
 #### Instrumentation
 - per-resource `GetByIdLatencyMs`, `QueryLatencyMs`
-- cache hit rate, rebuild rate, rebuild latency
 - per-request result set count and reconstitution CPU time
 
 ---
@@ -178,26 +165,26 @@ At the “very large table” scale (e.g., ~100M documents and ~1B edges), sever
 ### `dms.Document` (~100M rows)
 
 - **Row/index bloat from repeated strings**: wide strings in hot tables inflate storage and reduce cache locality; mitigate by using small surrogate keys (e.g., `ResourceKeyId` instead of `ProjectName`/`ResourceName`) and only denormalizing names where required (e.g., CDC metadata).
-- **Cascade-driven update churn**: representation-metadata bumps (`Etag`, `LastModifiedAt`) can touch large dependent sets. Even without indexing those columns, high update rates cause Postgres MVCC bloat/autovacuum pressure and SQL Server log volume/fragmentation/lock contention.
+- **Bulk identity closure updates**: identity updates can cascade to many dependent documents (closure recompute), creating log/IO pressure and contention under “hub” scenarios.
 - **Random UUID index insertion**: `DocumentUuid` (and `dms.ReferentialIdentity.ReferentialId`) are effectively random, increasing page splits/fragmentation under sustained ingest unless explicitly managed.
 
 #### Possible actions / mitigations
 
 - Replace repeated `(ProjectName, ResourceName)` strings in hot tables with a small surrogate id (e.g., `dms.ResourceKey(ResourceKeyId)`); keep version metadata on `dms.ResourceKey` and only denormalize where required for CDC/streaming.
-- Keep representation metadata out of hot covering indexes; consider isolating high-churn representation metadata into a separate table if update contention becomes dominant (trade-off: extra join on reads).
+- Prefer narrow, purpose-built indexes and avoid indexing high-churn columns unless there is a measured query need.
 - Plan for UUID index maintenance (engine-appropriate fillfactor settings, tuned autovacuum/rebuild cadence).
 
 ### `dms.ReferenceEdge` (~1B rows)
 
 - **Storage and maintenance**: the heap + PK + reverse index are enormous; routine operations (vacuum/reindex/rebuild, backup/restore, replication/log shipping) and accidental large deletes/updates become very expensive.
 - **Churn amplification**: even diff-based edge maintenance still writes to very large B-trees; Postgres deletes/updates create dead tuples requiring vacuum, and SQL Server incurs heavy log + fragmentation.
-- **Fanout/hub contention**: “hub” children can have millions of inbound edges (e.g. `School` / `EducationOrganization`); strict identity/representation cascades and SERIALIZABLE edge scans over these hubs can drive latency spikes, deadlocks, and retry storms.
+- **Fanout/hub contention**: “hub” children can have millions of inbound edges (e.g. `School` / `EducationOrganization`); strict identity closure recompute and Change Query dependency expansion over these hubs can drive latency spikes, deadlocks, and retry storms.
 - **`CreatedAt` overhead**: a per-row timestamp is significant storage at this scale if it is not used for query/retention.
 
 #### Possible actions / mitigations
 
 - Make partitioning/compression of `dms.ReferenceEdge` a first-class deployment option (and choose a partitioning key that matches dominant access patterns, e.g., reverse lookups by `ChildDocumentId`).
 - Add a filtered/partial structure for identity edges (`IsIdentityComponent=true`) (filtered index/partial index, or a separate identity-edge table) so identity closure computations don’t pay full “all edges” cost.
-- Add guardrails for high-fanout cascades (configurable bounds, explicit retry/backoff policies, and a fallback mode that degrades representation-metadata/caching cascades to eventual consistency when the impacted set is huge).
+- Add guardrails for high-fanout closure work (configurable bounds, explicit retry/backoff policies, and clear operator guidance when the impacted set is huge).
 - Re-evaluate `CreatedAt` on `dms.ReferenceEdge` (drop if unused, or move to an optional audit table).
 - Already assumed: descriptor edges are excluded from this table

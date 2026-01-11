@@ -11,7 +11,6 @@ This document is the extensions deep dive for `overview.md`.
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
-- Authorization: [auth.md](auth.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
 ## Table of Contents
@@ -38,7 +37,7 @@ Defines how Ed-Fi-style extensions (`_ext`) are represented in the relational pr
 - extension fields under `_ext` inside common types, including within collections and nested collections
 - multiple extension projects (e.g., Sample + TPDM) simultaneously
 
-Authorization storage is described in [auth.md](auth.md).
+Authorization is intentionally out of scope for this redesign phase.
 
 ## Goals & Constraints
 
