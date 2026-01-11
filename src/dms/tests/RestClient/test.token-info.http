@@ -200,7 +200,7 @@ client_id={{edOrgClientId}}
 @edOrgToken={{edOrgTokenRequest.response.body.access_token}}
 
 ### Check token info for EdOrg-only client
-POST http://localhost:{{configPort}}/oauth/token_info
+POST http://localhost:{{dmsPort}}/oauth/token_info
 Content-Type: application/json
 Authorization: bearer {{configToken}}
 
