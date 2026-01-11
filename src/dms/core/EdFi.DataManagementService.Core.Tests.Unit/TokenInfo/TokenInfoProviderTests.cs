@@ -37,8 +37,9 @@ public class TokenInfoProviderTests
         {
             // Arrange - Create a valid JWT token
             var tokenHandler = new JwtSecurityTokenHandler();
-            // Note: Test key only - never use hardcoded secrets in production
-#pragma warning disable S6781 // JWT secret keys should not be disclosed - This is a test key only
+            // Hardcoded secret is safe here: this is test-only code for unit testing JWT token parsing.
+            // Production code uses secure key management from configuration/secrets storage.
+#pragma warning disable S6781 // JWT secret keys should not be disclosed
             var testSecretKey = "this-is-a-test-secret-key-for-jwt-tokens-12345678";
             var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(testSecretKey));
 #pragma warning restore S6781
@@ -359,7 +360,9 @@ public class TokenInfoProviderTests
         {
             // Arrange - Create a JWT token without dmsInstanceIds
             var tokenHandler = new JwtSecurityTokenHandler();
-#pragma warning disable S6781 // JWT secret keys should not be disclosed - This is a test key only
+            // Hardcoded secret is safe here: this is test-only code for unit testing JWT token parsing.
+            // Production code uses secure key management from configuration/secrets storage.
+#pragma warning disable S6781 // JWT secret keys should not be disclosed
             var key = new SymmetricSecurityKey(
                 System.Text.Encoding.UTF8.GetBytes("this-is-a-test-secret-key-for-jwt-tokens-12345678")
             );
@@ -501,7 +504,9 @@ public class TokenInfoProviderTests
         {
             // Arrange - Create a valid JWT token
             var tokenHandler = new JwtSecurityTokenHandler();
-#pragma warning disable S6781 // JWT secret keys should not be disclosed - This is a test key only
+            // Hardcoded secret is safe here: this is test-only code for unit testing JWT token parsing.
+            // Production code uses secure key management from configuration/secrets storage.
+#pragma warning disable S6781 // JWT secret keys should not be disclosed
             var key = new SymmetricSecurityKey(
                 System.Text.Encoding.UTF8.GetBytes("this-is-a-test-secret-key-for-jwt-tokens-12345678")
             );
