@@ -155,7 +155,7 @@ public static class WebApplicationBuilderExtensions
             logger.Information("Injecting PostgreSQL as the primary backend datastore");
             webAppBuilder.Services.AddPostgresqlDatastore(
                 webAppBuilder.Configuration.GetSection("DatabaseSettings:DatabaseConnection").Value
-                ?? string.Empty
+                    ?? string.Empty
             );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
             webAppBuilder.Services.AddTransient<ITokenManager, OpenIddictTokenManager>();

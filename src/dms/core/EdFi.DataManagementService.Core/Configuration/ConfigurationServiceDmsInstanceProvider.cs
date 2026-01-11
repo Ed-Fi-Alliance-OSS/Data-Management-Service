@@ -120,10 +120,28 @@ public class ConfigurationServiceDmsInstanceProvider(
             : new List<DmsInstance>().AsReadOnly();
 
     /// <inheritdoc />
-    public DmsInstance? GetById(long id, string? tenant = null) =>
-        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
-            ? instances.FirstOrDefault(instance => instance.Id == id)
-            : null;
+    public DmsInstance? GetById(long id, string? tenant = null)
+    {
+        // If tenant is specified, only search in that tenant
+        if (tenant != null)
+        {
+            return _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
+                ? instances.FirstOrDefault(instance => instance.Id == id)
+                : null;
+        }
+
+        // If tenant is null, search across all loaded tenants (supports both single and multi-tenancy)
+        foreach (var tenantInstances in _instancesByTenant.Values)
+        {
+            var instance = tenantInstances.FirstOrDefault(i => i.Id == id);
+            if (instance != null)
+            {
+                return instance;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Gets the cache key for a tenant, using empty string for null/empty tenant

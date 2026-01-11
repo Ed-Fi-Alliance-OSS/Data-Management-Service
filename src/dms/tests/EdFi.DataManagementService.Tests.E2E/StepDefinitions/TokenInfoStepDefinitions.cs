@@ -1,0 +1,307 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Tests.E2E.Management;
+using FluentAssertions;
+using Microsoft.Playwright;
+using Reqnroll;
+
+namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
+
+[Binding]
+public sealed class TokenInfoStepDefinitions
+{
+    private readonly PlaywrightContext _playwrightContext;
+    private readonly TestLogger _logger;
+    private readonly ScenarioContext _scenarioContext;
+    private readonly StepDefinitions _sharedSteps;
+
+    private IAPIResponse _apiResponse = null!;
+    private JsonNode? _responseBody;
+    private string _currentToken = string.Empty;
+
+    public TokenInfoStepDefinitions(
+        PlaywrightContext playwrightContext,
+        TestLogger logger,
+        ScenarioContext scenarioContext,
+        StepDefinitions sharedSteps
+    )
+    {
+        _playwrightContext = playwrightContext;
+        _logger = logger;
+        _scenarioContext = scenarioContext;
+        _sharedSteps = sharedSteps;
+    }
+
+    [When("a POST request is made to {string} with the current bearer token")]
+    public async Task WhenPostRequestWithCurrentToken(string endpoint)
+    {
+        // Get the current token from scenario context (set by authorization step)
+        var dmsToken = _scenarioContext.Get<string>("dmsToken");
+        // Extract the bearer token (remove "Bearer " prefix)
+        _currentToken = dmsToken.Replace("Bearer ", "");
+
+        var requestBody = new { token = _currentToken };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+            }
+        );
+
+        // Set the response in the shared steps via reflection so "Then it should respond with" works
+        SetSharedApiResponse(_apiResponse);
+
+        var responseText = await _apiResponse.TextAsync();
+        if (!string.IsNullOrEmpty(responseText))
+        {
+            try
+            {
+                _responseBody = JsonNode.Parse(responseText);
+            }
+            catch
+            {
+                _logger.log.Information("Response is not valid JSON: {ResponseText}", responseText);
+            }
+        }
+    }
+
+    [When("a POST request is made to {string} with form-encoded token")]
+    public async Task WhenPostRequestWithFormEncodedToken(string endpoint)
+    {
+        var dmsToken = _scenarioContext.Get<string>("dmsToken");
+        // Extract the bearer token (remove "Bearer " prefix)
+        _currentToken = dmsToken.Replace("Bearer ", "");
+
+        var formData = new Dictionary<string, string> { ["token"] = _currentToken };
+        using var content = new FormUrlEncodedContent(formData);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = await content.ReadAsStringAsync(),
+                Headers = new Dictionary<string, string>
+                {
+                    ["Content-Type"] = "application/x-www-form-urlencoded",
+                },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+
+        var responseText = await _apiResponse.TextAsync();
+        if (!string.IsNullOrEmpty(responseText))
+        {
+            try
+            {
+                _responseBody = JsonNode.Parse(responseText);
+            }
+            catch
+            {
+                _logger.log.Information("Response is not valid JSON: {ResponseText}", responseText);
+            }
+        }
+    }
+
+    [When("a POST request is made to {string} without a token")]
+    public async Task WhenPostRequestWithoutToken(string endpoint)
+    {
+        var requestBody = new { };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+    }
+
+    [When("a POST request is made to {string} with an invalid token")]
+    public async Task WhenPostRequestWithInvalidToken(string endpoint)
+    {
+        var invalidToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.invalid.signature";
+        var requestBody = new { token = invalidToken };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+
+        var responseText = await _apiResponse.TextAsync();
+        if (!string.IsNullOrEmpty(responseText))
+        {
+            try
+            {
+                _responseBody = JsonNode.Parse(responseText);
+            }
+            catch
+            {
+                _logger.log.Information("Response is not valid JSON: {ResponseText}", responseText);
+            }
+        }
+    }
+
+    [When("a POST request is made to {string} with token {string}")]
+    public async Task WhenPostRequestWithSpecificToken(string endpoint, string token)
+    {
+        var requestBody = new { token };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+
+        var responseText = await _apiResponse.TextAsync();
+        if (!string.IsNullOrEmpty(responseText))
+        {
+            try
+            {
+                _responseBody = JsonNode.Parse(responseText);
+            }
+            catch
+            {
+                _logger.log.Information("Response is not valid JSON: {ResponseText}", responseText);
+            }
+        }
+    }
+
+    [When("a POST request is made to {string} without authorization")]
+    public async Task WhenPostRequestWithoutAuthorization(string endpoint)
+    {
+        // Send request with no body and minimal headers (no Authorization header)
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions { Data = string.Empty }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+    }
+
+    [Then("the token info response should contain {string}")]
+    public void ThenTokenInfoResponseShouldContain(string propertyName)
+    {
+        _responseBody.Should().NotBeNull();
+        _responseBody![propertyName].Should().NotBeNull($"{propertyName} should be present in response");
+    }
+
+    [Then("the token info response body is")]
+    public void ThenTokenInfoResponseBodyIs(string expectedResponse)
+    {
+        _responseBody.Should().NotBeNull();
+
+        var expectedJson = JsonNode.Parse(expectedResponse);
+        expectedJson.Should().NotBeNull();
+
+        // Check that the response contains at least the expected fields with expected values
+        foreach (var property in expectedJson!.AsObject())
+        {
+            _responseBody![property.Key].Should().NotBeNull($"{property.Key} should be present in response");
+
+            // For simple values, check equality
+            if (property.Value is JsonValue)
+            {
+                _responseBody![property.Key]!
+                    .ToJsonString()
+                    .Should()
+                    .Be(property.Value.ToJsonString(), $"{property.Key} should have the expected value");
+            }
+        }
+    }
+
+    [Then("the token info response should have at least {int} education organization")]
+    [Then("the token info response should have at least {int} education organizations")]
+    public void ThenTokenInfoResponseShouldHaveEducationOrganizations(int count)
+    {
+        _responseBody.Should().NotBeNull();
+        var edOrgs = _responseBody!["education_organizations"];
+        edOrgs.Should().NotBeNull();
+        edOrgs!.AsArray().Should().NotBeEmpty();
+        edOrgs!.AsArray().Count.Should().BeGreaterThanOrEqualTo(count);
+    }
+
+    [Then("the token info resources should use pluralized endpoint names")]
+    public void ThenResourcesShouldUsePluralizedEndpointNames()
+    {
+        _responseBody.Should().NotBeNull();
+        var resources = _responseBody!["resources"];
+        resources.Should().NotBeNull();
+        resources!.AsArray().Should().NotBeEmpty();
+
+        // Check that resource paths end with 's' (pluralized)
+        var resourcePaths = resources.AsArray().Select(r => r!["resource"]!.GetValue<string>());
+
+        foreach (var resourcePath in resourcePaths)
+        {
+            resourcePath.Should().NotBeNullOrEmpty();
+            // Most Ed-Fi resources should be pluralized (ending with 's')
+            // Examples: /ed-fi/students, /ed-fi/schools, /ed-fi/academicWeeks
+            var segments = resourcePath.Split('/');
+            var lastSegment = segments[segments.Length - 1];
+            lastSegment.Should().MatchRegex("s$", "resources should be pluralized");
+        }
+    }
+
+    [Then("the token info resources should include operations")]
+    public void ThenResourcesShouldIncludeOperations()
+    {
+        _responseBody.Should().NotBeNull();
+        var resources = _responseBody!["resources"];
+        resources.Should().NotBeNull();
+        resources!.AsArray().Should().NotBeEmpty();
+
+        var resourceOperations = resources.AsArray().Select(r => r!["operations"]);
+
+        foreach (var operations in resourceOperations)
+        {
+            operations.Should().NotBeNull();
+            operations!.AsArray().Should().NotBeEmpty("each resource should have at least one operation");
+        }
+    }
+
+    [Then("the token is marked as inactive")]
+    public void ThenTokenIsMarkedAsInactive()
+    {
+        _responseBody.Should().NotBeNull();
+        var active = _responseBody!["active"];
+        active.Should().NotBeNull();
+        active!.GetValue<bool>().Should().BeFalse("invalid tokens should be marked as inactive");
+    }
+
+    private void SetSharedApiResponse(IAPIResponse response)
+    {
+        // Use reflection to set the _apiResponse field in the shared StepDefinitions class
+        var apiResponseField = typeof(StepDefinitions).GetField(
+            "_apiResponse",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+        );
+        apiResponseField?.SetValue(_sharedSteps, response);
+    }
+}
