@@ -212,14 +212,14 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
   - loads the configured core+extension `ApiSchema.json` files,
   - computes `EffectiveSchemaHash`,
   - derives the same relational model as runtime,
-  - emits (and optionally applies) deterministic DDL for PostgreSQL and SQL Server for:
+  - emits (and optionally provisions) deterministic DDL for PostgreSQL and SQL Server for:
     - core `dms.*` tables,
     - per-project schemas and per-resource tables,
     - extension schemas/tables,
     - abstract union views,
     - update tracking sequences and triggers,
   - records the singleton `dms.EffectiveSchema` row (including `ResourceKeyCount`/`ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
-  - apply semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
+  - provision semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
 - (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
 

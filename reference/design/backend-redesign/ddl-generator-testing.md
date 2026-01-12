@@ -16,10 +16,10 @@ Authorization-related objects are explicitly out of scope for this harness until
 
 ## Design principles
 
-- **Layered tests**: fast unit/contract tests catch most issues; DB-apply and “runtime selection” tests catch integration issues.
+- **Layered tests**: fast unit/contract tests catch most issues; DB-provision and “runtime selection” tests catch integration issues.
 - **Deterministic artifacts**: normalize outputs (line endings, whitespace) and compare exact text/structure.
 - **Authoritative fixtures**: treat some outputs as a contract (“goldens”), updated only intentionally.
-- **No Testcontainers**: DB-apply tests use docker compose (consistent with repo guidance).
+- **No Testcontainers**: DB-provision tests use docker compose (consistent with repo guidance).
 
 ## Test layers
 
@@ -120,7 +120,7 @@ Practical considerations:
 - Authoritative fixtures can be large; keep them scoped to a small set of “canonical combinations” that matter most.
 - If file size becomes problematic, consider storing compressed inputs and expanding to temp at test runtime, but prefer checked-in plain JSON for debuggability.
 
-### 4) DB-apply smoke tests (docker compose; pgsql + mssql)
+### 4) DB-provision smoke tests (docker compose; pgsql + mssql)
 
 Goal: prove the emitted DDL actually provisions an empty database on each engine and creates the expected objects.
 
@@ -132,17 +132,17 @@ Test shape:
 
 Workflow per engine:
 1. Start a fresh DB via docker compose (separate compose files or profiles for pgsql/mssql).
-2. Apply the generated DDL:
+2. Provision the database using the generated DDL:
    - PostgreSQL: `psql -v ON_ERROR_STOP=1 -f ...`
    - SQL Server: `sqlcmd -b -i ...`
-   - Recommended additional check: apply the **same** DDL a second time and assert it succeeds and the applied schema manifest is unchanged (validates existence-check patterns and insert-if-missing seed semantics).
+   - Recommended additional check: run the **same** DDL a second time and assert it succeeds and the provisioned schema manifest is unchanged (validates existence-check patterns and insert-if-missing seed semantics).
 3. Run a minimal journaling smoke check (required because journaling triggers are correctness-critical):
    - insert one row into `dms.Document` (using a seeded `ResourceKeyId`) and assert:
      - `dms.DocumentChangeEvent` has one new row for that `DocumentId`
      - `dms.IdentityChangeEvent` has one new row for that `DocumentId`
    - update `ContentVersion` and assert one new `dms.DocumentChangeEvent` row is emitted
    - update `IdentityVersion` and assert one new `dms.IdentityChangeEvent` row is emitted
-4. Run engine-specific introspection queries and emit a stable **applied schema manifest** artifact:
+4. Run engine-specific introspection queries and emit a stable **provisioned schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,
    - indexes,
@@ -169,9 +169,9 @@ Test workflow:
    - (optional) slow-path diff on mismatch for diagnostics.
 4. Include a negative test:
    - tamper `dms.ResourceKey` (or the recorded seed hash) and assert validation fails with a useful mismatch report.
-5. Include a generator/CLI preflight negative test (if applying via CLI is supported):
+5. Include a generator/CLI preflight negative test (if provisioning via CLI is supported):
    - provision a DB for effective hash `A`,
-   - attempt to apply a different effective hash `B` to the same DB,
+   - attempt to provision a different effective hash `B` to the same DB,
    - assert the tool fails fast with a clear “hash mismatch” error (no in-place upgrade semantics).
 ## AOT pack testing (avoid brittle byte-for-byte checks)
 
@@ -260,10 +260,10 @@ Authoritative fixtures (real schemas):
 ## CI wiring (recommended)
 
 - Default PR job: unit + snapshot tests only (fast, deterministic).
-  - `dotnet test ... --filter "TestCategory!=Authoritative&TestCategory!=DbApply"`
+  - `dotnet test ... --filter "TestCategory!=Authoritative&TestCategory!=DbProvision"`
 - Separate CI jobs (or scheduled builds):
-  - `Authoritative` (runs on schema generator changes and nightly)
-  - `DbApply` (runs on schema generator changes and nightly; requires docker availability)
+  - `Authoritative` (runs on `dms-schema` changes and nightly)
+  - `DbProvision` (runs on `dms-schema` changes and nightly; requires docker availability)
 
 ## Developer workflow
 
@@ -277,5 +277,5 @@ Authoritative fixtures (real schemas):
 - A new developer can:
   - run fast tests locally without docker,
   - run authoritative comparisons and see a clean diff on failure,
-  - run DB-apply smoke tests for both engines with a single script,
+  - run DB-provision smoke tests for both engines with a single script,
   - validate pack ↔ DB compatibility gates and see actionable failure messages.

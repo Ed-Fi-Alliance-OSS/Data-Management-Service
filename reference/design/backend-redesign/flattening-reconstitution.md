@@ -139,7 +139,7 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 
 This is not code generation; it is compiled (or deserialized) metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
-The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and apply schema changes (see [ddl-generation.md](ddl-generation.md)).
+The same derived model is also built by the DDL generation utility to generate dialect-specific DDL and provision database schemas (see [ddl-generation.md](ddl-generation.md)).
 
 Determinism requirement:
 - The derived model and compiled plans must be reproducible for a given effective schema and mapping version.
@@ -848,7 +848,7 @@ public sealed record RelationalScalarType(
 #### Scalar type mapping (dialect defaults)
 
 These mappings are a determinism contract for both:
-- the DDL generation utility (DDL emitted/applied), and
+- the DDL generation utility (DDL emitted/provisioned), and
 - the runtime plan compiler (parameter types, casts, and view definitions).
 
 Rules:
