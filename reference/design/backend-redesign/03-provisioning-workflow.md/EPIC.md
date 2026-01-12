@@ -16,4 +16,4 @@ Authorization objects remain out of scope.
 - `00-ddl-emit-command.md` — CLI: `ddl emit` (files + manifests)
 - `01-ddl-provision-command.md` — CLI: `ddl provision` (create-only, optional create DB)
 - `02-preflight-and-idempotency.md` — Preflight mismatch + rerun safety + diagnostics
-
+- `03-ddl-manifest.md` — Emit `ddl.manifest.json` (normalized hashes + counts)
