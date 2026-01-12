@@ -438,14 +438,23 @@ public class TokenInfoProvider(
             // Get the ApiSchema and ProjectSchema
             var apiSchemaNodes = apiSchemaProvider.GetApiSchemaNodes();
             var apiSchemaDocuments = new ApiSchemaDocuments(apiSchemaNodes, logger);
-            var coreProjectSchema = apiSchemaDocuments.GetCoreProjectSchema();
 
+            // Find the appropriate project schema based on the project endpoint name
+            // This handles both core (ed-fi) and extension projects (homograph, tpdm, etc.)
+            var projectEndpointName = new ApiSchema.Model.ProjectEndpointName(projectName);
+            var projectSchema = apiSchemaDocuments.FindProjectSchemaForProjectNamespace(projectEndpointName);
+
+            if (projectSchema is null)
+            {
+                logger.LogWarning("Project schema not found for project name: {ProjectName}", projectName);
+                return string.Empty;
+            }
             // Convert to ResourceName and get the endpoint name from ApiSchema
             var resourceNameTyped = new ResourceName(resourceName);
-            var endpointName = coreProjectSchema.GetEndpointNameFromResourceName(resourceNameTyped);
+            var endpointName = projectSchema.GetEndpointNameFromResourceName(resourceNameTyped);
 
             // Construct the full path with project endpoint prefix
-            return $"/{projectName ?? coreProjectSchema.ProjectEndpointName.Value}/{endpointName.Value}";
+            return $"/{projectSchema.ProjectEndpointName.Value}/{endpointName.Value}";
         }
         catch (Exception ex)
         {
