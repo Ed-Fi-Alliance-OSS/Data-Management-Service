@@ -234,6 +234,8 @@ CREATE TABLE dms.IdentityChangeEvent (
 
 ## Derived API metadata (read-time)
 
+Representation dependencies: `SELECT ChildDocumentId FROM dms.ReferenceEdge WHERE ParentDocumentId=@P` (do not filter on `IsIdentityComponent`)
+
 ### Derived `_etag`
 
 For document `P`, collect:
@@ -258,6 +260,34 @@ Properties:
 - Upstream identity change ⇒ dependency `IdentityVersion` changes ⇒ `_etag` changes.
 - No cross-document writes are required to make a referencing document’s `_etag` change.
 
+#### Example: `_etag` input set (stable ordering)
+
+Assume document `P` has:
+
+- `P.ContentVersion = 42`
+- `P.IdentityVersion = 40`
+
+And `P` has two representation dependencies, observed in any order:
+
+- `D1 = (DocumentId=2001, IdentityVersion=7)`
+- `D2 = (DocumentId=3001, IdentityVersion=11)`
+
+Before hashing, sort dependencies by `DocumentId`:
+
+```text
+Sorted deps = [(2001, 7), (3001, 11)]
+```
+
+Then the `_etag` input tuple is:
+
+```text
+P._etag = Base64(SHA-256(EncodeV1(
+  42,
+  40,
+  [(2001, 7), (3001, 11)]
+)))
+```
+
 ### Derived `_lastModifiedDate`
 
 Representation last modified is the maximum of:
@@ -274,6 +304,26 @@ P._lastModifiedDate = max(
 )
 ```
 
+#### Example: `_lastModifiedDate` (max of local + dependency identity timestamps)
+
+Assume:
+
+- `P.ContentLastModifiedAt = 2026-01-05T09:10:00Z`
+- `P.IdentityLastModifiedAt = 2026-01-06T18:22:41Z`
+- Dependency identity timestamps:
+  - `D1.IdentityLastModifiedAt = 2026-01-04T00:00:00Z`
+  - `D2.IdentityLastModifiedAt = 2026-01-07T03:00:00Z`
+
+Then:
+
+```text
+P._lastModifiedDate = max(
+  2026-01-05T09:10:00Z,
+  2026-01-06T18:22:41Z,
+  max(2026-01-04T00:00:00Z, 2026-01-07T03:00:00Z)
+) = 2026-01-07T03:00:00Z
+```
+
 ### Derived per-item `ChangeVersion`
 
 Define:
@@ -288,6 +338,29 @@ ChangeVersion(P) = max(
 ```
 
 This is computed alongside `_etag/_lastModifiedDate` from the same dependency token reads.
+
+#### Example: `ChangeVersion` (max of local + dependency identity versions)
+
+Assume:
+
+- `P.ContentVersion = 42`
+- `P.IdentityVersion = 40`
+- Dependency identity versions:
+  - `D1.IdentityVersion = 7`
+  - `D2.IdentityVersion = 11`
+
+Then:
+
+```text
+LocalChangeVersion(P) = max(42, 40) = 42
+ChangeVersion(P) = max(42, max(7, 11)) = 42
+```
+
+If later `D2.IdentityVersion` becomes `60`, then on the next read:
+
+```text
+ChangeVersion(P) = max(42, 60) = 60
+```
 
 ## Write-side behavior
 
