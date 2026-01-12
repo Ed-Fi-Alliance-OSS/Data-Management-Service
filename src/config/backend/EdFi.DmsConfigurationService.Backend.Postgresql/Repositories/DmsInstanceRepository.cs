@@ -66,8 +66,7 @@ public class DmsInstanceRepository(
         try
         {
             var sql = $"""
-                SELECT Id, InstanceType, InstanceName, ConnectionString,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, TenantId
+                SELECT Id, InstanceType, InstanceName, ConnectionString, TenantId
                 FROM dmscs.DmsInstance
                 WHERE {TenantContext.TenantWhereClause()}
                 ORDER BY Id
@@ -79,10 +78,6 @@ public class DmsInstanceRepository(
                 string InstanceType,
                 string InstanceName,
                 byte[]? ConnectionString,
-                DateTime CreatedAt,
-                string? CreatedBy,
-                DateTime? LastModifiedAt,
-                string? ModifiedBy,
                 long? TenantId
             )>(
                 sql,
@@ -157,10 +152,6 @@ public class DmsInstanceRepository(
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
                 DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
                 DmsInstanceDerivatives = derivativesByInstanceId.GetValueOrDefault(row.Id, []),
-                CreatedAt = row.CreatedAt,
-                CreatedBy = row.CreatedBy,
-                LastModifiedAt = row.LastModifiedAt,
-                ModifiedBy = row.ModifiedBy,
                 TenantId = row.TenantId,
             });
             return new DmsInstanceQueryResult.Success(instances);
@@ -178,8 +169,7 @@ public class DmsInstanceRepository(
         try
         {
             var sql = $"""
-                SELECT Id, InstanceType, InstanceName, ConnectionString,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, TenantId
+                SELECT Id, InstanceType, InstanceName, ConnectionString, TenantId
                 FROM dmscs.DmsInstance
                 WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
@@ -189,10 +179,6 @@ public class DmsInstanceRepository(
                 string InstanceType,
                 string InstanceName,
                 byte[]? ConnectionString,
-                DateTime CreatedAt,
-                string? CreatedBy,
-                DateTime? LastModifiedAt,
-                string? ModifiedBy,
                 long? TenantId
             )?>(sql, new { Id = id, TenantId });
             if (result == null)
@@ -236,10 +222,6 @@ public class DmsInstanceRepository(
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
                 DmsInstanceRouteContexts = routeContexts,
                 DmsInstanceDerivatives = derivatives,
-                CreatedAt = result.Value.CreatedAt,
-                CreatedBy = result.Value.CreatedBy,
-                LastModifiedAt = result.Value.LastModifiedAt,
-                ModifiedBy = result.Value.ModifiedBy,
                 TenantId = result.Value.TenantId,
             };
             return new DmsInstanceGetResult.Success(instance);
@@ -347,7 +329,7 @@ public class DmsInstanceRepository(
             var sql = $"""
                 SELECT application.*, aeo.EducationOrganizationId, acdi.DmsInstanceId
                 FROM (
-                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId, a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy
+                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId
                     FROM dmscs.ApiClientDmsInstance acdi
                     JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
                     JOIN dmscs.Application a ON a.Id = ac.ApplicationId
@@ -377,10 +359,6 @@ public class DmsInstanceRepository(
                 string ApplicationName,
                 string ClaimSetName,
                 long VendorId,
-                DateTime CreatedAt,
-                string? CreatedBy,
-                DateTime? LastModifiedAt,
-                string? ModifiedBy,
                 long? EducationOrganizationId,
                 long DmsInstanceId
             )>(sql, parameters);
@@ -395,10 +373,6 @@ public class DmsInstanceRepository(
                         ApplicationName = application.ApplicationName,
                         ClaimSetName = application.ClaimSetName,
                         VendorId = application.VendorId,
-                        CreatedAt = application.CreatedAt,
-                        CreatedBy = application.CreatedBy,
-                        LastModifiedAt = application.LastModifiedAt,
-                        ModifiedBy = application.ModifiedBy,
 
                         EducationOrganizationIds = group
                             .Where(row => row.EducationOrganizationId != null)

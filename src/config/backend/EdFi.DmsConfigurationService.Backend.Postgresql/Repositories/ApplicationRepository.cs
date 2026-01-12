@@ -164,7 +164,6 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
                        e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
                 FROM (SELECT * FROM dmscs.Application ORDER BY Id LIMIT @Limit OFFSET @Offset) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
@@ -232,7 +231,6 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
                        e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId

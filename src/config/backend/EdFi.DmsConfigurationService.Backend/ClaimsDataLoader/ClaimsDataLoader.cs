@@ -69,9 +69,9 @@ public class ClaimsDataLoader(
                 claimsNodes = claimsProvider.GetClaimsDocumentNodes();
                 if (claimsNodes == null)
                 {
-                    return new ClaimsDataLoadResult.ValidationFailure(
-                        ["Failed to load claims document from provider"]
-                    );
+                    return new ClaimsDataLoadResult.ValidationFailure([
+                        "Failed to load claims document from provider",
+                    ]);
                 }
             }
             catch (InvalidOperationException ex)

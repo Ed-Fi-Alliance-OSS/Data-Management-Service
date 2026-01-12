@@ -17,7 +17,10 @@ public interface IDmsInstanceRepository
     Task<DmsInstanceUpdateResult> UpdateDmsInstance(DmsInstanceUpdateCommand command);
     Task<DmsInstanceDeleteResult> DeleteDmsInstance(long id);
     Task<DmsInstanceIdsExistResult> GetExistingDmsInstanceIds(long[] ids);
-    Task<ApplicationByDmsInstanceQueryResult> QueryApplicationByDmsInstance(long dmsInstanceId, PagingQuery query);
+    Task<ApplicationByDmsInstanceQueryResult> QueryApplicationByDmsInstance(
+        long dmsInstanceId,
+        PagingQuery query
+    );
 }
 
 public record DmsInstanceInsertResult
@@ -74,7 +77,8 @@ public record DmsInstanceIdsExistResult
 
 public record ApplicationByDmsInstanceQueryResult
 {
-    public record Success(IEnumerable<ApplicationResponse> ApplicationResponse) : ApplicationByDmsInstanceQueryResult();
+    public record Success(IEnumerable<ApplicationResponse> ApplicationResponse)
+        : ApplicationByDmsInstanceQueryResult();
 
     public record FailureNotExists() : ApplicationByDmsInstanceQueryResult();
 

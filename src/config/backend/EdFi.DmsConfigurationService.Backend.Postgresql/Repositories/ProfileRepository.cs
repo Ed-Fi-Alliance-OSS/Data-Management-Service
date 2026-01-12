@@ -111,8 +111,7 @@ public class ProfileRepository(
         await connection.OpenAsync();
         try
         {
-            string sql =
-                @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile WHERE Id=@Id;";
+            string sql = @"SELECT Id, ProfileName AS Name, Definition FROM dmscs.Profile WHERE Id=@Id;";
             var profile = await connection.QuerySingleOrDefaultAsync<ProfileResponse>(sql, new { Id = id });
             if (profile == null)
             {
@@ -135,7 +134,7 @@ public class ProfileRepository(
         try
         {
             string sql =
-                @"SELECT Id, ProfileName AS Name, Definition, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
+                @"SELECT Id, ProfileName AS Name, Definition FROM dmscs.Profile ORDER BY Id LIMIT @Limit OFFSET @Offset;";
             var profiles = await connection.QueryAsync<ProfileResponse>(
                 sql,
                 new { Limit = query.Limit, Offset = query.Offset }

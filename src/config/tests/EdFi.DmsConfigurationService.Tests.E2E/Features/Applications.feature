@@ -90,11 +90,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -103,11 +99,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       }]
                   """
              When a GET request is made to "/v2/applications"
@@ -121,11 +113,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -134,11 +122,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -147,11 +131,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -160,11 +140,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -173,11 +149,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       }]
                   """
 
@@ -209,11 +181,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "profileIds": []
                   }
                   """
 
@@ -528,11 +496,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "profileIds": []
                   }
                   """
 
@@ -681,11 +645,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim21",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [{profileId}],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "profileIds": [{profileId}]
                   }
                   """
 
@@ -722,11 +682,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim22Update",
                     "educationOrganizationIds": [],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "profileIds": [{profileId}],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": "{*}",
-                    "modifiedBy": "{*}"
+                    "profileIds": [{profileId}]
                   }
                   """
 

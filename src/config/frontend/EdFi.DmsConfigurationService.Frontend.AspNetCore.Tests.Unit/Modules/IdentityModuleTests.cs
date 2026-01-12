@@ -64,13 +64,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient1"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient1"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient1"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient1"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
@@ -97,13 +95,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", ""),
-                new KeyValuePair<string, string>("clientsecret", ""),
-                new KeyValuePair<string, string>("displayname", ""),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", ""),
+            new KeyValuePair<string, string>("clientsecret", ""),
+            new KeyValuePair<string, string>("displayname", ""),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
         content = System.Text.RegularExpressions.Regex.Unescape(content);
@@ -139,13 +135,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient2"),
-                new KeyValuePair<string, string>("clientsecret", secret),
-                new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient2"),
+            new KeyValuePair<string, string>("clientsecret", secret),
+            new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
@@ -183,13 +177,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient3"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient3"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient3"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient3"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
@@ -223,13 +215,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient3"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient3"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient3"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient3"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
@@ -267,13 +257,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient3"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient3"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient3"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient3"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
         var actualResponse = JsonNode.Parse(content);
@@ -321,13 +309,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient2"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient2"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
+        ]);
 
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
@@ -361,13 +347,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         // Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient2"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient2"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient2@cs.com"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
 
         // Assert
@@ -401,13 +385,11 @@ public class RegisterEndpointTests
         using var client = factory.CreateClient();
 
         //Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("clientid", "CSClient3"),
-                new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
-                new KeyValuePair<string, string>("displayname", "CSClient3"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("clientid", "CSClient3"),
+            new KeyValuePair<string, string>("clientsecret", "test123@Puiu"),
+            new KeyValuePair<string, string>("displayname", "CSClient3"),
+        ]);
         var response = await client.PostAsync("/connect/register", requestContent);
         string content = await response.Content.ReadAsStringAsync();
 
@@ -731,14 +713,12 @@ public class TokenEndpointTests
         using var client = factory.CreateClient();
 
         //Act
-        var requestContent = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("client_id", "CSClient1"),
-                new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
-            ]
-        );
+        var requestContent = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("client_id", "CSClient1"),
+            new KeyValuePair<string, string>("client_secret", "test123@Puiu"),
+            new KeyValuePair<string, string>("grant_type", "client_credentials"),
+            new KeyValuePair<string, string>("scope", "edfi_admin_api/full_access"),
+        ]);
         var response = await client.PostAsync("/connect/token", requestContent);
 
         // Assert

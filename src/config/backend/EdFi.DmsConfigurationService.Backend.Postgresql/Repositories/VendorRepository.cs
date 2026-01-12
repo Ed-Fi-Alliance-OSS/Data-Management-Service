@@ -136,7 +136,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = $"""
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, TenantId, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
                     FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()} ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
                     LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
@@ -180,7 +180,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = $"""
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, TenantId, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
                     FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
                     WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
                     """;
@@ -330,7 +330,6 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 string sqlEdOrgs = $"""
                     SELECT
                         v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
-                        a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
                         eo.EducationOrganizationId
                     FROM dmscs.vendor v
                     LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId

@@ -59,7 +59,7 @@ public class TenantRepository(
         try
         {
             var sql = """
-                SELECT Id, Name, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
+                SELECT Id, Name
                 FROM dmscs.Tenant
                 ORDER BY Id
                 LIMIT @Limit OFFSET @Offset;
@@ -83,7 +83,7 @@ public class TenantRepository(
         try
         {
             var sql = """
-                SELECT Id, Name, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
+                SELECT Id, Name
                 FROM dmscs.Tenant
                 WHERE Id = @Id;
                 """;
@@ -110,7 +110,7 @@ public class TenantRepository(
         {
             // Case-insensitive tenant lookup to support any casing in requests
             var sql = """
-                SELECT Id, Name, CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy
+                SELECT Id, Name
                 FROM dmscs.Tenant
                 WHERE LOWER(Name) = LOWER(@Name);
                 """;

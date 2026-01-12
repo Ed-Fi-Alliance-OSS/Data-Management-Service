@@ -53,14 +53,12 @@ public class ApiClientModule : IEndpointModule
         );
         if (applicationResult is not ApplicationGetResult.Success applicationSuccess)
         {
-            throw new ValidationException(
-                [
-                    new ValidationFailure(
-                        "ApplicationId",
-                        $"Application with ID {command.ApplicationId} not found."
-                    ),
-                ]
-            );
+            throw new ValidationException([
+                new ValidationFailure(
+                    "ApplicationId",
+                    $"Application with ID {command.ApplicationId} not found."
+                ),
+            ]);
         }
 
         ApplicationResponse application = applicationSuccess.ApplicationResponse;
@@ -79,14 +77,12 @@ public class ApiClientModule : IEndpointModule
 
                 if (notFoundIds.Count > 0)
                 {
-                    throw new ValidationException(
-                        [
-                            new ValidationFailure(
-                                "DmsInstanceIds",
-                                $"The following DmsInstanceIds were not found in database: {string.Join(", ", notFoundIds)}"
-                            ),
-                        ]
-                    );
+                    throw new ValidationException([
+                        new ValidationFailure(
+                            "DmsInstanceIds",
+                            $"The following DmsInstanceIds were not found in database: {string.Join(", ", notFoundIds)}"
+                        ),
+                    ]);
                 }
             }
             else if (existingIdsResult is DmsInstanceIdsExistResult.FailureUnknown failure)
@@ -104,9 +100,9 @@ public class ApiClientModule : IEndpointModule
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
             default:
-                throw new ValidationException(
-                    [new ValidationFailure("VendorId", "Reference 'VendorId' does not exist.")]
-                );
+                throw new ValidationException([
+                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
+                ]);
         }
 
         var clientId = Guid.NewGuid().ToString();
@@ -167,19 +163,17 @@ public class ApiClientModule : IEndpointModule
                         );
                     case ApiClientInsertResult.FailureApplicationNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException(
-                            [
-                                new ValidationFailure(
-                                    "ApplicationId",
-                                    $"Application with ID {command.ApplicationId} not found."
-                                ),
-                            ]
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure(
+                                "ApplicationId",
+                                $"Application with ID {command.ApplicationId} not found."
+                            ),
+                        ]);
                     case ApiClientInsertResult.FailureDmsInstanceNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException(
-                            [new ValidationFailure("DmsInstanceId", "DMS instance does not exist.")]
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                        ]);
                     case ApiClientInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -286,14 +280,12 @@ public class ApiClientModule : IEndpointModule
         );
         if (applicationResult is not ApplicationGetResult.Success applicationSuccess)
         {
-            throw new ValidationException(
-                [
-                    new ValidationFailure(
-                        "ApplicationId",
-                        $"Application with ID {command.ApplicationId} not found."
-                    ),
-                ]
-            );
+            throw new ValidationException([
+                new ValidationFailure(
+                    "ApplicationId",
+                    $"Application with ID {command.ApplicationId} not found."
+                ),
+            ]);
         }
 
         ApplicationResponse application = applicationSuccess.ApplicationResponse;
@@ -312,14 +304,12 @@ public class ApiClientModule : IEndpointModule
 
                 if (notFoundIds.Count > 0)
                 {
-                    throw new ValidationException(
-                        [
-                            new ValidationFailure(
-                                "DmsInstanceIds",
-                                $"The following DmsInstanceIds were not found in database: {string.Join(", ", notFoundIds)}"
-                            ),
-                        ]
-                    );
+                    throw new ValidationException([
+                        new ValidationFailure(
+                            "DmsInstanceIds",
+                            $"The following DmsInstanceIds were not found in database: {string.Join(", ", notFoundIds)}"
+                        ),
+                    ]);
                 }
             }
             else if (existingIdsResult is DmsInstanceIdsExistResult.FailureUnknown failure)
@@ -340,9 +330,9 @@ public class ApiClientModule : IEndpointModule
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
             default:
-                throw new ValidationException(
-                    [new ValidationFailure("VendorId", "Reference 'VendorId' does not exist.")]
-                );
+                throw new ValidationException([
+                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
+                ]);
         }
 
         // Get original application for rollback if needed
@@ -411,9 +401,9 @@ public class ApiClientModule : IEndpointModule
                                 [.. existingApiClient.DmsInstanceIds]
                             );
                         }
-                        throw new ValidationException(
-                            [new ValidationFailure("Id", $"ApiClient with ID {id} not found.")]
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure("Id", $"ApiClient with ID {id} not found."),
+                        ]);
                     case ApiClientUpdateResult.FailureApplicationNotFound:
                         // Attempt to rollback identity provider changes
                         if (originalApplication != null)
@@ -430,14 +420,12 @@ public class ApiClientModule : IEndpointModule
                                 [.. existingApiClient.DmsInstanceIds]
                             );
                         }
-                        throw new ValidationException(
-                            [
-                                new ValidationFailure(
-                                    "ApplicationId",
-                                    $"Application with ID {command.ApplicationId} not found."
-                                ),
-                            ]
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure(
+                                "ApplicationId",
+                                $"Application with ID {command.ApplicationId} not found."
+                            ),
+                        ]);
                     case ApiClientUpdateResult.FailureDmsInstanceNotFound:
                         // Attempt to rollback identity provider changes
                         if (originalApplication != null)
@@ -454,9 +442,9 @@ public class ApiClientModule : IEndpointModule
                                 [.. existingApiClient.DmsInstanceIds]
                             );
                         }
-                        throw new ValidationException(
-                            [new ValidationFailure("DmsInstanceId", "DMS instance does not exist.")]
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                        ]);
                     case ApiClientUpdateResult.FailureUnknown failure:
                         // Attempt to rollback identity provider changes
                         if (originalApplication != null)

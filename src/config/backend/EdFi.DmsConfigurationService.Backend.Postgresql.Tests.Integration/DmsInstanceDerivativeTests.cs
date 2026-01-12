@@ -96,10 +96,6 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             derivativeFromDb
                 .ConnectionString.Should()
                 .Be("Server=replica;Database=ReplicaDb;User Id=user;Password=pass;");
-            derivativeFromDb.CreatedAt.Should().NotBeNull();
-            derivativeFromDb.CreatedBy.Should().Be("test-user");
-            derivativeFromDb.LastModifiedAt.Should().BeNull();
-            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
 
         [Test]
@@ -116,10 +112,6 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             derivativeFromDb
                 .ConnectionString.Should()
                 .Be("Server=replica;Database=ReplicaDb;User Id=user;Password=pass;");
-            derivativeFromDb.CreatedAt.Should().NotBeNull();
-            derivativeFromDb.CreatedBy.Should().Be("test-user");
-            derivativeFromDb.LastModifiedAt.Should().BeNull();
-            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
     }
 
@@ -166,10 +158,6 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeGetResult.Success)getByIdResult
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
-            derivativeFromDb.CreatedAt.Should().NotBeNull();
-            derivativeFromDb.CreatedBy.Should().Be("test-user");
-            derivativeFromDb.LastModifiedAt.Should().BeNull();
-            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
     }
 
@@ -216,10 +204,6 @@ public class DmsInstanceDerivativeTests : DatabaseTest
                 (DmsInstanceDerivativeGetResult.Success)getByIdResult
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.ConnectionString.Should().BeNull();
-            derivativeFromDb.CreatedAt.Should().NotBeNull();
-            derivativeFromDb.CreatedBy.Should().Be("test-user");
-            derivativeFromDb.LastModifiedAt.Should().BeNull();
-            derivativeFromDb.ModifiedBy.Should().BeNull();
         }
     }
 
@@ -280,10 +264,6 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             ).DmsInstanceDerivativeResponses.First();
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
             derivativeFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
-            derivativeFromDb.CreatedAt.Should().NotBeNull();
-            derivativeFromDb.CreatedBy.Should().Be("test-user");
-            derivativeFromDb.LastModifiedAt.Should().NotBeNull();
-            derivativeFromDb.ModifiedBy.Should().Be("test-user");
         }
 
         [Test]
@@ -297,10 +277,6 @@ public class DmsInstanceDerivativeTests : DatabaseTest
             ).DmsInstanceDerivativeResponse;
             derivativeFromDb.DerivativeType.Should().Be("Snapshot");
             derivativeFromDb.ConnectionString.Should().Be("Server=updated;Database=UpdatedDb;");
-            derivativeFromDb.CreatedAt.Should().NotBeNull();
-            derivativeFromDb.CreatedBy.Should().Be("test-user");
-            derivativeFromDb.LastModifiedAt.Should().NotBeNull();
-            derivativeFromDb.ModifiedBy.Should().Be("test-user");
         }
     }
 

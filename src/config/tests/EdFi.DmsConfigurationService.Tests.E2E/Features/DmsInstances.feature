@@ -20,11 +20,7 @@ Feature: DmsInstances endpoints
                           "instanceName": "Test Instance",
                           "connectionString": "Server=localhost;Database=TestDb;",
                           "dmsInstanceRouteContexts": [],
-                          "dmsInstanceDerivatives": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "dmsInstanceDerivatives": []
                       },
                       {
                           "id": {id},
@@ -32,11 +28,7 @@ Feature: DmsInstances endpoints
                           "instanceName": "Dev Instance",
                           "connectionString": "Server=dev;Database=DevDb;",
                           "dmsInstanceRouteContexts": [],
-                          "dmsInstanceDerivatives": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "dmsInstanceDerivatives": []
                       }]
                   """
 
@@ -64,11 +56,7 @@ Feature: DmsInstances endpoints
                         "instanceName": "New Test Instance",
                         "connectionString": "Server=newtest;Database=NewTestDb;",
                         "dmsInstanceRouteContexts": [],
-                        "dmsInstanceDerivatives": [],
-                        "createdAt": "{*}",
-                        "createdBy": "{*}",
-                        "lastModifiedAt": null,
-                        "modifiedBy": null
+                        "dmsInstanceDerivatives": []
                     }
                   """
 
@@ -92,11 +80,7 @@ Feature: DmsInstances endpoints
                           "instanceName": "Retrieved Instance",
                           "connectionString": "Server=retrieved;Database=RetrievedDb;",
                           "dmsInstanceRouteContexts": [],
-                          "dmsInstanceDerivatives": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "dmsInstanceDerivatives": []
                       }
                   """
 
@@ -128,11 +112,7 @@ Feature: DmsInstances endpoints
                         "instanceName": "Updated Instance",
                         "connectionString": "Server=updated;Database=UpdatedDb;",
                         "dmsInstanceRouteContexts": [],
-                        "dmsInstanceDerivatives": [],
-                        "createdAt": "{*}",
-                        "createdBy": "{*}",
-                        "lastModifiedAt": "{*}",
-                        "modifiedBy": "{*}"
+                        "dmsInstanceDerivatives": []
                     }
                   """
 
@@ -387,11 +367,7 @@ Feature: DmsInstances endpoints
                                 "derivativeType": "Snapshot",
                                 "connectionString": "Server=snapshot;Database=SnapshotDb;"
                             }
-                        ],
-                        "createdAt": "{*}",
-                        "createdBy": "{*}",
-                        "lastModifiedAt": null,
-                        "modifiedBy": null
+                        ]
                     }
                   """
 
@@ -454,11 +430,7 @@ Feature: DmsInstances endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [3, 4],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "profileIds": [],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       }]
                   """
 

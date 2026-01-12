@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 
-public class VendorResponse : AuditableResponse
+public class VendorResponse
 {
     public long Id { get; set; }
     public required string Company { get; set; }

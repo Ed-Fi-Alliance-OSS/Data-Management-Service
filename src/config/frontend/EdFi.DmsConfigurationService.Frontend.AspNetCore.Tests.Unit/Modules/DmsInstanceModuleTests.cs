@@ -93,21 +93,19 @@ public class DmsInstanceModuleTests
 
             A.CallTo(() => _dmsInstanceRepository.QueryDmsInstance(A<PagingQuery>._))
                 .Returns(
-                    new DmsInstanceQueryResult.Success(
-                        [
-                            new DmsInstanceResponse
-                            {
-                                Id = 1,
-                                InstanceType = "Production",
-                                InstanceName = "Test Instance",
-                                ConnectionString = "Server=localhost;Database=TestDb;",
-                                DmsInstanceDerivatives =
-                                [
-                                    new(1, 1, "ReadReplica", "Server=localhost;Database=Replica1;"),
-                                ],
-                            },
-                        ]
-                    )
+                    new DmsInstanceQueryResult.Success([
+                        new DmsInstanceResponse
+                        {
+                            Id = 1,
+                            InstanceType = "Production",
+                            InstanceName = "Test Instance",
+                            ConnectionString = "Server=localhost;Database=TestDb;",
+                            DmsInstanceDerivatives =
+                            [
+                                new(1, 1, "ReadReplica", "Server=localhost;Database=Replica1;"),
+                            ],
+                        },
+                    ])
                 );
 
             A.CallTo(() => _dmsInstanceRepository.GetDmsInstance(A<long>._))
@@ -141,19 +139,17 @@ public class DmsInstanceModuleTests
 
             A.CallTo(() => _dmsInstanceRepository.QueryApplicationByDmsInstance(A<long>._, A<PagingQuery>._))
                 .Returns(
-                    new ApplicationByDmsInstanceQueryResult.Success(
-                        [
-                            new ApplicationResponse
-                            {
-                                Id = 1,
-                                ApplicationName = "Test Application 1",
-                                VendorId = 1,
-                                ClaimSetName = "TestClaimSet1",
-                                EducationOrganizationIds = [1, 2, 3],
-                                DmsInstanceIds = [1],
-                            }
-                        ]
-                    )
+                    new ApplicationByDmsInstanceQueryResult.Success([
+                        new ApplicationResponse
+                        {
+                            Id = 1,
+                            ApplicationName = "Test Application 1",
+                            VendorId = 1,
+                            ClaimSetName = "TestClaimSet1",
+                            EducationOrganizationIds = [1, 2, 3],
+                            DmsInstanceIds = [1],
+                        },
+                    ])
                 );
         }
 
@@ -197,7 +193,9 @@ public class DmsInstanceModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/dmsInstances/1");
-            var queryApplicationsByDmsInstanceResponse = await client.GetAsync("/v2/dmsInstances/1/applications/?offset=0&limit=25");
+            var queryApplicationsByDmsInstanceResponse = await client.GetAsync(
+                "/v2/dmsInstances/1/applications/?offset=0&limit=25"
+            );
 
             insertResponse.StatusCode.Should().Be(HttpStatusCode.Created);
             queryResponse.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -375,7 +373,9 @@ public class DmsInstanceModuleTests
                 )
             );
             var deleteResponse = await client.DeleteAsync("/v2/dmsInstances/999");
-            var queryApplicationsByDmsInstanceResponse = await client.GetAsync("/v2/dmsInstances/0/applications/?offset=0&limit=25");
+            var queryApplicationsByDmsInstanceResponse = await client.GetAsync(
+                "/v2/dmsInstances/0/applications/?offset=0&limit=25"
+            );
 
             getResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
             updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
