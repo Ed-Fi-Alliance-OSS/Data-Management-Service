@@ -633,6 +633,10 @@ This design uses a narrow **union view per abstract resource**:
   - Else, if `R.isSubclass=true` and `R.superclassIdentityJsonPath == $.{fieldName}`, use the concrete identity column(s) from `R.identityJsonPaths` (identity rename case; e.g., `$.schoolId` → `EducationOrganizationId`).
 - If a concrete type cannot supply all abstract identity fields, startup schema validation fails fast (schema mismatch).
 
+DDL generation requirement:
+- The DDL generator emits these `{schema}.{AbstractResource}_View` definitions as part of provisioning (not as handwritten SQL).
+- View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityPathOrder`, and explicit casts where needed for cross-engine union compatibility.
+
 **PostgreSQL example: `EducationOrganization_View`**
 
 ```sql
