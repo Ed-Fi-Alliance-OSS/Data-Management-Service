@@ -532,4 +532,270 @@ public class TokenInfoProviderTests
             result.Should().BeNull();
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Claims_With_Multiple_Projects_In_Schema : TokenInfoProviderTests
+    {
+        private IApiSchemaProvider? _fakeApiSchemaProvider;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Setup API Schema with Ed-Fi (core) and Sample (extension) projects
+            var edFiApiSchemaJson = new JsonObject
+            {
+                ["projectSchema"] = new JsonObject
+                {
+                    ["projectName"] = "Ed-Fi",
+                    ["projectVersion"] = "5.0.0",
+                    ["description"] = "Ed-Fi Data Standard",
+                    ["projectEndpointName"] = "ed-fi",
+                    ["isExtensionProject"] = false,
+                    ["abstractResources"] = new JsonObject(),
+                    ["caseInsensitiveEndpointNameMapping"] = new JsonObject
+                    {
+                        ["students"] = "students",
+                        ["schools"] = "schools",
+                    },
+                    ["resourceNameMapping"] = new JsonObject
+                    {
+                        ["Student"] = "students",
+                        ["School"] = "schools",
+                    },
+                    ["resourceSchemas"] = new JsonObject
+                    {
+                        ["students"] = new JsonObject
+                        {
+                            ["resourceName"] = "Student",
+                            ["isDescriptor"] = false,
+                        },
+                        ["schools"] = new JsonObject
+                        {
+                            ["resourceName"] = "School",
+                            ["isDescriptor"] = false,
+                        },
+                    },
+                },
+            };
+
+            var sampleApiSchemaJson = new JsonObject
+            {
+                ["projectSchema"] = new JsonObject
+                {
+                    ["projectName"] = "Sample",
+                    ["projectVersion"] = "1.1.0",
+                    ["description"] = "Sample Extension",
+                    ["projectEndpointName"] = "sample",
+                    ["isExtensionProject"] = true,
+                    ["abstractResources"] = new JsonObject(),
+                    ["caseInsensitiveEndpointNameMapping"] = new JsonObject
+                    {
+                        ["buses"] = "buses",
+                        ["busroutes"] = "busRoutes",
+                    },
+                    ["resourceNameMapping"] = new JsonObject
+                    {
+                        ["Bus"] = "buses",
+                        ["BusRoute"] = "busRoutes",
+                    },
+                    ["resourceSchemas"] = new JsonObject
+                    {
+                        ["buses"] = new JsonObject { ["resourceName"] = "Bus", ["isDescriptor"] = false },
+                        ["busRoutes"] = new JsonObject
+                        {
+                            ["resourceName"] = "BusRoute",
+                            ["isDescriptor"] = false,
+                        },
+                    },
+                },
+            };
+
+            var apiSchemaNodes = new ApiSchemaDocumentNodes(edFiApiSchemaJson, [sampleApiSchemaJson]);
+            _fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            A.CallTo(() => _fakeApiSchemaProvider.GetApiSchemaNodes()).Returns(apiSchemaNodes);
+        }
+
+        [Test]
+        public void Should_Convert_EdFi_Claim_To_Correct_Resource_Path()
+        {
+            // Arrange
+            var tokenInfoProvider = new TokenInfoProvider(
+                A.Fake<ConfigurationServiceApiClient>(),
+                A.Fake<IConfigurationServiceTokenHandler>(),
+                A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IEducationOrganizationRepository>(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDmsInstanceSelection>(),
+                _fakeApiSchemaProvider!,
+                NullLogger<TokenInfoProvider>.Instance
+            );
+
+            // Use reflection to access the private method
+            var method = typeof(TokenInfoProvider).GetMethod(
+                "ConvertClaimNameToResourcePath",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+
+            // Act
+            var result =
+                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/ed-fi/student"])
+                as string;
+
+            // Assert
+            result.Should().Be("/ed-fi/students");
+        }
+
+        [Test]
+        public void Should_Convert_Sample_Extension_Claim_To_Correct_Resource_Path()
+        {
+            // Arrange
+            var tokenInfoProvider = new TokenInfoProvider(
+                A.Fake<ConfigurationServiceApiClient>(),
+                A.Fake<IConfigurationServiceTokenHandler>(),
+                A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IEducationOrganizationRepository>(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDmsInstanceSelection>(),
+                _fakeApiSchemaProvider!,
+                NullLogger<TokenInfoProvider>.Instance
+            );
+
+            // Use reflection to access the private method
+            var method = typeof(TokenInfoProvider).GetMethod(
+                "ConvertClaimNameToResourcePath",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+
+            // Act
+            var result =
+                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/sample/bus"])
+                as string;
+
+            // Assert
+            result.Should().Be("/sample/buses");
+        }
+
+        [Test]
+        public void Should_Convert_Sample_BusRoute_Claim_To_Correct_Resource_Path()
+        {
+            // Arrange
+            var tokenInfoProvider = new TokenInfoProvider(
+                A.Fake<ConfigurationServiceApiClient>(),
+                A.Fake<IConfigurationServiceTokenHandler>(),
+                A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IEducationOrganizationRepository>(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDmsInstanceSelection>(),
+                _fakeApiSchemaProvider!,
+                NullLogger<TokenInfoProvider>.Instance
+            );
+
+            // Use reflection to access the private method
+            var method = typeof(TokenInfoProvider).GetMethod(
+                "ConvertClaimNameToResourcePath",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+
+            // Act
+            var result =
+                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/sample/busRoute"])
+                as string;
+
+            // Assert
+            result.Should().Be("/sample/busRoutes");
+        }
+
+        [Test]
+        public void Should_Return_Empty_When_Project_Not_Found()
+        {
+            // Arrange
+            var tokenInfoProvider = new TokenInfoProvider(
+                A.Fake<ConfigurationServiceApiClient>(),
+                A.Fake<IConfigurationServiceTokenHandler>(),
+                A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IEducationOrganizationRepository>(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDmsInstanceSelection>(),
+                _fakeApiSchemaProvider!,
+                NullLogger<TokenInfoProvider>.Instance
+            );
+
+            // Use reflection to access the private method
+            var method = typeof(TokenInfoProvider).GetMethod(
+                "ConvertClaimNameToResourcePath",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+
+            // Act - Try with a non-existent project
+            var result =
+                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/homograph/school"])
+                as string;
+
+            // Assert
+            result.Should().Be(string.Empty);
+        }
+
+        [Test]
+        public void Should_Return_Empty_When_Resource_Not_Found_In_Project()
+        {
+            // Arrange
+            var tokenInfoProvider = new TokenInfoProvider(
+                A.Fake<ConfigurationServiceApiClient>(),
+                A.Fake<IConfigurationServiceTokenHandler>(),
+                A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IEducationOrganizationRepository>(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDmsInstanceSelection>(),
+                _fakeApiSchemaProvider!,
+                NullLogger<TokenInfoProvider>.Instance
+            );
+
+            // Use reflection to access the private method
+            var method = typeof(TokenInfoProvider).GetMethod(
+                "ConvertClaimNameToResourcePath",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+
+            // Act - Try with a resource that doesn't exist in the Sample project
+            var result =
+                method!.Invoke(
+                    tokenInfoProvider,
+                    ["http://ed-fi.org/ods/identity/claims/sample/nonExistentResource"]
+                ) as string;
+
+            // Assert
+            result.Should().Be(string.Empty);
+        }
+
+        [Test]
+        public void Should_Handle_Domain_Prefix_With_Multiple_Projects()
+        {
+            // Arrange
+            var tokenInfoProvider = new TokenInfoProvider(
+                A.Fake<ConfigurationServiceApiClient>(),
+                A.Fake<IConfigurationServiceTokenHandler>(),
+                A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IEducationOrganizationRepository>(),
+                A.Fake<IDmsInstanceProvider>(),
+                A.Fake<IDmsInstanceSelection>(),
+                _fakeApiSchemaProvider!,
+                NullLogger<TokenInfoProvider>.Instance
+            );
+
+            // Use reflection to access the private method
+            var method = typeof(TokenInfoProvider).GetMethod(
+                "ConvertClaimNameToResourcePath",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance
+            );
+
+            // Act - Test with domains prefix
+            var result =
+                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/domains/sample/bus"])
+                as string;
+
+            // Assert
+            result.Should().Be("/sample/buses");
+        }
+    }
 }
