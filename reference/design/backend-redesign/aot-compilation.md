@@ -148,7 +148,7 @@ These requirements are normative for both runtime compilation and AOT pack compi
 
 We use compressed Protobuf as our mapping pack format. C# Protobuf code requires a codegen step after defining the pack format schema. To avoid checked-in generated code in the main DMS repo and avoid requiring `protoc` at every build of every consuming project:
 
-- Create a small repo/project that owns:
+- Create a dedicated **contracts project** that owns:
   - the `.proto` schema for mapping packs,
   - generated C# code (via `Grpc.Tools`), and
   - packaging as a NuGet package.
@@ -156,8 +156,10 @@ We use compressed Protobuf as our mapping pack format. C# Protobuf code requires
 Suggested packages:
 - `EdFi.DataManagementService.MappingPacks.Contracts` (C# generated types)
 
+Recommended starting point:
+- Keep the contracts project **in this repository** (so producer/consumer can evolve together), and optionally publish it as a NuGet package when other repos need to read/write packs.
 
-All pack producers/consumers reference the NuGet contracts package so they agree on tags and wire format.
+All pack producers/consumers MUST reference the same contracts package (or project) version so they agree on tags and wire format.
 
 Build policy:
 - Never reuse field numbers.
@@ -333,12 +335,16 @@ A CLI utility (can be a new executable or a mode of the DDL generator) that:
 Suggested CLI:
 
 ```
-dms-mappingpack build \
+dms-schema pack build \
   --dialect pgsql \
   --apiSchemaPath ./ApiSchema \
   --out ./mapping-packs/pgsql \
   --relMappingVersion v1
 ```
+
+Notes:
+- A single CLI with subcommands is recommended because DDL generation and pack building share the same compilation pipeline (schema load/merge, hashing, derived model, dialect SQL compilation).
+- Alternate layout (equivalent): keep `dms-ddl` and `dms-mappingpack` as separate executables but require they reference the same underlying compilation libraries and constants.
 
 ### 10.2 Example producer code (sketch)
 

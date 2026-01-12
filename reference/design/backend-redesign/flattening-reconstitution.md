@@ -1131,6 +1131,13 @@ All SQL strings emitted into compiled plans (runtime caches and/or AOT mapping p
 - **Alias naming**: generate stable table/column aliases deterministically from the plan/model (no randomized suffixes).
 - **Parameter naming**: generate parameter names deterministically from the binding model (no GUIDs, no hash-map iteration order). When duplicates are possible, use a deterministic de-duplication scheme.
 
+Implementation guidance:
+- Use a single dialect-specific SQL writer/formatter shared by both:
+  - the DDL generator (`ddl-generation.md`), and
+  - the plan compiler (this document),
+  so canonicalization rules cannot drift between “schema provisioning SQL” and “runtime/pack SQL”.
+- Tests and manifests should compare **normalized SQL** (or stable hashes of normalized SQL), never “pretty printed” variants.
+
 This is required to support golden-file tests for compiled SQL, stable AOT pack output, and reliable diagnostics.
 
 ```csharp

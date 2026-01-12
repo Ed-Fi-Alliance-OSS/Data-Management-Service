@@ -135,6 +135,7 @@ Workflow per engine:
 2. Apply the generated DDL:
    - PostgreSQL: `psql -v ON_ERROR_STOP=1 -f ...`
    - SQL Server: `sqlcmd -b -i ...`
+   - Recommended additional check: apply the **same** DDL a second time and assert it succeeds and the applied schema manifest is unchanged (validates existence-check patterns and insert-if-missing seed semantics).
 3. Run engine-specific introspection queries and emit a stable **applied schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,
@@ -162,6 +163,10 @@ Test workflow:
    - (optional) slow-path diff on mismatch for diagnostics.
 4. Include a negative test:
    - tamper `dms.ResourceKey` (or the recorded seed hash) and assert validation fails with a useful mismatch report.
+5. Include a generator/CLI preflight negative test (if applying via CLI is supported):
+   - provision a DB for effective hash `A`,
+   - attempt to apply a different effective hash `B` to the same DB,
+   - assert the tool fails fast with a clear “hash mismatch” error (no in-place upgrade semantics).
 ## AOT pack testing (avoid brittle byte-for-byte checks)
 
 Unless we explicitly guarantee deterministic protobuf + zstd output bytes, avoid comparing `.mpack` files directly.
