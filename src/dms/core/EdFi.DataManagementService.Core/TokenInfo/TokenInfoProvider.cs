@@ -268,6 +268,10 @@ public class TokenInfoProvider(
             var claimsArray = claimSet["claims"]?.AsArray() ?? new JsonArray();
             var authorizationsArray = claimSet["authorizations"]?.AsArray() ?? new JsonArray();
 
+            // Load API schema once for all claim conversions (optimization to avoid repeated I/O)
+            var apiSchemaNodes = apiSchemaProvider.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(apiSchemaNodes, logger);
+
             foreach (var claim in claimsArray)
             {
                 var claimName = claim?["name"]?.GetValue<string>();
@@ -312,7 +316,7 @@ public class TokenInfoProvider(
                 else
                 {
                     // It's a resource claim - convert to resource path with pluralization
-                    var resourcePath = ConvertClaimNameToResourcePath(claimName);
+                    var resourcePath = ConvertClaimNameToResourcePath(claimName, apiSchemaDocuments);
                     if (!string.IsNullOrEmpty(resourcePath))
                     {
                         resources.Add(
@@ -391,7 +395,7 @@ public class TokenInfoProvider(
     /// Converts a claim name to a resource path using DMS's ApiSchema resource name mapping
     /// Example: "http://ed-fi.org/ods/identity/claims/ed-fi/student" -> "/ed-fi/students"
     /// </summary>
-    private string ConvertClaimNameToResourcePath(string claimName)
+    private string ConvertClaimNameToResourcePath(string claimName, ApiSchemaDocuments apiSchemaDocuments)
     {
         const string OdsIdentityClaimsPrefix = "http://ed-fi.org/ods/identity/claims/";
         const string IdentityClaimsPrefix = "http://ed-fi.org/identity/claims/";
@@ -435,10 +439,6 @@ public class TokenInfoProvider(
 
         try
         {
-            // Get the ApiSchema and ProjectSchema
-            var apiSchemaNodes = apiSchemaProvider.GetApiSchemaNodes();
-            var apiSchemaDocuments = new ApiSchemaDocuments(apiSchemaNodes, logger);
-
             // Find the appropriate project schema based on the project endpoint name
             // This handles both core (ed-fi) and extension projects (homograph, tpdm, etc.)
             var projectEndpointName = new ApiSchema.Model.ProjectEndpointName(projectName);
