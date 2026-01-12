@@ -6,7 +6,7 @@ Implement mapping set selection based on the database’s `EffectiveSchemaHash`:
 
 - Determine the runtime dialect (PGSQL vs MSSQL).
 - Select a matching mapping set using:
-  - `.mpack` loading when enabled (see `reference/design/backend-redesign/05-mpack-generation.md`), or
+  - `.mpack` loading when enabled (see `reference/design/backend-redesign/aot-compilation.md` and `reference/design/backend-redesign/mpack-format-v1.md`), or
   - runtime compilation fallback when allowed.
 - Cache mapping sets by selection key to avoid repeat compilation/decoding.
 
@@ -32,4 +32,3 @@ Implement mapping set selection based on the database’s `EffectiveSchemaHash`:
    1. required-pack behavior,
    2. fallback behavior,
    3. cache concurrency behavior.
-

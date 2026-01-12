@@ -8,7 +8,7 @@ Update tests and developer workflow to support the relational backend redesign:
 - Add runtime integration tests for write/read/delete correctness using the new relational backend.
 - Maintain pgsql + mssql parity testing where applicable.
 
-This epic complements the DDL generator harness epic (`04-verification-harness.md`) by covering runtime behavior.
+This epic complements the DDL generator harness epic (`reference/design/backend-redesign/epics/04-verification-harness/EPIC.md`) by covering runtime behavior.
 
 Authorization testing remains out of scope.
 
@@ -18,4 +18,3 @@ Authorization testing remains out of scope.
 - `01-backend-integration-tests.md` — CRUD integration tests against provisioned DBs (pgsql + mssql)
 - `02-parity-and-fixtures.md` — Shared fixtures and parity assertions across engines
 - `03-developer-docs.md` — Update docs/runbooks for the new workflow
-

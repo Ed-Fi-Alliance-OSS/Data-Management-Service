@@ -25,7 +25,7 @@ Aligns with the suggested `dms-schema pack manifest` deliverable in `reference/d
 - CLI emits:
   - `pack.manifest.json` (decoded payload semantics),
   - optionally `mappingset.manifest.json` (after `MappingSet.FromPayload(...)`).
-- Manifest outputs are deterministic and match the library emitters used by tests (`05-mpack-generation.md/04-pack-manifests.md`).
+- Manifest outputs are deterministic and match the library emitters used by tests (`reference/design/backend-redesign/epics/05-mpack-generation/04-pack-manifests.md`).
 
 ## Tasks
 
@@ -37,4 +37,3 @@ Aligns with the suggested `dms-schema pack manifest` deliverable in `reference/d
    2. wrong header fields,
    3. bad `payload_sha256`,
    4. successful manifest emission.
-
