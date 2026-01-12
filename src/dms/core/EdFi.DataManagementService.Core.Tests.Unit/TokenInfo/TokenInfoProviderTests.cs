@@ -631,6 +631,13 @@ public class TokenInfoProviderTests
                 NullLogger<TokenInfoProvider>.Instance
             );
 
+            // Create ApiSchemaDocuments to pass to the method
+            var apiSchemaNodes = _fakeApiSchemaProvider!.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(
+                apiSchemaNodes,
+                NullLogger<ApiSchemaDocuments>.Instance
+            );
+
             // Use reflection to access the private method
             var method = typeof(TokenInfoProvider).GetMethod(
                 "ConvertClaimNameToResourcePath",
@@ -639,8 +646,10 @@ public class TokenInfoProviderTests
 
             // Act
             var result =
-                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/ed-fi/student"])
-                as string;
+                method!.Invoke(
+                    tokenInfoProvider,
+                    ["http://ed-fi.org/ods/identity/claims/ed-fi/student", apiSchemaDocuments]
+                ) as string;
 
             // Assert
             result.Should().Be("/ed-fi/students");
@@ -661,6 +670,13 @@ public class TokenInfoProviderTests
                 NullLogger<TokenInfoProvider>.Instance
             );
 
+            // Create ApiSchemaDocuments to pass to the method
+            var apiSchemaNodes = _fakeApiSchemaProvider!.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(
+                apiSchemaNodes,
+                NullLogger<ApiSchemaDocuments>.Instance
+            );
+
             // Use reflection to access the private method
             var method = typeof(TokenInfoProvider).GetMethod(
                 "ConvertClaimNameToResourcePath",
@@ -669,8 +685,10 @@ public class TokenInfoProviderTests
 
             // Act
             var result =
-                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/sample/bus"])
-                as string;
+                method!.Invoke(
+                    tokenInfoProvider,
+                    ["http://ed-fi.org/ods/identity/claims/sample/bus", apiSchemaDocuments]
+                ) as string;
 
             // Assert
             result.Should().Be("/sample/buses");
@@ -691,6 +709,13 @@ public class TokenInfoProviderTests
                 NullLogger<TokenInfoProvider>.Instance
             );
 
+            // Create ApiSchemaDocuments to pass to the method
+            var apiSchemaNodes = _fakeApiSchemaProvider!.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(
+                apiSchemaNodes,
+                NullLogger<ApiSchemaDocuments>.Instance
+            );
+
             // Use reflection to access the private method
             var method = typeof(TokenInfoProvider).GetMethod(
                 "ConvertClaimNameToResourcePath",
@@ -699,8 +724,10 @@ public class TokenInfoProviderTests
 
             // Act
             var result =
-                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/sample/busRoute"])
-                as string;
+                method!.Invoke(
+                    tokenInfoProvider,
+                    ["http://ed-fi.org/ods/identity/claims/sample/busRoute", apiSchemaDocuments]
+                ) as string;
 
             // Assert
             result.Should().Be("/sample/busRoutes");
@@ -721,6 +748,13 @@ public class TokenInfoProviderTests
                 NullLogger<TokenInfoProvider>.Instance
             );
 
+            // Create ApiSchemaDocuments to pass to the method
+            var apiSchemaNodes = _fakeApiSchemaProvider!.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(
+                apiSchemaNodes,
+                NullLogger<ApiSchemaDocuments>.Instance
+            );
+
             // Use reflection to access the private method
             var method = typeof(TokenInfoProvider).GetMethod(
                 "ConvertClaimNameToResourcePath",
@@ -729,8 +763,10 @@ public class TokenInfoProviderTests
 
             // Act - Try with a non-existent project
             var result =
-                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/homograph/school"])
-                as string;
+                method!.Invoke(
+                    tokenInfoProvider,
+                    ["http://ed-fi.org/ods/identity/claims/homograph/school", apiSchemaDocuments]
+                ) as string;
 
             // Assert
             result.Should().Be(string.Empty);
@@ -751,6 +787,13 @@ public class TokenInfoProviderTests
                 NullLogger<TokenInfoProvider>.Instance
             );
 
+            // Create ApiSchemaDocuments to pass to the method
+            var apiSchemaNodes = _fakeApiSchemaProvider!.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(
+                apiSchemaNodes,
+                NullLogger<ApiSchemaDocuments>.Instance
+            );
+
             // Use reflection to access the private method
             var method = typeof(TokenInfoProvider).GetMethod(
                 "ConvertClaimNameToResourcePath",
@@ -761,7 +804,7 @@ public class TokenInfoProviderTests
             var result =
                 method!.Invoke(
                     tokenInfoProvider,
-                    ["http://ed-fi.org/ods/identity/claims/sample/nonExistentResource"]
+                    ["http://ed-fi.org/ods/identity/claims/sample/nonExistentResource", apiSchemaDocuments]
                 ) as string;
 
             // Assert
@@ -783,6 +826,13 @@ public class TokenInfoProviderTests
                 NullLogger<TokenInfoProvider>.Instance
             );
 
+            // Create ApiSchemaDocuments to pass to the method
+            var apiSchemaNodes = _fakeApiSchemaProvider!.GetApiSchemaNodes();
+            var apiSchemaDocuments = new ApiSchemaDocuments(
+                apiSchemaNodes,
+                NullLogger<ApiSchemaDocuments>.Instance
+            );
+
             // Use reflection to access the private method
             var method = typeof(TokenInfoProvider).GetMethod(
                 "ConvertClaimNameToResourcePath",
@@ -791,8 +841,10 @@ public class TokenInfoProviderTests
 
             // Act - Test with domains prefix
             var result =
-                method!.Invoke(tokenInfoProvider, ["http://ed-fi.org/ods/identity/claims/domains/sample/bus"])
-                as string;
+                method!.Invoke(
+                    tokenInfoProvider,
+                    ["http://ed-fi.org/ods/identity/claims/domains/sample/bus", apiSchemaDocuments]
+                ) as string;
 
             // Assert
             result.Should().Be("/sample/buses");
