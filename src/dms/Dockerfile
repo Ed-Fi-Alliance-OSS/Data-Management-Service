@@ -45,11 +45,7 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.1-alpine3.23@sha256:2273b24ea865e253d5
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
 # jq: used to parse plugins defined in JSON env variable
-# zlib upgrade: CVE-2026-22184 fix
-RUN apk update && \
-    apk --no-cache upgrade zlib && \
-    apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.8 && \
-    rm -rf /var/cache/apk/*
+RUN apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.8
 
 FROM runtimebase AS setup
 
