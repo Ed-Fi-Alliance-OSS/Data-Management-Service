@@ -18,6 +18,8 @@ This document is the DDL Generation deep dive for `overview.md`:
 
 DMS compiles a derived relational resource model from each configured effective `ApiSchema.json` set (core + extensions) (see “Derived Relational Resource Model” in [flattening-reconstitution.md](flattening-reconstitution.md)). DMS treats schema changes as an operational concern outside the server process and validates compatibility per database using the recorded schema fingerprint (see “Schema Validation (EffectiveSchema)” in [transactions-and-concurrency.md](transactions-and-concurrency.md)).
 
+This redesign makes the existing legacy `EdFi.DataManagementService.SchemaGenerator` obsolete. The DDL generation utility described in this document is the replacement, and the legacy SchemaGenerator should be removed rather than extended for the relational-primary-store design.
+
 Optionally, the same derived model and dialect-specific plans could be compiled **ahead-of-time** into redistributable mapping packs keyed by `EffectiveSchemaHash` (see [aot-compilation.md](aot-compilation.md)).
 
 This redesign therefore requires a separate utility (“DDL generation utility”) that:
@@ -345,11 +347,11 @@ DMS runtime should remain “validate-only”:
 - Schema creation/update is the DDL generation utility’s responsibility, not the server’s.
 - On first use of a given database connection string, DMS reads the database’s recorded `EffectiveSchemaHash` and selects the matching compiled mapping set (or rejects the request if none is available).
 
-## Suggested deliverables
+## Deliverables
 
-- A single CLI (recommended) that supports both DDL and packs via subcommands:
+- A single CLI that supports both DDL and packs via subcommands:
   - `dms-schema ddl emit` (emit normalized SQL to stdout/files)
-  - `dms-schema ddl provision` (optional: provision a database; includes preflight hash mismatch check)
+  - `dms-schema ddl provision` (provision a database; includes preflight hash mismatch check)
   - `dms-schema pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
   - `dms-schema pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
 - A shared “artifact emitter” library used by both CLI and tests to produce normalized SQL + manifests for fixture comparisons (see `ddl-generator-testing.md`).
