@@ -330,6 +330,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                 string sqlEdOrgs = $"""
                     SELECT
                         v.Id as VendorId, a.Id, a.ApplicationName, a.ClaimSetName,
+                        a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
                         eo.EducationOrganizationId
                     FROM dmscs.vendor v
                     LEFT OUTER JOIN dmscs.Application a ON v.Id = a.VendorId
@@ -401,6 +402,33 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         },
                         param: new { VendorId = vendorId },
                         splitOn: "DmsInstanceId"
+                    );
+
+                    // Get Profile IDs for each application
+                    string sqlProfiles = """
+                            SELECT
+                                ap.ApplicationId,
+                                ap.ProfileId
+                            FROM dmscs.ApplicationProfile ap
+                            INNER JOIN dmscs.Application a ON ap.ApplicationId = a.Id
+                            WHERE a.VendorId = @VendorId;
+                        """;
+
+                    await connection.QueryAsync<long, long, long>(
+                        sqlProfiles,
+                        (applicationId, profileId) =>
+                        {
+                            if (
+                                response.TryGetValue(applicationId, out ApplicationResponse? application)
+                                && !application.ProfileIds.Contains(profileId)
+                            )
+                            {
+                                application.ProfileIds.Add(profileId);
+                            }
+                            return applicationId;
+                        },
+                        param: new { VendorId = vendorId },
+                        splitOn: "ProfileId"
                     );
                 }
 
