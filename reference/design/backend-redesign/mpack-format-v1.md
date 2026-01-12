@@ -213,6 +213,9 @@ Protobuf evolution rules:
 - only add new optional fields
 - keep deprecated fields to preserve wire compatibility where possible
 
+Implementation note (non-normative):
+- Maintain this `.proto` schema and the generated C# types in a dedicated “contracts” project (recommended: in-repo, optionally publishable as a NuGet package) so pack producers and consumers share a single source of truth.
+
 ```proto
 syntax = "proto3";
 

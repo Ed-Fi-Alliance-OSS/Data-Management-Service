@@ -72,6 +72,12 @@ Therefore, the DDL generator (and the plan compiler used for AOT packs) MUST app
 - **Stable parameter naming**: any parameterized SQL emitted as an artifact (e.g., compiled read/write/projection SQL in mapping packs) must use parameter names derived deterministically from the model/bindings.
 - **Stable ordering**: emit objects and clauses in a deterministic order (see “Deterministic output ordering (DDL + packs)” below).
 
+Implementation guidance:
+- Prefer a single dialect-specific SQL writer/formatter shared by:
+  - DDL generation (this document), and
+  - compiled plan generation (`flattening-reconstitution.md`),
+  so canonicalization rules cannot drift across layers.
+
 Acceptance: for a fixed `(ApiSchema.json set, dialect, relational mapping version)`, emitted SQL text artifacts are byte-for-byte stable.
 
 ## Determinism Scope (Artifacts)
@@ -142,10 +148,13 @@ For each abstract resource in `projectSchema.abstractResources`:
 
 The emitted SQL must include deterministic DML that establishes the runtime contract:
 
-1. `dms.ResourceKey` seed inserts with explicit `ResourceKeyId` values (deterministic ordering).
-2. Upsert/replace of the singleton `dms.EffectiveSchema` row (`EffectiveSchemaSingletonId=1`) including:
+1. `dms.ResourceKey` seed inserts with explicit `ResourceKeyId` values (deterministic ordering), using **insert-if-missing** semantics.
+   - After inserts, validate that the table contents match the expected seed set exactly; fail on mismatch.
+2. Insert-if-missing of the singleton `dms.EffectiveSchema` row (`EffectiveSchemaSingletonId=1`) including:
    - `ApiSchemaFormatVersion`, `EffectiveSchemaHash`, `ResourceKeyCount`, `ResourceKeySeedHash`, `AppliedAt`
-3. Replace of `dms.SchemaComponent` rows for the current `EffectiveSchemaHash`.
+   - If the singleton row already exists with a **different** `EffectiveSchemaHash`, fail fast (this utility is not a migration tool).
+3. `dms.SchemaComponent` inserts for the current `EffectiveSchemaHash`, using insert-if-missing semantics.
+   - Validate that the recorded components match the expected project list (exact match); fail on mismatch.
 
 ## FK index policy (v1)
 
@@ -174,25 +183,41 @@ This policy applies to:
 
 The DDL generation utility is a **provisioning** tool, not a schema migration engine. Apply behavior is defined as follows:
 
-### Create-only (no re-run support, no upgrades)
+### Create-only (no migrations / upgrades)
 
 - The utility targets **new/empty** databases only.
 - There is **no upgrade/migration** capability and no support for evolving an already-provisioned database from one `EffectiveSchemaHash` to another.
-- The utility does **not** define “re-run” support as a product feature (it does not attempt to compute diffs, reconcile drift, or preserve data).
+- The utility is not required to preserve data or compute diffs/reconcile drift for previously provisioned databases.
+
+This design **does** require provisioning to be robust and operationally repeatable:
+- The emitted SQL should be safe to re-run to completion on an empty database, and resilient to partial/failed runs (guardrails).
+- If the target database is already provisioned for a *different* effective schema hash, the tool must fail fast rather than attempting “in-place change”.
+
+### Preflight: fail fast on schema-hash mismatch
+
+Before applying any schema-dependent objects, the utility must perform a lightweight preflight check:
+
+- If `dms.EffectiveSchema` does not exist yet, proceed (this is a new/empty database).
+- If `dms.EffectiveSchema` exists and the singleton row is present:
+  - if `EffectiveSchemaHash` matches the computed hash: proceed (but still validate seed fingerprints),
+  - if `EffectiveSchemaHash` differs: fail fast with a clear error (“database is provisioned for hash X; generator expected hash Y”).
 
 ### Existence-check patterns everywhere
 
 Even though the tool is create-only, the generated SQL uses existence-check patterns for *all* database objects to make provisioning robust against partial/failed runs:
 
-- PostgreSQL: `CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` (where supported), and `CREATE OR REPLACE VIEW`.
-- SQL Server: `IF NOT EXISTS (...) CREATE ...` patterns for schemas/tables/indexes/constraints where needed, and `CREATE OR ALTER VIEW`.
+- PostgreSQL: use `IF NOT EXISTS` syntax where supported (`CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` where supported, `CREATE OR REPLACE VIEW`), and use catalog-based existence checks for object types that do not support `IF NOT EXISTS` (notably cross-table constraints/FKs).
+- SQL Server: use `IF NOT EXISTS (...) CREATE ...` patterns for schemas/tables/indexes/constraints where needed, and `CREATE OR ALTER VIEW`.
 
 This is not a migration story; it is a guardrail to avoid brittle provisioning scripts.
 
 ### Seed data semantics
 
-- Deterministic seed data (notably `dms.ResourceKey`) uses **TRUNCATE + reinsert** semantics.
-- Inserts always provide explicit deterministic ids (e.g., `ResourceKeyId`) so the mapping remains stable for a given `EffectiveSchemaHash`.
+- Deterministic seed data MUST be safe with foreign keys.
+- `dms.ResourceKey` seeding uses **insert-if-missing + validate** semantics (not `TRUNCATE`):
+  - `TRUNCATE` is not compatible with FK references in SQL Server, and `TRUNCATE ... CASCADE` is not acceptable.
+  - After seeding, validate the full `dms.ResourceKey` contents against the expected seed set; fail on mismatch.
+- All deterministic inserts always provide explicit deterministic ids (e.g., `ResourceKeyId`) so the mapping remains stable for a given `EffectiveSchemaHash`.
 
 ### `dms.EffectiveSchema` / `dms.SchemaComponent` immutability
 
@@ -251,7 +276,7 @@ Rules:
   3. Add foreign keys (all `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...`)
   4. Create indexes
   5. Create/alter views
-  6. Create triggers (optional features only)
+  6. Create triggers (required for update tracking, when enabled)
   7. Seed deterministic data (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
 
 Within each phase:
@@ -281,12 +306,15 @@ Within each phase:
 
 The DDL generation utility should reuse the same compilation pipeline as runtime:
 
+- Effective schema loading/merging (core + extensions) and `EffectiveSchemaHash` calculation (including canonicalization rules) as defined in `data-model.md`.
 - Relational model derivation (resource → tables/columns/constraints).
 - Dialect-specific DDL generation (`ISqlDialect`-style boundary).
 - View generation for abstract resources.
 - Identifier rules (schema/table/column naming, quoting, truncation, and constraint/index naming): see `data-model.md` (“Naming Rules (Deterministic, Cross-DB Safe)”).
 - Scalar type mapping rules (ApiSchema → SQL): see `data-model.md` (“Type Mapping Defaults (Deterministic, Cross-DB Safe)”) and `flattening-reconstitution.md` (“Scalar type mapping (dialect defaults)”).
+- SQL text canonicalization shared with the compiled-plan layer (`flattening-reconstitution.md`), ideally via a single dialect-specific SQL writer/formatter.
 - (Optional) mapping pack output for the same derived models/plans (see [aot-compilation.md](aot-compilation.md)).
+  - If emitting packs, use the PackFormatVersion=1 `.proto` contracts as defined in `mpack-format-v1.md` (recommended: via a contracts project shared by producer/consumer).
 
 DMS runtime should remain “validate-only”:
 
@@ -295,8 +323,11 @@ DMS runtime should remain “validate-only”:
 
 ## Suggested deliverables
 
-- A CLI entrypoint (e.g., `dms-ddl`) that emits the full SQL script
-- (Optional) a mapping pack builder/emit mode that produces redistributable mapping packs keyed by `EffectiveSchemaHash` (see [aot-compilation.md](aot-compilation.md)).
+- A single CLI (recommended) that supports both DDL and packs via subcommands:
+  - `dms-schema ddl emit` (emit normalized SQL to stdout/files)
+  - `dms-schema ddl apply` (optional: apply to a database; includes preflight hash mismatch check)
+  - `dms-schema pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
+  - `dms-schema pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,
   - DDL success,

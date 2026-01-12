@@ -375,7 +375,25 @@ Recommendations:
   - `projectSchema.resourceSchemas[*].openApiFragments`
   - `projectSchema.abstractResources[*].openApiFragment`
 - Keep arrays in-order (many arrays are semantically ordered), but sort objects by property name recursively.
-- Include a DMS-controlled constant “relational mapping version” so that a breaking change in mapping conventions forces a mismatch even if ApiSchema content is unchanged.
+- Include a DMS-controlled constant **`RelationalMappingVersion`** so that a breaking change in mapping conventions forces a mismatch even if ApiSchema content is unchanged.
+
+Canonical JSON contract (normative for `canonicalizeJson(...)`):
+- Parse JSON into a token tree and re-emit it as canonical UTF-8 bytes:
+  - JSON objects: properties sorted recursively by property name using `StringComparer.Ordinal`.
+  - JSON arrays: element order preserved (no sorting).
+  - No insignificant whitespace in the canonical output (stable minified JSON).
+- Canonicalization MUST NOT depend on:
+  - JSON file ordering,
+  - JSON object property ordering,
+  - whitespace/indentation,
+  - or platform line endings.
+- `removeOpenApiPayloads(...)` MUST be applied before canonicalization.
+- Implementation must be centralized: the DDL generator, mapping pack builder, and runtime compilation (when enabled) must use the same `EffectiveSchemaHashCalculator` implementation and the same canonicalization rules.
+
+`RelationalMappingVersion` contract:
+- `RelationalMappingVersion` is a single DMS-owned string constant (recommended: a short value like `v1`).
+- The value used in the `EffectiveSchemaHash` manifest MUST match the value used for mapping pack selection (`relational_mapping_version` in `.mpack`).
+- Changing mapping rules requires bumping `RelationalMappingVersion` (or, if the hash algorithm itself changes, bump the hash header/version).
 
 Algorithm (suggested):
 1. Parse the configured core + extension ApiSchema files.
@@ -386,7 +404,7 @@ Algorithm (suggested):
 4. Compute `ProjectHash = SHA-256(canonicalJson(projectSchema))` for each project.
 5. Compute `EffectiveSchemaHash = SHA-256(manifestString)` where `manifestString` is:
    - a constant header (e.g., `dms-effective-schema-hash:v1`)
-   - a constant mapping version (e.g., `relational-mapping:v3`)
+   - a constant mapping version (e.g., `relationalMappingVersion=v1`)
    - `ApiSchemaFormatVersion`
    - one line per project: `ProjectEndpointName|ProjectName|ProjectVersion|IsExtensionProject|ProjectHash`
 
@@ -394,7 +412,7 @@ Pseudocode:
 
 ```text
 const HashVersion = "dms-effective-schema-hash:v1"
-const RelationalMappingVersion = "relational-mapping:v3"
+const RelationalMappingVersion = "v1"
 
 projects = []
 apiSchemaFormatVersion = null
@@ -418,7 +436,7 @@ projects = sortBy(projects, p => p.projectEndpointName)
 
 manifest =
   HashVersion + "\n" +
-  RelationalMappingVersion + "\n" +
+  "relationalMappingVersion=" + RelationalMappingVersion + "\n" +
   "apiSchemaFormatVersion=" + apiSchemaFormatVersion + "\n" +
   join(projects, "\n",
     p.projectEndpointName + "|" +
@@ -429,6 +447,13 @@ manifest =
 
 effectiveSchemaHash = sha256hex(utf8(manifest))
 ```
+
+Conformance tests (required):
+- Provide small fixture schema sets with expected hash outputs to lock down:
+  - stability across file ordering, whitespace, and JSON property ordering,
+  - stable exclusion of OpenAPI payload sections,
+  - and deterministic inclusion of `RelationalMappingVersion`.
+- Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
 ##### 5) `dms.ReferenceEdge` (reverse reference index for cascades)
 
