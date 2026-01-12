@@ -355,52 +355,67 @@ This makes the documents whose identities actually changed “emit” an identit
 
 This redesign requires DB-enforced journaling. Triggers on `dms.Document` insert into the journal tables when token columns change. Application code should treat the journal tables as derived artifacts and **not** write to them directly.
 
-#### PostgreSQL (sketch)
+The DDL generator must emit these triggers (and any supporting functions) as part of provisioning.
+SQL below is illustrative; the generator output must follow the canonicalization and quoting rules in `ddl-generation.md`.
+
+#### PostgreSQL (generated example; statement-level triggers)
 
 ```sql
-CREATE OR REPLACE FUNCTION dms.trg_document_change_events()
+-- INSERT trigger: journal rows for new documents
+CREATE OR REPLACE FUNCTION dms.trg_document_change_events_ins()
 RETURNS trigger AS
 $$
-DECLARE
-  localChangeVersion bigint;
 BEGIN
-  IF (TG_OP = 'INSERT') THEN
-    localChangeVersion := GREATEST(NEW.ContentVersion, NEW.IdentityVersion);
+  INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
+  SELECT GREATEST(ContentVersion, IdentityVersion), DocumentId, ResourceKeyId
+  FROM inserted;
 
-    INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
-    VALUES (localChangeVersion, NEW.DocumentId, NEW.ResourceKeyId);
+  INSERT INTO dms.IdentityChangeEvent(ChangeVersion, DocumentId)
+  SELECT IdentityVersion, DocumentId
+  FROM inserted;
 
-    INSERT INTO dms.IdentityChangeEvent(ChangeVersion, DocumentId)
-    VALUES (NEW.IdentityVersion, NEW.DocumentId);
-
-    RETURN NEW;
-  END IF;
-
-  IF (TG_OP = 'UPDATE') THEN
-    IF (NEW.ContentVersion <> OLD.ContentVersion OR NEW.IdentityVersion <> OLD.IdentityVersion) THEN
-      localChangeVersion := GREATEST(NEW.ContentVersion, NEW.IdentityVersion);
-
-      INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
-      VALUES (localChangeVersion, NEW.DocumentId, NEW.ResourceKeyId);
-    END IF;
-
-    IF (NEW.IdentityVersion <> OLD.IdentityVersion) THEN
-      INSERT INTO dms.IdentityChangeEvent(ChangeVersion, DocumentId)
-      VALUES (NEW.IdentityVersion, NEW.DocumentId);
-    END IF;
-  END IF;
-
-  RETURN NEW;
+  RETURN NULL;
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER TR_Document_ChangeEvents
-AFTER INSERT OR UPDATE ON dms.Document
-FOR EACH ROW
-EXECUTE FUNCTION dms.trg_document_change_events();
+-- UPDATE trigger: journal rows only when token columns change
+CREATE OR REPLACE FUNCTION dms.trg_document_change_events_upd()
+RETURNS trigger AS
+$$
+BEGIN
+  INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
+  SELECT GREATEST(i.ContentVersion, i.IdentityVersion), i.DocumentId, i.ResourceKeyId
+  FROM inserted i
+  JOIN deleted d ON d.DocumentId = i.DocumentId
+  WHERE i.ContentVersion <> d.ContentVersion
+     OR i.IdentityVersion <> d.IdentityVersion;
+
+  INSERT INTO dms.IdentityChangeEvent(ChangeVersion, DocumentId)
+  SELECT i.IdentityVersion, i.DocumentId
+  FROM inserted i
+  JOIN deleted d ON d.DocumentId = i.DocumentId
+  WHERE i.IdentityVersion <> d.IdentityVersion;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS TR_Document_ChangeEvents_Insert ON dms.Document;
+CREATE TRIGGER TR_Document_ChangeEvents_Insert
+AFTER INSERT ON dms.Document
+REFERENCING NEW TABLE AS inserted
+FOR EACH STATEMENT
+EXECUTE FUNCTION dms.trg_document_change_events_ins();
+
+DROP TRIGGER IF EXISTS TR_Document_ChangeEvents_Update ON dms.Document;
+CREATE TRIGGER TR_Document_ChangeEvents_Update
+AFTER UPDATE ON dms.Document
+REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted
+FOR EACH STATEMENT
+EXECUTE FUNCTION dms.trg_document_change_events_upd();
 ```
 
-#### SQL Server (sketch)
+#### SQL Server (generated example)
 
 ```sql
 CREATE OR ALTER TRIGGER dms.TR_Document_ChangeEvents

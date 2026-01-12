@@ -90,6 +90,18 @@ Determinism requirements differ by artifact:
   - Definition: two packs are equivalent if their keying fields match (effective schema hash, dialect, relational mapping version, pack format version) and their decoded payloads (models/plans/resource keys) are semantically identical after decompression and protobuf parse.
   - Rationale: pack envelopes may include producer metadata and compression may not be byte-for-byte stable even when payload semantics are unchanged.
 
+## Generated SQL is the source of truth
+
+SQL snippets in design documents are explanatory and may omit dialect details (e.g., always-quoted identifiers) for readability.
+
+The DDL generator is the authoritative source of dialect-specific SQL text for provisioning, including:
+- schemas/tables/sequences/constraints/indexes,
+- abstract union views,
+- trigger/function definitions (e.g., update-tracking journaling triggers),
+- deterministic seeding and schema-fingerprint recording.
+
+Any SQL called out as “sketch” in design documents must be implemented as generator output and covered by DDL text snapshots and/or golden tests.
+
 ## DDL Object Inventory (v1)
 
 This inventory is the explicit “what exists in the database” contract that the DDL generator produces for a given `EffectiveSchemaHash`.
@@ -206,8 +218,15 @@ Before applying any schema-dependent objects, the utility must perform a lightwe
 
 Even though the tool is create-only, the generated SQL uses existence-check patterns for *all* database objects to make provisioning robust against partial/failed runs:
 
-- PostgreSQL: use `IF NOT EXISTS` syntax where supported (`CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` where supported, `CREATE OR REPLACE VIEW`), and use catalog-based existence checks for object types that do not support `IF NOT EXISTS` (notably cross-table constraints/FKs).
-- SQL Server: use `IF NOT EXISTS (...) CREATE ...` patterns for schemas/tables/indexes/constraints where needed, and `CREATE OR ALTER VIEW`.
+- PostgreSQL:
+  - use `IF NOT EXISTS` syntax where supported (`CREATE SCHEMA IF NOT EXISTS`, `CREATE TABLE IF NOT EXISTS`, `CREATE INDEX IF NOT EXISTS` where supported, `CREATE OR REPLACE VIEW`),
+  - use catalog-based existence checks (e.g., `pg_catalog`) for object types that do not support `IF NOT EXISTS` (notably cross-table constraints/FKs),
+  - for generated trigger-backed features, prefer idempotent patterns:
+    - `CREATE OR REPLACE FUNCTION ...`,
+    - `DROP TRIGGER IF EXISTS ... ON ...` then `CREATE TRIGGER ...`.
+- SQL Server:
+  - use `IF NOT EXISTS (...) CREATE ...` patterns for schemas/tables/indexes/constraints where needed,
+  - use `CREATE OR ALTER` forms where available for generated programmable objects (views and triggers).
 
 This is not a migration story; it is a guardrail to avoid brittle provisioning scripts.
 

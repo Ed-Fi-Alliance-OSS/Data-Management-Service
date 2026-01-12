@@ -136,14 +136,20 @@ Workflow per engine:
    - PostgreSQL: `psql -v ON_ERROR_STOP=1 -f ...`
    - SQL Server: `sqlcmd -b -i ...`
    - Recommended additional check: apply the **same** DDL a second time and assert it succeeds and the applied schema manifest is unchanged (validates existence-check patterns and insert-if-missing seed semantics).
-3. Run engine-specific introspection queries and emit a stable **applied schema manifest** artifact:
+3. Run a minimal journaling smoke check (required because journaling triggers are correctness-critical):
+   - insert one row into `dms.Document` (using a seeded `ResourceKeyId`) and assert:
+     - `dms.DocumentChangeEvent` has one new row for that `DocumentId`
+     - `dms.IdentityChangeEvent` has one new row for that `DocumentId`
+   - update `ContentVersion` and assert one new `dms.DocumentChangeEvent` row is emitted
+   - update `IdentityVersion` and assert one new `dms.IdentityChangeEvent` row is emitted
+4. Run engine-specific introspection queries and emit a stable **applied schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,
    - indexes,
    - views,
-   - triggers (if used),
+   - triggers (required for journaling),
    - rows in `dms.EffectiveSchema`, `dms.SchemaComponent`, `dms.ResourceKey` (as applicable).
-4. Compare the manifest to an `expected/` manifest committed alongside the fixture.
+5. Compare the manifest to an `expected/` manifest committed alongside the fixture.
 
 ### 5) Runtime compatibility tests (pack selection + DB validation gate)
 
