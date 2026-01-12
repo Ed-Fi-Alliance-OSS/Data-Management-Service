@@ -24,7 +24,7 @@ This redesign therefore requires a separate utility (“DDL generation utility�
 
 - Builds the same derived relational model as runtime (no separate metadata source).
 - Generates deterministic, dialect-specific SQL DDL for PostgreSQL and SQL Server.
-- Optionally creates the target database (when configured), applies DDL, and records the resulting schema fingerprint in the singleton `dms.EffectiveSchema` row plus `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
+- Optionally creates the target database (when configured), provisions the schema, and records the resulting schema fingerprint in the singleton `dms.EffectiveSchema` row plus `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
 
 ## Scope
 
@@ -51,7 +51,7 @@ Explicitly out of scope for this redesign phase:
   - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
 **Outputs**
-- A deterministic SQL script (recommended even when applying directly)
+- A deterministic SQL script (recommended even when provisioning directly)
   - All schemas, tables, views, sequences, triggers
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
   - Deterministic `ResourceKeySeedHash`/`ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation)
@@ -188,12 +188,12 @@ This policy applies to:
 3. Derive the relational resource models and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md) and [data-model.md](data-model.md)).
 4. Generate “desired state” DDL for all required objects (schemas, tables, sequences, FKs, unique constraints, indexes, views, triggers).
    - Derive the `dms.ResourceKey` seed set from the effective schema and emit deterministic `INSERT` statements with explicit `ResourceKeyId` values.
-5. Generate the applied schema fingerprint statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
-6. Emit SQL and (optionally) apply it.
+5. Generate the schema-fingerprint recording statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
+6. Emit SQL and (optionally) provision it.
 
-## Apply semantics (create-only, no migrations)
+## Provision semantics (create-only, no migrations)
 
-The DDL generation utility is a **provisioning** tool, not a schema migration engine. Apply behavior is defined as follows:
+The DDL generation utility is a **provisioning** tool, not a schema migration engine. Provision behavior is defined as follows:
 
 ### Create-only (no migrations / upgrades)
 
@@ -207,7 +207,7 @@ This design **does** require provisioning to be robust and operationally repeata
 
 ### Preflight: fail fast on schema-hash mismatch
 
-Before applying any schema-dependent objects, the utility must perform a lightweight preflight check:
+Before provisioning any schema-dependent objects, the utility must perform a lightweight preflight check:
 
 - If `dms.EffectiveSchema` does not exist yet, proceed (this is a new/empty database).
 - If `dms.EffectiveSchema` exists and the singleton row is present:
@@ -241,13 +241,13 @@ This is not a migration story; it is a guardrail to avoid brittle provisioning s
 ### `dms.EffectiveSchema` / `dms.SchemaComponent` immutability
 
 - `dms.EffectiveSchema` is a **singleton current-state** record of the database’s provisioned schema fingerprint.
-  - Provisioning writes the singleton row once (no append-only “applied history”).
-  - Generated SQL uses insert-if-missing semantics (no “new applied row per run” behavior).
+  - Provisioning writes the singleton row once (no append-only “provisioning history”).
+  - Generated SQL uses insert-if-missing semantics (no “new row per run” behavior).
 - `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash` and are treated as immutable for that fingerprint.
 
 ### Transaction boundary
 
-- Apply runs in a **single transaction**:
+- Provisioning runs in a **single transaction**:
   - all schemas/tables/views/sequences/triggers,
   - all deterministic seeds (`dms.ResourceKey`, schema fingerprint rows),
   - all required supporting indexes.
@@ -255,13 +255,13 @@ This is not a migration story; it is a guardrail to avoid brittle provisioning s
 
 ### Optional database creation
 
-- Apply can optionally create the target database if it does not exist.
+- Provisioning can optionally create the target database if it does not exist.
 - Database creation is treated as a **pre-step** (performed before the main transaction) because PostgreSQL `CREATE DATABASE` cannot run inside a transaction block.
-- After the database exists, the utility connects to the target database and runs the main apply transaction as described above.
+- After the database exists, the utility connects to the target database and runs the main provisioning transaction as described above.
 
 ### Concurrency
 
-- Apply runs are assumed to be operationally serialized (no explicit apply-locking is required by this design).
+- Provisioning runs are assumed to be operationally serialized (no explicit provisioning lock is required by this design).
 
 ## Deterministic `dms.ResourceKey` seeding
 
@@ -344,7 +344,7 @@ DMS runtime should remain “validate-only”:
 
 - A single CLI (recommended) that supports both DDL and packs via subcommands:
   - `dms-schema ddl emit` (emit normalized SQL to stdout/files)
-  - `dms-schema ddl apply` (optional: apply to a database; includes preflight hash mismatch check)
+  - `dms-schema ddl provision` (optional: provision a database; includes preflight hash mismatch check)
   - `dms-schema pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
   - `dms-schema pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:

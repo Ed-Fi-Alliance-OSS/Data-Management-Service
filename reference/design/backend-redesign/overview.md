@@ -100,8 +100,8 @@ This redesign is split into focused docs in this directory:
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - Update tracking (derived `_etag/_lastModifiedDate`, `ChangeVersion`, change journals): [update-tracking.md](update-tracking.md)
-- DDL Generation (builds the relational model and emits/applies DDL): [ddl-generation.md](ddl-generation.md)
-- DDL generator verification harness (goldens, apply smoke, pack validation): [ddl-generator-testing.md](ddl-generator-testing.md)
+- DDL Generation (builds the relational model and emits/provisions DDL): [ddl-generation.md](ddl-generation.md)
+- DDL generator verification harness (goldens, provision smoke, pack validation): [ddl-generator-testing.md](ddl-generator-testing.md)
 - Strengths and risks (operational + correctness + performance): [strengths-risks.md](strengths-risks.md)
 
 ## Related Changes Implied by This Redesign
