@@ -17,4 +17,4 @@ Authorization remains out of scope.
 - `01-resourcekey-validation.md` — Validate `dms.ResourceKey` seed mapping (fast + slow path)
 - `02-mapping-set-selection.md` — Select mapping set by `(hash, dialect, mapping version)` (pack vs runtime compile)
 - `03-config-and-failure-modes.md` — Configuration surface and fail-fast behaviors
-
+- `04-remove-hot-reload.md` — Remove in-process schema reload/hot-reload behavior
