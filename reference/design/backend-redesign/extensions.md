@@ -24,7 +24,6 @@ This document is the extensions deep dive for `overview.md`.
 - [Reconstitution integration](#reconstitution-getquery-integration)
 - [Example](#example-contact--sample-extension-resource--common-type)
 - [Schema validation notes](#schema-validation-notes)
-- [Open questions](#open-questions--decisions-to-confirm)
 
 ---
 

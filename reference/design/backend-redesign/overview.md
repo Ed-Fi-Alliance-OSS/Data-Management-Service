@@ -107,6 +107,7 @@ This redesign is split into focused docs in this directory:
 ## Related Changes Implied by This Redesign
 
  - **Remove schema reload/hot-reload**: The current reload behavior exists primarily for testing convenience. With relational-first storage, DMS uses per-database schema fingerprint validation (`dms.EffectiveSchema`) instead of runtime schema toggles.
+ - **Remove legacy SchemaGenerator**: the existing legacy `EdFi.DataManagementService.SchemaGenerator` toolchain is obsolete under the relational-primary-store redesign and will be removed; the DDL generation utility described in [ddl-generation.md](ddl-generation.md) (and its verification harness) is the replacement.
  - **E2E testing approach changes**: Instead of switching schemas in-place, E2E tests should provision separate databases/containers (or separate DMS instances) per schema/version under test.
  - **Fail-fast on schema mismatch**: DMS should verify on first use of a given database connection string that the database schema matches an available effective `ApiSchema.json` mapping set (see `dms.EffectiveSchema`) and reject requests for that database if it does not.
 
