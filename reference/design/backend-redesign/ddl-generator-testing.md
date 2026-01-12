@@ -16,10 +16,143 @@ Authorization-related objects are explicitly out of scope for this harness until
 
 ## Design principles
 
-- **Layered tests**: fast unit/contract tests catch most issues; DB-provision and “runtime selection” tests catch integration issues.
+- **Layered tests**: fast unit/contract tests catch most issues; DB-apply and “runtime selection” tests catch integration issues.
 - **Deterministic artifacts**: normalize outputs (line endings, whitespace) and compare exact text/structure.
 - **Authoritative fixtures**: treat some outputs as a contract (“goldens”), updated only intentionally.
-- **No Testcontainers**: DB-provision tests use docker compose (consistent with repo guidance).
+- **No Testcontainers**: DB-apply tests use docker compose (consistent with repo guidance).
+
+## Artifacts and fixtures (normative)
+
+This harness only works if it has concrete, checked-in **inputs** and stable, comparable **outputs**. This section defines the on-disk layout and the exact filenames that tests compare.
+
+### Fixture directory layout
+
+Fixtures are checked in as directories with this structure:
+
+```text
+{TestProjectRoot}/
+  Fixtures/
+    small/
+      minimal/
+        inputs/
+          ... ApiSchema.json files ...
+        fixture.json
+        expected/
+          effective-schema.manifest.json
+          relational-model.manifest.json
+          pgsql.sql
+          mssql.sql
+          pack.manifest.json
+          mappingset.manifest.json
+    authoritative/
+      ds-core/
+        inputs/
+          ... ApiSchema.json files ...
+        fixture.json
+        expected/
+          effective-schema.manifest.json
+          relational-model.manifest.json
+          pgsql.sql
+          mssql.sql
+          pack.manifest.json
+          mappingset.manifest.json
+```
+
+Notes:
+- Tests write outputs to an `actual/` directory next to `expected/` (or into a temp dir with the same structure) and compare `expected/` vs `actual/`.
+- `actual/` MUST NOT be checked in (add a `.gitignore` entry).
+
+### `fixture.json` (normative)
+
+Each fixture includes a `fixture.json` that declares **exactly** which `ApiSchema.json` files participate in the effective schema set (do not rely on filesystem enumeration order).
+
+Minimal schema (field names are normative; extra fields are allowed for future expansion):
+
+```json
+{
+  "apiSchemaFiles": [
+    "edfi/ApiSchema.json",
+    "tpdm/ApiSchema.json"
+  ],
+  "dialects": ["pgsql", "mssql"],
+  "buildMappingPack": true
+}
+```
+
+Semantics:
+- `apiSchemaFiles`: relative paths under `inputs/` in the exact order listed; the harness still canonicalizes/sorts for hashing per `data-model.md`, but this makes the fixture explicit and debuggable.
+- `dialects`: which dialect outputs must be produced and compared.
+- `buildMappingPack`: when `true`, the harness MUST also produce and compare `pack.manifest.json` and `mappingset.manifest.json`.
+
+### Standard outputs (normative filenames)
+
+Every fixture’s `expected/` directory uses consistent filenames. Some outputs are conditional based on `fixture.json`:
+
+Always required:
+
+- `effective-schema.manifest.json`: schema fingerprint + schema components + deterministic `dms.ResourceKey` seed mapping summary (and optionally the full seed list).
+- `relational-model.manifest.json`: derived relational model summary (schemas/tables/columns/constraints/indexes/views/triggers) used to generate DDL and compile plans.
+- `{dialect}.sql`: normalized DDL text, where `{dialect}` is `pgsql` or `mssql` (one file per dialect listed in `fixture.json.dialects`).
+
+Optional (recommended for diagnostics and fast diffs):
+
+- `ddl.manifest.json`: stable per-dialect DDL summary (normalized SQL hashes and statement counts).
+
+Required when `fixture.json.buildMappingPack=true`:
+
+- `pack.manifest.json`: semantic manifest derived from *decoded protobuf payload* (never compare `.mpack` bytes).
+- `mappingset.manifest.json`: semantic manifest derived from the in-memory mapping set used by runtime execution (after pack decode, or runtime compilation).
+
+DB-apply tests add an additional expected artifact (per dialect):
+
+- `provisioned-schema.{dialect}.manifest.json`: stable introspection manifest emitted **after** applying DDL to an empty database.
+
+### Manifest formats (normative)
+
+The harness compares manifests byte-for-byte after normalization. Manifests MUST be serialized deterministically (stable property ordering, stable indentation, `\n` line endings, no trailing whitespace).
+
+Minimum required fields:
+
+- `effective-schema.manifest.json`
+  - `api_schema_format_version`
+  - `relational_mapping_version`
+  - `effective_schema_hash`
+  - `resource_key_count`
+  - `resource_key_seed_hash`
+  - `schema_components[]`: `project_endpoint_name`, `project_name`, `project_version`, `is_extension_project`, `project_hash`
+  - Optional (recommended): `resource_keys[]` list with `resource_key_id`, `project_name`, `resource_name`, `resource_version`
+- `relational-model.manifest.json`
+  - `effective_schema_hash`, `dialect`, `relational_mapping_version`
+  - `resources[]` ordered by `(project_name, resource_name)` ordinal:
+    - physical schema/table names
+    - columns (in physical column order)
+    - constraints/indexes/views/triggers (names + key columns)
+- `pack.manifest.json`
+  - `effective_schema_hash`, `dialect`, `relational_mapping_version`, `pack_format_version`
+  - `payload_sha256`
+  - `resource_key_count`, `resource_key_seed_hash`
+  - `resources[]` plan summaries:
+    - per plan: `normalized_sql_sha256` (store SQL hashes, not the raw SQL text for large fixtures)
+    - binding order metadata required for correctness (parameter order, keyset ordering, etc.)
+- `mappingset.manifest.json`
+  - Same semantic shape as `pack.manifest.json` for the runtime mapping-set object graph
+  - MUST match pack-derived mapping sets exactly (after normalization)
+- `ddl.manifest.json` (when emitted)
+  - `effective_schema_hash`, `relational_mapping_version`
+  - `ddl[]` ordered by dialect:
+    - `dialect`
+    - `normalized_sql_sha256`
+    - `statement_count`
+
+### Artifact emitter (required component)
+
+All test layers share one implementation that produces normalized artifacts from a fixture input set:
+
+- Inputs: `inputs/` + `fixture.json`
+- Outputs: an `actual/` directory containing the standardized files above
+
+Design requirement:
+- The CLI(s) and tests MUST reuse the same “artifact emitter” library code to avoid “tests validate something the CLI doesn’t produce” drift.
 
 ## Test layers
 
@@ -66,8 +199,10 @@ Goal: lock down generated output shapes for representative “small” models wi
 Artifacts snapshot-tested:
 
 - **Generated DDL text** per dialect for small fixtures.
+- **Effective schema manifest** (`effective-schema.manifest.json`) for small fixtures (hash + schema components + resource key seed summary).
 - **Derived relational model manifest** (a normalized, stable text/JSON view of:
   schemas, tables, columns, constraints, indexes, views, triggers).
+- **DDL manifest** (`ddl.manifest.json`) when emitted (stable per-dialect hashes and counts).
 - **Mapping pack manifest** (see “AOT pack testing”): stable, human-readable output describing pack semantics.
 
 Implementation notes:
@@ -85,22 +220,7 @@ Approach:
 
 - Create a dedicated NUnit test project (or a separate test category) such as:
   - `...DdlGenerator.Tests.Authoritative` with `[Category("Authoritative")]`.
-- Check in fixture sets as directories:
-
-```
-.../Authoritative/Fixtures/
-  ds-core/
-    inputs/   (ApiSchema.json files: core only)
-    expected/
-      pgsql.sql
-      mssql.sql
-      pack.manifest.json   (optional)
-  ds-core+tpdm/
-    inputs/   (core + TPDM ApiSchema.json files)
-    expected/ ...
-  ds-core+sample/
-  ds-core+homograph/
-```
+- Use the standard fixture layout in `Fixtures/authoritative/*` (see “Artifacts and fixtures (normative)”).
 
 - Test behavior:
   1. Run the generator against `inputs/` (prefer in-process; CLI is acceptable).
@@ -120,7 +240,7 @@ Practical considerations:
 - Authoritative fixtures can be large; keep them scoped to a small set of “canonical combinations” that matter most.
 - If file size becomes problematic, consider storing compressed inputs and expanding to temp at test runtime, but prefer checked-in plain JSON for debuggability.
 
-### 4) DB-provision smoke tests (docker compose; pgsql + mssql)
+### 4) DB-apply smoke tests (docker compose; pgsql + mssql)
 
 Goal: prove the emitted DDL actually provisions an empty database on each engine and creates the expected objects.
 
@@ -149,7 +269,7 @@ Workflow per engine:
    - views,
    - triggers (required for journaling),
    - rows in `dms.EffectiveSchema`, `dms.SchemaComponent`, `dms.ResourceKey` (as applicable).
-5. Compare the manifest to an `expected/` manifest committed alongside the fixture.
+5. Compare the manifest to `expected/provisioned-schema.{dialect}.manifest.json` committed alongside the fixture.
 
 ### 5) Runtime compatibility tests (pack selection + DB validation gate)
 
@@ -260,10 +380,10 @@ Authoritative fixtures (real schemas):
 ## CI wiring (recommended)
 
 - Default PR job: unit + snapshot tests only (fast, deterministic).
-  - `dotnet test ... --filter "TestCategory!=Authoritative&TestCategory!=DbProvision"`
+  - `dotnet test ... --filter "TestCategory!=Authoritative&TestCategory!=DbApply"`
 - Separate CI jobs (or scheduled builds):
   - `Authoritative` (runs on `dms-schema` changes and nightly)
-  - `DbProvision` (runs on `dms-schema` changes and nightly; requires docker availability)
+  - `DbApply` (runs on `dms-schema` changes and nightly; requires docker availability)
 
 ## Developer workflow
 
@@ -277,5 +397,5 @@ Authoritative fixtures (real schemas):
 - A new developer can:
   - run fast tests locally without docker,
   - run authoritative comparisons and see a clean diff on failure,
-  - run DB-provision smoke tests for both engines with a single script,
+  - run DB-apply smoke tests for both engines with a single script,
   - validate pack ↔ DB compatibility gates and see actionable failure messages.
