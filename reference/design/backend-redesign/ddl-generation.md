@@ -57,6 +57,11 @@ Explicitly out of scope for this redesign phase:
   - Deterministic `ResourceKeySeedHash`/`ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation)
   - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`).
   - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
+- Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
+  - `effective-schema.manifest.json` (schema fingerprint inputs + schema components + resource-key seed summary)
+  - `relational-model.manifest.json` (derived model inventory used to generate DDL and compile plans)
+  - `ddl.manifest.json` (per-dialect normalized DDL hashes and statement counts)
+  - File naming and minimum required fields are defined in `ddl-generator-testing.md` (“Artifacts and fixtures (normative)”).
 
 ## SQL Text Canonicalization (Determinism Contract)
 
@@ -347,6 +352,7 @@ DMS runtime should remain “validate-only”:
   - `dms-schema ddl provision` (optional: provision a database; includes preflight hash mismatch check)
   - `dms-schema pack build` (emit `.mpack` keyed by `EffectiveSchemaHash`)
   - `dms-schema pack manifest` (emit a stable JSON/text manifest for testing/diagnostics; avoids brittle `.mpack` byte comparisons)
+- A shared “artifact emitter” library used by both CLI and tests to produce normalized SQL + manifests for fixture comparisons (see `ddl-generator-testing.md`).
 - A test harness that runs the DDL generation utility against empty PostgreSQL and SQL Server instances and verifies:
   - stable naming,
   - DDL success,
