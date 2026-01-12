@@ -13,4 +13,5 @@ public class ApplicationResponse : AuditableResponse
     public required string ClaimSetName { get; set; }
     public List<long> EducationOrganizationIds { get; set; } = [];
     public List<long> DmsInstanceIds { get; set; } = [];
+    public List<long> ProfileIds { get; set; } = [];
 }
