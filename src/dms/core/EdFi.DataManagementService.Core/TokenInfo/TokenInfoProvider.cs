@@ -424,6 +424,7 @@ public class TokenInfoProvider(
         // The path might be "ed-fi/student" or just "student", we need to extract the last part
         var parts = resourcePath.Split('/');
         var resourceName = parts[^1]; // Get last part (e.g., "student" from "ed-fi/student")
+        var projectName = parts[0];
 
         // Capitalize first letter to match ResourceName format (e.g., "student" -> "Student")
         // ApiSchema resourceNameMapping uses PascalCase resource names
@@ -444,7 +445,7 @@ public class TokenInfoProvider(
             var endpointName = coreProjectSchema.GetEndpointNameFromResourceName(resourceNameTyped);
 
             // Construct the full path with project endpoint prefix
-            return $"/{coreProjectSchema.ProjectEndpointName.Value}/{endpointName.Value}";
+            return $"/{projectName ?? coreProjectSchema.ProjectEndpointName.Value}/{endpointName.Value}";
         }
         catch (Exception ex)
         {
