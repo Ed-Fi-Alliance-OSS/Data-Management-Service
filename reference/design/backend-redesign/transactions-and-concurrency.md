@@ -668,6 +668,52 @@ This spec assumes the DMS resilience policy retries the full write transaction o
 - Default: use **READ COMMITTED + explicit `dms.IdentityLock` row locks** for normal writes and for identity correctness (Algorithms 1–2).
 - Do not rely on SERIALIZABLE edge scans for representation update tracking; the derived-token design in [update-tracking.md](update-tracking.md) avoids write-time fan-out and SERIALIZABLE/key-range locking for `_etag/_lastModifiedDate` / `ChangeVersion`.
 
+##### Locking future improvement ideas
+
+These are non-normative ideas to reduce lock contention/overhead while preserving the strict identity correctness guarantees of this redesign.
+
+1) **Identity-volatility-based child lock elision**
+   - Today’s Algorithm 1 assumes any identity-component child might have an identity/URI-affecting transaction in flight.
+   - Future optimization: precompute `CanIdentityOrUriChange` per *resource type* from ApiSchema (a DAG once cycles are rejected):
+     - `CanChange(R) = AllowIdentityUpdates(R) OR any(CanChange(C) for identity-component child reference targets C)`
+     - descriptor components remain excluded (descriptors treated as immutable in this redesign)
+   - At runtime, filter `IdentityComponentChildren` to only those whose resolved resource type has `CanIdentityOrUriChange=true` before taking shared locks.
+   - Benefit: avoids shared locking on “immutable hubs” (frequently referenced resources whose identities never change), reducing blocking and lock-manager churn.
+   - Cost/complexity: requires the resolver to surface the resolved target resource type (e.g., `ResourceKeyId`) alongside `DocumentId` (including polymorphic references).
+
+2) **Skip locks/recompute on non-identity writes (fast path)**
+   - Many writes do not change:
+     - scalar identity values, nor
+     - identity-component FK targets, nor
+     - the set of identity-component edges.
+   - Future optimization: if identity projection is unchanged (see epic [02-identity-change-detection.md](epics/09-identity-concurrency/02-identity-change-detection.md)) and `dms.ReferenceEdge` maintenance is diff-based (so no new identity edges are written), then:
+     - skip shared identity locks on children, and
+     - skip closure recompute entirely.
+   - Benefit: makes “update non-identity fields” scale without paying identity-lock overhead.
+   - Cost/complexity: requires reliable identity-change detection and edge diffing so we do not violate Invariant A by accidentally inserting identity-component edges without holding the child lock.
+
+3) **Make diff-based `dms.ReferenceEdge` the default (lock and write reduction)**
+   - This document already recommends diff-based edge maintenance to reduce churn.
+   - Future improvement: treat it as the default path (replace becomes debug-only), because it is also a *locking* optimization:
+     - if the edge set does not change, we avoid writing identity-component edges, which makes the non-identity fast path above feasible.
+   - Benefit: fewer writes + fewer lock requirements under Invariant A.
+   - Cost/complexity: implementation work + careful performance validation for very large edge sets.
+
+4) **PostgreSQL: advisory locks to avoid hot-row `MultiXact` overhead**
+   - Under very high concurrency, repeated shared row locks on the same `dms.IdentityLock` tuple can create measurable Postgres overhead (lock-manager work, `MultiXact` membership churn, and associated VACUUM/WAL pressure).
+   - Future optimization (PostgreSQL only): replace row-locking `dms.IdentityLock` with transaction-scoped advisory locks keyed by `DocumentId`:
+     - shared: `pg_advisory_xact_lock_shared(...)`
+     - exclusive/update: `pg_advisory_xact_lock(...)`
+   - Benefit: keeps the same ordering/phantom-safety story but removes tuple-level locking side effects on a hot row.
+   - Cost/complexity: PostgreSQL-specific implementation, careful keying (namespace + `DocumentId`), and additional diagnostics/telemetry for lock contention since it won’t surface as row locks.
+
+5) **Optimistic “validate and retry” using identity-version stamps (reduce shared locking)**
+   - Future optimization: instead of taking shared locks on all identity-component children for Algorithm 1, read each child’s `IdentityVersion` (or equivalent “identity changed” stamp) during reference resolution, compute the parent’s derived identity, then re-check the versions before commit; retry on mismatch.
+   - Benefit: shifts work from steady-state locking to rare retries during concurrent identity updates.
+   - Cost/complexity:
+     - requires durable identity-version stamps on documents and a clear “version increments on identity/URI change” contract (including closure recompute),
+     - must still preserve phantom-safety for closure expansion (Invariant A) for *new* identity-component edges, or replace it with an equivalent mechanism (e.g., versioned FK metadata akin to the “versioned reference” idea explored in `axel-alternative/`).
+
 ##### Cycle safety (MUST)
 
 Startup schema validation must reject ApiSchema identity graphs with cycles at the **resource-type** level (edge `R → T` when `R`’s identity includes an identity-component document reference that depends on `T`). Cycles make Algorithm 2 unsafe and can lead to deadlocks or non-termination.
