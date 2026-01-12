@@ -15,8 +15,8 @@ Dependency types used below:
 - **Optional path**: applies only when mapping packs (`.mpack`) are enabled.
 
 ID conventions:
-- Epic: `E{NN}` maps to `epics/{NN}-*/EPIC.md`
-- Story: `E{NN}-S{MM}` maps to `epics/{NN}-*/{MM}-*.md`
+- Epic: `E{NN}` maps to `{NN}-*/EPIC.md`
+- Story: `E{NN}-S{MM}` maps to `{NN}-*/{MM}-*.md`
 
 ---
 
@@ -76,21 +76,21 @@ Notes:
 
 | Epic | Title | Hard Depends On | Primary Outputs / What It Unblocks |
 | --- | --- | --- | --- |
-| E00 | [Effective Schema Fingerprinting & `dms.ResourceKey` Seeding](epics/00-effective-schema-hash/EPIC.md) | — | Hashing + seed contract used by DDL/provisioning, packs, and runtime selection |
-| E01 | [Derived Relational Model (v1)](epics/01-relational-model/EPIC.md) | E00 | Fully derived model inventory used by DDL emission and plan compilation |
-| E02 | [Deterministic DDL Emission](epics/02-ddl-emission/EPIC.md) | E01 | Engine-specific DDL (pgsql/mssql) + deterministic ordering/canonicalization |
-| E03 | [Provisioning Workflow (Create-Only)](epics/03-provisioning-workflow/EPIC.md) | E02 | CLI + provisioning guardrails; enables DB-apply and runtime validation |
-| E04 | [Verification Harness](epics/04-verification-harness/EPIC.md) | E00–E03 | Fixture runner + determinism/snapshot/golden/DB-apply tests |
-| E05 | [Mapping Pack Generation and Consumption (Optional)](epics/05-mpack-generation/EPIC.md) | E00–E02 | `.mpack` build/validate/load; enables AOT mapping distribution |
-| E06 | [Runtime Schema Validation & Mapping Set Selection](epics/06-runtime-mapping-selection/EPIC.md) | E00, E03 (and E05 optional) | Per-DB fingerprint validation + mapping selection + caching; removes hot reload |
-| E07 | [Relational Write Path (POST/PUT)](epics/07-relational-write-path/EPIC.md) | E06, E01, E02 | End-to-end relational writes; produces/maintains derived artifacts (edges, tokens hooks) |
-| E08 | [Relational Read Path (GET + Query)](epics/08-relational-read-path/EPIC.md) | E06, E01, E02 | End-to-end relational reads and reconstitution (incl. abstract+descriptor projection) |
-| E09 | [Strict Identity Maintenance & Concurrency](epics/09-identity-concurrency/EPIC.md) | E07, E02 | Transactional referential-identity correctness + locking + closure recompute |
-| E10 | [Update Tracking + Change Queries](epics/10-update-tracking-change-queries/EPIC.md) | E07, E08, E09, E02 | Derived `_etag/_lastModifiedDate/ChangeVersion`, journaling triggers, change selection |
-| E11 | [Delete Path & Conflict Diagnostics](epics/11-delete-path/EPIC.md) | E07, E02 | Delete-by-id + FK conflict mapping + diagnostics |
-| E12 | [Operational Guardrails](epics/12-ops-guardrails/EPIC.md) | E07, E09 (and E10 recommended) | Drift prevention/repair + observability + closure guardrails + benchmarks |
-| E13 | [Test Strategy & Migration](epics/13-test-migration/EPIC.md) | E03, E06–E08, E11 | E2E/integration/parity tests and docs aligned to provisioning model |
-| E14 | [Authorization (Deferred)](epics/14-authorization/EPIC.md) | — | Explicitly deferred; must not block baseline redesign |
+| E00 | [Effective Schema Fingerprinting & `dms.ResourceKey` Seeding](00-effective-schema-hash/EPIC.md) | — | Hashing + seed contract used by DDL/provisioning, packs, and runtime selection |
+| E01 | [Derived Relational Model (v1)](01-relational-model/EPIC.md) | E00 | Fully derived model inventory used by DDL emission and plan compilation |
+| E02 | [Deterministic DDL Emission](02-ddl-emission/EPIC.md) | E01 | Engine-specific DDL (pgsql/mssql) + deterministic ordering/canonicalization |
+| E03 | [Provisioning Workflow (Create-Only)](03-provisioning-workflow/EPIC.md) | E02 | CLI + provisioning guardrails; enables DB-apply and runtime validation |
+| E04 | [Verification Harness](04-verification-harness/EPIC.md) | E00–E03 | Fixture runner + determinism/snapshot/golden/DB-apply tests |
+| E05 | [Mapping Pack Generation and Consumption (Optional)](05-mpack-generation/EPIC.md) | E00–E02 | `.mpack` build/validate/load; enables AOT mapping distribution |
+| E06 | [Runtime Schema Validation & Mapping Set Selection](06-runtime-mapping-selection/EPIC.md) | E00, E03 (and E05 optional) | Per-DB fingerprint validation + mapping selection + caching; removes hot reload |
+| E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02 | End-to-end relational writes; produces/maintains derived artifacts (edges, tokens hooks) |
+| E08 | [Relational Read Path (GET + Query)](08-relational-read-path/EPIC.md) | E06, E01, E02 | End-to-end relational reads and reconstitution (incl. abstract+descriptor projection) |
+| E09 | [Strict Identity Maintenance & Concurrency](09-identity-concurrency/EPIC.md) | E07, E02 | Transactional referential-identity correctness + locking + closure recompute |
+| E10 | [Update Tracking + Change Queries](10-update-tracking-change-queries/EPIC.md) | E07, E08, E09, E02 | Derived `_etag/_lastModifiedDate/ChangeVersion`, journaling triggers, change selection |
+| E11 | [Delete Path & Conflict Diagnostics](11-delete-path/EPIC.md) | E07, E02 | Delete-by-id + FK conflict mapping + diagnostics |
+| E12 | [Operational Guardrails](12-ops-guardrails/EPIC.md) | E07, E09 (and E10 recommended) | Drift prevention/repair + observability + closure guardrails + benchmarks |
+| E13 | [Test Strategy & Migration](13-test-migration/EPIC.md) | E03, E06–E08, E11 | E2E/integration/parity tests and docs aligned to provisioning model |
+| E14 | [Authorization (Deferred)](14-authorization/EPIC.md) | — | Explicitly deferred; must not block baseline redesign |
 
 ---
 
@@ -98,184 +98,184 @@ Notes:
 
 ### E00 — Effective Schema Fingerprinting & `dms.ResourceKey` Seeding
 
-Epic: `epics/00-effective-schema-hash/EPIC.md`
+Epic: `00-effective-schema-hash/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E00-S00 | [`00-schema-loader.md`](epics/00-effective-schema-hash/00-schema-loader.md) | — | — | Effective schema loader (explicit inputs, OpenAPI stripping, fail-fast validation) |
-| E00-S01 | [`01-canonical-json.md`](epics/00-effective-schema-hash/01-canonical-json.md) | — | — | Canonical JSON serializer (stable UTF-8 bytes) |
-| E00-S02 | [`02-effective-schema-hash.md`](epics/00-effective-schema-hash/02-effective-schema-hash.md) | E00-S00, E00-S01 | — | `EffectiveSchemaHash` calculator + `RelationalMappingVersion` participation |
-| E00-S03 | [`03-resourcekey-seed.md`](epics/00-effective-schema-hash/03-resourcekey-seed.md) | E00-S00 | E00-S02 | Deterministic `dms.ResourceKey` seed list + `resource_key_seed_hash` |
-| E00-S04 | [`04-effective-schema-manifest.md`](epics/00-effective-schema-hash/04-effective-schema-manifest.md) | E00-S02, E00-S03 | — | `effective-schema.manifest.json` emitter (deterministic) |
+| E00-S00 | [`00-schema-loader.md`](00-effective-schema-hash/00-schema-loader.md) | — | — | Effective schema loader (explicit inputs, OpenAPI stripping, fail-fast validation) |
+| E00-S01 | [`01-canonical-json.md`](00-effective-schema-hash/01-canonical-json.md) | — | — | Canonical JSON serializer (stable UTF-8 bytes) |
+| E00-S02 | [`02-effective-schema-hash.md`](00-effective-schema-hash/02-effective-schema-hash.md) | E00-S00, E00-S01 | — | `EffectiveSchemaHash` calculator + `RelationalMappingVersion` participation |
+| E00-S03 | [`03-resourcekey-seed.md`](00-effective-schema-hash/03-resourcekey-seed.md) | E00-S00 | E00-S02 | Deterministic `dms.ResourceKey` seed list + `resource_key_seed_hash` |
+| E00-S04 | [`04-effective-schema-manifest.md`](00-effective-schema-hash/04-effective-schema-manifest.md) | E00-S02, E00-S03 | — | `effective-schema.manifest.json` emitter (deterministic) |
 
 ### E01 — Derived Relational Model (v1)
 
-Epic: `epics/01-relational-model/EPIC.md`
+Epic: `01-relational-model/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E01-S00 | [`00-base-schema-traversal.md`](epics/01-relational-model/00-base-schema-traversal.md) | E00-S00 | — | Logical table/column scopes from JSON schema (`$ref` resolution, arrays→tables) |
-| E01-S01 | [`01-reference-and-constraints.md`](epics/01-relational-model/01-reference-and-constraints.md) | E01-S00 | — | FK bindings (`..._DocumentId`/`..._DescriptorId`) + identity/uniqueness constraints |
-| E01-S02 | [`02-naming-and-overrides.md`](epics/01-relational-model/02-naming-and-overrides.md) | E01-S00 | E01-S01 | Deterministic naming + `relational.nameOverrides` parsing + collision/length rules |
-| E01-S03 | [`03-ext-mapping.md`](epics/01-relational-model/03-ext-mapping.md) | E01-S00, E01-S02 | E01-S01 | `_ext` model derivation (extension schemas/tables aligned to base keys) |
-| E01-S04 | [`04-abstract-union-views.md`](epics/01-relational-model/04-abstract-union-views.md) | E01-S01, E01-S02 | — | Abstract union view model (identity select-list + ordering + casts) |
-| E01-S05 | [`05-relational-model-manifest.md`](epics/01-relational-model/05-relational-model-manifest.md) | E01-S00–E01-S04 | — | `relational-model.manifest.json` emitter (stable ordering) |
+| E01-S00 | [`00-base-schema-traversal.md`](01-relational-model/00-base-schema-traversal.md) | E00-S00 | — | Logical table/column scopes from JSON schema (`$ref` resolution, arrays→tables) |
+| E01-S01 | [`01-reference-and-constraints.md`](01-relational-model/01-reference-and-constraints.md) | E01-S00 | — | FK bindings (`..._DocumentId`/`..._DescriptorId`) + identity/uniqueness constraints |
+| E01-S02 | [`02-naming-and-overrides.md`](01-relational-model/02-naming-and-overrides.md) | E01-S00 | E01-S01 | Deterministic naming + `relational.nameOverrides` parsing + collision/length rules |
+| E01-S03 | [`03-ext-mapping.md`](01-relational-model/03-ext-mapping.md) | E01-S00, E01-S02 | E01-S01 | `_ext` model derivation (extension schemas/tables aligned to base keys) |
+| E01-S04 | [`04-abstract-union-views.md`](01-relational-model/04-abstract-union-views.md) | E01-S01, E01-S02 | — | Abstract union view model (identity select-list + ordering + casts) |
+| E01-S05 | [`05-relational-model-manifest.md`](01-relational-model/05-relational-model-manifest.md) | E01-S00–E01-S04 | — | `relational-model.manifest.json` emitter (stable ordering) |
 
 ### E02 — Deterministic DDL Emission (PostgreSQL + SQL Server)
 
-Epic: `epics/02-ddl-emission/EPIC.md`
+Epic: `02-ddl-emission/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E02-S00 | [`00-dialect-abstraction.md`](epics/02-ddl-emission/00-dialect-abstraction.md) | — | — | Dialect abstraction (quoting, type mapping, idempotent patterns, formatter) |
-| E02-S01 | [`01-core-dms-ddl.md`](epics/02-ddl-emission/01-core-dms-ddl.md) | E02-S00 | E00-S02 | Core `dms.*` objects (tables, triggers, sequences, indexes) |
-| E02-S02 | [`02-project-and-resource-ddl.md`](epics/02-ddl-emission/02-project-and-resource-ddl.md) | E02-S00, E01-S05 | — | Project schemas + resource/extension tables + abstract views |
-| E02-S03 | [`03-seed-and-fingerprint-ddl.md`](epics/02-ddl-emission/03-seed-and-fingerprint-ddl.md) | E02-S00, E02-S01, E00-S02, E00-S03 | — | Seed/recording DML (`ResourceKey`, `EffectiveSchema`, `SchemaComponent`) |
-| E02-S04 | [`04-sql-canonicalization.md`](epics/02-ddl-emission/04-sql-canonicalization.md) | E02-S00 | E02-S01–E02-S03 | Canonical SQL formatting + deterministic statement ordering tests |
+| E02-S00 | [`00-dialect-abstraction.md`](02-ddl-emission/00-dialect-abstraction.md) | — | — | Dialect abstraction (quoting, type mapping, idempotent patterns, formatter) |
+| E02-S01 | [`01-core-dms-ddl.md`](02-ddl-emission/01-core-dms-ddl.md) | E02-S00 | E00-S02 | Core `dms.*` objects (tables, triggers, sequences, indexes) |
+| E02-S02 | [`02-project-and-resource-ddl.md`](02-ddl-emission/02-project-and-resource-ddl.md) | E02-S00, E01-S05 | — | Project schemas + resource/extension tables + abstract views |
+| E02-S03 | [`03-seed-and-fingerprint-ddl.md`](02-ddl-emission/03-seed-and-fingerprint-ddl.md) | E02-S00, E02-S01, E00-S02, E00-S03 | — | Seed/recording DML (`ResourceKey`, `EffectiveSchema`, `SchemaComponent`) |
+| E02-S04 | [`04-sql-canonicalization.md`](02-ddl-emission/04-sql-canonicalization.md) | E02-S00 | E02-S01–E02-S03 | Canonical SQL formatting + deterministic statement ordering tests |
 
 ### E03 — Provisioning Workflow (Create-Only)
 
-Epic: `epics/03-provisioning-workflow/EPIC.md`
+Epic: `03-provisioning-workflow/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E03-S00 | [`00-ddl-emit-command.md`](epics/03-provisioning-workflow/00-ddl-emit-command.md) | E00-S04, E01-S05, E02-S01–E02-S04 | — | CLI outputs: `{dialect}.sql` + manifests (no DB required) |
-| E03-S01 | [`01-ddl-provision-command.md`](epics/03-provisioning-workflow/01-ddl-provision-command.md) | E03-S00 | — | CLI provisions empty DB (create-only) using generated DDL |
-| E03-S02 | [`02-preflight-and-idempotency.md`](epics/03-provisioning-workflow/02-preflight-and-idempotency.md) | E03-S01 | — | Preflight mismatch, rerun safety, seed validation diagnostics |
-| E03-S03 | [`03-ddl-manifest.md`](epics/03-provisioning-workflow/03-ddl-manifest.md) | E03-S00 | — | `ddl.manifest.json` emission (hashes/counts for DDL) |
-| E03-S04 | [`04-remove-legacy-schemagenerator.md`](epics/03-provisioning-workflow/04-remove-legacy-schemagenerator.md) | E03-S00, E03-S01 | E04-S00 | Remove legacy SchemaGenerator + migrate docs/scripts/CI references |
+| E03-S00 | [`00-ddl-emit-command.md`](03-provisioning-workflow/00-ddl-emit-command.md) | E00-S04, E01-S05, E02-S01–E02-S04 | — | CLI outputs: `{dialect}.sql` + manifests (no DB required) |
+| E03-S01 | [`01-ddl-provision-command.md`](03-provisioning-workflow/01-ddl-provision-command.md) | E03-S00 | — | CLI provisions empty DB (create-only) using generated DDL |
+| E03-S02 | [`02-preflight-and-idempotency.md`](03-provisioning-workflow/02-preflight-and-idempotency.md) | E03-S01 | — | Preflight mismatch, rerun safety, seed validation diagnostics |
+| E03-S03 | [`03-ddl-manifest.md`](03-provisioning-workflow/03-ddl-manifest.md) | E03-S00 | — | `ddl.manifest.json` emission (hashes/counts for DDL) |
+| E03-S04 | [`04-remove-legacy-schemagenerator.md`](03-provisioning-workflow/04-remove-legacy-schemagenerator.md) | E03-S00, E03-S01 | E04-S00 | Remove legacy SchemaGenerator + migrate docs/scripts/CI references |
 
 ### E04 — Verification Harness (Determinism + DB-Apply)
 
-Epic: `epics/04-verification-harness/EPIC.md`
+Epic: `04-verification-harness/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E04-S00 | [`00-fixture-runner.md`](epics/04-verification-harness/00-fixture-runner.md) | E03-S00 | — | Fixture runner (`expected/` vs `actual/`) + `.gitignore` for `actual/` |
-| E04-S01 | [`01-contract-tests.md`](epics/04-verification-harness/01-contract-tests.md) | E00-S04, E01-S05, E02-S00 | — | Determinism + negative-path unit/contract tests |
-| E04-S02 | [`02-snapshot-tests.md`](epics/04-verification-harness/02-snapshot-tests.md) | E04-S00 | E04-S01 | Snapshot tests for small fixtures (DDL + manifests) |
-| E04-S03 | [`03-authoritative-goldens.md`](epics/04-verification-harness/03-authoritative-goldens.md) | E04-S00 | — | Authoritative golden directory diffs + bless mode |
-| E04-S04 | [`04-db-apply-smoke.md`](epics/04-verification-harness/04-db-apply-smoke.md) | E03-S01, E03-S02 | — | DB-apply smoke (docker compose) + post-provision introspection manifest |
-| E04-S05 | [`05-runtime-compatibility-gate.md`](epics/04-verification-harness/05-runtime-compatibility-gate.md) | E04-S04 | E06-S01, E06-S02 | Gate tests: mapping set seed summary ↔ DB fingerprint validation |
+| E04-S00 | [`00-fixture-runner.md`](04-verification-harness/00-fixture-runner.md) | E03-S00 | — | Fixture runner (`expected/` vs `actual/`) + `.gitignore` for `actual/` |
+| E04-S01 | [`01-contract-tests.md`](04-verification-harness/01-contract-tests.md) | E00-S04, E01-S05, E02-S00 | — | Determinism + negative-path unit/contract tests |
+| E04-S02 | [`02-snapshot-tests.md`](04-verification-harness/02-snapshot-tests.md) | E04-S00 | E04-S01 | Snapshot tests for small fixtures (DDL + manifests) |
+| E04-S03 | [`03-authoritative-goldens.md`](04-verification-harness/03-authoritative-goldens.md) | E04-S00 | — | Authoritative golden directory diffs + bless mode |
+| E04-S04 | [`04-db-apply-smoke.md`](04-verification-harness/04-db-apply-smoke.md) | E03-S01, E03-S02 | — | DB-apply smoke (docker compose) + post-provision introspection manifest |
+| E04-S05 | [`05-runtime-compatibility-gate.md`](04-verification-harness/05-runtime-compatibility-gate.md) | E04-S04 | E06-S01, E06-S02 | Gate tests: mapping set seed summary ↔ DB fingerprint validation |
 
 ### E05 — Mapping Pack (`.mpack`) Generation and Consumption (Optional AOT Mode)
 
-Epic: `epics/05-mpack-generation/EPIC.md`
+Epic: `05-mpack-generation/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E05-S00 | [`00-protobuf-contracts.md`](epics/05-mpack-generation/00-protobuf-contracts.md) | — | — | Contracts project/package for PackFormatVersion=1 |
-| E05-S01 | [`01-pack-payload-shape.md`](epics/05-mpack-generation/01-pack-payload-shape.md) | E05-S00, E00-S03, E01-S05 | — | Payload builder + ordering invariants + validation |
-| E05-S02 | [`02-plan-compilation.md`](epics/05-mpack-generation/02-plan-compilation.md) | E02-S00, E01-S05 | E01-S02 | Dialect-specific SQL plan compilation + canonicalization (pack + runtime) |
-| E05-S03 | [`03-pack-build-cli.md`](epics/05-mpack-generation/03-pack-build-cli.md) | E05-S01, E05-S02, E00-S02 | — | CLI: `pack build` produces `.mpack` keyed by `EffectiveSchemaHash` |
-| E05-S04 | [`04-pack-manifests.md`](epics/05-mpack-generation/04-pack-manifests.md) | E05-S01, E05-S02 | — | Deterministic `pack.manifest.json` + `mappingset.manifest.json` |
-| E05-S05 | [`05-pack-loader-validation.md`](epics/05-mpack-generation/05-pack-loader-validation.md) | E05-S03, E05-S04 | E06-S01 | Pack selection + decode/validate + DB seed gate |
-| E05-S06 | [`06-pack-equivalence-tests.md`](epics/05-mpack-generation/06-pack-equivalence-tests.md) | E05-S05 | — | Equivalence: runtime compile vs pack decode mapping-set semantics |
-| E05-S07 | [`07-pack-manifest-command.md`](epics/05-mpack-generation/07-pack-manifest-command.md) | E05-S05 | E05-S04 | CLI: validate/decode pack and emit manifests (no rebuild) |
+| E05-S00 | [`00-protobuf-contracts.md`](05-mpack-generation/00-protobuf-contracts.md) | — | — | Contracts project/package for PackFormatVersion=1 |
+| E05-S01 | [`01-pack-payload-shape.md`](05-mpack-generation/01-pack-payload-shape.md) | E05-S00, E00-S03, E01-S05 | — | Payload builder + ordering invariants + validation |
+| E05-S02 | [`02-plan-compilation.md`](05-mpack-generation/02-plan-compilation.md) | E02-S00, E01-S05 | E01-S02 | Dialect-specific SQL plan compilation + canonicalization (pack + runtime) |
+| E05-S03 | [`03-pack-build-cli.md`](05-mpack-generation/03-pack-build-cli.md) | E05-S01, E05-S02, E00-S02 | — | CLI: `pack build` produces `.mpack` keyed by `EffectiveSchemaHash` |
+| E05-S04 | [`04-pack-manifests.md`](05-mpack-generation/04-pack-manifests.md) | E05-S01, E05-S02 | — | Deterministic `pack.manifest.json` + `mappingset.manifest.json` |
+| E05-S05 | [`05-pack-loader-validation.md`](05-mpack-generation/05-pack-loader-validation.md) | E05-S03, E05-S04 | E06-S01 | Pack selection + decode/validate + DB seed gate |
+| E05-S06 | [`06-pack-equivalence-tests.md`](05-mpack-generation/06-pack-equivalence-tests.md) | E05-S05 | — | Equivalence: runtime compile vs pack decode mapping-set semantics |
+| E05-S07 | [`07-pack-manifest-command.md`](05-mpack-generation/07-pack-manifest-command.md) | E05-S05 | E05-S04 | CLI: validate/decode pack and emit manifests (no rebuild) |
 
 ### E06 — Runtime Schema Validation & Mapping Set Selection
 
-Epic: `epics/06-runtime-mapping-selection/EPIC.md`
+Epic: `06-runtime-mapping-selection/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E06-S00 | [`00-read-effective-schema.md`](epics/06-runtime-mapping-selection/00-read-effective-schema.md) | E02-S01, E03-S01 | — | Runtime DB fingerprint reader + per-connection-string cache |
-| E06-S01 | [`01-resourcekey-validation.md`](epics/06-runtime-mapping-selection/01-resourcekey-validation.md) | E06-S00, E00-S03 | — | Fast-path seed gate via `dms.EffectiveSchema`; slow-path `dms.ResourceKey` diff |
-| E06-S02 | [`02-mapping-set-selection.md`](epics/06-runtime-mapping-selection/02-mapping-set-selection.md) | E06-S00, E06-S01 | E05-S05 | Mapping set selection/caching (pack-backed optional; runtime compile fallback) |
-| E06-S03 | [`03-config-and-failure-modes.md`](epics/06-runtime-mapping-selection/03-config-and-failure-modes.md) | E06-S02 | — | Config surface + error contracts + multi-DB-safe failure behavior |
-| E06-S04 | [`04-remove-hot-reload.md`](epics/06-runtime-mapping-selection/04-remove-hot-reload.md) | E06-S00–E06-S03 | E13-S00 | Remove schema reload/hot-reload hooks; align tests/workflow to provisioning model |
+| E06-S00 | [`00-read-effective-schema.md`](06-runtime-mapping-selection/00-read-effective-schema.md) | E02-S01, E03-S01 | — | Runtime DB fingerprint reader + per-connection-string cache |
+| E06-S01 | [`01-resourcekey-validation.md`](06-runtime-mapping-selection/01-resourcekey-validation.md) | E06-S00, E00-S03 | — | Fast-path seed gate via `dms.EffectiveSchema`; slow-path `dms.ResourceKey` diff |
+| E06-S02 | [`02-mapping-set-selection.md`](06-runtime-mapping-selection/02-mapping-set-selection.md) | E06-S00, E06-S01 | E05-S05 | Mapping set selection/caching (pack-backed optional; runtime compile fallback) |
+| E06-S03 | [`03-config-and-failure-modes.md`](06-runtime-mapping-selection/03-config-and-failure-modes.md) | E06-S02 | — | Config surface + error contracts + multi-DB-safe failure behavior |
+| E06-S04 | [`04-remove-hot-reload.md`](06-runtime-mapping-selection/04-remove-hot-reload.md) | E06-S00–E06-S03 | — | Remove schema reload/hot-reload hooks; align tests/workflow to provisioning model |
 
 ### E07 — Relational Write Path (POST/PUT)
 
-Epic: `epics/07-relational-write-path/EPIC.md`
+Epic: `07-relational-write-path/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E07-S00 | [`00-core-extraction-location.md`](epics/07-relational-write-path/00-core-extraction-location.md) | — | — | Core emits concrete JSON locations for each extracted document reference |
-| E07-S01 | [`01-reference-and-descriptor-resolution.md`](epics/07-relational-write-path/01-reference-and-descriptor-resolution.md) | E07-S00, E02-S01 | E09-S01 | Bulk `ReferentialId→DocumentId` resolver + descriptor discriminator validation |
-| E07-S02 | [`02-flattening-executor.md`](epics/07-relational-write-path/02-flattening-executor.md) | E06-S02, E07-S01 | E01-S05, E01-S03 | JSON→row buffers (root/children/_ext) using compiled mapping |
-| E07-S03 | [`03-persist-and-batch.md`](epics/07-relational-write-path/03-persist-and-batch.md) | E07-S02 | E10-S00 | Transactional persist executor (replace semantics, batching, limits) |
-| E07-S04 | [`04-referenceedge-maintenance.md`](epics/07-relational-write-path/04-referenceedge-maintenance.md) | E07-S03 | E01-S01 | `dms.ReferenceEdge` diff-based maintenance (by-construction completeness) |
-| E07-S05 | [`05-write-error-mapping.md`](epics/07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
+| E07-S00 | [`00-core-extraction-location.md`](07-relational-write-path/00-core-extraction-location.md) | — | — | Core emits concrete JSON locations for each extracted document reference |
+| E07-S01 | [`01-reference-and-descriptor-resolution.md`](07-relational-write-path/01-reference-and-descriptor-resolution.md) | E07-S00, E02-S01 | E09-S01 | Bulk `ReferentialId→DocumentId` resolver + descriptor discriminator validation |
+| E07-S02 | [`02-flattening-executor.md`](07-relational-write-path/02-flattening-executor.md) | E06-S02, E07-S01 | E01-S05, E01-S03 | JSON→row buffers (root/children/_ext) using compiled mapping |
+| E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02 | E10-S00 | Transactional persist executor (replace semantics, batching, limits) |
+| E07-S04 | [`04-referenceedge-maintenance.md`](07-relational-write-path/04-referenceedge-maintenance.md) | E07-S03 | E01-S01 | `dms.ReferenceEdge` diff-based maintenance (by-construction completeness) |
+| E07-S05 | [`05-write-error-mapping.md`](07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
 
 ### E08 — Relational Read Path (GET + Query)
 
-Epic: `epics/08-relational-read-path/EPIC.md`
+Epic: `08-relational-read-path/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E08-S00 | [`00-hydrate-multiresult.md`](epics/08-relational-read-path/00-hydrate-multiresult.md) | E06-S02 | E05-S02 | Multi-result hydration queries for root/child/_ext tables |
-| E08-S01 | [`01-json-reconstitution.md`](epics/08-relational-read-path/01-json-reconstitution.md) | E08-S00 | — | JSON writer/reconstituter (ordering, null handling, `_ext` overlay) |
-| E08-S02 | [`02-reference-identity-projection.md`](epics/08-relational-read-path/02-reference-identity-projection.md) | E08-S00, E02-S02 | E01-S04 | Reference identity projection (incl. abstract targets via `{Abstract}_View`) |
-| E08-S03 | [`03-descriptor-projection.md`](epics/08-relational-read-path/03-descriptor-projection.md) | E08-S00, E02-S01 | — | Descriptor URI projection from `dms.Descriptor` |
-| E08-S04 | [`04-query-execution.md`](epics/08-relational-read-path/04-query-execution.md) | E06-S02 | E05-S02 | Root-table-only query execution + deterministic paging |
+| E08-S00 | [`00-hydrate-multiresult.md`](08-relational-read-path/00-hydrate-multiresult.md) | E06-S02 | E05-S02 | Multi-result hydration queries for root/child/_ext tables |
+| E08-S01 | [`01-json-reconstitution.md`](08-relational-read-path/01-json-reconstitution.md) | E08-S00 | — | JSON writer/reconstituter (ordering, null handling, `_ext` overlay) |
+| E08-S02 | [`02-reference-identity-projection.md`](08-relational-read-path/02-reference-identity-projection.md) | E08-S00, E02-S02 | E01-S04 | Reference identity projection (incl. abstract targets via `{Abstract}_View`) |
+| E08-S03 | [`03-descriptor-projection.md`](08-relational-read-path/03-descriptor-projection.md) | E08-S00, E02-S01 | — | Descriptor URI projection from `dms.Descriptor` |
+| E08-S04 | [`04-query-execution.md`](08-relational-read-path/04-query-execution.md) | E06-S02 | E05-S02 | Root-table-only query execution + deterministic paging |
 
 ### E09 — Strict Identity Maintenance & Concurrency
 
-Epic: `epics/09-identity-concurrency/EPIC.md`
+Epic: `09-identity-concurrency/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E09-S00 | [`00-locking-and-retry.md`](epics/09-identity-concurrency/00-locking-and-retry.md) | E02-S01 | — | Lock primitives on `dms.IdentityLock` + deadlock retry policy |
-| E09-S01 | [`01-referentialidentity-maintenance.md`](epics/09-identity-concurrency/01-referentialidentity-maintenance.md) | E09-S00 | — | Transactional writes to `dms.ReferentialIdentity` (primary + alias rows) |
-| E09-S02 | [`02-identity-change-detection.md`](epics/09-identity-concurrency/02-identity-change-detection.md) | E07-S02 | — | Detect “identity projection changed” from write inputs/outputs |
-| E09-S03 | [`03-identity-closure-recompute.md`](epics/09-identity-concurrency/03-identity-closure-recompute.md) | E09-S00, E09-S01, E07-S04 | E12-S03 | Closure expansion + lock + set-based recompute to fixpoint |
-| E09-S04 | [`04-cache-invalidation.md`](epics/09-identity-concurrency/04-cache-invalidation.md) | E06-S02, E09-S01 | — | Post-commit cache invalidation for identity resolution |
+| E09-S00 | [`00-locking-and-retry.md`](09-identity-concurrency/00-locking-and-retry.md) | E02-S01 | — | Lock primitives on `dms.IdentityLock` + deadlock retry policy |
+| E09-S01 | [`01-referentialidentity-maintenance.md`](09-identity-concurrency/01-referentialidentity-maintenance.md) | E09-S00 | — | Transactional writes to `dms.ReferentialIdentity` (primary + alias rows) |
+| E09-S02 | [`02-identity-change-detection.md`](09-identity-concurrency/02-identity-change-detection.md) | E07-S02 | — | Detect “identity projection changed” from write inputs/outputs |
+| E09-S03 | [`03-identity-closure-recompute.md`](09-identity-concurrency/03-identity-closure-recompute.md) | E09-S00, E09-S01, E07-S04 | E12-S03 | Closure expansion + lock + set-based recompute to fixpoint |
+| E09-S04 | [`04-cache-invalidation.md`](09-identity-concurrency/04-cache-invalidation.md) | E06-S02, E09-S01 | — | Post-commit cache invalidation for identity resolution |
 
 ### E10 — Update Tracking (`_etag/_lastModifiedDate`) + Change Queries (`ChangeVersion`)
 
-Epic: `epics/10-update-tracking-change-queries/EPIC.md`
+Epic: `10-update-tracking-change-queries/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E10-S00 | [`00-token-stamping.md`](epics/10-update-tracking-change-queries/00-token-stamping.md) | E02-S01, E07-S03, E09-S02 | E09-S03 | Stamp allocator + token updates on `dms.Document` (incl. closure recompute) |
-| E10-S01 | [`01-journaling-contract.md`](epics/10-update-tracking-change-queries/01-journaling-contract.md) | E02-S01, E03-S01 | E10-S00 | Triggers own journal writes; integration smoke tests |
-| E10-S02 | [`02-derived-metadata.md`](epics/10-update-tracking-change-queries/02-derived-metadata.md) | E08-S01, E07-S04 | — | Read-time derived `_etag/_lastModifiedDate/ChangeVersion` (bulk deps) |
-| E10-S03 | [`03-if-match.md`](epics/10-update-tracking-change-queries/03-if-match.md) | E10-S02 | — | `If-Match` enforcement using derived `_etag` |
-| E10-S04 | [`04-change-query-selection.md`](epics/10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01, E07-S04 | — | Change Query candidate selection (journals + `ReferenceEdge`) |
-| E10-S05 | [`05-change-query-api.md`](epics/10-update-tracking-change-queries/05-change-query-api.md) | E10-S04 | — | Optional HTTP endpoints for change queries |
+| E10-S00 | [`00-token-stamping.md`](10-update-tracking-change-queries/00-token-stamping.md) | E02-S01, E07-S03, E09-S02 | E09-S03 | Stamp allocator + token updates on `dms.Document` (incl. closure recompute) |
+| E10-S01 | [`01-journaling-contract.md`](10-update-tracking-change-queries/01-journaling-contract.md) | E02-S01, E03-S01 | E10-S00 | Triggers own journal writes; integration smoke tests |
+| E10-S02 | [`02-derived-metadata.md`](10-update-tracking-change-queries/02-derived-metadata.md) | E08-S01, E07-S04 | — | Read-time derived `_etag/_lastModifiedDate/ChangeVersion` (bulk deps) |
+| E10-S03 | [`03-if-match.md`](10-update-tracking-change-queries/03-if-match.md) | E10-S02 | — | `If-Match` enforcement using derived `_etag` |
+| E10-S04 | [`04-change-query-selection.md`](10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01, E07-S04 | — | Change Query candidate selection (journals + `ReferenceEdge`) |
+| E10-S05 | [`05-change-query-api.md`](10-update-tracking-change-queries/05-change-query-api.md) | E10-S04 | — | Optional HTTP endpoints for change queries |
 
 ### E11 — Delete Path & Conflict Diagnostics
 
-Epic: `epics/11-delete-path/EPIC.md`
+Epic: `11-delete-path/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E11-S00 | [`00-delete-by-id.md`](epics/11-delete-path/00-delete-by-id.md) | E02-S01 | — | Delete-by-id transaction shape (delete via `dms.Document`) |
-| E11-S01 | [`01-conflict-mapping.md`](epics/11-delete-path/01-conflict-mapping.md) | E11-S00 | E11-S02 | FK violation mapping to DMS conflict response (edge preferred, naming fallback) |
-| E11-S02 | [`02-referenceedge-diagnostics.md`](epics/11-delete-path/02-referenceedge-diagnostics.md) | E07-S04 | — | “who references me?” diagnostics via `dms.ReferenceEdge` |
-| E11-S03 | [`03-delete-tests.md`](epics/11-delete-path/03-delete-tests.md) | E11-S00–E11-S02 | — | Delete/conflict parity tests (pgsql + mssql) |
+| E11-S00 | [`00-delete-by-id.md`](11-delete-path/00-delete-by-id.md) | E02-S01, E02-S02 | — | Delete-by-id transaction shape (delete via `dms.Document`) |
+| E11-S01 | [`01-conflict-mapping.md`](11-delete-path/01-conflict-mapping.md) | E11-S00 | E11-S02 | FK violation mapping to DMS conflict response (edge preferred, naming fallback) |
+| E11-S02 | [`02-referenceedge-diagnostics.md`](11-delete-path/02-referenceedge-diagnostics.md) | E07-S04 | — | “who references me?” diagnostics via `dms.ReferenceEdge` |
+| E11-S03 | [`03-delete-tests.md`](11-delete-path/03-delete-tests.md) | E11-S00–E11-S02 | — | Delete/conflict parity tests (pgsql + mssql) |
 
 ### E12 — Operational Guardrails, Repair Tools, and Observability
 
-Epic: `epics/12-ops-guardrails/EPIC.md`
+Epic: `12-ops-guardrails/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E12-S00 | [`00-referenceedge-audit-repair.md`](epics/12-ops-guardrails/00-referenceedge-audit-repair.md) | E07-S04, E06-S02 | — | Offline audit/repair tool for `dms.ReferenceEdge` |
-| E12-S01 | [`01-referenceedge-watchdog.md`](epics/12-ops-guardrails/01-referenceedge-watchdog.md) | E12-S00 | — | Online sampling verification + optional self-heal |
-| E12-S02 | [`02-instrumentation.md`](epics/12-ops-guardrails/02-instrumentation.md) | E07-S03, E09-S03 | — | Metrics/logs for locks, closures, edge churn, retries |
-| E12-S03 | [`03-guardrails.md`](epics/12-ops-guardrails/03-guardrails.md) | E09-S03 | — | Configurable bounds for closure/locks with fail-fast + rollback |
-| E12-S04 | [`04-performance-benchmarks.md`](epics/12-ops-guardrails/04-performance-benchmarks.md) | E07-S03, E08-S00 | — | Benchmark harness for read/write hot paths |
+| E12-S00 | [`00-referenceedge-audit-repair.md`](12-ops-guardrails/00-referenceedge-audit-repair.md) | E07-S04, E06-S02 | — | Offline audit/repair tool for `dms.ReferenceEdge` |
+| E12-S01 | [`01-referenceedge-watchdog.md`](12-ops-guardrails/01-referenceedge-watchdog.md) | E12-S00 | — | Online sampling verification + optional self-heal |
+| E12-S02 | [`02-instrumentation.md`](12-ops-guardrails/02-instrumentation.md) | E07-S03, E09-S03 | — | Metrics/logs for locks, closures, edge churn, retries |
+| E12-S03 | [`03-guardrails.md`](12-ops-guardrails/03-guardrails.md) | E09-S03 | — | Configurable bounds for closure/locks with fail-fast + rollback |
+| E12-S04 | [`04-performance-benchmarks.md`](12-ops-guardrails/04-performance-benchmarks.md) | E07-S03, E08-S00 | — | Benchmark harness for read/write hot paths |
 
 ### E13 — Test Strategy & Migration (Runtime + E2E)
 
-Epic: `epics/13-test-migration/EPIC.md`
+Epic: `13-test-migration/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E13-S00 | [`00-e2e-environment-updates.md`](epics/13-test-migration/00-e2e-environment-updates.md) | E03-S01, E06-S04 | — | E2E docker/scripts updated for per-schema provisioning (no hot reload) |
-| E13-S01 | [`01-backend-integration-tests.md`](epics/13-test-migration/01-backend-integration-tests.md) | E07-S03, E08-S01, E11-S01 | — | End-to-end runtime CRUD/query integration tests (docker compose, no Testcontainers) |
-| E13-S02 | [`02-parity-and-fixtures.md`](epics/13-test-migration/02-parity-and-fixtures.md) | E13-S01 | — | Cross-engine parity tests and shared fixtures |
-| E13-S03 | [`03-developer-docs.md`](epics/13-test-migration/03-developer-docs.md) | E13-S00 | E03-S00, E05-S03 | Dev docs/runbooks for provisioning, packs (optional), debugging |
+| E13-S00 | [`00-e2e-environment-updates.md`](13-test-migration/00-e2e-environment-updates.md) | E03-S01, E06-S04 | — | E2E docker/scripts updated for per-schema provisioning (no hot reload) |
+| E13-S01 | [`01-backend-integration-tests.md`](13-test-migration/01-backend-integration-tests.md) | E07-S03, E08-S01, E11-S01 | — | End-to-end runtime CRUD/query integration tests (docker compose, no Testcontainers) |
+| E13-S02 | [`02-parity-and-fixtures.md`](13-test-migration/02-parity-and-fixtures.md) | E13-S01 | — | Cross-engine parity tests and shared fixtures |
+| E13-S03 | [`03-developer-docs.md`](13-test-migration/03-developer-docs.md) | E13-S00 | E03-S00, E05-S03 | Dev docs/runbooks for provisioning, packs (optional), debugging |
 
 ### E14 — Authorization (Deferred)
 
-Epic: `epics/14-authorization/EPIC.md`
+Epic: `14-authorization/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E14-S00 | [`00-auth-placeholder.md`](epics/14-authorization/00-auth-placeholder.md) | — | — | Placeholder (ensures “auth is deferred” is explicit and enforced) |
+| E14-S00 | [`00-auth-placeholder.md`](14-authorization/00-auth-placeholder.md) | — | — | Placeholder (ensures “auth is deferred” is explicit and enforced) |
 
 ---
 
@@ -350,4 +350,3 @@ These are areas where diverging implementations will create long-term drift; the
 8. **`dms.ReferenceEdge` completeness is correctness-critical**
    - Source: E07-S04 (maintenance) and E12 (audit/watchdog)
    - Consumers: E09 identity closure recompute, E10 derived metadata and change selection, E11 delete diagnostics
-
