@@ -35,7 +35,11 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0.1-alpine3.23@sha256:2273b24ea865e253d5
 
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
-RUN apk --no-cache add bash=~5 postgresql16-client=~16
+# zlib upgrade: CVE-2026-22184 fix
+RUN apk update && \
+    apk --no-cache upgrade zlib && \
+    apk --no-cache add bash=~5 postgresql16-client=~16 && \
+    rm -rf /var/cache/apk/*
 
 FROM runtimebase AS setup
 
