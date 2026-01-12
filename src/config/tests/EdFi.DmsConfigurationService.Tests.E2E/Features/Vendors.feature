@@ -366,7 +366,12 @@ Feature: Vendors endpoints
                                 2,
                                 3
                             ],
-                            "dmsInstanceIds": [{dmsInstanceId}]
+                            "dmsInstanceIds": [{dmsInstanceId}],
+                            "profileIds": [],
+                            "createdAt": "{*}",
+                            "createdBy": "{*}",
+                            "lastModifiedAt": null,
+                            "modifiedBy": null
                         }
                     ]
                   """
