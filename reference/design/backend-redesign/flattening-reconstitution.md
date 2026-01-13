@@ -729,7 +729,7 @@ Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
 - write descriptor strings by looking up `dms.Descriptor.Uri`
 - write `_ext` blocks from extension tables (only when at least one extension value is present at that scope)
 - inject `id` from `dms.Document.DocumentUuid`
-- derive `_etag` and `_lastModifiedDate` from persisted `dms.Document` token columns plus dependency tokens (see [update-tracking.md](update-tracking.md)); these values must not be generated as “now” at read/materialization time.
+- derive `_etag` and `_lastModifiedDate` from persisted `dms.Document` token columns plus dependency tokens (see [update-tracking.md](update-tracking.md), including “Worked example: Section → ClassPeriod”); these values must not be generated as “now” at read/materialization time.
 
 Array presence rule (recommended):
 - If the array has rows, write it.
