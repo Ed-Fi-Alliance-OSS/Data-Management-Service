@@ -222,12 +222,7 @@ internal class TenantResolutionMiddlewareTests
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Headers["Tenant"] = "valid-tenant";
 
-            var tenantResponse = new TenantResponse
-            {
-                Id = 123,
-                Name = "valid-tenant",
-                CreatedAt = DateTime.UtcNow,
-            };
+            var tenantResponse = new TenantResponse { Id = 123, Name = "valid-tenant" };
 
             A.CallTo(() => _tenantRepository.GetTenantByName("valid-tenant"))
                 .Returns(new TenantGetByNameResult.Success(tenantResponse));
@@ -257,12 +252,7 @@ internal class TenantResolutionMiddlewareTests
             var httpContext = new DefaultHttpContext();
             httpContext.Request.Headers["Tenant"] = "tenant-with-dashes_and_underscores";
 
-            var tenantResponse = new TenantResponse
-            {
-                Id = 456,
-                Name = "tenant-with-dashes_and_underscores",
-                CreatedAt = DateTime.UtcNow,
-            };
+            var tenantResponse = new TenantResponse { Id = 456, Name = "tenant-with-dashes_and_underscores" };
 
             A.CallTo(() => _tenantRepository.GetTenantByName("tenant-with-dashes_and_underscores"))
                 .Returns(new TenantGetByNameResult.Success(tenantResponse));

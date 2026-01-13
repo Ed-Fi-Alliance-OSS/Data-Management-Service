@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
-public class ClaimSetExportResponse : AuditableResponse
+public class ClaimSetExportResponse
 {
     public long Id { get; set; }
     public required string Name { get; set; }

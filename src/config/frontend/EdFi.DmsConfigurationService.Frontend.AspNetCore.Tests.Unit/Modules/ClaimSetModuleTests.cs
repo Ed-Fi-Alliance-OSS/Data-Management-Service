@@ -84,9 +84,9 @@ public class ClaimSetModuleTests
 
             A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(
-                    new ClaimSetQueryResult.Success(
-                        [new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false }]
-                    )
+                    new ClaimSetQueryResult.Success([
+                        new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false },
+                    ])
                 );
 
             A.CallTo(() => _claimSetRepository.GetClaimSet(A<long>.Ignored))

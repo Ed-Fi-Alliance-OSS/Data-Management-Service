@@ -98,6 +98,25 @@ public class ApplicationRepository(
                 await connection.ExecuteAsync(sql, dmsInstanceMappings);
             }
 
+            if (command.ProfileIds.Length > 0)
+            {
+                sql = """
+                    INSERT INTO dmscs.ApplicationProfile (ApplicationId, ProfileId, CreatedBy)
+                    VALUES (@ApplicationId, @ProfileId, @CreatedBy);
+                    """;
+
+                var profileMappings = command
+                    .ProfileIds.Distinct()
+                    .Select(profileId => new
+                    {
+                        ApplicationId = id,
+                        ProfileId = profileId,
+                        CreatedBy = currentUser,
+                    });
+
+                await connection.ExecuteAsync(sql, profileMappings);
+            }
+
             await transaction.CommitAsync();
             return new ApplicationInsertResult.Success(id);
         }
@@ -112,6 +131,13 @@ public class ApplicationRepository(
             logger.LogWarning(ex, "DMS instance not found");
             await transaction.RollbackAsync();
             return new ApplicationInsertResult.FailureDmsInstanceNotFound();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
+        {
+            logger.LogWarning(ex, "Profile not found");
+            await transaction.RollbackAsync();
+            return new ApplicationInsertResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))
@@ -140,22 +166,23 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
-                       e.EducationOrganizationId, acd.DmsInstanceId
+                       e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
                 FROM (SELECT * FROM dmscs.Application ORDER BY Id LIMIT @Limit OFFSET @Offset) AS a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
                 ORDER BY a.ApplicationName;
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
                 long?,
                 long?,
+                long?,
                 ApplicationResponse
             >(
                 sql,
-                (application, educationOrganizationId, dmsInstanceId) =>
+                (application, educationOrganizationId, dmsInstanceId, profileId) =>
                 {
                     if (educationOrganizationId != null)
                     {
@@ -165,10 +192,14 @@ public class ApplicationRepository(
                     {
                         application.DmsInstanceIds.Add(dmsInstanceId.Value);
                     }
+                    if (profileId != null)
+                    {
+                        application.ProfileIds.Add(profileId.Value);
+                    }
                     return application;
                 },
                 param: query,
-                splitOn: "EducationOrganizationId,DmsInstanceId"
+                splitOn: "EducationOrganizationId,DmsInstanceId,ProfileId"
             );
 
             var returnApplications = applications
@@ -180,6 +211,7 @@ public class ApplicationRepository(
                         .Distinct()
                         .ToList();
                     grouped.DmsInstanceIds = g.SelectMany(a => a.DmsInstanceIds).Distinct().ToList();
+                    grouped.ProfileIds = g.SelectMany(a => a.ProfileIds).Distinct().ToList();
                     return grouped;
                 })
                 .ToList();
@@ -201,22 +233,23 @@ public class ApplicationRepository(
         {
             string sql = """
                 SELECT a.Id, a.ApplicationName, a.VendorId, a.ClaimSetName,
-                       a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy,
-                       e.EducationOrganizationId, acd.DmsInstanceId
+                       e.EducationOrganizationId, acd.DmsInstanceId, ap.ProfileId
                 FROM dmscs.Application a
                 LEFT OUTER JOIN dmscs.ApplicationEducationOrganization e ON a.Id = e.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClient ac ON a.Id = ac.ApplicationId
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
+                LEFT OUTER JOIN dmscs.ApplicationProfile ap ON a.Id = ap.ApplicationId
                 WHERE a.Id = @Id;
                 """;
             var applications = await connection.QueryAsync<
                 ApplicationResponse,
                 long?,
                 long?,
+                long?,
                 ApplicationResponse
             >(
                 sql,
-                (application, educationOrganizationId, dmsInstanceId) =>
+                (application, educationOrganizationId, dmsInstanceId, profileId) =>
                 {
                     if (educationOrganizationId != null)
                     {
@@ -226,10 +259,14 @@ public class ApplicationRepository(
                     {
                         application.DmsInstanceIds.Add(dmsInstanceId.Value);
                     }
+                    if (profileId != null)
+                    {
+                        application.ProfileIds.Add(profileId.Value);
+                    }
                     return application;
                 },
                 param: new { Id = id },
-                splitOn: "EducationOrganizationId,DmsInstanceId"
+                splitOn: "EducationOrganizationId,DmsInstanceId,ProfileId"
             );
 
             ApplicationResponse? returnApplication = applications
@@ -241,6 +278,7 @@ public class ApplicationRepository(
                         .Distinct()
                         .ToList();
                     grouped.DmsInstanceIds = g.SelectMany(a => a.DmsInstanceIds).Distinct().ToList();
+                    grouped.ProfileIds = g.SelectMany(a => a.ProfileIds).Distinct().ToList();
                     return grouped;
                 })
                 .SingleOrDefault();
@@ -351,6 +389,30 @@ public class ApplicationRepository(
                 await connection.ExecuteAsync(sql, dmsInstanceMappings);
             }
 
+            // Delete existing Profile relationships
+            sql = "DELETE FROM dmscs.ApplicationProfile WHERE ApplicationId = @ApplicationId";
+            await connection.ExecuteAsync(sql, new { ApplicationId = command.Id });
+
+            // Insert new Profile relationships if provided
+            if (command.ProfileIds.Length > 0)
+            {
+                sql = """
+                    INSERT INTO dmscs.ApplicationProfile (ApplicationId, ProfileId, CreatedBy)
+                    VALUES (@ApplicationId, @ProfileId, @CreatedBy);
+                    """;
+
+                var profileMappings = command
+                    .ProfileIds.Distinct()
+                    .Select(profileId => new
+                    {
+                        ApplicationId = command.Id,
+                        ProfileId = profileId,
+                        CreatedBy = currentUser,
+                    });
+
+                await connection.ExecuteAsync(sql, profileMappings);
+            }
+
             await transaction.CommitAsync();
 
             return new ApplicationUpdateResult.Success();
@@ -366,6 +428,13 @@ public class ApplicationRepository(
             logger.LogWarning(ex, "Update application failure: DMS instance not found");
             await transaction.RollbackAsync();
             return new ApplicationUpdateResult.FailureDmsInstanceNotFound();
+        }
+        catch (PostgresException ex)
+            when (ex.SqlState == "23503" && ex.Message.Contains("fk_applicationprofile_profile"))
+        {
+            logger.LogWarning(ex, "Update application failure: Profile not found");
+            await transaction.RollbackAsync();
+            return new ApplicationUpdateResult.FailureProfileNotFound();
         }
         catch (PostgresException ex)
             when (ex.SqlState == "23505" && ex.Message.Contains("idx_vendor_applicationname"))

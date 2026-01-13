@@ -36,8 +36,8 @@
     <PackageVersion Include="Snapshooter.NUnit" Version="1.0.1" />
     <PackageVersion Include="System.CommandLine" Version="2.0.0-rc.1.25451.107" />
     <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.12.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.11.0" />
-    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.11.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis" Version="4.12.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.CodeStyle" Version="4.12.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Abstractions" Version="10.0.1" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="9.5.0" />
     <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.1" />

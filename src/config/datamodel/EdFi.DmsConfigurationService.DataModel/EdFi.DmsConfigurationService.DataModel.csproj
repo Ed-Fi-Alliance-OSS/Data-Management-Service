@@ -8,8 +8,8 @@
         <PackageReference Include="FluentValidation" />
     </ItemGroup>
     <ItemGroup>
-      <None Update="Schema\Ed-Fi-ODS-API-Profile.xsd">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
+        <None Update="Schema\Ed-Fi-ODS-API-Profile.xsd">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
     </ItemGroup>
 </Project>

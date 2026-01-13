@@ -149,7 +149,10 @@ public class DmsInstanceModule : IEndpointModule
         HttpContext httpContext
     )
     {
-        ApplicationByDmsInstanceQueryResult getResult = await repository.QueryApplicationByDmsInstance(id, query);
+        ApplicationByDmsInstanceQueryResult getResult = await repository.QueryApplicationByDmsInstance(
+            id,
+            query
+        );
         return getResult switch
         {
             ApplicationByDmsInstanceQueryResult.Success success => Results.Ok(success.ApplicationResponse),

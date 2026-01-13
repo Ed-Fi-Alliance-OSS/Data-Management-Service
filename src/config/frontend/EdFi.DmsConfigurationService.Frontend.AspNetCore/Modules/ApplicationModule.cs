@@ -32,10 +32,8 @@ public class ApplicationModule : IEndpointModule
         // This avoids confusion and potential credential mismatches when resetting credentials, since
         // the reset operation only affects the first API client found.
         var enableResetEndpoint = endpoints
-            .ServiceProvider
-            .GetRequiredService<IOptions<AppSettings>>()
-            .Value
-            .EnableApplicationResetEndpoint;
+            .ServiceProvider.GetRequiredService<IOptions<AppSettings>>()
+            .Value.EnableApplicationResetEndpoint;
 
         if (enableResetEndpoint)
         {
@@ -70,9 +68,9 @@ public class ApplicationModule : IEndpointModule
                 namespacePrefixes = success.VendorResponse.NamespacePrefixes;
                 break;
             default:
-                throw new ValidationException(
-                    new[] { new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist.") }
-                );
+                throw new ValidationException([
+                    new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
+                ]);
         }
 
         var clientCreateResult = await clientRepository.CreateClientAsync(
@@ -126,28 +124,27 @@ public class ApplicationModule : IEndpointModule
                         );
                     case ApplicationInsertResult.FailureVendorNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException(
-                            new[]
-                            {
-                                new ValidationFailure("VendorId", $"Reference 'VendorId' does not exist."),
-                            }
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure("VendorId", "Reference 'VendorId' does not exist."),
+                        ]);
                     case ApplicationInsertResult.FailureDmsInstanceNotFound:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException(
-                            new[] { new ValidationFailure("DmsInstanceId", $"DMS instance does not exist.") }
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure("DmsInstanceId", "DMS instance does not exist."),
+                        ]);
+                    case ApplicationInsertResult.FailureProfileNotFound:
+                        await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
+                        throw new ValidationException([
+                            new ValidationFailure("ProfileId", "Profile does not exist."),
+                        ]);
                     case ApplicationInsertResult.FailureDuplicateApplication duplicateApp:
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
-                        throw new ValidationException(
-                            new[]
-                            {
-                                new ValidationFailure(
-                                    "ApplicationName",
-                                    $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                                ),
-                            }
-                        );
+                        throw new ValidationException([
+                            new ValidationFailure(
+                                "ApplicationName",
+                                $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
+                            ),
+                        ]);
                     case ApplicationInsertResult.FailureUnknown failure:
                         logger.LogError("Failure creating client {failure}", failure);
                         await clientRepository.DeleteClientAsync(clientSuccess.ClientUuid.ToString());
@@ -236,21 +233,26 @@ public class ApplicationModule : IEndpointModule
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureVendorNotFound)
                             {
-                                throw new ValidationException(
-                                    [
-                                        new ValidationFailure(
-                                            "VendorId",
-                                            $"Reference 'VendorId' does not exist."
-                                        ),
-                                    ]
-                                );
+                                throw new ValidationException([
+                                    new ValidationFailure(
+                                        "VendorId",
+                                        $"Reference 'VendorId' does not exist."
+                                    ),
+                                ]);
                             }
 
                             if (applicationUpdateResult is ApplicationUpdateResult.FailureDmsInstanceNotFound)
                             {
-                                throw new ValidationException(
-                                    [new ValidationFailure("DmsInstanceId", $"DMS instance does not exist.")]
-                                );
+                                throw new ValidationException([
+                                    new ValidationFailure("DmsInstanceId", $"DMS instance does not exist."),
+                                ]);
+                            }
+
+                            if (applicationUpdateResult is ApplicationUpdateResult.FailureProfileNotFound)
+                            {
+                                throw new ValidationException([
+                                    new ValidationFailure("ProfileId", $"Profile does not exist."),
+                                ]);
                             }
 
                             if (
@@ -258,14 +260,12 @@ public class ApplicationModule : IEndpointModule
                                 is ApplicationUpdateResult.FailureDuplicateApplication duplicateApp
                             )
                             {
-                                throw new ValidationException(
-                                    [
-                                        new ValidationFailure(
-                                            "ApplicationName",
-                                            $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
-                                        ),
-                                    ]
-                                );
+                                throw new ValidationException([
+                                    new ValidationFailure(
+                                        "ApplicationName",
+                                        $"Application '{duplicateApp.ApplicationName}' already exists for vendor."
+                                    ),
+                                ]);
                             }
 
                             return applicationUpdateResult switch

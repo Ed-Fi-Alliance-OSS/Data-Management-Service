@@ -100,7 +100,6 @@ public class ApiClientRepository(
         {
             string sql = """
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       ac.CreatedAt, ac.CreatedBy, ac.LastModifiedAt, ac.ModifiedBy,
                        acd.DmsInstanceId
                 FROM (SELECT * FROM dmscs.ApiClient ORDER BY Id LIMIT @Limit OFFSET @Offset) AS ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
@@ -148,7 +147,6 @@ public class ApiClientRepository(
         {
             string sql = """
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       ac.CreatedAt, ac.CreatedBy, ac.LastModifiedAt, ac.ModifiedBy,
                        acd.DmsInstanceId
                 FROM dmscs.ApiClient ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId
@@ -198,7 +196,6 @@ public class ApiClientRepository(
         {
             string sql = """
                 SELECT ac.Id, ac.ApplicationId, ac.ClientId, ac.ClientUuid, ac.Name, ac.IsApproved,
-                       ac.CreatedAt, ac.CreatedBy, ac.LastModifiedAt, ac.ModifiedBy,
                        acd.DmsInstanceId
                 FROM dmscs.ApiClient ac
                 LEFT OUTER JOIN dmscs.ApiClientDmsInstance acd ON ac.Id = acd.ApiClientId

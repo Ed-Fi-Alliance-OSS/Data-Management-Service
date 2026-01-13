@@ -20,6 +20,13 @@ Feature: Applications endpoints
                         "connectionString": "Server=test;Database=TestDb;"
                     }
                   """
+              And a POST request is made to "/v2/profiles" with
+                  """
+                    {
+                        "name": "TestProfile_{scenarioRunId}",
+                        "definition": "<Profile name=\"TestProfile_{scenarioRunId}\"><Resource name=\"School\"></Resource></Profile>"
+                    }
+                  """
 
         Scenario: 01 Ensure clients can GET applications
             Given a POST request is made to "/v2/applications" with
@@ -83,10 +90,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -95,10 +99,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       }]
                   """
              When a GET request is made to "/v2/applications"
@@ -112,10 +113,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -124,10 +122,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -136,10 +131,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -148,10 +140,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       },
                       {
                           "id": {id},
@@ -160,10 +149,7 @@ Feature: Applications endpoints
                           "vendorId": {vendorId},
                           "educationOrganizationIds": [],
                           "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "profileIds": []
                       }]
                   """
 
@@ -195,10 +181,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "profileIds": []
                   }
                   """
 
@@ -513,10 +496,7 @@ Feature: Applications endpoints
                     "claimSetName": "Claim06",
                     "educationOrganizationIds": [1, 2, 3],
                     "dmsInstanceIds": [{dmsInstanceId}],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "profileIds": []
                   }
                   """
 
@@ -633,6 +613,205 @@ Feature: Applications endpoints
                     ]
                   },
                     "errors": []
+                  }
+                  """
+
+        Scenario: 21 Ensure clients can POST and GET application with profileIds
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application with Profile 21",
+                   "claimSetName": "Claim21",
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": [{profileId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                    {
+                        "location": "/v2/applications/{applicationId}"
+                    }
+                  """
+              And the response body has key and secret
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Application with Profile 21",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim21",
+                    "educationOrganizationIds": [1, 2, 3],
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "profileIds": [{profileId}]
+                  }
+                  """
+
+        Scenario: 22 Ensure clients can PUT application with profileIds
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Update Profile 22",
+                   "claimSetName": "Claim22",
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": []
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v2/applications/{applicationId}" with
+                  """
+                      {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "Application Update Profile 22",
+                      "claimSetName": "Claim22Update",
+                      "dmsInstanceIds": [{dmsInstanceId}],
+                      "profileIds": [{profileId}]
+                      }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Application Update Profile 22",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim22Update",
+                    "educationOrganizationIds": [],
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "profileIds": [{profileId}]
+                  }
+                  """
+
+        Scenario: 23 Verify validation invalid profile reference
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Invalid Profile 23",
+                   "claimSetName": "Claim23",
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": [9999]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": "0HN8RI9E3O45G:00000004",
+                    "validationErrors": {
+                    "ProfileId": [
+                      "Profile does not exist."
+                    ]
+                  },
+                  "errors": []
+                  }
+                  """
+
+        Scenario: 24 Verify validation invalid profileId value
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Invalid ProfileId Value 24",
+                   "claimSetName": "Claim24",
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": [0]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "ProfileIds[0]": [
+                      "'Profile Ids' must be greater than '0'."
+                     ]
+                    },
+                   "errors": []
+                  }
+                  """
+
+        Scenario: 25 Ensure clients can POST application with duplicate profileIds
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Duplicate Profile 25",
+                   "claimSetName": "Claim25",
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": [{profileId}, {profileId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                    {
+                        "location": "/v2/applications/{applicationId}"
+                    }
+                  """
+              And the response body has key and secret
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Application Duplicate Profile 25",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim25",
+                    "educationOrganizationIds": [1, 2, 3],
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "profileIds": [{profileId}]
+                  }
+                  """
+
+        Scenario: 26 Ensure clients can PUT application with duplicate profileIds
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Update Duplicate Profile 26",
+                   "claimSetName": "Claim26",
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": []
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v2/applications/{applicationId}" with
+                  """
+                      {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "Application Update Duplicate Profile 26",
+                      "claimSetName": "Claim26Update",
+                      "dmsInstanceIds": [{dmsInstanceId}],
+                      "profileIds": [{profileId}, {profileId}]
+                      }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Application Update Duplicate Profile 26",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim26Update",
+                    "educationOrganizationIds": [],
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "profileIds": [{profileId}]
                   }
                   """
 

@@ -81,18 +81,16 @@ public class VendorModuleTests
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
                 .Returns(
-                    new VendorQueryResult.Success(
-                        [
-                            new VendorResponse()
-                            {
-                                Id = 1,
-                                Company = "Test Company",
-                                ContactName = "Test Contact",
-                                ContactEmailAddress = "test@test.com",
-                                NamespacePrefixes = "Test Prefix",
-                            },
-                        ]
-                    )
+                    new VendorQueryResult.Success([
+                        new VendorResponse()
+                        {
+                            Id = 1,
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        },
+                    ])
                 );
 
             A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
@@ -536,26 +534,24 @@ public class VendorModuleTests
         {
             A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
                 .Returns(
-                    new VendorApplicationsResult.Success(
-                        [
-                            new ApplicationResponse()
-                            {
-                                Id = 1,
-                                ApplicationName = "App 1",
-                                ClaimSetName = "Name",
-                                VendorId = 1,
-                                EducationOrganizationIds = [1],
-                            },
-                            new ApplicationResponse()
-                            {
-                                Id = 2,
-                                ApplicationName = "App 2",
-                                ClaimSetName = "Name",
-                                VendorId = 1,
-                                EducationOrganizationIds = [1],
-                            },
-                        ]
-                    )
+                    new VendorApplicationsResult.Success([
+                        new ApplicationResponse()
+                        {
+                            Id = 1,
+                            ApplicationName = "App 1",
+                            ClaimSetName = "Name",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                        },
+                        new ApplicationResponse()
+                        {
+                            Id = 2,
+                            ApplicationName = "App 2",
+                            ClaimSetName = "Name",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                        },
+                    ])
                 );
         }
 
@@ -566,26 +562,24 @@ public class VendorModuleTests
             using var client = SetUpClient();
             A.CallTo(() => _vendorRepository.GetVendorApplications(A<long>.Ignored))
                 .Returns(
-                    new VendorApplicationsResult.Success(
-                        [
-                            new ApplicationResponse()
-                            {
-                                Id = 1,
-                                ApplicationName = "App 1",
-                                ClaimSetName = "Name",
-                                VendorId = 1,
-                                EducationOrganizationIds = [1],
-                            },
-                            new ApplicationResponse()
-                            {
-                                Id = 2,
-                                ApplicationName = "App 2",
-                                ClaimSetName = "Name",
-                                VendorId = 1,
-                                EducationOrganizationIds = [1],
-                            },
-                        ]
-                    )
+                    new VendorApplicationsResult.Success([
+                        new ApplicationResponse()
+                        {
+                            Id = 1,
+                            ApplicationName = "App 1",
+                            ClaimSetName = "Name",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                        },
+                        new ApplicationResponse()
+                        {
+                            Id = 2,
+                            ApplicationName = "App 2",
+                            ClaimSetName = "Name",
+                            VendorId = 1,
+                            EducationOrganizationIds = [1],
+                        },
+                    ])
                 );
 
             // Act

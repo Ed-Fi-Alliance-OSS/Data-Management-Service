@@ -29,22 +29,14 @@ Feature: Vendors endpoints
                           "company": "Test 11",
                           "contactName": "Test",
                           "contactEmailAddress": "test@gmail.com",
-                          "namespacePrefixes": "Test",
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "namespacePrefixes": "Test"
                       },
                       {
                           "id": {id},
                           "company": "Test 12",
                           "contactName": "Test",
                           "contactEmailAddress": "test@gmail.com",
-                          "namespacePrefixes": "Test",
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "namespacePrefixes": "Test"
                       }]
                   """
 
@@ -72,11 +64,7 @@ Feature: Vendors endpoints
                       "company": "Test 16",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": "Test",
-                      "createdAt": "{*}",
-                      "createdBy": "{*}",
-                      "lastModifiedAt": null,
-                      "modifiedBy": null
+                      "namespacePrefixes": "Test"
                   }
                   """
 
@@ -100,11 +88,7 @@ Feature: Vendors endpoints
                         "company": "Test 17",
                         "contactName": "Test",
                         "contactEmailAddress": "test@gmail.com",
-                        "namespacePrefixes": "Test",
-                        "createdAt": "{*}",
-                        "createdBy": "{*}",
-                        "lastModifiedAt": null,
-                        "modifiedBy": null
+                        "namespacePrefixes": "Test"
                       }
                   """
 
@@ -137,11 +121,7 @@ Feature: Vendors endpoints
                        "company": "Test 18 updated",
                        "contactName": "Test",
                        "contactEmailAddress": "test@gmail.com",
-                       "namespacePrefixes": "Test",
-                        "createdAt": "{*}",
-                        "createdBy": "{*}",
-                        "lastModifiedAt": "{*}",
-                        "modifiedBy": "{*}"
+                       "namespacePrefixes": "Test"
                    }
                   """
 
@@ -366,7 +346,8 @@ Feature: Vendors endpoints
                                 2,
                                 3
                             ],
-                            "dmsInstanceIds": [{dmsInstanceId}]
+                            "dmsInstanceIds": [{dmsInstanceId}],
+                            "profileIds": []
                         }
                     ]
                   """
@@ -395,11 +376,7 @@ Feature: Vendors endpoints
                       "company": "Test 99",
                       "contactName": "Test",
                       "contactEmailAddress": "test@gmail.com",
-                      "namespacePrefixes": "Test",
-                      "createdAt": "{*}",
-                      "createdBy": "{*}",
-                      "lastModifiedAt": null,
-                      "modifiedBy": null
+                      "namespacePrefixes": "Test"
                   }
                   """
 

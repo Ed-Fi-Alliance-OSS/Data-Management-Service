@@ -43,6 +43,11 @@ public record ApplicationInsertResult
     public record FailureDmsInstanceNotFound() : ApplicationInsertResult();
 
     /// <summary>
+    /// Referenced profile not found exception thrown and caught
+    /// </summary>
+    public record FailureProfileNotFound() : ApplicationInsertResult();
+
+    /// <summary>
     /// Application name already exists for the vendor
     /// </summary>
     public record FailureDuplicateApplication(string ApplicationName) : ApplicationInsertResult();
@@ -106,6 +111,11 @@ public record ApplicationUpdateResult
     /// Referenced DMS instance not found exception thrown and caught
     /// </summary>
     public record FailureDmsInstanceNotFound() : ApplicationUpdateResult();
+
+    /// <summary>
+    /// Referenced profile not found exception thrown and caught
+    /// </summary>
+    public record FailureProfileNotFound() : ApplicationUpdateResult();
 
     /// <summary>
     /// Application name already exists for the vendor

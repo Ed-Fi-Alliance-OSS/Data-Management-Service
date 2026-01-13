@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.DmsInstance;
 
-public class DmsInstanceResponse : AuditableResponse
+public class DmsInstanceResponse
 {
     public long Id { get; set; }
     public required string InstanceType { get; set; }

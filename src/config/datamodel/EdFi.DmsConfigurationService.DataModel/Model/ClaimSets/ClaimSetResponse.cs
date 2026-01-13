@@ -8,7 +8,7 @@ using System.Text.Json.Serialization;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 
-public class ClaimSetResponse : AuditableResponse
+public class ClaimSetResponse
 {
     public long Id { get; set; }
 

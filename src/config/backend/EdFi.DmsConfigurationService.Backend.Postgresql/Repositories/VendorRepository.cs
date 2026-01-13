@@ -136,7 +136,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = $"""
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, TenantId, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
                     FROM (SELECT * FROM dmscs.Vendor WHERE {TenantContext.TenantWhereClause()} ORDER BY Id LIMIT @Limit OFFSET @Offset) AS v
                     LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId;
                     """;
@@ -180,7 +180,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
             try
             {
                 var sql = $"""
-                    SELECT v.Id, Company, ContactName, ContactEmailAddress, v.CreatedAt, v.CreatedBy, v.LastModifiedAt, v.ModifiedBy, TenantId, NamespacePrefix
+                    SELECT v.Id, Company, ContactName, ContactEmailAddress, TenantId, NamespacePrefix
                     FROM dmscs.Vendor v LEFT OUTER JOIN dmscs.VendorNamespacePrefix p ON v.Id = p.VendorId
                     WHERE v.Id = @Id AND {TenantContext.TenantWhereClause("v")};
                     """;
@@ -401,6 +401,33 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories
                         },
                         param: new { VendorId = vendorId },
                         splitOn: "DmsInstanceId"
+                    );
+
+                    // Get Profile IDs for each application
+                    string sqlProfiles = """
+                            SELECT
+                                ap.ApplicationId,
+                                ap.ProfileId
+                            FROM dmscs.ApplicationProfile ap
+                            INNER JOIN dmscs.Application a ON ap.ApplicationId = a.Id
+                            WHERE a.VendorId = @VendorId;
+                        """;
+
+                    await connection.QueryAsync<long, long, long>(
+                        sqlProfiles,
+                        (applicationId, profileId) =>
+                        {
+                            if (
+                                response.TryGetValue(applicationId, out ApplicationResponse? application)
+                                && !application.ProfileIds.Contains(profileId)
+                            )
+                            {
+                                application.ProfileIds.Add(profileId);
+                            }
+                            return applicationId;
+                        },
+                        param: new { VendorId = vendorId },
+                        splitOn: "ProfileId"
                     );
                 }
 

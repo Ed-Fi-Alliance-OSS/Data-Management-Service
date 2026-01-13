@@ -53,16 +53,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         List<Claim> hierarchy = [];
@@ -83,16 +81,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -165,16 +161,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -235,16 +229,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -325,16 +317,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -408,16 +398,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -505,16 +493,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -593,16 +579,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -697,16 +681,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -808,16 +790,14 @@ public class AuthorizationMetadataResponseFactoryTests
 
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse()
-                        {
-                            Id = 1,
-                            Name = claimSetName,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse()
+                    {
+                        Id = 1,
+                        Name = claimSetName,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
@@ -919,22 +899,20 @@ public class AuthorizationMetadataResponseFactoryTests
         // Mock the repository to return two claim sets
         A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
             .Returns(
-                new ClaimSetQueryResult.Success(
-                    [
-                        new ClaimSetResponse
-                        {
-                            Id = 1,
-                            Name = claimSet1.Name,
-                            IsSystemReserved = false,
-                        },
-                        new ClaimSetResponse
-                        {
-                            Id = 2,
-                            Name = claimSet2.Name,
-                            IsSystemReserved = false,
-                        },
-                    ]
-                )
+                new ClaimSetQueryResult.Success([
+                    new ClaimSetResponse
+                    {
+                        Id = 1,
+                        Name = claimSet1.Name,
+                        IsSystemReserved = false,
+                    },
+                    new ClaimSetResponse
+                    {
+                        Id = 2,
+                        Name = claimSet2.Name,
+                        IsSystemReserved = false,
+                    },
+                ])
             );
 
         var hierarchy = new List<Claim>
