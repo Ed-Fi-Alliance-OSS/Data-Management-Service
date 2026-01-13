@@ -47,7 +47,24 @@ Feature: OAuth Token Info Endpoint
     Rule: Token Info endpoint rejects invalid or missing tokens
 
         @DMS-902
-        Scenario: 04 Missing token returns error
-             When a POST request is made to "/oauth/token_info" without a token
+        Scenario: 04 Missing token in request body returns error
+             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
+              When a POST request is made to "/oauth/token_info" with empty body but valid authorization header
+             Then it should respond with 401
+
+        @DMS-902
+        Scenario: 05 Missing Authorization header returns error
+             When a POST request is made to "/oauth/token_info" without authorization header
+             Then it should respond with 401
+
+        @DMS-902
+        Scenario: 06 Token mismatch between Authorization header and body returns error
+             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
+              When a POST request is made to "/oauth/token_info" with mismatched tokens
+             Then it should respond with 401
+
+        @DMS-902
+        Scenario: 07 Invalid token format returns error
+             When a POST request is made to "/oauth/token_info" with an invalid token
              Then it should respond with 401
 

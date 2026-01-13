@@ -28,6 +28,7 @@ public class TokenInfoProvider(
     IDmsInstanceProvider dmsInstanceProvider,
     IDmsInstanceSelection dmsInstanceSelection,
     IApiSchemaProvider apiSchemaProvider,
+    IJwtValidationService jwtValidationService,
     ILogger<TokenInfoProvider> logger
 ) : ITokenInfoProvider
 {
@@ -38,7 +39,19 @@ public class TokenInfoProvider(
     {
         try
         {
-            // 1. Decode JWT without validation (introspection endpoint doesn't validate, just inspects)
+            // 1. Validate the JWT token cryptographically (signature verification)
+            var (principal, _) = await jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                token,
+                CancellationToken.None
+            );
+
+            if (principal == null)
+            {
+                logger.LogWarning("Token signature validation failed");
+                return null;
+            }
+
+            // 2. Decode JWT to extract claims for introspection response
             if (!_tokenHandler.CanReadToken(token))
             {
                 logger.LogWarning("Token cannot be read as a valid JWT");

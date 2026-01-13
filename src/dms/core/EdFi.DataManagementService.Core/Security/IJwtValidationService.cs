@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Core.Security;
 /// <summary>
 /// Service for validating JWT tokens and extracting client authorizations
 /// </summary>
-internal interface IJwtValidationService
+public interface IJwtValidationService
 {
     /// <summary>
     /// Validates a JWT token and extracts the client authorizations
