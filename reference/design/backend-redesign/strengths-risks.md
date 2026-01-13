@@ -129,6 +129,33 @@ Bulk importing large sets where many documents reference the same identity compo
 - `IdentityClosureSize`, `IdentityClosureIterations`, `IdentityClosureMs`
 - deadlock/serialization counters + retries exhausted counter
 
+### ReferentialIdentity Incorrect Mapping (High Correctness/Security Risk)
+`dms.ReferentialIdentity` is the canonical resolver for `ReferentialId → DocumentId` (including superclass/abstract alias rows). If a bug ever causes a `ReferentialId` to map to the wrong `DocumentId`, the system can become **silently corrupt**:
+- identity-based upserts can update/overwrite the wrong document
+- writes can persist foreign keys to the wrong targets (relationships become “valid but wrong”)
+- authorization decisions that depend on resolved `DocumentId`s can be incorrect (potential data exposure or denial)
+
+#### Likely detection
+- Mixed:
+  - **Concrete (non-polymorphic) references** are likely to fail fast: FK columns typically target a concrete root table (e.g., `..._DocumentId → edfi.School(DocumentId)`), so if resolution returns a `DocumentId` for a different resource, the referenced row won’t exist and the write should error (FK violation).
+  - **Polymorphic/abstract references** may not fail at the DB level: when the FK can only enforce existence (FK → `dms.Document`), an incorrect-but-existing `DocumentId` can slip through unless the app performs membership validation (e.g., `EXISTS` against `{schema}.{Abstract}_View`).
+  - **Identity-based upserts (the subject document itself)** can still be low-detection unless the write path validates that the resolved `DocumentId` is compatible with the requested resource (e.g., via `dms.Document.ResourceKeyId` / alias rules); otherwise it can be silent corruption.
+- It is also likely to surface later as unique-constraint conflicts (attempting to insert the “correct” mapping), unexpected reads (“wrong document for this natural key”), or explicit audit tooling that recomputes expected referential ids.
+
+#### Possible actions / mitigations
+- **Comprehensive identity-maintenance testing**:
+  - insert/update/delete across self-contained, reference-bearing, and polymorphic identities (primary + alias rows)
+  - cascading recompute scenarios when identity components change (including concurrency stress)
+  - run on both PostgreSQL and SQL Server to catch engine-specific upsert/locking differences
+- **Treat “same `ReferentialId`, different `DocumentId`” as incident-grade**:
+  - fail the transaction if a collision maps to an unexpected `DocumentId`
+  - emit high-severity diagnostics with the `ReferentialId`, expected/actual `DocumentId`, and involved `DocumentUuid`s
+- **Sampling-based verification on writes**:
+  - on a small percentage of commits, recompute expected referential ids for the impacted documents and verify round-trip (`ReferentialId → DocumentId`) matches
+- **Audit & repair tool**:
+  - full scan: recompute referential ids from the relational source-of-truth and repair `dms.ReferentialIdentity`
+  - targeted: rebuild one document’s referential ids (and optionally its identity-closure dependents)
+
 ---
 
 ## Read Latency & Reconstitution Overhead
