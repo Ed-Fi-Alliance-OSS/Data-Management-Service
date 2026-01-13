@@ -745,3 +745,73 @@ Feature: Applications endpoints
                   }
                   """
 
+        Scenario: 25 Ensure clients can POST application with duplicate profileIds
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Duplicate Profile 25",
+                   "claimSetName": "Claim25",
+                   "educationOrganizationIds": [1, 2, 3],
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": [{profileId}, {profileId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response headers include
+                  """
+                    {
+                        "location": "/v2/applications/{applicationId}"
+                    }
+                  """
+              And the response body has key and secret
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Application Duplicate Profile 25",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim25",
+                    "educationOrganizationIds": [1, 2, 3],
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "profileIds": [{profileId}]
+                  }
+                  """
+
+        Scenario: 26 Ensure clients can PUT application with duplicate profileIds
+             When a POST request is made to "/v2/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Application Update Duplicate Profile 26",
+                   "claimSetName": "Claim26",
+                   "dmsInstanceIds": [{dmsInstanceId}],
+                   "profileIds": []
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v2/applications/{applicationId}" with
+                  """
+                      {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "Application Update Duplicate Profile 26",
+                      "claimSetName": "Claim26Update",
+                      "dmsInstanceIds": [{dmsInstanceId}],
+                      "profileIds": [{profileId}, {profileId}]
+                      }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": {applicationId},
+                    "applicationName": "Application Update Duplicate Profile 26",
+                    "vendorId": {vendorId},
+                    "claimSetName": "Claim26Update",
+                    "educationOrganizationIds": [],
+                    "dmsInstanceIds": [{dmsInstanceId}],
+                    "profileIds": [{profileId}]
+                  }
+                  """
+

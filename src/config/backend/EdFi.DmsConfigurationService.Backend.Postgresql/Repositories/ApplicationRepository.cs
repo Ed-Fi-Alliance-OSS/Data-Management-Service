@@ -105,12 +105,14 @@ public class ApplicationRepository(
                     VALUES (@ApplicationId, @ProfileId, @CreatedBy);
                     """;
 
-                var profileMappings = command.ProfileIds.Select(profileId => new
-                {
-                    ApplicationId = id,
-                    ProfileId = profileId,
-                    CreatedBy = currentUser,
-                });
+                var profileMappings = command
+                    .ProfileIds.Distinct()
+                    .Select(profileId => new
+                    {
+                        ApplicationId = id,
+                        ProfileId = profileId,
+                        CreatedBy = currentUser,
+                    });
 
                 await connection.ExecuteAsync(sql, profileMappings);
             }
@@ -399,12 +401,14 @@ public class ApplicationRepository(
                     VALUES (@ApplicationId, @ProfileId, @CreatedBy);
                     """;
 
-                var profileMappings = command.ProfileIds.Select(profileId => new
-                {
-                    ApplicationId = command.Id,
-                    ProfileId = profileId,
-                    CreatedBy = currentUser,
-                });
+                var profileMappings = command
+                    .ProfileIds.Distinct()
+                    .Select(profileId => new
+                    {
+                        ApplicationId = command.Id,
+                        ProfileId = profileId,
+                        CreatedBy = currentUser,
+                    });
 
                 await connection.ExecuteAsync(sql, profileMappings);
             }
