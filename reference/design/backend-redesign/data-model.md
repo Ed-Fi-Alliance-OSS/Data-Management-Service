@@ -153,6 +153,12 @@ CREATE SEQUENCE dms.ChangeVersionSequence
 
 Append-only journal of per-document representation-affecting changes (local content and/or identity/URI projection). Used to support future Change Query APIs. See `reference/design/backend-redesign/update-tracking.md` for the selection algorithm and retention guidance.
 
+Why this table exists (vs. scanning resource tables / `dms.Document`):
+- Change Queries need an efficient way to find “documents of resource R whose local tokens contributed to a derived `ChangeVersion` in `[min,max]`”. Scanning all documents (or all rows of the resource table) to find those candidates does not scale with total dataset size.
+- The token columns (`ContentVersion`/`IdentityVersion`) live on `dms.Document`, change on most writes, and would require additional hot, frequently-updated indexes (or large scans) to support window queries efficiently across PostgreSQL and SQL Server.
+- `dms.DocumentChangeEvent` is a narrow, append-only structure purpose-built for the common access pattern: `WHERE ResourceKeyId=@R AND ChangeVersion BETWEEN @min AND @max`, supported by `IX (ResourceKeyId, ChangeVersion, DocumentId)`.
+- It also stores the derived per-document “local change” stamp (`ChangeVersion = max(ContentVersion, IdentityVersion)`), avoiding cross-engine computed-column/OR-indexing pitfalls and simplifying query plans.
+
 Columns:
 - `ChangeVersion`: derived per-document “local change” stamp (recommended: `max(ContentVersion, IdentityVersion)`).
 - `DocumentId`: changed document.
