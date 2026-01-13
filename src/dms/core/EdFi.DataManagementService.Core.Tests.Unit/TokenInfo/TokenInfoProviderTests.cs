@@ -9,6 +9,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Tests.Unit.Security;
@@ -81,6 +82,17 @@ public class TokenInfoProviderTests
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            // Setup JWT validation service to return a valid principal
+            var validPrincipal = new ClaimsPrincipal(new ClaimsIdentity(claims));
+            A.CallTo(() =>
+                    fakeJwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((validPrincipal, null)));
 
             // Setup authorization metadata response
             var authMetadata = new JsonArray
@@ -220,6 +232,7 @@ public class TokenInfoProviderTests
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
                 fakeApiSchemaProvider,
+                fakeJwtValidationService,
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -324,6 +337,16 @@ public class TokenInfoProviderTests
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            // Setup JWT validation service to return null principal for invalid token
+            A.CallTo(() =>
+                    fakeJwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((null, null)));
 
             _tokenInfoProvider = new TokenInfoProvider(
                 configServiceApiClient,
@@ -333,6 +356,7 @@ public class TokenInfoProviderTests
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
                 fakeApiSchemaProvider,
+                fakeJwtValidationService,
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -388,6 +412,17 @@ public class TokenInfoProviderTests
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            // Setup JWT validation service to return a valid principal
+            var validPrincipal = new ClaimsPrincipal(new ClaimsIdentity(claims));
+            A.CallTo(() =>
+                    fakeJwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((validPrincipal, null)));
 
             var authMetadata = new JsonArray
             {
@@ -430,6 +465,7 @@ public class TokenInfoProviderTests
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
                 fakeApiSchemaProvider,
+                fakeJwtValidationService,
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -484,6 +520,21 @@ public class TokenInfoProviderTests
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            // Setup JWT validation service to return a valid principal for testing config service failure
+            var validPrincipal = new ClaimsPrincipal(
+                new ClaimsIdentity(
+                    new List<Claim> { new("client_id", "test-client"), new("scope", "EdFiSandbox") }
+                )
+            );
+            A.CallTo(() =>
+                    fakeJwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(Task.FromResult<(ClaimsPrincipal?, ClientAuthorizations?)>((validPrincipal, null)));
 
             var configServiceApiClient = new ConfigurationServiceApiClient(httpClient);
 
@@ -495,6 +546,7 @@ public class TokenInfoProviderTests
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
                 fakeApiSchemaProvider,
+                fakeJwtValidationService,
                 NullLogger<TokenInfoProvider>.Instance
             );
         }
@@ -628,6 +680,7 @@ public class TokenInfoProviderTests
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
                 _fakeApiSchemaProvider!,
+                A.Fake<IJwtValidationService>(),
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -667,6 +720,7 @@ public class TokenInfoProviderTests
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
                 _fakeApiSchemaProvider!,
+                A.Fake<IJwtValidationService>(),
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -706,6 +760,7 @@ public class TokenInfoProviderTests
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
                 _fakeApiSchemaProvider!,
+                A.Fake<IJwtValidationService>(),
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -745,6 +800,7 @@ public class TokenInfoProviderTests
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
                 _fakeApiSchemaProvider!,
+                A.Fake<IJwtValidationService>(),
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -784,6 +840,7 @@ public class TokenInfoProviderTests
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
                 _fakeApiSchemaProvider!,
+                A.Fake<IJwtValidationService>(),
                 NullLogger<TokenInfoProvider>.Instance
             );
 
@@ -823,6 +880,7 @@ public class TokenInfoProviderTests
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
                 _fakeApiSchemaProvider!,
+                A.Fake<IJwtValidationService>(),
                 NullLogger<TokenInfoProvider>.Instance
             );
 

@@ -40,7 +40,19 @@ public class TokenInfoModule : IEndpointModule
     {
         try
         {
-            // Parse request (support both JSON and form-encoded)
+            // Extract and validate Authorization header
+            if (
+                !context.Request.Headers.TryGetValue("Authorization", out var authHeader)
+                || !authHeader.ToString().StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                logger.LogWarning("Token info request missing or invalid Authorization header");
+                return Results.Unauthorized();
+            }
+
+            string headerToken = authHeader.ToString()["Bearer ".Length..].Trim();
+
+            // Parse request body (support both JSON and form-encoded)
             TokenInfoRequest? request = null;
 
             if (context.Request.ContentType?.Contains("application/json") == true)
@@ -56,6 +68,13 @@ public class TokenInfoModule : IEndpointModule
             if (request == null || string.IsNullOrWhiteSpace(request.Token))
             {
                 logger.LogWarning("Token info request missing token parameter");
+                return Results.Unauthorized();
+            }
+
+            // Validate that Authorization header token matches body token (self-introspection)
+            if (!string.Equals(headerToken, request.Token.Trim(), StringComparison.Ordinal))
+            {
+                logger.LogWarning("Authorization header token does not match body token");
                 return Results.Unauthorized();
             }
 

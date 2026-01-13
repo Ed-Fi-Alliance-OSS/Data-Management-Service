@@ -53,7 +53,11 @@ public sealed class TokenInfoStepDefinitions
             new APIRequestContextOptions
             {
                 Data = json,
-                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+                Headers = new Dictionary<string, string>
+                {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = $"Bearer {_currentToken}",
+                },
             }
         );
 
@@ -92,6 +96,7 @@ public sealed class TokenInfoStepDefinitions
                 Headers = new Dictionary<string, string>
                 {
                     ["Content-Type"] = "application/x-www-form-urlencoded",
+                    ["Authorization"] = $"Bearer {_currentToken}",
                 },
             }
         );
@@ -110,6 +115,82 @@ public sealed class TokenInfoStepDefinitions
                 _logger.log.Information("Response is not valid JSON: {ResponseText}", responseText);
             }
         }
+    }
+
+    [When("a POST request is made to {string} with empty body but valid authorization header")]
+    public async Task WhenPostRequestWithEmptyBodyButValidAuthHeader(string endpoint)
+    {
+        var dmsToken = _scenarioContext.Get<string>("dmsToken");
+        _currentToken = dmsToken.Replace("Bearer ", "");
+
+        var requestBody = new { };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string>
+                {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = $"Bearer {_currentToken}",
+                },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+    }
+
+    [When("a POST request is made to {string} without authorization header")]
+    public async Task WhenPostRequestWithoutAuthorizationHeader(string endpoint)
+    {
+        var requestBody = new { token = "some-token-value" };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        // Create a new Playwright context without authorization header
+        var playwright = await Playwright.CreateAsync();
+        var requestContext = await playwright.APIRequest.NewContextAsync(
+            new APIRequestNewContextOptions { BaseURL = _playwrightContext.ApiUrl, IgnoreHTTPSErrors = true }
+        );
+
+        _apiResponse = await requestContext.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
+    }
+
+    [When("a POST request is made to {string} with mismatched tokens")]
+    public async Task WhenPostRequestWithMismatchedTokens(string endpoint)
+    {
+        var dmsToken = _scenarioContext.Get<string>("dmsToken");
+        _currentToken = dmsToken.Replace("Bearer ", "");
+
+        // Use a different token in the body than in the Authorization header
+        var differentToken = "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.different.token";
+        var requestBody = new { token = differentToken };
+        var json = JsonSerializer.Serialize(requestBody);
+
+        _apiResponse = await _playwrightContext.ApiRequestContext!.PostAsync(
+            endpoint,
+            new APIRequestContextOptions
+            {
+                Data = json,
+                Headers = new Dictionary<string, string>
+                {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = $"Bearer {_currentToken}",
+                },
+            }
+        );
+
+        SetSharedApiResponse(_apiResponse);
     }
 
     [When("a POST request is made to {string} without a token")]
@@ -142,7 +223,11 @@ public sealed class TokenInfoStepDefinitions
             new APIRequestContextOptions
             {
                 Data = json,
-                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+                Headers = new Dictionary<string, string>
+                {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = $"Bearer {invalidToken}",
+                },
             }
         );
 
@@ -173,7 +258,11 @@ public sealed class TokenInfoStepDefinitions
             new APIRequestContextOptions
             {
                 Data = json,
-                Headers = new Dictionary<string, string> { ["Content-Type"] = "application/json" },
+                Headers = new Dictionary<string, string>
+                {
+                    ["Content-Type"] = "application/json",
+                    ["Authorization"] = $"Bearer {token}",
+                },
             }
         );
 

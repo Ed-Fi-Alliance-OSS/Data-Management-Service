@@ -17,6 +17,11 @@
 ### 3. Set the identity provider below (comment/uncomment the appropriate section)
 ###
 ### 4. Run requests sequentially by clicking "Send Request" above each block
+###
+### NOTE: If you get "DMS instance X not found" errors in token_info responses, ensure:
+###   - The DMS instance exists in the Config Service (GET /v2/dmsInstances)
+###   - You've called /management/reload-schema after creating new instances
+###   - Or use the seed data instance (ID 1) which is pre-loaded with -LoadSeedData
 
 @dmsPort=8080
 @configPort=8081
@@ -95,6 +100,7 @@ Authorization: bearer {{configToken}}
 ### Extract DMS instance ID
 @dmsInstanceId={{createDmsInstance.response.body.id}}
 
+
 ###############################################################################
 ### STEP 4: Create API Client with Multiple Education Organizations
 ###############################################################################
@@ -110,7 +116,7 @@ Authorization: bearer {{configToken}}
     "applicationName": "Token Info Test App {{$randomInt 0 9999}}",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [255901, 255902, 255950],
-    "dmsInstanceIds": [{{dmsInstanceId}}]
+    "dmsInstanceIds": [1]
 }
 
 ### Extract client credentials
@@ -199,11 +205,77 @@ client_id={{edOrgClientId}}
 ###
 @edOrgToken={{edOrgTokenRequest.response.body.access_token}}
 
-### Check token info for EdOrg-only client
+### Check token info for EdOrg-only client (self-introspection)
+### Note: Authorization header and request body must contain the SAME token
 POST http://localhost:{{dmsPort}}/oauth/token_info
 Content-Type: application/json
-Authorization: bearer {{configToken}}
+Authorization: bearer {{edOrgToken}}
 
 {
     "token": "{{edOrgToken}}"
 }
+
+###############################################################################
+### STEP 10: Error Cases - Token Mismatch (Authorization header vs body token)
+###############################################################################
+
+### Test: Authorization header token does NOT match body token (should fail with 401)
+### This tests the self-introspection requirement
+POST http://localhost:{{dmsPort}}/oauth/token_info
+Content-Type: application/json
+Authorization: bearer {{clientToken}}
+
+{
+    "token": "{{edOrgToken}}"
+}
+
+###############################################################################
+### STEP 11: Error Cases - Missing Authorization Header
+###############################################################################
+
+### Test: Missing Authorization header (should fail with 401)
+POST http://localhost:{{dmsPort}}/oauth/token_info
+Content-Type: application/json
+
+{
+    "token": "{{clientToken}}"
+}
+
+###############################################################################
+### STEP 12: Error Cases - Missing Body Token
+###############################################################################
+
+### Test: Authorization header present but no token in body (should fail with 401)
+POST http://localhost:{{dmsPort}}/oauth/token_info
+Content-Type: application/json
+Authorization: bearer {{clientToken}}
+
+{
+}
+
+###############################################################################
+### STEP 13: Error Cases - Invalid Token Format
+###############################################################################
+
+### Test: Invalid token format (should fail with 401)
+POST http://localhost:{{dmsPort}}/oauth/token_info
+Content-Type: application/json
+Authorization: bearer invalid-token-format
+
+{
+    "token": "invalid-token-format"
+}
+
+###############################################################################
+### STEP 14: Error Cases - Expired Token (if available)
+###############################################################################
+
+### Note: To test expired token, you need to wait for token expiration
+### or configure a short-lived token. This is typically tested in E2E tests.
+
+### Test: Form-encoded with matching tokens (alternative format)
+POST http://localhost:{{dmsPort}}/oauth/token_info
+Content-Type: application/x-www-form-urlencoded
+Authorization: bearer {{clientToken}}
+
+token={{clientToken}}
