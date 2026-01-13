@@ -1,4 +1,4 @@
-# Backend Redesign Alternative: ODS-Style Natural-Key Cascades (Keep `DocumentId` Surrogates)
+# Backend Redesign Alternative: ODS-Style Natural-Key Cascades (Maintain `ReferentialIdentity` via Natural Keys)
 
 ## Status
 
