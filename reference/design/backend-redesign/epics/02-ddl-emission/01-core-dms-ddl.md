@@ -14,6 +14,7 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 
 - Generated DDL includes (at minimum) the v1 inventory from `ddl-generation.md`:
   - `dms.ResourceKey`, `dms.Document`, `dms.IdentityLock`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.ReferenceEdge`
+  - optional projection table: `dms.DocumentCache`
   - `dms.EffectiveSchema`, `dms.SchemaComponent`
   - `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.IdentityChangeEvent`
   - required journaling triggers/functions on `dms.Document`
@@ -27,4 +28,3 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 2. Implement update-tracking trigger emission per `reference/design/backend-redesign/update-tracking.md` (PG and MSSQL variants).
 3. Ensure deterministic ordering of statements (phased ordering per `ddl-generation.md`).
 4. Add snapshot tests that validate core DDL output for a small fixture (both dialects).
-

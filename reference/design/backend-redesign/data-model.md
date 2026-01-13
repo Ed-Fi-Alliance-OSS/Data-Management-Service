@@ -529,7 +529,7 @@ CREATE INDEX IX_ReferenceEdge_ChildDocumentId
 Key differences:
 - It stores **resolved `DocumentId` pairs**, so there is no `ReferentialId → DocumentId` join (no Alias-equivalent lookup), and no partition keys.
 - It can be maintained with a **low-churn diff** so “update that does not change references” performs **0 row writes** to this table.
-- It is not used for referential integrity; it exists for reverse lookups and for identity/version cascades (`IsIdentityComponent=true`).
+- It is not used for referential integrity; it exists for reverse lookups, for identity/version cascades (`IsIdentityComponent=true`), and for optional `dms.DocumentCache` rebuild/invalidation targeting.
 
 **Doesn’t this require the same InsertReferences pattern?**
 
@@ -538,6 +538,18 @@ We can use a similar *concept* (stage + diff) to avoid churn, but it is far simp
 - there is no partition-routing logic,
 - the table is keyed by the parent `DocumentId` (single delete scope), and
 - the diff is between two small sets of `ChildDocumentId`s (with associated `IsIdentityComponent` flags, aggregated by OR when a parent references the same child multiple times).
+
+**Why does `dms.DocumentCache` need an update cascade?**
+
+`dms.DocumentCache` stores **fully reconstituted JSON**, including:
+- reference objects expanded from the *current* identity values of referenced resources, and
+- descriptor URI strings (reconstituted from `dms.Descriptor`, which is treated as immutable in this redesign).
+
+If a referenced document’s identity/URI changes, the JSON that referencing documents should return changes as well. This is a *cache/projection refresh cascade*, not a relational data cascade:
+- relational FK columns remain stable (`..._DocumentId` still points to the same row),
+- only cached JSON requires recomputation/upsert.
+
+In the preferred eventual-cache mode, this is handled as an **async rebuild cascade** (enqueue/mark dependents for rebuild) rather than an in-transaction “no stale window” rewrite. Targeting rules are described in [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
 ##### 6) `dms.IdentityLock` (lock orchestration for strict identity correctness)
 
@@ -561,6 +573,72 @@ Rules:
 
 Notes:
 - See [transactions-and-concurrency.md](transactions-and-concurrency.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
+
+##### 7) `dms.DocumentCache` (optional, eventually consistent projection)
+
+Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
+
+This table is intentionally designed to support **CDC streaming** (e.g., Debezium → Kafka) and downstream indexing:
+- it is not purely a “cache-aside” optimization
+- when enabled, DMS should materialize documents into this table via a write-driven/background projector
+
+Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
+
+Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the **derived** `_etag/_lastModifiedDate` values computed at materialization time, and cache reads should validate freshness by recomputing the current derived `_etag` from dependency tokens (see `reference/design/backend-redesign/update-tracking.md`).
+
+Denormalized resource naming:
+- `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
+- `ResourceVersion` is the schema/project version (SemVer) from `ApiSchema.json` (`projectSchema.projectVersion`), stored canonically on `dms.ResourceKey` and denormalized here for CDC/streaming convenience.
+
+**PostgreSQL**
+
+```sql
+CREATE TABLE dms.DocumentCache (
+    DocumentId bigint PRIMARY KEY
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    DocumentUuid uuid NOT NULL,
+    ProjectName varchar(256) NOT NULL,
+    ResourceName varchar(256) NOT NULL,
+    ResourceVersion varchar(32) NOT NULL,
+    Etag varchar(64) NOT NULL,
+    LastModifiedAt timestamp with time zone NOT NULL,
+    DocumentJson jsonb NOT NULL,
+    ComputedAt timestamp with time zone NOT NULL DEFAULT now(),
+    CONSTRAINT CK_DocumentCache_JsonObject CHECK (jsonb_typeof(DocumentJson) = 'object'),
+    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+);
+
+CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
+    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.DocumentCache (
+    DocumentId bigint NOT NULL,
+    DocumentUuid uniqueidentifier NOT NULL,
+    ProjectName nvarchar(256) NOT NULL,
+    ResourceName nvarchar(256) NOT NULL,
+    ResourceVersion nvarchar(32) NOT NULL,
+    Etag nvarchar(64) NOT NULL,
+    LastModifiedAt datetime2(7) NOT NULL,
+    DocumentJson nvarchar(max) NOT NULL,
+    ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
+    CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
+    CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{'),
+    CONSTRAINT UX_DocumentCache_DocumentUuid UNIQUE (DocumentUuid)
+);
+
+CREATE INDEX IX_DocumentCache_ProjectName_ResourceName_LastModifiedAt
+    ON dms.DocumentCache (ProjectName, ResourceName, LastModifiedAt, DocumentId);
+```
+
+Uses:
+- Faster GET/query responses (skip reconstitution)
+- Easier CDC streaming (Debezium) / OpenSearch indexing / external integrations
 
 ### Resource tables (schema per project)
 

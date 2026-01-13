@@ -22,6 +22,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - [Write Path (POST Upsert / PUT by id)](#write-path-post-upsert--put-by-id)
 - [Read Path (GET by id / GET query)](#read-path-get-by-id--get-query)
 - [Caching (Low-Complexity Options)](#caching-low-complexity-options)
+- [Optional Database Projection: `dms.DocumentCache`](#optional-database-projection-dmsdocumentcache)
 - [Delete Path (DELETE by id)](#delete-path-delete-by-id)
 - [Schema Validation (EffectiveSchema)](#schema-validation-effectiveschema)
 - [Operational Considerations](#operational-considerations)
@@ -316,6 +317,7 @@ Tables-per-resource storage removes the need for **relational** cascade rewrites
   - Recompute and upsert `dms.ReferentialIdentity` for every impacted document (primary + superclass/abstract alias rows) in the same transaction, so `ReferentialId → DocumentId` lookups are never stale after commit (even for reference-bearing identities).
   - No rewrite of `dms.ReferenceEdge` rows is required for identity/URI changes: edges store `DocumentId`s and only change when outgoing references change.
   - Update/evict any caching after commit (e.g., `ReferentialId → DocumentId`, `DocumentUuid → DocumentId`, descriptor expansion).
+  - If `dms.DocumentCache` is enabled, schedule rebuild/invalidation for any cached rows whose JSON representation is impacted (see `dms.DocumentCache` section below).
 
 - **Outgoing document-reference set changes on a document** (`..._DocumentId` FK values change)
   - Relational writes update the FK columns as usual.
@@ -832,6 +834,41 @@ sequenceDiagram
 ```
 
 
+
+## Optional Database Projection: `dms.DocumentCache`
+
+`dms.DocumentCache` is an optional **materialized JSON projection** of GET/query results, intended for:
+- accelerating GET/query response assembly (skip reconstitution),
+- CDC streaming (e.g., Debezium → Kafka), and
+- downstream indexing (e.g., OpenSearch).
+
+Correctness must not depend on this table:
+- rows may be missing/stale and rebuilt asynchronously,
+- authorization must not use it as a source of truth.
+
+`dms.DocumentCache` is emitted by the DDL generator, but may remain unused/empty unless projection population is enabled (see [ddl-generation.md](ddl-generation.md)).
+
+### Freshness contract (recommended)
+
+When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
+- compute the current derived `_etag` for the document (see [update-tracking.md](update-tracking.md)),
+- compare to the cached `Etag`,
+- if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
+
+This avoids correctness depending on projection rebuild timing while still allowing `dms.DocumentCache` to deliver hot-path speedups when stable.
+
+### Rebuild/invalidation triggers (eventual consistency)
+
+Minimum rebuild targets:
+- **local content change**: rebuild the document’s own cached JSON (document itself changed).
+- **dependency identity/URI change**: rebuild any documents that reference the changed document (the parent representation embeds the referenced identity values).
+
+Targeting approach (recommended):
+- use `dms.ReferenceEdge` reverse lookups (`ChildDocumentId → ParentDocumentId`) over **all** document-reference edges (not just `IsIdentityComponent=true`) to find parents whose JSON reference objects become stale when a child identity changes.
+- drive the background projector from existing journals (`dms.DocumentChangeEvent`, `dms.IdentityChangeEvent`) plus `dms.ReferenceEdge` expansion, similar to Change Query candidate selection (see [update-tracking.md](update-tracking.md)).
+
+Operational note:
+- high fan-in dependencies can cause large rebuild cascades; prefer rate-limited background rebuild and/or rebuild-on-read strategies instead of in-transaction cascades.
 
 ## Delete Path (DELETE by id)
 
