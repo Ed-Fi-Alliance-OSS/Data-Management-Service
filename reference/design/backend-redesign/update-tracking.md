@@ -362,6 +362,70 @@ If later `D2.IdentityVersion` becomes `60`, then on the next read:
 ChangeVersion(P) = max(42, 60) = 60
 ```
 
+#### Worked example: Section → ClassPeriod (identity update changes parent metadata)
+
+This example shows the full “write → read” cycle that makes derived `_etag/_lastModifiedDate/ChangeVersion` representation-sensitive without write-time fan-out.
+
+**Schema shape (Ed-Fi DS 5.2 / ApiSchema v7.3)**
+
+- `Section.classPeriods[].classPeriodReference` embeds `ClassPeriod` identity fields `classPeriodName` and `schoolId`.
+- Therefore a `Section` representation depends on the current **identity projection** of each referenced `ClassPeriod` document.
+
+**Assume**
+
+- The `Section` document (`Section`) has `DocumentId = 5001`.
+- `Section` references the `ClassPeriod` document (`ClassPeriod`) with `DocumentId = 2001` (the FK is stored as `..._DocumentId` and indexed in `dms.ReferenceEdge(ParentDocumentId=5001, ChildDocumentId=2001)`).
+- Current tokens (before any change):
+  - `Section.ContentVersion = 42`, `Section.IdentityVersion = 40`
+  - `Section.ContentLastModifiedAt = 2026-01-05T09:10:00Z`, `Section.IdentityLastModifiedAt = 2026-01-06T18:22:41Z`
+  - `ClassPeriod.IdentityVersion = 7`, `ClassPeriod.IdentityLastModifiedAt = 2026-01-04T00:00:00Z`
+
+**Read: GET `Section` (before the identity change)**
+
+Representation dependencies are obtained from `dms.ReferenceEdge` (do not filter on `IsIdentityComponent`):
+
+```text
+deps(Section) = [(2001, 7)]
+```
+
+Derived metadata for the document `Section`:
+
+```text
+_etag input tuple = (42, 40, [(2001, 7)])
+_lastModifiedDate = max(2026-01-05T09:10:00Z, 2026-01-06T18:22:41Z, 2026-01-04T00:00:00Z)
+                 = 2026-01-06T18:22:41Z
+ChangeVersion(Section) = max(max(42, 40), 7) = 42
+```
+
+**Write: PUT `ClassPeriod` that changes identity**
+
+Update `ClassPeriod` so its identity projection changes (e.g., `classPeriodName` is updated). Per the stamping rule, the write:
+
+1. Detects an identity projection change for `ClassPeriod`.
+2. Allocates a new global stamp (e.g., `60`) from `dms.ChangeVersionSequence`.
+3. Updates only `ClassPeriod`’s local identity tokens:
+   - `ClassPeriod.IdentityVersion = 60`
+   - `ClassPeriod.IdentityLastModifiedAt = 2026-01-07T03:00:00Z`
+
+No `Section` rows are updated (no write-time “bump all referrers” fan-out).
+
+Note: if other documents’ identities depend on `ClassPeriod` via `dms.ReferenceEdge(IsIdentityComponent=true)`, strict identity closure recompute may also stamp their `IdentityVersion` values. This example does not rely on that; `Section`’s metadata changes purely because `Section` reads `ClassPeriod` as a representation dependency.
+
+**Read: GET `Section` (after the identity change)**
+
+On the next GET of the document `Section`:
+
+```text
+deps(Section) = [(2001, 60)]
+
+_etag input tuple = (42, 40, [(2001, 60)])  -- changes because the dependency’s IdentityVersion changed
+_lastModifiedDate = max(2026-01-05T09:10:00Z, 2026-01-06T18:22:41Z, 2026-01-07T03:00:00Z)
+                 = 2026-01-07T03:00:00Z
+ChangeVersion(Section) = max(max(42, 40), 60) = 60
+```
+
+This matches the externally visible semantics: the `Section` representation (including `classPeriodReference.classPeriodName`) changes because a referenced resource’s identity changed, so `_etag/_lastModifiedDate/ChangeVersion` change even though the `Section` document itself was not rewritten.
+
 ## Write-side behavior
 
 ### Stamping rule (recommended)
