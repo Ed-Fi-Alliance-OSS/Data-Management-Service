@@ -660,6 +660,27 @@ Client guidance (ODS-style):
 - Page through results using a fixed window (e.g., `minChangeVersion = checkpoint+1`, `maxChangeVersion = max`) until exhausted.
 - Only advance the client checkpoint to `max` after fully paging the window (prevents “moving max” gaps/duplicates).
 
+#### Example: `GET /staffSchoolAssociations?minChangeVersion=5665&maxChangeVersion=8000`
+
+Let `@ResourceKeyId = (ResourceKeyId for staffSchoolAssociations)`.
+
+Selection flow:
+
+1. **Direct candidates**: range-scan `dms.DocumentChangeEvent` for `@ResourceKeyId` where `ChangeVersion BETWEEN 5665 AND 8000`.
+2. **Indirect candidates**:
+   - range-scan `dms.IdentityChangeEvent` where `ChangeVersion BETWEEN 5665 AND 8000`,
+   - expand changed dependencies to parent `DocumentId`s via `dms.ReferenceEdge(ChildDocumentId → ParentDocumentId)`,
+   - filter those parents to `@ResourceKeyId` (typically via `JOIN dms.Document` to read `ResourceKeyId`).
+3. **Union candidates**, then compute each candidate’s derived `ChangeVersion = max(ContentVersion, IdentityVersion, max(dep.IdentityVersion))` and keep only those still in `[5665,8000]` (because derived `ChangeVersion` is computed from *current* rows, not “as of” the window boundary).
+4. **Page results** by `(ChangeVersion, DocumentId)`, then fetch/reconstitute and return the current resource representations for the resulting `DocumentId`s.
+
+Performance notes (applies to this call and in general; see “Expected cost profile” above):
+
+- Work scales with the number of journal rows in the window plus the number of `dms.ReferenceEdge` rows touched during expansion/verification, not with the total size of `dms.Document`.
+- The direct scan is an index range scan on `(ResourceKeyId, ChangeVersion, DocumentId)` and is typically fast.
+- The indirect expansion cost depends on how many `IdentityChangeEvent` rows fall in the window and how much parent fan-in the changed dependencies have (high fan-in dependencies can make this step large).
+- The verification step (computing `max(dep.IdentityVersion)` per candidate) is often dominant for large candidate sets; see “Optional enhancements” for ways to reduce this cost.
+
 ### PostgreSQL: resource change query (journal-driven, keyset paging)
 
 Parameters:
