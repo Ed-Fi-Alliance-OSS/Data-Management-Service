@@ -771,6 +771,7 @@ FROM edfi.StateEducationAgency sea;
 - **Write-time resolution**: abstract references resolve via `dms.ReferentialIdentity` (superclass aliases) and do not depend on the view.
 - **Read-time identity projection**: when reconstituting an abstract-target reference object, join to `{AbstractResource}_View` by `DocumentId` to fetch the abstract identity fields.
 - **Membership/type validation (standard)**: to ensure a `..._DocumentId` FK to `dms.Document` actually belongs to the allowed hierarchy, validate `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId=@id)` (batch when possible).
+  - The stored FK value is always a concrete document’s `DocumentId`; the view is what turns that `DocumentId` back into the abstract identity fields required by the API.
 
 Operational note:
 - Adding a new concrete subtype requires updating the view definition in the database (startup validation will fail fast if it does not match).

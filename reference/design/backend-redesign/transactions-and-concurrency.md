@@ -98,6 +98,24 @@ Relational tables store references as FKs so the database enforces referential i
 
 Optional: add a trigger to enforce the same membership check in the database by validating `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId = <fk>)` on insert/update.
 
+#### How polymorphic (abstract) `..._DocumentId` references work end-to-end
+
+Polymorphic references are stored as a single `BIGINT` `DocumentId` FK value even though the logical target is an *abstract* resource (e.g., `EducationOrganization`) with multiple concrete subtypes.
+
+The pieces fit together like this:
+
+1. **API payload uses abstract identity fields** (not a `DocumentId`):
+   - e.g., an `educationOrganizationReference` carries `educationOrganizationId` (and not “schoolId” vs “localEducationAgencyId”).
+2. **Write-time resolution uses `dms.ReferentialIdentity`**:
+   - DMS computes the target `ReferentialId` for the abstract resource type + identity values and resolves `ReferentialId → DocumentId` in bulk via `dms.ReferentialIdentity`.
+   - This works because each concrete subtype maintains a superclass/abstract **alias** referential-id row (e.g., a `School` document also has an `EducationOrganization` referential id row) so abstract references can resolve without per-subtype SQL.
+3. **Persist the FK as `..._DocumentId`**:
+   - The referencing row stores the resolved `DocumentId` and (because the target is abstract) the FK points to `dms.Document(DocumentId)` for existence.
+4. **Membership/type validation is via `{AbstractResource}_View`**:
+   - Because `FK → dms.Document` only checks existence, DMS validates that the referenced `DocumentId` is in the allowed hierarchy by checking membership in `{AbstractResource}_View` (or enforcing the same check via an optional trigger).
+5. **Read-time identity projection joins `{AbstractResource}_View`**:
+   - When reconstituting reference objects in API responses, DMS joins `..._DocumentId` to `{AbstractResource}_View` to fetch the abstract identity fields (and optional discriminator) to put into the reference object.
+
 ### Delete conflicts
 
 Deletes rely on the same FK graph:
