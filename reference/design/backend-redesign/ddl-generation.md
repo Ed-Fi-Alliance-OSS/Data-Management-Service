@@ -37,12 +37,13 @@ The DDL generation utility is responsible for database objects derived from the 
   - update tracking / Change Queries: `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.IdentityChangeEvent`
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
   - required triggers for journal emission (see [update-tracking.md](update-tracking.md))
+- Optional projection objects (performance / integrations):
+  - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
 - Per-project schemas (derived from `ProjectEndpointName`) and per-resource tables (root + child tables).
 - Extension project schemas and extension tables derived from `_ext` (see [extensions.md](extensions.md)).
 - Abstract union views (e.g., `{schema}.{AbstractResource}_View`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)).
 
 Explicitly out of scope for this redesign phase:
-- `dms.DocumentCache` (materialized JSON projection)
 - any authorization objects (`auth.*`, `dms.DocumentSubject`, etc.)
 
 ## Inputs and Outputs
@@ -129,6 +130,8 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.ReferentialIdentity`
 - `dms.Descriptor`
 - `dms.ReferenceEdge`
+- Optional projections:
+  - `dms.DocumentCache`
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
