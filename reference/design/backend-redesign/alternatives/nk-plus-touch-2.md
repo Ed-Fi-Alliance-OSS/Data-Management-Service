@@ -26,7 +26,7 @@ Key motivation:
 3. Preserve “no double touch” behavior from `alternatives/natural-key-plus-touch-cascades.md`.
 4. Maintain cross-engine feasibility (PostgreSQL + SQL Server).
 5. Ensure adjacency maintenance is set-based and does not require per-row procedural loops.
-6. Preserve strict ODS change-tracking semantics: touched parents must receive **unique per-row** `RepresentationChangeVersion` values so watermark-only clients (`minChangeVersion = last+1`) do not miss rows.
+6. Preserve strict ODS change-tracking semantics: touched parents must receive **unique per-row** `dms.Document.ContentVersion` values (used as `ChangeVersion`) so watermark-only clients (`minChangeVersion = last+1`) do not miss rows.
 
 ## Non-goals
 
@@ -156,6 +156,36 @@ Counts let triggers update `dms.ReferenceEdge` using only local `inserted/delete
 No table scans are required to determine whether an edge still exists.
 
 If a simpler schema is required, an alternative is to keep the baseline `(ParentDocumentId, ChildDocumentId, IsIdentityComponent)` shape and accept a “recompute per parent” procedure on deletes/updates; this document assumes counts to keep maintenance incremental and predictable.
+
+### Update tracking + Change Queries (write-time model; repurpose existing tables)
+
+This alternative is a **write-time** representation-tracking model:
+
+- `dms.Document.ContentVersion` is treated as the persisted **representation change stamp** (the `ChangeVersion` served by Change Queries and used for ETag derivation).
+- `dms.Document.ContentLastModifiedAt` is treated as the persisted API `_lastModifiedDate` for the resource representation.
+- `dms.Document.IdentityVersion` remains the **identity-projection change signal** (direct identity updates and identity cascades) and is the trigger point for the touch cascade.
+
+Implications:
+
+- Any write that changes a document’s identity projection (i.e., bumps `IdentityVersion`) MUST also bump that same document’s `ContentVersion/ContentLastModifiedAt`, because the representation changed.
+- “Touch cascades” update **referrers’** `ContentVersion/ContentLastModifiedAt` so indirect representation changes appear as local stamps on the affected parents.
+
+#### Change Query journal (reuse `dms.DocumentChangeEvent`)
+
+Use **only** `dms.DocumentChangeEvent` to drive Change Query selection:
+
+- A trigger on `dms.Document` inserts a `dms.DocumentChangeEvent` row whenever `ContentVersion` changes (including touch updates).
+- `dms.DocumentChangeEvent.ChangeVersion` should equal the document’s new `ContentVersion` in this alternative.
+
+#### Drop `dms.IdentityChangeEvent` completely
+
+This alternative drops `dms.IdentityChangeEvent` entirely.
+
+Rationale: `dms.IdentityChangeEvent` exists in the baseline (read-time derivation) design to expand indirect impacts via `dms.ReferenceEdge` at query time. In this write-time touch model, indirect impacts are already materialized by updating each impacted parent’s `ContentVersion`, so Change Query selection no longer needs an identity-change journal.
+
+#### Deletes require a tombstone journal (not designed here)
+
+Change Queries need a durable “delete marker” journal because `dms.DocumentChangeEvent` rows are tied to `dms.Document` rows and cannot represent deletions after the row is gone. This document notes the requirement but does not design the tombstone schema/API.
 
 ## Trigger-maintained adjacency list
 
@@ -402,7 +432,7 @@ With counts:
 ### Trigger sketch on `dms.Document` (PostgreSQL)
 
 ODS compatibility note:
-- Use **per-row** `RepresentationChangeVersion` allocation for touched parents (not “one stamp per statement/transaction”). This preserves the “single watermark” client contract used by ODS Change Queries (`minChangeVersion = last+1`) and avoids missing rows when many documents change in one cascade.
+- Use **per-row** `ContentVersion` allocation for touched parents (not “one stamp per statement/transaction”). This preserves the “single watermark” client contract used by ODS Change Queries (`minChangeVersion = last+1`) and avoids missing rows when many documents change in one cascade.
 - Reduce contention by (a) ensuring touch targets are distinct (each parent is updated once per triggering statement), and (b) using a sequence cache sized for your write volume (gaps on restart are acceptable under ODS semantics).
 
 ```sql
@@ -437,13 +467,13 @@ BEGIN
       -- Allocate one version per touched parent (unique per row).
       SELECT
           t.ParentDocumentId,
-          nextval('dms.ChangeVersionSequence') AS NewRepresentationChangeVersion
+          nextval('dms.ChangeVersionSequence') AS NewContentVersion
       FROM touch_targets t
   )
   UPDATE dms.Document p
   SET
-      RepresentationChangeVersion = v.NewRepresentationChangeVersion,
-      RepresentationLastModifiedAt = now()
+      ContentVersion = v.NewContentVersion,
+      ContentLastModifiedAt = now()
   FROM versioned_targets v
   WHERE p.DocumentId = v.ParentDocumentId;
 
@@ -507,13 +537,13 @@ EXEC sys.sp_sequence_get_range
 ),
 versioned AS (
     SELECT ParentDocumentId,
-           @first + rn0 AS NewRepresentationChangeVersion
+           @first + rn0 AS NewContentVersion
     FROM ordered
 )
 UPDATE p
 SET
-    RepresentationChangeVersion = v.NewRepresentationChangeVersion,
-    RepresentationLastModifiedAt = sysutcdatetime()
+    ContentVersion = v.NewContentVersion,
+    ContentLastModifiedAt = sysutcdatetime()
 FROM dms.Document p
 JOIN versioned v ON v.ParentDocumentId = p.DocumentId;
 
@@ -581,7 +611,7 @@ Even with triggers:
 
 ## Open questions
 
-1. **Stamping granularity**: resolved for strict ODS compatibility — touch assigns one `RepresentationChangeVersion` per touched row (not one per triggering transaction/statement).
+1. **Stamping granularity**: resolved for strict ODS compatibility — touch assigns one `ContentVersion` per touched row (not one per triggering transaction/statement).
 2. **Counts vs recompute**: is incremental count maintenance worth the schema/trigger complexity, or is “recompute edges for affected parents” acceptable given expected write patterns?
 3. **Index strategy defaults**: do we require filtered/partial indexes for identity/non-identity edges, or only the general reverse index?
 4. **SQL Server cascade feasibility**: if `ON UPDATE CASCADE` is constrained by “multiple cascade paths” rules, does the identity-only propagation still hold, or do we need trigger-based propagation (reintroducing ODS-like trigger complexity)?
