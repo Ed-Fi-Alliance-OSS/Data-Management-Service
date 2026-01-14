@@ -615,3 +615,12 @@ Even with triggers:
 2. **Counts vs recompute**: is incremental count maintenance worth the schema/trigger complexity, or is “recompute edges for affected parents” acceptable given expected write patterns?
 3. **Index strategy defaults**: do we require filtered/partial indexes for identity/non-identity edges, or only the general reverse index?
 4. **SQL Server cascade feasibility**: if `ON UPDATE CASCADE` is constrained by “multiple cascade paths” rules, does the identity-only propagation still hold, or do we need trigger-based propagation (reintroducing ODS-like trigger complexity)?
+
+## Recommended proof artifacts
+
+- **Make invariants explicit (spec artifact):** Add a short “Correctness invariants” section that precisely defines what `ReferenceEdge` must equal (per `(ParentDocumentId, ChildDocumentId)` counts), what “no-double-touch” means, and what should *never* happen (negative counts, missing edges, touch on identity referrers).
+- **Ship a rebuild + audit kit (operational SQL artifact):** Generate and version 4 routines for both Postgres and SQL Server: (1) full rebuild of `dms.ReferenceEdge` from FK sites, (2) targeted rebuild for one `ParentDocumentId` (scan only that resource’s root+child tables), (3) audit/verify for one `ParentDocumentId` (expected vs actual diffs), (4) audit sampling job (random parents per hour/day). These are the “prove/repair” tools when triggers misbehave.
+- **Add trigger contract tests (verification artifact):** A DB-backed test suite that runs multi-row `INSERT/UPDATE/DELETE` (including “update unrelated columns”, “move FK A→B”, “duplicate FK sites”, “set FK to NULL”) and asserts edge counts and touch targets. Run it against both engines as part of CI/provision smoke.
+- **Add concurrency/deadlock proof (stress artifact):** A small stress harness that runs concurrent writers touching FK columns + concurrent identity updates, verifying: no negative counts, eventual consistency after retries, and bounded touch time. Document the required retry policy and the expected deadlock surface.
+- **Add a failure-mode runbook (ops artifact):** Clear operator steps for: guardrail exceeded, audit mismatch detected, rebuild procedure usage, expected lock/impact, and how to re-run safely.
+- **Add telemetry + alert thresholds (proof-in-prod artifact):** Counters/histograms for “edges updated”, “touch targets”, “touch duration”, “guardrail aborts”, “audit mismatches”, and “rebuild invoked”, with alerting guidance.
