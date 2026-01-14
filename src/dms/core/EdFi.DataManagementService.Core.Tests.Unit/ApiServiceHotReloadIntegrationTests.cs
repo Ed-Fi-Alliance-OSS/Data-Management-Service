@@ -437,7 +437,23 @@ public class ApiServiceHotReloadIntegrationTests
 
     protected async Task WriteTestSchemaFile(string fileName, string content)
     {
-        await File.WriteAllTextAsync(Path.Combine(_testDirectory, fileName), content);
+        var filePath = Path.Combine(_testDirectory, fileName);
+        const int MaxRetries = 5;
+
+        for (int attempt = 0; attempt < MaxRetries; attempt++)
+        {
+            try
+            {
+                await File.WriteAllTextAsync(filePath, content);
+                return;
+            }
+            catch (IOException) when (attempt < MaxRetries - 1)
+            {
+                // On Windows, concurrent file access can cause conflicts.
+                // Retry with exponential backoff.
+                await Task.Delay(TimeSpan.FromMilliseconds(10 * Math.Pow(2, attempt)));
+            }
+        }
     }
 
     protected static FrontendRequest CreateTestRequest(string path, string? body = null)
