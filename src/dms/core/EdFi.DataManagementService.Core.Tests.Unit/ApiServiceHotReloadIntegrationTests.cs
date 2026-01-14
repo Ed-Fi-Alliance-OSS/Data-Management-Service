@@ -9,6 +9,8 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
@@ -119,6 +121,24 @@ public class ApiServiceHotReloadIntegrationTests
 
         services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
             NullLogger<ResolveDmsInstanceMiddleware>.Instance
+        );
+
+        // Register Profile Resolution services
+        services.AddTransient<ProfileResolutionMiddleware>();
+        var fakeProfileService = A.Fake<IProfileService>();
+        A.CallTo(() =>
+                fakeProfileService.ResolveProfileAsync(
+                    A<ParsedProfileHeader?>._,
+                    A<RequestMethod>._,
+                    A<string>._,
+                    A<long>._,
+                    A<string?>._
+                )
+            )
+            .Returns(Task.FromResult(ProfileResolutionResult.NoProfileApplies()));
+        services.AddSingleton<IProfileService>(fakeProfileService);
+        services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
+            NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
         var serviceProvider = services.BuildServiceProvider();
