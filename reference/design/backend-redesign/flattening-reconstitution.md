@@ -510,6 +510,35 @@ The page case must not become “GET by id repeated N times”.
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
 Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same key/ordinal columns (see [extensions.md](extensions.md)).
 
+#### Query predicates for reference identity fields (set-based default)
+
+`ApiSchema.queryFieldMapping` can expose query parameters that correspond to identity fields inside a **reference object** (e.g., `studentUniqueId` mapped from `$.studentReference.studentUniqueId`). These do **not** map to a local scalar column on the querying resource’s root table, because reference objects are stored as a single `..._DocumentId` FK column.
+
+The query compiler should treat these as **reference query fields** and translate them into a predicate on the FK column using a **set-based lookup** over the referenced resource’s root table:
+
+- Build a subquery (or `EXISTS`/join) that returns matching referenced `DocumentId`s using whatever identity parts are present in the query.
+- Filter the referencing FK with `IN (subquery)` (or an equivalent join).
+- This works for both complete and partial referenced identities:
+  - complete identity ⇒ the subquery returns 0 or 1 `DocumentId` (due to the referenced table’s identity uniqueness)
+  - partial identity ⇒ the subquery can return 0..N `DocumentId`s
+
+Example (conceptual): query `StudentAssessmentRegistration` by `studentUniqueId` when the root table stores only `Student_DocumentId`:
+
+```sql
+SELECT r.DocumentId
+FROM edfi.StudentAssessmentRegistration r
+WHERE r.Student_DocumentId IN (
+  SELECT s.DocumentId
+  FROM edfi.Student s
+  WHERE s.StudentUniqueId = @StudentUniqueId
+)
+ORDER BY r.DocumentId
+OFFSET @Offset
+LIMIT @Limit;
+```
+
+Optional optimization (complete identity only): when *all* identity components for the referenced resource are present, compute the referenced `ReferentialId` from the query values and resolve a single `DocumentId` via `dms.ReferentialIdentity`, then compile `r.<Ref>_DocumentId = @resolvedDocumentId` (or `= (SELECT DocumentId FROM dms.ReferentialIdentity WHERE ReferentialId=@id)`).
+
 #### Single round-trip: materialize a `page` keyset, then hydrate by join
 
 Build one command that:
