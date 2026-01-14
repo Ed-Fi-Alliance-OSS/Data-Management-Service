@@ -158,6 +158,10 @@ Rationale: `dms.IdentityChangeEvent` exists in the baseline (read-time derivatio
 
 Change Queries need a durable “delete marker” journal because `dms.DocumentChangeEvent` rows are tied to `dms.Document` rows and cannot represent deletions after the row is gone. This document notes the requirement but does not design the tombstone schema/API.
 
+#### Retention (journals)
+
+Because this alternative materializes indirect representation changes as **write-time** `ContentVersion` updates, a single identity update can generate a large number of `dms.DocumentChangeEvent` rows. Plan for a configurable retention window (by `ChangeVersion` range and/or time), and expose an `oldestChangeVersion` so clients can detect when a requested window is no longer available (matching the approach in `../update-tracking.md`).
+
 ## Recompute/diff-maintained adjacency list
 
 This section replaces the trigger+counts approach from earlier drafts with a recompute/diff approach that is identical in both PostgreSQL and SQL Server.
@@ -499,6 +503,49 @@ Important coupling point:
 - **DDL generator complexity**: generator must emit per-resource edge projection SQL and the recompute routine(s) for both engines.
 - **High-fan-in touch events remain the tail risk**: even with fast reverse lookup, touching millions of parents is still operationally dangerous (locks/log volume/deadlocks).
 - **Correctness is critical**: if edge projection or recompute is wrong, touch cascades can miss parents (stale `_etag/_lastModifiedDate/ChangeVersion` for indirect identity changes).
+
+## Concurrency hardening
+
+This alternative makes cascades synchronous and write-amplifying, so it needs an explicit “deadlock minimization + bounded failure” story.
+
+### Database isolation defaults
+
+- **SQL Server (strong recommendation)**: enable MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, and optionally `ALLOW_SNAPSHOT_ISOLATION ON`) for the database.
+  - Rationale: touch updates and edge recompute read `dms.ReferenceEdge` while other transactions write it; without MVCC, those reads can take `S` locks and materially increase deadlock risk.
+- **PostgreSQL**: default `READ COMMITTED` MVCC behavior is sufficient for the patterns described here.
+
+### Lock ordering rules (deadlock minimization)
+
+- Any statement that updates **multiple `dms.Document` rows** (touch cascades, identity-propagation stamping, rebuild jobs) should lock/update them in **ascending `DocumentId`** order.
+- Any statement that updates **multiple `dms.ReferenceEdge` rows** should apply deltas in **ascending `(ParentDocumentId, ChildDocumentId)`** order.
+
+### Touch cascade execution pattern (deterministic + bounded)
+
+- Materialize `TouchTargets` into a temp table (`touch_targets` / `#touch_targets`) with a **primary key on `ParentDocumentId`** (distinct + ordered driver).
+- Apply guardrails before updates:
+  - enforce `MaxTouchParents`,
+  - apply a lock timeout (PostgreSQL `lock_timeout`; SQL Server `SET LOCK_TIMEOUT`) so the system fails fast under contention instead of blocking indefinitely.
+- Lock the target parent rows deterministically, then update:
+  - **PostgreSQL**: lock targets with `SELECT ... FOR UPDATE` driven by `touch_targets` PK order, then `UPDATE dms.Document ... FROM touch_targets ...`.
+  - **SQL Server**: pre-lock targets using `UPDLOCK, HOLDLOCK` (and optionally `ROWLOCK`) on `dms.Document` joined from `#touch_targets`, then `UPDATE ... JOIN #touch_targets ...`.
+- **SQL Server version allocation**: prefer reserving a contiguous sequence range once per statement with `sys.sp_sequence_get_range` and assigning `NewContentVersion = first + row_number - 1` ordered by `ParentDocumentId` (avoids `NEXT VALUE FOR` per-row overhead).
+
+### Retry + backpressure (application contract)
+
+- The API layer should implement a bounded retry policy for expected transient concurrency errors:
+  - SQL Server deadlock victim (`1205`)
+  - PostgreSQL deadlock (`SQLSTATE 40P01`)
+  - (Optional) serialization failures if any code path opts into stronger isolation (`SQLSTATE 40001`).
+- Use jittered exponential backoff; cap attempts (e.g., 3–5). If the transaction still fails, surface a deterministic error with operational hints (e.g., include `touch_count` and `MaxTouchParents` when the guardrail trips).
+
+### Optional serialization of identity-changing cascades (high impact, high confidence)
+
+To reduce “two large cascades overlap and deadlock each other” risk, optionally serialize **identity-changing** writes only (the ones that can trigger large touch cascades) using a transaction-scoped advisory/app lock:
+
+- **PostgreSQL**: `pg_advisory_xact_lock(...)`
+- **SQL Server**: `sp_getapplock` (e.g., `Exclusive`, transaction-owned)
+
+This preserves concurrency for ordinary writes, but makes the “rare hub cascade” path more predictable and easier to operate (at the cost of throughput for concurrent identity updates).
 
 ## Required operational tooling
 
