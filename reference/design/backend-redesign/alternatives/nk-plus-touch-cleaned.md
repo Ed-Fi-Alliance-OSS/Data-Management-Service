@@ -541,7 +541,7 @@ BEGIN
     FROM #expected e
     WHERE NOT EXISTS (
         SELECT 1
-        FROM dms.ReferenceEdge re WITH (UPDLOCK, HOLDLOCK)
+        FROM dms.ReferenceEdge re WITH (UPDLOCK, HOLDLOCK) -- Prevent insert race on (ParentDocumentId, ChildDocumentId); SQL Server equivalent of Postgres ON CONFLICT DO NOTHING
         WHERE re.ParentDocumentId = e.ParentDocumentId
           AND re.ChildDocumentId  = e.ChildDocumentId
     );
@@ -637,7 +637,7 @@ $$ LANGUAGE plpgsql;
 ### SQL Server touch trigger sketch
 
 ```sql
-;WITH changed_children AS (
+WITH changed_children AS (
     SELECT i.DocumentId
     FROM inserted i
     JOIN deleted  d ON d.DocumentId = i.DocumentId
