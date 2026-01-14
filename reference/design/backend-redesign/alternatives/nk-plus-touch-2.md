@@ -12,26 +12,27 @@ Draft (alternative design exploration).
 
 In that doc (and `alternatives/touch-cascade.md`), the DB finds “who references this changed document?” via a generated global `UNION ALL` projection (e.g., `dms.AllDocumentReferences`), because there is no persisted reverse index.
 
-This v2 alternative keeps the same high-level intent, but replaces the global union view with a **persisted adjacency list** (a `dms.ReferenceEdge`-like table) that is **maintained entirely by database triggers**.
+This v2 alternative keeps the same high-level intent, but replaces the global union view with a **persisted adjacency list** (a `dms.ReferenceEdge`-like table) that is maintained by a **per-parent recompute/diff routine** invoked once per document write transaction (same approach for PostgreSQL and SQL Server).
 
 Key motivation:
 - eliminate the optimizer/DDL-size risks of a very large `UNION ALL` view across all FK sites,
 - keep reverse lookups index-driven and predictable (`ChildDocumentId → ParentDocumentId`),
-- keep the “push cascade work to the write path” framing, without pushing “scan all FK sites” work into the cascade trigger itself.
+- reduce edge churn under the baseline “replace” write strategy (delete+insert of child rows),
+- keep the “push cascade work to the write path” framing, without pushing “scan all FK sites” work into the touch-cascade trigger itself.
 
 ## Goals
 
 1. Avoid a global “all FK sites” union view while still supporting ODS-like indirect-update semantics for stored representation metadata.
 2. Keep `DocumentId` as the only persisted join/reference key for relational integrity and query performance.
 3. Preserve “no double touch” behavior from `alternatives/natural-key-plus-touch-cascades.md`.
-4. Maintain cross-engine feasibility (PostgreSQL + SQL Server).
-5. Ensure adjacency maintenance is set-based and does not require per-row procedural loops.
+4. Maintain cross-engine feasibility (PostgreSQL + SQL Server) with the **same logical maintenance algorithm**.
+5. Minimize `dms.ReferenceEdge` churn, especially under “replace” collection writes.
 6. Preserve strict ODS change-tracking semantics: touched parents must receive **unique per-row** `dms.Document.ContentVersion` values (used as `ChangeVersion`) so watermark-only clients (`minChangeVersion = last+1`) do not miss rows.
 
 ## Non-goals
 
 - Define the full identity-cascade implementation (covered by `alternatives/ods-style-natural-key-cascades.md` and `alternatives/natural-key-plus-touch-cascades.md`).
-- Replace the baseline redesign’s application-managed edge maintenance; this document is about a DB-managed alternative.
+- Replace the baseline redesign’s application-managed edge maintenance; this document is about a DB-managed alternative for touch cascades.
 
 ## Core idea
 
@@ -39,7 +40,10 @@ Introduce a persisted reverse index:
 
 - `dms.ReferenceEdge` (adjacency list): “Parent document `P` references child document `C` via at least one `..._DocumentId` FK site”.
 
-Maintain it with **generated triggers on every table that contains document-reference FK columns** (root tables and child tables).
+Maintain it by recomputing the parent’s edge set from its **final persisted FK state** and applying a **diff**:
+
+- After a document write finishes writing the resource root + all child/extension rows (still inside the transaction), run `dms.RecomputeReferenceEdges(P)`.
+- The routine projects the parent’s current `..._DocumentId` FK values (root + children), dedupes, ORs identity-component classification, then upserts/deletes edges so `dms.ReferenceEdge` equals the projection.
 
 Then implement “touch cascades” using **only** `dms.ReferenceEdge`:
 
@@ -49,24 +53,19 @@ This replaces the `dms.AllDocumentReferences` union view.
 
 ## Data model
 
-### `dms.ReferenceEdge` (trigger-maintained)
+### `dms.ReferenceEdge` (recompute/diff-maintained)
 
 This alternative needs to support:
 
 - “All referrers” for touch cascades (representation dependencies).
 - “Identity-component referrers” for the **no-double-touch** rule.
 
-Because multiple FK sites (and multiple child rows) can reference the same child document, an adjacency list that stores only a single boolean `IsIdentityComponent` becomes hard to maintain correctly on deletes/updates without rescanning.
+Shape:
 
-Recommended shape: keep one row per `(ParentDocumentId, ChildDocumentId)` but add **counts** so triggers can maintain it incrementally.
-
-Conceptual columns:
-- `IdentityRefCount`: number of identity-component FK occurrences from `ParentDocumentId` to `ChildDocumentId`
-- `NonIdentityRefCount`: number of non-identity FK occurrences from `ParentDocumentId` to `ChildDocumentId`
-
-Derived meaning:
-- “edge exists” iff `IdentityRefCount + NonIdentityRefCount > 0`
-- “child participates in parent identity” iff `IdentityRefCount > 0`
+- One row per `(ParentDocumentId, ChildDocumentId)`.
+- `IsIdentityComponent` means: the parent has **any** identity-component reference site to this child (OR across sites/rows).
+  - `IsIdentityComponent=true` ⇒ “do not touch this parent in the touch cascade” (it is assumed to be locally stamped by identity-only natural-key propagation).
+  - `IsIdentityComponent=false` ⇒ the edge exists only via non-identity reference sites and is eligible for touch.
 
 #### DDL sketch (PostgreSQL)
 
@@ -76,34 +75,26 @@ CREATE TABLE dms.ReferenceEdge (
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     ChildDocumentId  bigint NOT NULL
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-
-    IdentityRefCount integer NOT NULL DEFAULT 0,
-    NonIdentityRefCount integer NOT NULL DEFAULT 0,
-
+    IsIdentityComponent boolean NOT NULL,
     CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, ChildDocumentId),
-    CONSTRAINT CK_ReferenceEdge_Counts CHECK (
-        IdentityRefCount >= 0
-        AND NonIdentityRefCount >= 0
-    )
+    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, ChildDocumentId)
 );
 
 -- Reverse lookups (touch cascades / diagnostics)
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId
-    ON dms.ReferenceEdge (ChildDocumentId)
-    INCLUDE (ParentDocumentId, IdentityRefCount, NonIdentityRefCount);
+    ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
+    INCLUDE (ParentDocumentId);
 
--- Optional: identity-only reverse lookups (closure work / no-double-touch fast path)
+-- Optional partial indexes (only if needed after measurement)
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId_Identity
     ON dms.ReferenceEdge (ChildDocumentId)
     INCLUDE (ParentDocumentId)
-    WHERE IdentityRefCount > 0;
+    WHERE IsIdentityComponent;
 
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId_NonIdentity
     ON dms.ReferenceEdge (ChildDocumentId)
     INCLUDE (ParentDocumentId)
-    WHERE NonIdentityRefCount > 0;
+    WHERE NOT IsIdentityComponent;
 ```
 
 #### DDL sketch (SQL Server)
@@ -112,50 +103,30 @@ CREATE INDEX IX_ReferenceEdge_ChildDocumentId_NonIdentity
 CREATE TABLE dms.ReferenceEdge (
     ParentDocumentId bigint NOT NULL,
     ChildDocumentId  bigint NOT NULL,
-
-    IdentityRefCount int NOT NULL CONSTRAINT DF_ReferenceEdge_IdentityRefCount DEFAULT (0),
-    NonIdentityRefCount int NOT NULL CONSTRAINT DF_ReferenceEdge_NonIdentityRefCount DEFAULT (0),
-
+    IsIdentityComponent bit NOT NULL,
     CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ReferenceEdge_CreatedAt DEFAULT (sysutcdatetime()),
-
     CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, ChildDocumentId),
     CONSTRAINT FK_ReferenceEdge_Parent FOREIGN KEY (ParentDocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
     CONSTRAINT FK_ReferenceEdge_Child FOREIGN KEY (ChildDocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_ReferenceEdge_Counts CHECK (
-        IdentityRefCount >= 0
-        AND NonIdentityRefCount >= 0
-    )
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
 );
 
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId
-    ON dms.ReferenceEdge (ChildDocumentId)
-    INCLUDE (ParentDocumentId, IdentityRefCount, NonIdentityRefCount);
+    ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
+    INCLUDE (ParentDocumentId);
 
--- Optional filtered indexes
+-- Optional filtered indexes (only if needed after measurement)
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId_Identity
     ON dms.ReferenceEdge (ChildDocumentId)
     INCLUDE (ParentDocumentId)
-    WHERE IdentityRefCount > 0;
+    WHERE IsIdentityComponent = 1;
 
 CREATE INDEX IX_ReferenceEdge_ChildDocumentId_NonIdentity
     ON dms.ReferenceEdge (ChildDocumentId)
     INCLUDE (ParentDocumentId)
-    WHERE NonIdentityRefCount > 0;
+    WHERE IsIdentityComponent = 0;
 ```
-
-### Why counts?
-
-Counts let triggers update `dms.ReferenceEdge` using only local `inserted/deleted` row images:
-
-- Inserts increment counts.
-- Deletes decrement counts.
-- Updates do a “decrement old, increment new” when FK values change.
-
-No table scans are required to determine whether an edge still exists.
-
-If a simpler schema is required, an alternative is to keep the baseline `(ParentDocumentId, ChildDocumentId, IsIdentityComponent)` shape and accept a “recompute per parent” procedure on deletes/updates; this document assumes counts to keep maintenance incremental and predictable.
 
 ### Update tracking + Change Queries (write-time model; repurpose existing tables)
 
@@ -187,9 +158,47 @@ Rationale: `dms.IdentityChangeEvent` exists in the baseline (read-time derivatio
 
 Change Queries need a durable “delete marker” journal because `dms.DocumentChangeEvent` rows are tied to `dms.Document` rows and cannot represent deletions after the row is gone. This document notes the requirement but does not design the tombstone schema/API.
 
-## Trigger-maintained adjacency list
+## Recompute/diff-maintained adjacency list
 
-### Trigger generation rule
+This section replaces the trigger+counts approach from earlier drafts with a recompute/diff approach that is identical in both PostgreSQL and SQL Server.
+
+### Why recompute/diff (reduce churn under “replace” writes)
+
+The baseline relational write strategy for collections is “replace” (delete existing child rows, then insert current rows). If edge maintenance is incremental (statement deltas), a replace will:
+
+- decrement all edges (child-row deletes), often deleting the edge rows,
+- then increment all edges again (child-row inserts), re-inserting edge rows,
+
+even when the net reference set did not change. That produces high WAL/log volume and heavy `dms.ReferenceEdge` index churn.
+
+Recompute/diff instead:
+
+- reads the parent’s **final** FK graph once, and
+- writes **only** net changes to `dms.ReferenceEdge` (often 0 rows on idempotent updates).
+
+### Where the recompute happens (single call per document write)
+
+Within the document write transaction, after all writes to the resource root table + child/extension tables have completed:
+
+1. Persist relational rows (root + children + extensions).
+2. Call `dms.RecomputeReferenceEdges(@ParentDocumentId)` once.
+3. Commit.
+
+If `dms.RecomputeReferenceEdges` fails, the whole transaction fails (no “best effort” edge window).
+
+### Why SQL Server can’t do this as “pure triggers”
+
+PostgreSQL supports deferrable constraint triggers that can run at transaction end, but **SQL Server does not**:
+
+- SQL Server triggers run **per statement**, not at commit, and cannot be deferred until the end of the transaction.
+- A DMS write spans **multiple statements across multiple tables** (root + many child tables). Any trigger-based recompute would:
+  - run multiple times per write (edge churn), and/or
+  - run before the final child-table state exists (incorrect intermediate edge sets), and/or
+  - require complex “dirty queue + session state” signaling to detect “end of document write”, which SQL Server still cannot reliably hook to “transaction commit”.
+
+Therefore, on SQL Server the recompute/diff must be invoked explicitly by the document write path (application code or a stored procedure that encapsulates the whole write). For cross-engine parity, this v2 alternative uses the same explicit call model on PostgreSQL.
+
+### Projection rule (generated, per resource)
 
 For every relational table `T` produced by the mapping/DDL generator:
 
@@ -201,207 +210,151 @@ For every relational table `T` produced by the mapping/DDL generator:
   - exclude descriptor FKs (`..._DescriptorId`) by design.
 - For each such column, the generator knows whether it is an **identity component site** (`IsIdentityComponent=true`) based on ApiSchema identity bindings.
 
-Emit an `AFTER INSERT/UPDATE/DELETE` trigger on `T` that updates `dms.ReferenceEdge` counts based on changes in those FK columns.
+The generator emits a compiled “edge projection query” for the resource that, given `@ParentDocumentId`, returns distinct `(ChildDocumentId, IsIdentityComponent)` pairs by:
 
-### Set-based delta pattern (conceptual)
+- `UNION ALL` selecting each FK column as `ChildDocumentId` with a constant `IsIdentityComponent`,
+- filtering to `ParentDocumentId = @ParentDocumentId` and `ChildDocumentId IS NOT NULL`,
+- collapsing duplicates with `GROUP BY ChildDocumentId` and `bool_or`/`MAX` to compute the OR of `IsIdentityComponent`.
 
-Each trigger computes deltas as a set of `(ParentDocumentId, ChildDocumentId, IdentityDelta, NonIdentityDelta)` rows:
+### Diff algorithm (conceptual)
 
-- For each inserted row: add `(+1)` to `IdentityDelta` or `NonIdentityDelta` per non-null FK value.
-- For each deleted row: add `(-1)` similarly.
-- For updates: treat as “deleted old + inserted new” (the `inserted`/`deleted` transition tables already provide this), but emit deltas only for FK columns whose value changed to avoid unnecessary writes.
+Given `ParentDocumentId = P`:
 
-Then:
-1. Aggregate deltas per `(ParentDocumentId, ChildDocumentId)` (both counts can be positive or negative in the same statement).
-2. Apply the aggregated deltas to the stored counts in `dms.ReferenceEdge` in a way that correctly handles **mixed-sign** deltas.
-3. Delete any edges that reach zero counts, **scoped to the touched keys** (avoid full-table scans).
+1. Stage expected edges into a temp/staging table:
+   - `expected(ParentDocumentId, ChildDocumentId, IsIdentityComponent)`
+2. Apply the diff:
+   - insert edges in `expected` that are missing in `dms.ReferenceEdge`
+   - update `IsIdentityComponent` where it changed
+   - delete edges in `dms.ReferenceEdge` for `P` that are not in `expected`
 
-### PostgreSQL sketch (statement-level trigger with transition tables)
+Avoid `MERGE` on SQL Server; use explicit `INSERT ... WHERE NOT EXISTS`, `UPDATE ... FROM`, `DELETE ... WHERE NOT EXISTS`.
 
-The generator emits one function+trigger per table `T` (names illustrative).
+#### PostgreSQL sketch (`dms.RecomputeReferenceEdges`)
 
 ```sql
-CREATE OR REPLACE FUNCTION dms.trg_refedge_edfi_studentSchoolAssociation()
-RETURNS trigger AS
-$$
+CREATE OR REPLACE PROCEDURE dms.RecomputeReferenceEdges(parent_document_id bigint)
+LANGUAGE plpgsql
+AS $$
 BEGIN
-  -- Aggregate deltas for this table and statement.
-  WITH deltas AS (
-      -- INSERTED rows: non-identity FK site
-      SELECT
-          i.DocumentId AS ParentDocumentId,
-          i.Program_DocumentId AS ChildDocumentId,
-          0 AS IdentityDelta,
-          1 AS NonIdentityDelta
-      FROM inserted i
-      WHERE i.Program_DocumentId IS NOT NULL
+  CREATE TEMP TABLE reference_edge_expected (
+      ParentDocumentId bigint NOT NULL,
+      ChildDocumentId  bigint NOT NULL,
+      IsIdentityComponent boolean NOT NULL,
+      PRIMARY KEY (ParentDocumentId, ChildDocumentId)
+  ) ON COMMIT DROP;
 
-      UNION ALL
-      -- DELETED rows: non-identity FK site
-      SELECT
-          d.DocumentId,
-          d.Program_DocumentId,
-          0,
-          -1
-      FROM deleted d
-      WHERE d.Program_DocumentId IS NOT NULL
+  -- Generated projection for this resource type (union across FK sites), collapsed by OR:
+  INSERT INTO reference_edge_expected (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+  SELECT parent_document_id, ChildDocumentId, bool_or(IsIdentityComponent)
+  FROM (
+      -- UNION ALL branches generated per FK site:
+      -- SELECT r.Program_DocumentId AS ChildDocumentId, false AS IsIdentityComponent
+      -- FROM edfi.StudentSchoolAssociation r
+      -- WHERE r.DocumentId = parent_document_id AND r.Program_DocumentId IS NOT NULL
+      --
+      -- UNION ALL
+      -- SELECT r.Student_DocumentId, true
+      -- FROM edfi.StudentSchoolAssociation r
+      -- WHERE r.DocumentId = parent_document_id AND r.Student_DocumentId IS NOT NULL
+  ) x
+  GROUP BY ChildDocumentId;
 
-      UNION ALL
-      -- INSERTED rows: identity-component FK site
-      SELECT
-          i.DocumentId,
-          i.Student_DocumentId,
-          1,
-          0
-      FROM inserted i
-      WHERE i.Student_DocumentId IS NOT NULL
+  -- Insert missing
+  INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+  SELECT e.ParentDocumentId, e.ChildDocumentId, e.IsIdentityComponent
+  FROM reference_edge_expected e
+  LEFT JOIN dms.ReferenceEdge re
+    ON re.ParentDocumentId = e.ParentDocumentId
+   AND re.ChildDocumentId  = e.ChildDocumentId
+  WHERE re.ParentDocumentId IS NULL;
 
-      UNION ALL
-      -- DELETED rows: identity-component FK site
-      SELECT
-          d.DocumentId,
-          d.Student_DocumentId,
-          -1,
-          0
-      FROM deleted d
-      WHERE d.Student_DocumentId IS NOT NULL
-  ),
-  agg AS (
-      SELECT
-          ParentDocumentId,
-          ChildDocumentId,
-          SUM(IdentityDelta) AS IdentityDelta,
-          SUM(NonIdentityDelta) AS NonIdentityDelta
-      FROM deltas
-      GROUP BY ParentDocumentId, ChildDocumentId
-      HAVING SUM(IdentityDelta) <> 0 OR SUM(NonIdentityDelta) <> 0
-  ),
-  upserted AS (
-      -- Apply deltas in one upsert to correctly handle mixed-sign deltas.
-      -- If a negative delta appears for a missing edge row, the CHECK constraint should fail fast.
-      INSERT INTO dms.ReferenceEdge(ParentDocumentId, ChildDocumentId, IdentityRefCount, NonIdentityRefCount)
-      SELECT ParentDocumentId, ChildDocumentId, IdentityDelta, NonIdentityDelta
-      FROM agg
-      ON CONFLICT (ParentDocumentId, ChildDocumentId)
-      DO UPDATE SET
-          IdentityRefCount = dms.ReferenceEdge.IdentityRefCount + EXCLUDED.IdentityRefCount,
-          NonIdentityRefCount = dms.ReferenceEdge.NonIdentityRefCount + EXCLUDED.NonIdentityRefCount
-      RETURNING ParentDocumentId, ChildDocumentId
-  )
-  -- Remove zero edges, scoped to keys touched by this statement.
-  DELETE FROM dms.ReferenceEdge e
-  USING upserted u
-  WHERE e.ParentDocumentId = u.ParentDocumentId
-    AND e.ChildDocumentId  = u.ChildDocumentId
-    AND e.IdentityRefCount = 0 AND e.NonIdentityRefCount = 0;
+  -- Update changed
+  UPDATE dms.ReferenceEdge re
+  SET IsIdentityComponent = e.IsIdentityComponent
+  FROM reference_edge_expected e
+  WHERE re.ParentDocumentId = e.ParentDocumentId
+    AND re.ChildDocumentId  = e.ChildDocumentId
+    AND re.IsIdentityComponent IS DISTINCT FROM e.IsIdentityComponent;
 
-  RETURN NULL;
+  -- Delete stale
+  DELETE FROM dms.ReferenceEdge re
+  WHERE re.ParentDocumentId = parent_document_id
+    AND NOT EXISTS (
+      SELECT 1
+      FROM reference_edge_expected e
+      WHERE e.ParentDocumentId = re.ParentDocumentId
+        AND e.ChildDocumentId  = re.ChildDocumentId
+    );
 END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS TR_edfi_StudentSchoolAssociation_ReferenceEdge ON edfi.StudentSchoolAssociation;
-CREATE TRIGGER TR_edfi_StudentSchoolAssociation_ReferenceEdge
-AFTER INSERT OR UPDATE OR DELETE ON edfi.StudentSchoolAssociation
-REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted
-FOR EACH STATEMENT
-EXECUTE FUNCTION dms.trg_refedge_edfi_studentSchoolAssociation();
+$$;
 ```
 
-Notes:
-- The generator should restrict the trigger to fire only when relevant FK columns change (`AFTER UPDATE OF ...`) to reduce overhead.
-- The example uses simplified sites and names; the generator emits one `UNION ALL` branch per FK site in the table.
-- Prefer set-based statements; avoid row-level triggers.
-
-### SQL Server sketch (statement-level trigger using `inserted`/`deleted`)
+#### SQL Server sketch (`dms.RecomputeReferenceEdges`)
 
 ```sql
-CREATE OR ALTER TRIGGER edfi.TR_StudentSchoolAssociation_ReferenceEdge
-ON edfi.StudentSchoolAssociation
-AFTER INSERT, UPDATE, DELETE
+CREATE OR ALTER PROCEDURE dms.RecomputeReferenceEdges
+    @ParentDocumentId bigint
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    ;WITH deltas AS (
-        SELECT
-            i.DocumentId AS ParentDocumentId,
-            i.Student_DocumentId AS ChildDocumentId,
-            CAST(1 AS int) AS IdentityDelta,
-            CAST(0 AS int) AS NonIdentityDelta
-        FROM inserted i
-        WHERE i.Student_DocumentId IS NOT NULL
-
-        UNION ALL
-        SELECT
-            d.DocumentId,
-            d.Student_DocumentId,
-            CAST(-1 AS int),
-            CAST(0 AS int)
-        FROM deleted d
-        WHERE d.Student_DocumentId IS NOT NULL
-
-        UNION ALL
-        SELECT
-            i.DocumentId,
-            i.Program_DocumentId,
-            CAST(0 AS int),
-            CAST(1 AS int)
-        FROM inserted i
-        WHERE i.Program_DocumentId IS NOT NULL
-
-        UNION ALL
-        SELECT
-            d.DocumentId,
-            d.Program_DocumentId,
-            CAST(0 AS int),
-            CAST(-1 AS int)
-        FROM deleted d
-        WHERE d.Program_DocumentId IS NOT NULL
-    ),
-    agg AS (
-        SELECT
-            ParentDocumentId,
-            ChildDocumentId,
-            SUM(IdentityDelta) AS IdentityDelta,
-            SUM(NonIdentityDelta) AS NonIdentityDelta
-        FROM deltas
-        GROUP BY ParentDocumentId, ChildDocumentId
-        HAVING SUM(IdentityDelta) <> 0 OR SUM(NonIdentityDelta) <> 0
-    )
-    -- Ensure edge rows exist (avoid MERGE; use locking hints to prevent duplicate inserts under concurrency).
-    INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IdentityRefCount, NonIdentityRefCount)
-    SELECT a.ParentDocumentId, a.ChildDocumentId, 0, 0
-    FROM agg a
-    WHERE NOT EXISTS (
-        SELECT 1
-        FROM dms.ReferenceEdge e WITH (UPDLOCK, HOLDLOCK)
-        WHERE e.ParentDocumentId = a.ParentDocumentId
-          AND e.ChildDocumentId  = a.ChildDocumentId
+    CREATE TABLE #expected (
+        ParentDocumentId bigint NOT NULL,
+        ChildDocumentId  bigint NOT NULL,
+        IsIdentityComponent bit NOT NULL,
+        CONSTRAINT PK_expected PRIMARY KEY (ParentDocumentId, ChildDocumentId)
     );
 
-    -- Apply deltas (supports mixed-sign deltas; CHECK constraint enforces non-negative counts).
-    UPDATE e
-    SET
-        IdentityRefCount = e.IdentityRefCount + a.IdentityDelta,
-        NonIdentityRefCount = e.NonIdentityRefCount + a.NonIdentityDelta
-    FROM dms.ReferenceEdge e
-    JOIN agg a
-      ON a.ParentDocumentId = e.ParentDocumentId
-     AND a.ChildDocumentId  = e.ChildDocumentId;
+    -- Generated projection for this resource type (union across FK sites), collapsed by OR:
+    INSERT INTO #expected (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+    SELECT @ParentDocumentId,
+           x.ChildDocumentId,
+           CAST(MAX(CAST(x.IsIdentityComponent AS int)) AS bit) AS IsIdentityComponent
+    FROM (
+        -- UNION ALL branches generated per FK site:
+        -- SELECT r.Program_DocumentId AS ChildDocumentId, CAST(0 AS bit) AS IsIdentityComponent
+        -- FROM edfi.StudentSchoolAssociation r
+        -- WHERE r.DocumentId = @ParentDocumentId AND r.Program_DocumentId IS NOT NULL
+        --
+        -- UNION ALL
+        -- SELECT r.Student_DocumentId, CAST(1 AS bit)
+        -- FROM edfi.StudentSchoolAssociation r
+        -- WHERE r.DocumentId = @ParentDocumentId AND r.Student_DocumentId IS NOT NULL
+    ) x
+    GROUP BY x.ChildDocumentId;
 
-    -- Remove zero edges, scoped to keys touched by this statement.
-    DELETE e
-    FROM dms.ReferenceEdge e
-    JOIN agg a
-      ON a.ParentDocumentId = e.ParentDocumentId
-     AND a.ChildDocumentId  = e.ChildDocumentId
-    WHERE e.IdentityRefCount = 0 AND e.NonIdentityRefCount = 0;
+    -- Insert missing
+    INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+    SELECT e.ParentDocumentId, e.ChildDocumentId, e.IsIdentityComponent
+    FROM #expected e
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM dms.ReferenceEdge re WITH (UPDLOCK, HOLDLOCK)
+        WHERE re.ParentDocumentId = e.ParentDocumentId
+          AND re.ChildDocumentId  = e.ChildDocumentId
+    );
+
+    -- Update changed
+    UPDATE re
+    SET IsIdentityComponent = e.IsIdentityComponent
+    FROM dms.ReferenceEdge re
+    JOIN #expected e
+      ON e.ParentDocumentId = re.ParentDocumentId
+     AND e.ChildDocumentId  = re.ChildDocumentId
+    WHERE re.IsIdentityComponent <> e.IsIdentityComponent;
+
+    -- Delete stale
+    DELETE re
+    FROM dms.ReferenceEdge re
+    WHERE re.ParentDocumentId = @ParentDocumentId
+      AND NOT EXISTS (
+        SELECT 1
+        FROM #expected e
+        WHERE e.ParentDocumentId = re.ParentDocumentId
+          AND e.ChildDocumentId  = re.ChildDocumentId
+      );
 END;
 ```
-
-Implementation notes:
-- The check constraint should fail the transaction if counts go negative (signals a trigger bug or unexpected write path).
-- The generator should short-circuit work for updates that do not touch any FK columns (`IF NOT (UPDATE(Student_DocumentId) OR UPDATE(...)) RETURN;`).
 
 ## Touch cascade without the union view
 
@@ -411,23 +364,18 @@ Touch cascades still trigger off the same event as in `alternatives/touch-cascad
 
 But referrer discovery uses `dms.ReferenceEdge`.
 
-### No-double-touch rule (unchanged)
+### No-double-touch rule (unchanged, simplified by `IsIdentityComponent`)
 
 As described in `alternatives/natural-key-plus-touch-cascades.md`:
 
 - identity-component referrers already get a local row update via natural-key propagation, and local stamping updates their representation metadata.
 
-Therefore:
+Therefore, the touch cascade targets only **non-identity** referrers:
 
 ```text
 TouchTargets(child) =
-  NonIdentityReferrers(child)
-  \ IdentityReferrers(child)
+  { Parent | ReferenceEdge(Parent, child) exists AND IsIdentityComponent=false }
 ```
-
-With counts:
-- `NonIdentityReferrers(child)` = parents where `NonIdentityRefCount > 0`
-- `IdentityReferrers(child)` = parents where `IdentityRefCount > 0`
 
 ### Trigger sketch on `dms.Document` (PostgreSQL)
 
@@ -446,22 +394,11 @@ BEGIN
       JOIN deleted  d ON d.DocumentId = i.DocumentId
       WHERE i.IdentityVersion IS DISTINCT FROM d.IdentityVersion
   ),
-  non_identity_referrers AS (
-      SELECT DISTINCT e.ParentDocumentId
-      FROM dms.ReferenceEdge e
-      JOIN changed_children c ON c.DocumentId = e.ChildDocumentId
-      WHERE e.NonIdentityRefCount > 0
-  ),
-  identity_referrers AS (
-      SELECT DISTINCT e.ParentDocumentId
-      FROM dms.ReferenceEdge e
-      JOIN changed_children c ON c.DocumentId = e.ChildDocumentId
-      WHERE e.IdentityRefCount > 0
-  ),
   touch_targets AS (
-      SELECT ParentDocumentId FROM non_identity_referrers
-      EXCEPT
-      SELECT ParentDocumentId FROM identity_referrers
+      SELECT DISTINCT e.ParentDocumentId
+      FROM dms.ReferenceEdge e
+      JOIN changed_children c ON c.DocumentId = e.ChildDocumentId
+      WHERE e.IsIdentityComponent = false
   ),
   versioned_targets AS (
       -- Allocate one version per touched parent (unique per row).
@@ -495,22 +432,11 @@ $$ LANGUAGE plpgsql;
     JOIN deleted  d ON d.DocumentId = i.DocumentId
     WHERE i.IdentityVersion <> d.IdentityVersion
 ),
-non_identity_referrers AS (
-    SELECT DISTINCT e.ParentDocumentId
-    FROM dms.ReferenceEdge e
-    JOIN changed_children c ON c.DocumentId = e.ChildDocumentId
-    WHERE e.NonIdentityRefCount > 0
-),
-identity_referrers AS (
-    SELECT DISTINCT e.ParentDocumentId
-    FROM dms.ReferenceEdge e
-    JOIN changed_children c ON c.DocumentId = e.ChildDocumentId
-    WHERE e.IdentityRefCount > 0
-),
 touch_targets AS (
-    SELECT ParentDocumentId FROM non_identity_referrers
-    EXCEPT
-    SELECT ParentDocumentId FROM identity_referrers
+    SELECT DISTINCT e.ParentDocumentId
+    FROM dms.ReferenceEdge e
+    JOIN changed_children c ON c.DocumentId = e.ChildDocumentId
+    WHERE e.IsIdentityComponent = 0
 )
 IF OBJECT_ID('tempdb..#touch_targets') IS NOT NULL DROP TABLE #touch_targets;
 CREATE TABLE #touch_targets (ParentDocumentId bigint NOT NULL PRIMARY KEY);
@@ -557,25 +483,26 @@ This v2 alternative assumes the same identity-only propagation model as `alterna
 - identity-component sites may materialize referenced identity values and use `ON UPDATE CASCADE` to propagate those values locally (or emulate via triggers where required).
 
 Important coupling point:
-- `dms.ReferenceEdge` maintenance triggers should be driven only by **`..._DocumentId` FK columns** (the persisted relationship), not by duplicated natural-key identity columns.
-  - Natural-key propagation updates the identity columns, not the `DocumentId` FK, so the edge set is stable and should not churn from those cascades.
+- `dms.ReferenceEdge` recompute uses only **`..._DocumentId` FK columns** (the persisted relationship), not duplicated natural-key identity columns.
+  - Natural-key propagation updates identity columns, not the `DocumentId` FKs, so the edge set is stable and should not churn from those cascades.
 
 ## Benefits vs a union view
 
 - **Predictable reverse lookup**: `ChildDocumentId → ParentDocumentId` is a single indexed table scan, not a multi-branch union plan.
-- **Bounded DDL**: no single global view that grows with every extension and FK site.
-- **Reuse**: adjacency can support touch cascades, diagnostics, and (optionally) future change query selection patterns without additional projections.
+- **Bounded DDL**: no single global view that grows with every extension and FK site; edge projection queries are per resource type.
+- **Lower edge churn**: recompute/diff writes only net changes to `dms.ReferenceEdge` (even under replace writes).
 
 ## Costs / risks
 
-- **Write overhead**: every resource-table write that touches FK columns also writes `dms.ReferenceEdge` (and indexes).
-- **Trigger surface area**: DDL generator must emit and validate many triggers (one per table with document FK sites) across engines.
+- **Read work on writes**: each write pays to project the parent’s FK graph (root + children). For very large documents, this can be non-trivial even when the net edge set doesn’t change.
+- **Orchestration requirement (DB correctness boundary)**: `dms.ReferenceEdge` is only correct if all relational writes go through a path that calls `dms.RecomputeReferenceEdges` before commit (application or stored proc). Ad-hoc DML without the recompute is unsupported and requires rebuild tooling.
+- **DDL generator complexity**: generator must emit per-resource edge projection SQL and the recompute routine(s) for both engines.
 - **High-fan-in touch events remain the tail risk**: even with fast reverse lookup, touching millions of parents is still operationally dangerous (locks/log volume/deadlocks).
-- **Constraint/trigger correctness is critical**: a bug can create negative counts or orphan/missing edges; the design relies on DB constraints to fail-fast.
+- **Correctness is critical**: if edge projection or recompute is wrong, touch cascades can miss parents (stale `_etag/_lastModifiedDate/ChangeVersion` for indirect identity changes).
 
 ## Required operational tooling
 
-Even with triggers:
+Even with recompute/diff:
 
 1. **Backfill/rebuild**: a job/procedure to rebuild `dms.ReferenceEdge` from the relational FK graph (offline or targeted).
 2. **Guardrails** (optional, strongly recommended): configurable limits (“max parents to touch per statement/transaction”) with a safe failure mode (abort with clear operator guidance).
@@ -612,15 +539,15 @@ Even with triggers:
 ## Open questions
 
 1. **Stamping granularity**: resolved for strict ODS compatibility — touch assigns one `ContentVersion` per touched row (not one per triggering transaction/statement).
-2. **Counts vs recompute**: is incremental count maintenance worth the schema/trigger complexity, or is “recompute edges for affected parents” acceptable given expected write patterns?
-3. **Index strategy defaults**: do we require filtered/partial indexes for identity/non-identity edges, or only the general reverse index?
+2. **When to recompute**: always recompute after every write (simplest), or only when the write plan touched any `..._DocumentId` columns (optimization; requires a reliable “did any FK change?” signal).
+3. **Index strategy defaults**: do we require filtered/partial indexes by default, or only the general reverse index?
 4. **SQL Server cascade feasibility**: if `ON UPDATE CASCADE` is constrained by “multiple cascade paths” rules, does the identity-only propagation still hold, or do we need trigger-based propagation (reintroducing ODS-like trigger complexity)?
 
 ## Recommended proof artifacts
 
-- **Make invariants explicit (spec artifact):** Add a short “Correctness invariants” section that precisely defines what `ReferenceEdge` must equal (per `(ParentDocumentId, ChildDocumentId)` counts), what “no-double-touch” means, and what should *never* happen (negative counts, missing edges, touch on identity referrers).
-- **Ship a rebuild + audit kit (operational SQL artifact):** Generate and version 4 routines for both Postgres and SQL Server: (1) full rebuild of `dms.ReferenceEdge` from FK sites, (2) targeted rebuild for one `ParentDocumentId` (scan only that resource’s root+child tables), (3) audit/verify for one `ParentDocumentId` (expected vs actual diffs), (4) audit sampling job (random parents per hour/day). These are the “prove/repair” tools when triggers misbehave.
-- **Add trigger contract tests (verification artifact):** A DB-backed test suite that runs multi-row `INSERT/UPDATE/DELETE` (including “update unrelated columns”, “move FK A→B”, “duplicate FK sites”, “set FK to NULL”) and asserts edge counts and touch targets. Run it against both engines as part of CI/provision smoke.
-- **Add concurrency/deadlock proof (stress artifact):** A small stress harness that runs concurrent writers touching FK columns + concurrent identity updates, verifying: no negative counts, eventual consistency after retries, and bounded touch time. Document the required retry policy and the expected deadlock surface.
+- **Make invariants explicit (spec artifact):** Add a short “Correctness invariants” section that precisely defines what `ReferenceEdge` must equal (the FK projection for the parent), what “no-double-touch” means, and what should *never* happen (missing edges, touch on identity referrers).
+- **Ship a rebuild + audit kit (operational SQL artifact):** Generate and version 4 routines for both Postgres and SQL Server: (1) full rebuild of `dms.ReferenceEdge` from FK sites, (2) targeted rebuild for one `ParentDocumentId` (scan only that resource’s root+child tables), (3) audit/verify for one `ParentDocumentId` (expected vs actual diffs), (4) audit sampling job (random parents per hour/day).
+- **Add recompute contract tests (verification artifact):** A DB-backed test suite that runs multi-row `INSERT/UPDATE/DELETE` on root+child tables (including the replace pattern) and asserts `dms.ReferenceEdge` equals the FK projection and that touch targeting matches `IsIdentityComponent=false`. Run it against both engines as part of CI/provision smoke.
+- **Add concurrency/deadlock proof (stress artifact):** A small stress harness that runs concurrent writers updating parents + concurrent identity updates, verifying: edge recompute is correct after retries, and touch time is bounded. Document the required retry policy and the expected deadlock surface.
 - **Add a failure-mode runbook (ops artifact):** Clear operator steps for: guardrail exceeded, audit mismatch detected, rebuild procedure usage, expected lock/impact, and how to re-run safely.
-- **Add telemetry + alert thresholds (proof-in-prod artifact):** Counters/histograms for “edges updated”, “touch targets”, “touch duration”, “guardrail aborts”, “audit mismatches”, and “rebuild invoked”, with alerting guidance.
+- **Add telemetry + alert thresholds (proof-in-prod artifact):** Counters/histograms for “edge projection time”, “edges changed”, “touch targets”, “touch duration”, “guardrail aborts”, “audit mismatches”, and “rebuild invoked”, with alerting guidance.
