@@ -95,12 +95,13 @@ Result:
 
 #### Write-path compatibility (flattening + minimal round-trips)
 
-Including these propagated natural-key columns is compatible with the baseline “flatten then insert” write path.
+Including these propagated natural-key columns is compatible with the baseline “flatten then insert” write path as long as the incoming API payload continues to carry the reference identity fields (normal Ed-Fi `{...}Reference` objects).
 
 - The flattener can set both:
   - `<RefName>_DocumentId` (from the existing bulk `ReferentialId → DocumentId` resolution), and
   - the propagated identity columns (directly from the request JSON at the reference-object paths),
   without additional database reads.
+- If DMS ever accepts “DocumentId-only” or “link-only” references for identity-component sites (i.e., the natural-key fields are absent), these propagated columns cannot be populated without an additional database lookup and would break the “almost no round-trips” property. This alternative should either fail the request for that shape or explicitly accept write-path lookups to backfill the missing identity values.
 
 #### Column naming convention (avoid collisions)
 
@@ -135,6 +136,83 @@ Referencing tables then use composite FKs to the abstract identity table with `O
 
 This replaces baseline’s “membership validation via `{Abstract}_View` on the write path” for cascaded abstract identities, because the FK implies membership.
 
+#### Example: abstract identity table + maintenance triggers (`EducationOrganization`)
+
+This example shows one possible shape for an abstract identity table, and one concrete member (`School`) maintaining it.
+
+**PostgreSQL (sketch)**
+
+```sql
+CREATE TABLE edfi.EducationOrganizationIdentity (
+    DocumentId bigint NOT NULL PRIMARY KEY
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    EducationOrganizationId integer NOT NULL,
+    Discriminator varchar(256) NOT NULL,
+    CONSTRAINT UX_EdOrgIdentity_DocumentId_EdOrgId UNIQUE (DocumentId, EducationOrganizationId),
+    CONSTRAINT UX_EdOrgIdentity_EdOrgId UNIQUE (EducationOrganizationId)
+);
+
+CREATE OR REPLACE FUNCTION edfi.trg_school_edorg_identity_upsert()
+RETURNS trigger AS
+$$
+BEGIN
+  INSERT INTO edfi.EducationOrganizationIdentity (DocumentId, EducationOrganizationId, Discriminator)
+  VALUES (NEW.DocumentId, NEW.SchoolId, 'School')
+  ON CONFLICT (DocumentId) DO UPDATE
+    SET EducationOrganizationId = EXCLUDED.EducationOrganizationId,
+        Discriminator = EXCLUDED.Discriminator;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER TR_School_EdOrgIdentity_Upsert
+AFTER INSERT OR UPDATE OF SchoolId ON edfi.School
+FOR EACH ROW
+EXECUTE FUNCTION edfi.trg_school_edorg_identity_upsert();
+```
+
+**SQL Server (sketch)**
+
+```sql
+CREATE TABLE edfi.EducationOrganizationIdentity (
+    DocumentId bigint NOT NULL,
+    EducationOrganizationId int NOT NULL,
+    Discriminator nvarchar(256) NOT NULL,
+    CONSTRAINT PK_EdOrgIdentity PRIMARY KEY CLUSTERED (DocumentId),
+    CONSTRAINT FK_EdOrgIdentity_Document FOREIGN KEY (DocumentId)
+        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
+    CONSTRAINT UX_EdOrgIdentity_DocumentId_EdOrgId UNIQUE (DocumentId, EducationOrganizationId),
+    CONSTRAINT UX_EdOrgIdentity_EdOrgId UNIQUE (EducationOrganizationId)
+);
+GO
+
+CREATE OR ALTER TRIGGER edfi.TR_School_EdOrgIdentity_Upsert
+ON edfi.School
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Update existing rows
+    UPDATE t
+    SET
+        t.EducationOrganizationId = i.SchoolId,
+        t.Discriminator = N'School'
+    FROM edfi.EducationOrganizationIdentity t
+    JOIN inserted i ON i.DocumentId = t.DocumentId;
+
+    -- Insert missing rows
+    INSERT INTO edfi.EducationOrganizationIdentity (DocumentId, EducationOrganizationId, Discriminator)
+    SELECT i.DocumentId, i.SchoolId, N'School'
+    FROM inserted i
+    WHERE NOT EXISTS (
+        SELECT 1 FROM edfi.EducationOrganizationIdentity t WHERE t.DocumentId = i.DocumentId
+    );
+END;
+GO
+```
+
 ### D) Stored representation metadata on `dms.Document` (served by the API)
 
 This alternative serves representation metadata directly from persisted columns and updates them in-transaction:
@@ -152,6 +230,73 @@ To minimize schema width and align with the existing token columns, repurpose th
 - `dms.Document.IdentityVersion` / `IdentityLastModifiedAt` remain **identity projection** change signals and are used to trigger touch cascades.
 
 Change Query journaling can still use `dms.DocumentChangeEvent` as in the baseline redesign, emitted by triggers on `dms.Document`. Because touch cascades materialize indirect impacts as local `ContentVersion` updates on the touched parents, those touched rows naturally appear in the change journal.
+
+#### Example: `dms.DocumentChangeEvent` journal triggers (on `dms.Document`)
+
+This example shows journal emission that records one `dms.DocumentChangeEvent` row whenever a document’s served representation stamp changes (local write, identity change, or touch).
+
+**PostgreSQL (sketch)**
+
+```sql
+CREATE OR REPLACE FUNCTION dms.trg_document_change_event_ins()
+RETURNS trigger AS
+$$
+BEGIN
+  INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
+  SELECT ContentVersion, DocumentId, ResourceKeyId
+  FROM inserted;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION dms.trg_document_change_event_upd()
+RETURNS trigger AS
+$$
+BEGIN
+  INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
+  SELECT i.ContentVersion, i.DocumentId, i.ResourceKeyId
+  FROM inserted i
+  JOIN deleted d ON d.DocumentId = i.DocumentId
+  WHERE i.ContentVersion <> d.ContentVersion;
+
+  RETURN NULL;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS TR_DocumentChangeEvent_Insert ON dms.Document;
+CREATE TRIGGER TR_DocumentChangeEvent_Insert
+AFTER INSERT ON dms.Document
+REFERENCING NEW TABLE AS inserted
+FOR EACH STATEMENT
+EXECUTE FUNCTION dms.trg_document_change_event_ins();
+
+DROP TRIGGER IF EXISTS TR_DocumentChangeEvent_Update ON dms.Document;
+CREATE TRIGGER TR_DocumentChangeEvent_Update
+AFTER UPDATE ON dms.Document
+REFERENCING NEW TABLE AS inserted OLD TABLE AS deleted
+FOR EACH STATEMENT
+EXECUTE FUNCTION dms.trg_document_change_event_upd();
+```
+
+**SQL Server (sketch)**
+
+```sql
+CREATE OR ALTER TRIGGER dms.TR_DocumentChangeEvent
+ON dms.Document
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    INSERT INTO dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId)
+    SELECT i.ContentVersion, i.DocumentId, i.ResourceKeyId
+    FROM inserted i
+    LEFT JOIN deleted d ON d.DocumentId = i.DocumentId
+    WHERE d.DocumentId IS NULL
+       OR i.ContentVersion <> d.ContentVersion;
+END;
+```
 
 ### E) `dms.ReferenceEdge` (persisted reverse index; touch targeting + diagnostics)
 
@@ -230,6 +375,198 @@ Given `ParentDocumentId = P`:
    - delete stale
 
 Avoid `MERGE` on SQL Server; use explicit `INSERT ... WHERE NOT EXISTS`, `UPDATE ... FROM`, `DELETE ... WHERE NOT EXISTS`.
+
+### Example: per-resource edge projection query (StudentSchoolAssociation)
+
+This is an illustrative “edge projection query” for a single resource type, generated from the derived relational model and ApiSchema reference bindings.
+
+**PostgreSQL (sketch)**
+
+```sql
+-- Input: parent_document_id bigint
+SELECT ChildDocumentId, bool_or(IsIdentityComponent) AS IsIdentityComponent
+FROM (
+    -- Root table FK sites
+    SELECT r.Student_DocumentId AS ChildDocumentId, true  AS IsIdentityComponent
+    FROM edfi.StudentSchoolAssociation r
+    WHERE r.DocumentId = parent_document_id AND r.Student_DocumentId IS NOT NULL
+
+    UNION ALL
+    SELECT r.School_DocumentId, true
+    FROM edfi.StudentSchoolAssociation r
+    WHERE r.DocumentId = parent_document_id AND r.School_DocumentId IS NOT NULL
+
+    -- Child table FK sites
+    UNION ALL
+    SELECT c.Program_DocumentId, false
+    FROM edfi.StudentSchoolAssociationProgramParticipation c
+    WHERE c.StudentSchoolAssociation_DocumentId = parent_document_id AND c.Program_DocumentId IS NOT NULL
+) x
+GROUP BY ChildDocumentId;
+```
+
+**SQL Server (sketch)**
+
+```sql
+-- Input: @ParentDocumentId bigint
+SELECT x.ChildDocumentId,
+       CAST(MAX(CAST(x.IsIdentityComponent AS int)) AS bit) AS IsIdentityComponent
+FROM (
+    SELECT r.Student_DocumentId AS ChildDocumentId, CAST(1 AS bit) AS IsIdentityComponent
+    FROM edfi.StudentSchoolAssociation r
+    WHERE r.DocumentId = @ParentDocumentId AND r.Student_DocumentId IS NOT NULL
+
+    UNION ALL
+    SELECT r.School_DocumentId, CAST(1 AS bit)
+    FROM edfi.StudentSchoolAssociation r
+    WHERE r.DocumentId = @ParentDocumentId AND r.School_DocumentId IS NOT NULL
+
+    UNION ALL
+    SELECT c.Program_DocumentId, CAST(0 AS bit)
+    FROM edfi.StudentSchoolAssociationProgramParticipation c
+    WHERE c.StudentSchoolAssociation_DocumentId = @ParentDocumentId AND c.Program_DocumentId IS NOT NULL
+) x
+GROUP BY x.ChildDocumentId;
+```
+
+### Example: `dms.RecomputeReferenceEdges` (generated routine)
+
+In practice, the DDL generator will emit a resource-specific body (or a dispatcher that selects the resource-specific projection) so the routine can project the FK graph for the resource being written.
+
+**PostgreSQL (sketch)**
+
+```sql
+CREATE OR REPLACE PROCEDURE dms.RecomputeReferenceEdges(parent_document_id bigint)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  CREATE TEMP TABLE reference_edge_expected (
+      ParentDocumentId bigint NOT NULL,
+      ChildDocumentId  bigint NOT NULL,
+      IsIdentityComponent boolean NOT NULL,
+      PRIMARY KEY (ParentDocumentId, ChildDocumentId)
+  ) ON COMMIT DROP;
+
+  -- Example projection for StudentSchoolAssociation (see above), collapsed by OR:
+  INSERT INTO reference_edge_expected (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+  SELECT parent_document_id, ChildDocumentId, bool_or(IsIdentityComponent)
+  FROM (
+      SELECT r.Student_DocumentId AS ChildDocumentId, true AS IsIdentityComponent
+      FROM edfi.StudentSchoolAssociation r
+      WHERE r.DocumentId = parent_document_id AND r.Student_DocumentId IS NOT NULL
+
+      UNION ALL
+      SELECT r.School_DocumentId, true
+      FROM edfi.StudentSchoolAssociation r
+      WHERE r.DocumentId = parent_document_id AND r.School_DocumentId IS NOT NULL
+
+      UNION ALL
+      SELECT c.Program_DocumentId, false
+      FROM edfi.StudentSchoolAssociationProgramParticipation c
+      WHERE c.StudentSchoolAssociation_DocumentId = parent_document_id AND c.Program_DocumentId IS NOT NULL
+  ) x
+  GROUP BY ChildDocumentId;
+
+  -- Insert missing
+  INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+  SELECT e.ParentDocumentId, e.ChildDocumentId, e.IsIdentityComponent
+  FROM reference_edge_expected e
+  LEFT JOIN dms.ReferenceEdge re
+    ON re.ParentDocumentId = e.ParentDocumentId
+   AND re.ChildDocumentId  = e.ChildDocumentId
+  WHERE re.ParentDocumentId IS NULL;
+
+  -- Update changed
+  UPDATE dms.ReferenceEdge re
+  SET IsIdentityComponent = e.IsIdentityComponent
+  FROM reference_edge_expected e
+  WHERE re.ParentDocumentId = e.ParentDocumentId
+    AND re.ChildDocumentId  = e.ChildDocumentId
+    AND re.IsIdentityComponent IS DISTINCT FROM e.IsIdentityComponent;
+
+  -- Delete stale
+  DELETE FROM dms.ReferenceEdge re
+  WHERE re.ParentDocumentId = parent_document_id
+    AND NOT EXISTS (
+      SELECT 1
+      FROM reference_edge_expected e
+      WHERE e.ParentDocumentId = re.ParentDocumentId
+        AND e.ChildDocumentId  = re.ChildDocumentId
+    );
+END;
+$$;
+```
+
+**SQL Server (sketch)**
+
+```sql
+CREATE OR ALTER PROCEDURE dms.RecomputeReferenceEdges
+    @ParentDocumentId bigint
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    CREATE TABLE #expected (
+        ParentDocumentId bigint NOT NULL,
+        ChildDocumentId  bigint NOT NULL,
+        IsIdentityComponent bit NOT NULL,
+        CONSTRAINT PK_expected PRIMARY KEY (ParentDocumentId, ChildDocumentId)
+    );
+
+    -- Example projection for StudentSchoolAssociation (see above), collapsed by OR:
+    INSERT INTO #expected (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+    SELECT @ParentDocumentId,
+           x.ChildDocumentId,
+           CAST(MAX(CAST(x.IsIdentityComponent AS int)) AS bit) AS IsIdentityComponent
+    FROM (
+        SELECT r.Student_DocumentId AS ChildDocumentId, CAST(1 AS bit) AS IsIdentityComponent
+        FROM edfi.StudentSchoolAssociation r
+        WHERE r.DocumentId = @ParentDocumentId AND r.Student_DocumentId IS NOT NULL
+
+        UNION ALL
+        SELECT r.School_DocumentId, CAST(1 AS bit)
+        FROM edfi.StudentSchoolAssociation r
+        WHERE r.DocumentId = @ParentDocumentId AND r.School_DocumentId IS NOT NULL
+
+        UNION ALL
+        SELECT c.Program_DocumentId, CAST(0 AS bit)
+        FROM edfi.StudentSchoolAssociationProgramParticipation c
+        WHERE c.StudentSchoolAssociation_DocumentId = @ParentDocumentId AND c.Program_DocumentId IS NOT NULL
+    ) x
+    GROUP BY x.ChildDocumentId;
+
+    -- Insert missing
+    INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+    SELECT e.ParentDocumentId, e.ChildDocumentId, e.IsIdentityComponent
+    FROM #expected e
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM dms.ReferenceEdge re WITH (UPDLOCK, HOLDLOCK)
+        WHERE re.ParentDocumentId = e.ParentDocumentId
+          AND re.ChildDocumentId  = e.ChildDocumentId
+    );
+
+    -- Update changed
+    UPDATE re
+    SET IsIdentityComponent = e.IsIdentityComponent
+    FROM dms.ReferenceEdge re
+    JOIN #expected e
+      ON e.ParentDocumentId = re.ParentDocumentId
+     AND e.ChildDocumentId  = re.ChildDocumentId
+    WHERE re.IsIdentityComponent <> e.IsIdentityComponent;
+
+    -- Delete stale
+    DELETE re
+    FROM dms.ReferenceEdge re
+    WHERE re.ParentDocumentId = @ParentDocumentId
+      AND NOT EXISTS (
+        SELECT 1
+        FROM #expected e
+        WHERE e.ParentDocumentId = re.ParentDocumentId
+          AND e.ChildDocumentId  = re.ChildDocumentId
+      );
+END;
+```
 
 ## Touch cascade (non-identity referrers only)
 
@@ -366,6 +703,144 @@ The trigger must match Core’s referential-id computation exactly:
 This implies the DDL generator must also provision a deterministic UUIDv5 function per engine (or rely on an approved extension where available), and emit per-resource trigger expressions for the ordered identity concatenation.
 
 Subclass/superclass alias rows (polymorphic identity behavior) are maintained the same way (up to two rows per document).
+
+#### Example: per-resource referential-identity + version-stamping trigger (StudentSchoolAssociation)
+
+This example shows a per-resource trigger recomputing and upserting `dms.ReferentialIdentity` from locally present identity columns (including propagated identity-component values) and stamping `dms.Document.IdentityVersion`/`ContentVersion` when the identity projection changes.
+
+Notes:
+- The DDL generator inlines the correct `ResourceKeyId` for the table and the ordered identity concatenation for that resource’s `identityJsonPaths`.
+- The UUIDv5 helper is assumed to exist (example name: `dms.uuid_v5(namespace_uuid, name_text)` / `dms.fn_uuid_v5(...)`).
+
+**PostgreSQL (sketch)**
+
+```sql
+CREATE OR REPLACE FUNCTION edfi.trg_ssa_referential_identity_upsert()
+RETURNS trigger AS
+$$
+DECLARE
+  resource_key_id smallint := 123; -- generated constant for edfi.StudentSchoolAssociation
+  namespace_uuid uuid := '00000000-0000-0000-0000-000000000000'; -- generated constant (UUIDv5 namespace)
+  resource_info text := 'EdFiStudentSchoolAssociation'; -- generated canonical resource info string
+  identity_text text;
+  referential_id uuid;
+  stamp bigint;
+BEGIN
+  -- Avoid stamping on no-op updates.
+  IF TG_OP = 'UPDATE'
+     AND NEW.Student_StudentUniqueId IS NOT DISTINCT FROM OLD.Student_StudentUniqueId
+     AND NEW.School_SchoolId        IS NOT DISTINCT FROM OLD.School_SchoolId
+     AND NEW.EntryDate              IS NOT DISTINCT FROM OLD.EntryDate
+  THEN
+    RETURN NEW;
+  END IF;
+
+  -- Ordered identity concatenation (generated for identityJsonPaths)
+  identity_text :=
+      '$.studentReference.studentUniqueId=' || NEW.Student_StudentUniqueId
+   || '#$.schoolReference.schoolId='        || NEW.School_SchoolId
+   || '#$.entryDate='                      || to_char(NEW.EntryDate, 'YYYY-MM-DD');
+
+  referential_id := dms.uuid_v5(namespace_uuid, resource_info || identity_text);
+
+  -- Upsert by (DocumentId, ResourceKeyId); update sets the new ReferentialId (PK update).
+  INSERT INTO dms.ReferentialIdentity (ReferentialId, DocumentId, ResourceKeyId)
+  VALUES (referential_id, NEW.DocumentId, resource_key_id)
+  ON CONFLICT (DocumentId, ResourceKeyId) DO UPDATE
+    SET ReferentialId = EXCLUDED.ReferentialId;
+
+  -- Stamp identity + served representation metadata.
+  -- Use one stamp value for both IdentityVersion and ContentVersion.
+  stamp := nextval('dms.ChangeVersionSequence');
+  UPDATE dms.Document d
+  SET
+      IdentityVersion = stamp,
+      IdentityLastModifiedAt = now(),
+      ContentVersion = stamp,
+      ContentLastModifiedAt = now()
+  WHERE d.DocumentId = NEW.DocumentId;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER TR_SSA_ReferentialIdentity_Upsert
+AFTER INSERT OR UPDATE OF Student_StudentUniqueId, School_SchoolId, EntryDate
+ON edfi.StudentSchoolAssociation
+FOR EACH ROW
+EXECUTE FUNCTION edfi.trg_ssa_referential_identity_upsert();
+```
+
+**SQL Server (sketch)**
+
+```sql
+CREATE OR ALTER TRIGGER edfi.TR_SSA_ReferentialIdentity_Upsert
+ON edfi.StudentSchoolAssociation
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    DECLARE @ResourceKeyId smallint = 123; -- generated constant for edfi.StudentSchoolAssociation
+    DECLARE @Namespace uniqueidentifier = '00000000-0000-0000-0000-000000000000'; -- generated UUIDv5 namespace
+    DECLARE @ResourceInfo nvarchar(256) = N'EdFiStudentSchoolAssociation'; -- generated canonical resource info string
+
+    ;WITH changed AS (
+        SELECT i.DocumentId,
+               i.Student_StudentUniqueId,
+               i.School_SchoolId,
+               i.EntryDate
+        FROM inserted i
+        LEFT JOIN deleted d ON d.DocumentId = i.DocumentId
+        WHERE d.DocumentId IS NULL
+           OR i.Student_StudentUniqueId <> d.Student_StudentUniqueId
+           OR i.School_SchoolId        <> d.School_SchoolId
+           OR i.EntryDate              <> d.EntryDate
+    ),
+    computed AS (
+        SELECT
+            c.DocumentId,
+            dms.fn_uuid_v5(
+                @Namespace,
+                @ResourceInfo
+                + N'$.studentReference.studentUniqueId=' + c.Student_StudentUniqueId
+                + N'#$.schoolReference.schoolId='        + CAST(c.School_SchoolId AS nvarchar(32))
+                + N'#$.entryDate='                      + CONVERT(nvarchar(10), c.EntryDate, 23)
+            ) AS ReferentialId
+        FROM changed c
+    )
+    -- Update existing
+    UPDATE ri
+    SET ri.ReferentialId = c.ReferentialId
+    FROM dms.ReferentialIdentity ri
+    JOIN computed c
+      ON c.DocumentId = ri.DocumentId
+     AND ri.ResourceKeyId = @ResourceKeyId;
+
+    -- Insert missing
+    INSERT INTO dms.ReferentialIdentity (ReferentialId, DocumentId, ResourceKeyId)
+    SELECT c.ReferentialId, c.DocumentId, @ResourceKeyId
+    FROM computed c
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM dms.ReferentialIdentity ri
+        WHERE ri.DocumentId = c.DocumentId
+          AND ri.ResourceKeyId = @ResourceKeyId
+    );
+
+    -- Stamp identity + served representation metadata.
+    UPDATE d
+    SET
+        d.IdentityVersion = s.Stamp,
+        d.IdentityLastModifiedAt = sysutcdatetime(),
+        d.ContentVersion = s.Stamp,
+        d.ContentLastModifiedAt = sysutcdatetime()
+    FROM dms.Document d
+    JOIN computed c ON c.DocumentId = d.DocumentId
+    CROSS APPLY (SELECT NEXT VALUE FOR dms.ChangeVersionSequence AS Stamp) s;
+END;
+GO
+```
 
 ### IdentityVersion stamping
 
