@@ -137,9 +137,9 @@ internal class CachedProfileService(
                     var fetchResults = await Task.WhenAll(fetchTasks);
 
                     // Process results
-                    var profilesByName = new Dictionary<string, ProfileDefinition>(
-                        StringComparer.OrdinalIgnoreCase
-                    );
+                    // Note: We use lowercase keys instead of StringComparer.OrdinalIgnoreCase because
+                    // HybridCache serialization loses the comparer. Lookups must also use ToLowerInvariant().
+                    var profilesByName = new Dictionary<string, ProfileDefinition>();
                     var assignedProfileNames = new List<string>();
 
                     foreach (var (profileId, profileResponse) in fetchResults)
@@ -170,7 +170,7 @@ internal class CachedProfileService(
                             continue;
                         }
 
-                        profilesByName[parseResult.Definition.ProfileName] = parseResult.Definition;
+                        profilesByName[parseResult.Definition.ProfileName.ToLowerInvariant()] = parseResult.Definition;
                         assignedProfileNames.Add(parseResult.Definition.ProfileName);
                     }
 
@@ -226,9 +226,10 @@ internal class CachedProfileService(
     )
     {
         // Check if the profile is assigned to this application
+        // Note: Keys are stored in lowercase - see comment in GetOrFetchApplicationProfilesAsync
         if (
             !cachedProfiles.ProfilesByName.TryGetValue(
-                parsedHeader.ProfileName,
+                parsedHeader.ProfileName.ToLowerInvariant(),
                 out ProfileDefinition? profileDefinition
             )
         )
