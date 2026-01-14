@@ -84,15 +84,24 @@ Have the DDL generator emit a single view in `dms` that unions every document-re
 ```sql
 CREATE VIEW dms.AllDocumentReferences AS
     -- One branch per DocumentFk column across all root/child tables.
-    SELECT DocumentId AS ParentDocumentId, School_DocumentId AS ChildDocumentId
+    SELECT
+        DocumentId AS ParentDocumentId,
+        School_DocumentId AS ChildDocumentId,
+        CAST(1 AS boolean) AS IsIdentityComponent
     FROM edfi.StudentSchoolAssociation
     WHERE School_DocumentId IS NOT NULL
 UNION ALL
-    SELECT DocumentId AS ParentDocumentId, Student_DocumentId AS ChildDocumentId
+    SELECT
+        DocumentId AS ParentDocumentId,
+        Student_DocumentId AS ChildDocumentId,
+        CAST(0 AS boolean) AS IsIdentityComponent
     FROM edfi.StudentSchoolAssociation
     WHERE Student_DocumentId IS NOT NULL
 UNION ALL
-    SELECT DocumentId AS ParentDocumentId, ClassPeriod_DocumentId AS ChildDocumentId
+    SELECT
+        DocumentId AS ParentDocumentId,
+        ClassPeriod_DocumentId AS ChildDocumentId,
+        CAST(0 AS boolean) AS IsIdentityComponent
     FROM edfi.SectionClassPeriod
     WHERE ClassPeriod_DocumentId IS NOT NULL
 -- ... etc for every DocumentFk site derived from ApiSchema (descriptors excluded)
@@ -102,6 +111,9 @@ UNION ALL
 Properties:
 - **Correct-by-construction**: it is defined from the physical FK columns; there is no separately maintained cache that can drift.
 - Handles nested collections: child tables also carry the root `DocumentId` (as the first parent key part).
+- Supports “no double touch” logic when paired with identity-component natural-key propagation:
+  - `IsIdentityComponent=true` for FK sites that participate in the referencing document’s identity (`identityJsonPaths`).
+  - `IsIdentityComponent=false` for all other FK sites (representation dependencies that do not participate in identity).
 
 Indexing requirement:
 - every `..._DocumentId` column must have an index to support reverse lookups without scanning.
@@ -126,6 +138,23 @@ This alternative leverages the same signal:
 - identity correctness remains application-driven (or separately redesigned), and
 - the database uses `IdentityVersion` changes to drive representation-touch cascades.
 
+### Avoiding “double touch” when identity-component cascades exist
+
+If you pair this touch-cascade design with **natural-key propagation** for identity-component references (see `alternatives/ods-style-natural-key-cascades.md`):
+
+- identity-component referrers will already experience a *local* update (their identity columns are rewritten by `ON UPDATE CASCADE`), and
+- your normal “local update” stamping will already update their representation metadata.
+
+In that hybrid, the touch cascade should target **only** referrers whose dependency on the changed child is **non-identity**.
+
+Concretely, for a set of changed child `DocumentId`s:
+
+- `NonIdentityReferrers(child)` = parents that reference `child` at any `IsIdentityComponent=false` site
+- `IdentityReferrers(child)` = parents that reference `child` at any `IsIdentityComponent=true` site
+- `TouchTargets(child) = NonIdentityReferrers(child) \ IdentityReferrers(child)`
+
+This also handles the corner case where the same parent references the same child in multiple places (some identity-component, some not): if any identity-component site exists, the parent is excluded from touch (because it will already be locally updated by natural-key propagation).
+
 ### PostgreSQL sketch (statement-level trigger on `dms.Document`)
 
 ```sql
@@ -140,17 +169,30 @@ BEGIN
       JOIN deleted  d ON d.DocumentId = i.DocumentId
       WHERE i.IdentityVersion IS DISTINCT FROM d.IdentityVersion
   ),
-  impacted_parents AS (
+  non_identity_referrers AS (
       SELECT DISTINCT r.ParentDocumentId
       FROM dms.AllDocumentReferences r
       JOIN changed_children c
         ON c.DocumentId = r.ChildDocumentId
+      WHERE r.IsIdentityComponent = false
+  ),
+  identity_referrers AS (
+      SELECT DISTINCT r.ParentDocumentId
+      FROM dms.AllDocumentReferences r
+      JOIN changed_children c
+        ON c.DocumentId = r.ChildDocumentId
+      WHERE r.IsIdentityComponent = true
+  ),
+  touch_targets AS (
+      SELECT ParentDocumentId FROM non_identity_referrers
+      EXCEPT
+      SELECT ParentDocumentId FROM identity_referrers
   )
   UPDATE dms.Document p
   SET
       RepresentationChangeVersion = nextval('dms.ChangeVersionSequence'),
       RepresentationLastModifiedAt = now()
-  WHERE p.DocumentId IN (SELECT ParentDocumentId FROM impacted_parents);
+  WHERE p.DocumentId IN (SELECT ParentDocumentId FROM touch_targets);
 
   RETURN NULL;
 END;
@@ -184,17 +226,29 @@ BEGIN
         JOIN deleted  d ON d.DocumentId = i.DocumentId
         WHERE i.IdentityVersion <> d.IdentityVersion
     ),
-    impacted_parents AS (
+    non_identity_referrers AS (
         SELECT DISTINCT r.ParentDocumentId
         FROM dms.AllDocumentReferences r
         JOIN changed_children c ON c.DocumentId = r.ChildDocumentId
+        WHERE r.IsIdentityComponent = 0
+    ),
+    identity_referrers AS (
+        SELECT DISTINCT r.ParentDocumentId
+        FROM dms.AllDocumentReferences r
+        JOIN changed_children c ON c.DocumentId = r.ChildDocumentId
+        WHERE r.IsIdentityComponent = 1
+    ),
+    touch_targets AS (
+        SELECT ParentDocumentId FROM non_identity_referrers
+        EXCEPT
+        SELECT ParentDocumentId FROM identity_referrers
     )
     UPDATE p
     SET
         RepresentationChangeVersion = NEXT VALUE FOR dms.ChangeVersionSequence,
         RepresentationLastModifiedAt = sysutcdatetime()
     FROM dms.Document p
-    JOIN impacted_parents ip ON ip.ParentDocumentId = p.DocumentId;
+    JOIN touch_targets t ON t.ParentDocumentId = p.DocumentId;
 END;
 ```
 
