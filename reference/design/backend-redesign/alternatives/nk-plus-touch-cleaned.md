@@ -116,6 +116,18 @@ This alternative must extend the baseline naming rules in `reference/design/back
   - name shortening/truncation effects on long paths.
 - Use `resourceSchema.relational.nameOverrides` on full JSON paths (e.g., `$.studentReference.studentUniqueId`) to resolve any remaining collisions, and apply the baseline truncation+hash rule when dialect identifier limits are exceeded.
 
+#### Query compilation benefit (partial reference filters)
+
+One benefit of materializing referenced identity fields into columns is that **query filters on reference identity parts** can be evaluated locally on the querying resource’s root table, without a set-based lookup against the referenced resource table.
+
+- For any reference site where propagated identity columns exist (this alternative’s default: **identity-component** reference sites), a `queryFieldMapping` entry that points into that reference object (e.g., `$.assessmentReference.assessmentIdentifier`) can compile to:
+  - `WHERE r.Assessment_AssessmentIdentifier = @value` (and/or additional identity-part predicates), rather than:
+  - `WHERE r.Assessment_DocumentId IN (SELECT a.DocumentId FROM edfi.Assessment a WHERE a.AssessmentIdentifier = @value ...)`.
+- This naturally supports **partial referenced identities** (e.g., 2-part reference identity where the client supplies only 1 part): the query becomes a predicate on the available propagated columns.
+
+Caveats:
+- In this alternative, non-identity reference sites remain `DocumentId`-only and still require the baseline set-based lookup/join approach for partial identity filters.
+
 ### B) Non-identity document references stay `DocumentId`-only
 
 For non-identity references:
