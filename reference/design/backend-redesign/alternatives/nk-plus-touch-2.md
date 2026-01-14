@@ -181,8 +181,9 @@ Each trigger computes deltas as a set of `(ParentDocumentId, ChildDocumentId, Id
 - For updates: treat as “deleted old + inserted new” (the `inserted`/`deleted` transition tables already provide this), but emit deltas only for FK columns whose value changed to avoid unnecessary writes.
 
 Then:
-1. Apply deltas to `dms.ReferenceEdge` (upsert for positives, update for negatives).
-2. Delete any edges where counts reach zero (both counts are `0`).
+1. Aggregate deltas per `(ParentDocumentId, ChildDocumentId)` (both counts can be positive or negative in the same statement).
+2. Apply the aggregated deltas to the stored counts in `dms.ReferenceEdge` in a way that correctly handles **mixed-sign** deltas.
+3. Delete any edges that reach zero counts, **scoped to the touched keys** (avoid full-table scans).
 
 ### PostgreSQL sketch (statement-level trigger with transition tables)
 
@@ -242,36 +243,26 @@ BEGIN
           SUM(NonIdentityDelta) AS NonIdentityDelta
       FROM deltas
       GROUP BY ParentDocumentId, ChildDocumentId
+      HAVING SUM(IdentityDelta) <> 0 OR SUM(NonIdentityDelta) <> 0
   ),
-  pos AS (
-      SELECT * FROM agg
-      WHERE IdentityDelta > 0 OR NonIdentityDelta > 0
-  ),
-  neg AS (
-      SELECT * FROM agg
-      WHERE IdentityDelta < 0 OR NonIdentityDelta < 0
+  upserted AS (
+      -- Apply deltas in one upsert to correctly handle mixed-sign deltas.
+      -- If a negative delta appears for a missing edge row, the CHECK constraint should fail fast.
+      INSERT INTO dms.ReferenceEdge(ParentDocumentId, ChildDocumentId, IdentityRefCount, NonIdentityRefCount)
+      SELECT ParentDocumentId, ChildDocumentId, IdentityDelta, NonIdentityDelta
+      FROM agg
+      ON CONFLICT (ParentDocumentId, ChildDocumentId)
+      DO UPDATE SET
+          IdentityRefCount = dms.ReferenceEdge.IdentityRefCount + EXCLUDED.IdentityRefCount,
+          NonIdentityRefCount = dms.ReferenceEdge.NonIdentityRefCount + EXCLUDED.NonIdentityRefCount
+      RETURNING ParentDocumentId, ChildDocumentId
   )
-  -- Apply positive deltas (insert or increment)
-  INSERT INTO dms.ReferenceEdge(ParentDocumentId, ChildDocumentId, IdentityRefCount, NonIdentityRefCount)
-  SELECT ParentDocumentId, ChildDocumentId, IdentityDelta, NonIdentityDelta
-  FROM pos
-  ON CONFLICT (ParentDocumentId, ChildDocumentId)
-  DO UPDATE SET
-      IdentityRefCount = dms.ReferenceEdge.IdentityRefCount + EXCLUDED.IdentityRefCount,
-      NonIdentityRefCount = dms.ReferenceEdge.NonIdentityRefCount + EXCLUDED.NonIdentityRefCount;
-
-  -- Apply negative deltas (must hit existing rows; CK ensures non-negative)
-  UPDATE dms.ReferenceEdge e
-  SET
-      IdentityRefCount = e.IdentityRefCount + n.IdentityDelta,
-      NonIdentityRefCount = e.NonIdentityRefCount + n.NonIdentityDelta
-  FROM neg n
-  WHERE e.ParentDocumentId = n.ParentDocumentId
-    AND e.ChildDocumentId  = n.ChildDocumentId;
-
-  -- Remove zero edges (counts can reach 0/0 after both decremented to zero)
+  -- Remove zero edges, scoped to keys touched by this statement.
   DELETE FROM dms.ReferenceEdge e
-  WHERE e.IdentityRefCount = 0 AND e.NonIdentityRefCount = 0;
+  USING upserted u
+  WHERE e.ParentDocumentId = u.ParentDocumentId
+    AND e.ChildDocumentId  = u.ChildDocumentId
+    AND e.IdentityRefCount = 0 AND e.NonIdentityRefCount = 0;
 
   RETURN NULL;
 END;
@@ -344,8 +335,20 @@ BEGIN
             SUM(NonIdentityDelta) AS NonIdentityDelta
         FROM deltas
         GROUP BY ParentDocumentId, ChildDocumentId
+        HAVING SUM(IdentityDelta) <> 0 OR SUM(NonIdentityDelta) <> 0
     )
-    -- Apply deltas via UPDATE then INSERT (avoid MERGE)
+    -- Ensure edge rows exist (avoid MERGE; use locking hints to prevent duplicate inserts under concurrency).
+    INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IdentityRefCount, NonIdentityRefCount)
+    SELECT a.ParentDocumentId, a.ChildDocumentId, 0, 0
+    FROM agg a
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM dms.ReferenceEdge e WITH (UPDLOCK, HOLDLOCK)
+        WHERE e.ParentDocumentId = a.ParentDocumentId
+          AND e.ChildDocumentId  = a.ChildDocumentId
+    );
+
+    -- Apply deltas (supports mixed-sign deltas; CHECK constraint enforces non-negative counts).
     UPDATE e
     SET
         IdentityRefCount = e.IdentityRefCount + a.IdentityDelta,
@@ -355,17 +358,12 @@ BEGIN
       ON a.ParentDocumentId = e.ParentDocumentId
      AND a.ChildDocumentId  = e.ChildDocumentId;
 
-    INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IdentityRefCount, NonIdentityRefCount)
-    SELECT a.ParentDocumentId, a.ChildDocumentId, a.IdentityDelta, a.NonIdentityDelta
-    FROM agg a
-    LEFT JOIN dms.ReferenceEdge e
-      ON e.ParentDocumentId = a.ParentDocumentId
-     AND e.ChildDocumentId  = a.ChildDocumentId
-    WHERE e.ParentDocumentId IS NULL
-      AND (a.IdentityDelta > 0 OR a.NonIdentityDelta > 0);
-
+    -- Remove zero edges, scoped to keys touched by this statement.
     DELETE e
     FROM dms.ReferenceEdge e
+    JOIN agg a
+      ON a.ParentDocumentId = e.ParentDocumentId
+     AND a.ChildDocumentId  = e.ChildDocumentId
     WHERE e.IdentityRefCount = 0 AND e.NonIdentityRefCount = 0;
 END;
 ```
