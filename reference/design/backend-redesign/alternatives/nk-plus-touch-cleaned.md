@@ -15,8 +15,8 @@ The alternative keeps the baseline relational storage model (tables-per-resource
 - **Reverse lookups for touch targeting** use a persisted adjacency list `dms.ReferenceEdge`, maintained by a **recompute/diff** routine invoked once per document write transaction.
 
 This trade is attractive only if:
-- identity/URI updates are enabled but operationally rare, and
-- the system is willing to accept potentially large synchronous fan-out during those rare events (with guardrails).
+- Identity updates are operationally rare, and
+- The system is willing to accept potentially large synchronous fan-out during those events.
 
 ## How this changes the baseline redesign (explicit deltas)
 
@@ -42,7 +42,7 @@ This alternative intentionally diverges from these baseline design points:
 ## Goals
 
 1. Preserve baseline’s relational-first storage and use of stable `DocumentId` FKs for referential integrity and query performance.
-2. Make identity/URI updates and their dependent effects fully correct at commit time (no stale window).
+2. Make identity updates and their dependent effects fully correct at commit time (no stale window).
 3. Provide ODS-like “indirect update” semantics for representation metadata using write-time updates:
    - if a referenced identity changes, referrers’ `_etag/_lastModifiedDate/ChangeVersion` must change.
 4. Avoid “double touch”: documents updated locally by identity-only propagation should not also be touched.
@@ -51,21 +51,20 @@ This alternative intentionally diverges from these baseline design points:
 ## Non-goals
 
 - Define the entire read path and query semantics (use baseline documents for flattening/reconstitution and query execution).
-- Solve authorization storage/filtering (out of scope as in the baseline redesign).
 
 ## Core concepts
 
 ### 1) Two dependency types
 
-For a parent document `P` that references document `C`:
+For a parent document that references a child document :
 
 1. **Identity component reference**
-   - `C`’s projected identity values participate in `P`’s identity (`identityJsonPaths`).
-   - If those projected values change, `P`’s `ReferentialId` must change.
+   - Child’s projected identity values participate in Parent’s identity (`identityJsonPaths`).
+   - If those projected values change, Parent’s `ReferentialId` must change.
 
 2. **Non-identity representation dependency**
-   - `C`’s projected identity values appear in `P`’s API representation (as a `{...}Reference` object), but do not participate in `P`’s identity.
-   - If they change, `P`’s representation metadata must change, but `P`’s `ReferentialId` does not.
+   - Child’s projected identity values appear in Parent’s API representation (as a `{...}Reference` object), but do not participate in Parent’s identity.
+   - If they change, Parent’s representation metadata must change, but Parent’s `ReferentialId` does not.
 
 ### 2) Two cascade mechanisms (different purposes)
 
@@ -93,6 +92,28 @@ For each **identity-component** document reference site (derived from ApiSchema)
 Result:
 - when the referenced identity value changes, the DB rewrites only the minimal identity-component columns on dependent rows;
 - downstream referential-id recompute triggers become row-local (no identity projection joins, no closure expansion).
+
+#### Write-path compatibility (flattening + minimal round-trips)
+
+Including these propagated natural-key columns is compatible with the baseline “flatten then insert” write path.
+
+- The flattener can set both:
+  - `<RefName>_DocumentId` (from the existing bulk `ReferentialId → DocumentId` resolution), and
+  - the propagated identity columns (directly from the request JSON at the reference-object paths),
+  without additional database reads.
+
+#### Column naming convention (avoid collisions)
+
+This alternative must extend the baseline naming rules in `reference/design/backend-redesign/data-model.md` (Naming Rules → Column names) for the new propagated identity columns.
+
+- Naming rule: for each propagated identity value sourced from a reference object, use:
+  - `{ReferenceBaseName}_{IdentityFieldBaseName}` (PascalCase components; underscore separator to match existing `{ReferenceBaseName}_DocumentId` convention).
+  - Example: `Student_DocumentId` + `Student_StudentUniqueId`; `School_DocumentId` + `School_SchoolId`.
+- Rationale: avoids collisions with:
+  - local scalar fields (e.g., a resource may already have `SchoolId`),
+  - multiple references that share identity field names (`EducationOrganizationId`, etc.), and
+  - name shortening/truncation effects on long paths.
+- Use `resourceSchema.relational.nameOverrides` on full JSON paths (e.g., `$.studentReference.studentUniqueId`) to resolve any remaining collisions, and apply the baseline truncation+hash rule when dialect identifier limits are exceeded.
 
 ### B) Non-identity document references stay `DocumentId`-only
 
@@ -130,7 +151,7 @@ To minimize schema width and align with the existing token columns, repurpose th
   - bump on touch cascades (indirect identity changes)
 - `dms.Document.IdentityVersion` / `IdentityLastModifiedAt` remain **identity projection** change signals and are used to trigger touch cascades.
 
-Change Query journals (`dms.DocumentChangeEvent`, `dms.IdentityChangeEvent`) can remain as in the baseline redesign, emitted by triggers on `dms.Document`, and will naturally include touched updates if they update `ContentVersion`.
+Change Query journaling can still use `dms.DocumentChangeEvent` as in the baseline redesign, emitted by triggers on `dms.Document`. Because touch cascades materialize indirect impacts as local `ContentVersion` updates on the touched parents, those touched rows naturally appear in the change journal.
 
 ### E) `dms.ReferenceEdge` (persisted reverse index; touch targeting + diagnostics)
 
@@ -143,6 +164,22 @@ This table is used for:
 - touch cascade targeting (`ChildDocumentId → ParentDocumentId`) for **non-identity** referrers
 - diagnostics (“who references me?”)
 - operational audit/rebuild targeting
+
+### Baseline tables that can be removed
+
+This alternative changes the baseline cascade and update-tracking mechanisms such that some baseline design core tables are no longer required:
+
+- `dms.IdentityLock` (baseline: `reference/design/backend-redesign/transactions-and-concurrency.md`)
+  - Baseline purpose: phantom-safe identity-closure locking for application-managed `dms.ReferentialIdentity` recompute and dependency-stable read-time algorithms.
+  - Alternative: identity correctness is maintained by DB cascade propagation + row-local triggers, and optimistic concurrency uses stored representation metadata (no dependency-token reads/locks). There is no application-managed identity-closure traversal to lock, so `dms.IdentityLock` is redundant.
+
+- `dms.IdentityChangeEvent` (baseline: `reference/design/backend-redesign/update-tracking.md` / `reference/design/backend-redesign/data-model.md`)
+  - Baseline purpose: expand indirectly impacted parents during Change Query selection (child identity changes + `dms.ReferenceEdge` reverse lookups).
+  - Alternative: indirect impacts are materialized immediately by the touch cascade as local `dms.Document.ContentVersion` updates on the parents, so Change Query selection does not need a separate “identity changed” journal.
+
+`dms.DocumentChangeEvent` is not strictly required, but is still recommended:
+- If you keep it, Change Query window scans remain narrow and index-friendly (same motivation as baseline).
+- If you drop it, Change Query selection must instead query/index `dms.Document` directly on `(ResourceKeyId, ContentVersion)` (or the chosen representation stamp), which can add hot, high-churn indexing pressure to `dms.Document`.
 
 ## `dms.ReferenceEdge` maintenance: recompute + diff (single call per write)
 
@@ -187,7 +224,7 @@ The generator emits a per-resource “edge projection query” that, given `@Par
 Given `ParentDocumentId = P`:
 
 1. Stage expected edges into a temp table `expected(ParentDocumentId, ChildDocumentId, IsIdentityComponent)`.
-2. Apply a diff to `dms.ReferenceEdge` scoped to `P`:
+2. Apply a diff to `dms.ReferenceEdge` scoped to Parent:
    - insert missing
    - update `IsIdentityComponent` changes
    - delete stale
@@ -393,4 +430,3 @@ To reduce risk of “two large cascades overlap and deadlock each other”, opti
 2. UUIDv5 implementation: do we accept an engine extension dependency (Postgres) and a custom implementation (SQL Server), or do we implement UUIDv5 in pure SQL for both engines?
 3. Recompute call placement: always recompute edges after every write, or only when `..._DocumentId` columns may have changed?
 4. Index defaults: do we require filtered/partial structures for high-cardinality hubs or `IsIdentityComponent=true` edges to reduce touch and audit cost?
-
