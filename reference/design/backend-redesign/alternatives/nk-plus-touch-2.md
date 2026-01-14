@@ -26,6 +26,7 @@ Key motivation:
 3. Preserve “no double touch” behavior from `alternatives/natural-key-plus-touch-cascades.md`.
 4. Maintain cross-engine feasibility (PostgreSQL + SQL Server).
 5. Ensure adjacency maintenance is set-based and does not require per-row procedural loops.
+6. Preserve strict ODS change-tracking semantics: touched parents must receive **unique per-row** `RepresentationChangeVersion` values so watermark-only clients (`minChangeVersion = last+1`) do not miss rows.
 
 ## Non-goals
 
@@ -400,6 +401,10 @@ With counts:
 
 ### Trigger sketch on `dms.Document` (PostgreSQL)
 
+ODS compatibility note:
+- Use **per-row** `RepresentationChangeVersion` allocation for touched parents (not “one stamp per statement/transaction”). This preserves the “single watermark” client contract used by ODS Change Queries (`minChangeVersion = last+1`) and avoids missing rows when many documents change in one cascade.
+- Reduce contention by (a) ensuring touch targets are distinct (each parent is updated once per triggering statement), and (b) using a sequence cache sized for your write volume (gaps on restart are acceptable under ODS semantics).
+
 ```sql
 CREATE OR REPLACE FUNCTION dms.trg_touch_referrers_on_identity_change()
 RETURNS trigger AS
@@ -427,12 +432,20 @@ BEGIN
       SELECT ParentDocumentId FROM non_identity_referrers
       EXCEPT
       SELECT ParentDocumentId FROM identity_referrers
+  ),
+  versioned_targets AS (
+      -- Allocate one version per touched parent (unique per row).
+      SELECT
+          t.ParentDocumentId,
+          nextval('dms.ChangeVersionSequence') AS NewRepresentationChangeVersion
+      FROM touch_targets t
   )
   UPDATE dms.Document p
   SET
-      RepresentationChangeVersion = nextval('dms.ChangeVersionSequence'),
+      RepresentationChangeVersion = v.NewRepresentationChangeVersion,
       RepresentationLastModifiedAt = now()
-  WHERE p.DocumentId IN (SELECT ParentDocumentId FROM touch_targets);
+  FROM versioned_targets v
+  WHERE p.DocumentId = v.ParentDocumentId;
 
   RETURN NULL;
 END;
@@ -442,6 +455,10 @@ $$ LANGUAGE plpgsql;
 ### SQL Server trigger sketch
 
 ```sql
+-- ODS compatibility: allocate a unique change version per touched parent row.
+--
+-- Contention reduction: reserve a contiguous sequence range once per statement with sys.sp_sequence_get_range,
+-- then assign first + row_number - 1 per parent (much less overhead than NEXT VALUE FOR per row).
 ;WITH changed_children AS (
     SELECT i.DocumentId
     FROM inserted i
@@ -465,12 +482,42 @@ touch_targets AS (
     EXCEPT
     SELECT ParentDocumentId FROM identity_referrers
 )
+IF OBJECT_ID('tempdb..#touch_targets') IS NOT NULL DROP TABLE #touch_targets;
+CREATE TABLE #touch_targets (ParentDocumentId bigint NOT NULL PRIMARY KEY);
+
+INSERT INTO #touch_targets (ParentDocumentId)
+SELECT ParentDocumentId FROM touch_targets;
+
+DECLARE @n int = (SELECT COUNT(*) FROM #touch_targets);
+IF @n = 0 RETURN;
+
+-- Optional guardrail (recommended): abort if fan-in is too large for the configured instance.
+-- IF @n > @MaxTouchedParents THROW 51000, 'Touch cascade too large; see operator guidance', 1;
+
+DECLARE @first bigint;
+EXEC sys.sp_sequence_get_range
+    @sequence_name      = N'dms.ChangeVersionSequence',
+    @range_size         = @n,
+    @range_first_value  = @first OUTPUT;
+
+;WITH ordered AS (
+    SELECT ParentDocumentId,
+           ROW_NUMBER() OVER (ORDER BY ParentDocumentId) - 1 AS rn0
+    FROM #touch_targets
+),
+versioned AS (
+    SELECT ParentDocumentId,
+           @first + rn0 AS NewRepresentationChangeVersion
+    FROM ordered
+)
 UPDATE p
 SET
-    RepresentationChangeVersion = NEXT VALUE FOR dms.ChangeVersionSequence,
+    RepresentationChangeVersion = v.NewRepresentationChangeVersion,
     RepresentationLastModifiedAt = sysutcdatetime()
 FROM dms.Document p
-JOIN touch_targets t ON t.ParentDocumentId = p.DocumentId;
+JOIN versioned v ON v.ParentDocumentId = p.DocumentId;
+
+DROP TABLE #touch_targets;
 ```
 
 ## Interaction with identity-only natural-key propagation
@@ -501,12 +548,40 @@ Important coupling point:
 Even with triggers:
 
 1. **Backfill/rebuild**: a job/procedure to rebuild `dms.ReferenceEdge` from the relational FK graph (offline or targeted).
-2. **Guardrails**: configurable limits (“max parents to touch per statement/transaction”) with a safe failure mode (abort with clear operator guidance).
+2. **Guardrails** (optional, strongly recommended): configurable limits (“max parents to touch per statement/transaction”) with a safe failure mode (abort with clear operator guidance).
+
+   ### Optional guardrail: max parents to touch (default 5,000)
+
+   Even if identity cascades are infrequent, *when they happen* they can be extreme “hub” events (a single changed child referenced by many parents). Because this design performs the touch in-transaction, an unbounded touch can create an operational incident:
+   - long-running write transactions (timeouts, blocking),
+   - lock contention/deadlocks (especially under concurrent writes),
+   - large log/WAL volume and replication/HA pressure,
+   - SQL Server lock escalation risk on large update sets,
+   - and “retry storms” if the API layer retries deadlocked transactions.
+
+   A simple, engine-agnostic guardrail is to cap the touch fan-in:
+
+   - **`MaxTouchParents`**: maximum number of **distinct** `ParentDocumentId`s in `TouchTargets(...)` for a single write/transaction.
+   - **Default**: `5_000`.
+
+   **Why 5,000?**
+   - It is already a very large synchronous fan-out for a single OLTP write; above this, the probability of unacceptable lock/log impact rises sharply.
+   - It is high enough to avoid tripping on typical fan-in patterns (most updates touch 0 or a small number of parents) while still preventing “hub” updates from silently degrading the whole system.
+   - It provides a clear operational boundary: if a change would touch >5k parents, treat it as an operator event (maintenance window and/or a temporarily raised limit) rather than a normal API write.
+
+   **Failure mode (fail-closed)**
+   - Before performing the `UPDATE dms.Document ... WHERE DocumentId IN (TouchTargets)`, compute `touch_count` (ideally short-circuiting at `MaxTouchParents + 1`).
+   - If `touch_count > MaxTouchParents`, **raise an error and abort the transaction**.
+   - The API maps this to a deterministic client error (e.g., `409 Conflict` or `422 Unprocessable Entity`) with a stable error code (e.g., `touchCascadeLimitExceeded`) and operator guidance (include `touch_count`, `MaxTouchParents`, and the triggering child `DocumentId`s).
+
+   Notes:
+   - This cap should be configurable per environment. A “maintenance override” mode can temporarily raise it, accepting the operational impact explicitly.
+   - The cap should be on **distinct parents**, not edges/rows, because multiple FK sites/rows can collapse to one parent touch.
 3. **Telemetry**: emit per-transaction metrics (number of identity changes, number of touched parents, time spent in touch trigger, deadlock retries).
 
 ## Open questions
 
-1. **Stamping granularity**: should touch assign one `RepresentationChangeVersion` per touched row (ODS-like) or one per triggering transaction?
+1. **Stamping granularity**: resolved for strict ODS compatibility — touch assigns one `RepresentationChangeVersion` per touched row (not one per triggering transaction/statement).
 2. **Counts vs recompute**: is incremental count maintenance worth the schema/trigger complexity, or is “recompute edges for affected parents” acceptable given expected write patterns?
 3. **Index strategy defaults**: do we require filtered/partial indexes for identity/non-identity edges, or only the general reverse index?
 4. **SQL Server cascade feasibility**: if `ON UPDATE CASCADE` is constrained by “multiple cascade paths” rules, does the identity-only propagation still hold, or do we need trigger-based propagation (reintroducing ODS-like trigger complexity)?
