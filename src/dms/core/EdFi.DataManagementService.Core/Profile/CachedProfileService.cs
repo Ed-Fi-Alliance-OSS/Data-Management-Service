@@ -237,7 +237,7 @@ internal class CachedProfileService(
             string availableProfiles = string.Join(
                 ", ",
                 cachedProfiles.AssignedProfileNames.Select(name =>
-                    $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable)}'"
+                    $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, GetUsageTypeForMethod(method))}'"
                 )
             );
 
@@ -379,7 +379,7 @@ internal class CachedProfileService(
         string availableProfiles = string.Join(
             ", ",
             applicableProfiles.Select(p =>
-                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), p.ProfileName, method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable)}'"
+                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), p.ProfileName, GetUsageTypeForMethod(method))}'"
             )
         );
 
@@ -396,6 +396,13 @@ internal class CachedProfileService(
             )
         );
     }
+
+    /// <summary>
+    /// Determines the appropriate ProfileUsageType based on the HTTP method.
+    /// GET requests use Readable, all other methods use Writable.
+    /// </summary>
+    private static ProfileUsageType GetUsageTypeForMethod(RequestMethod method) =>
+        method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable;
 
     private static ProfileResolutionResult? ValidateUsageType(
         ProfileUsageType usageType,

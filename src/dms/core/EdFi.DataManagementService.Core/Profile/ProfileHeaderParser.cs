@@ -47,8 +47,11 @@ public static class ProfileHeaderParser
 {
     // Pattern: application/vnd.ed-fi.{resource}.{profile}.{usage}+json
     // Captures: resource, profile, usage
-    // Note: Resource names are camelCase (no hyphens), profile names can contain hyphens
-    private static readonly Regex ProfileHeaderRegex = new(
+    // Note: Resource names are camelCase (no hyphens), profile names can contain hyphens.
+    // Case-sensitivity: Parsing is case-insensitive (accepts "Student" or "student"),
+    // but the original case is preserved in ParsedProfileHeader for downstream matching.
+    // BuildProfileContentType normalizes to lowercase for consistent output.
+    private static readonly Regex _profileHeaderRegex = new(
         @"^application/vnd\.ed-fi\.(?<resource>[a-zA-Z][a-zA-Z0-9]*)\.(?<profile>[a-zA-Z][a-zA-Z0-9-]*)\.(?<usage>readable|writable)\+json$",
         RegexOptions.Compiled | RegexOptions.IgnoreCase
     );
@@ -74,7 +77,7 @@ public static class ProfileHeaderParser
         // Check if it looks like it should be a profile header but is malformed
         if (headerValue.StartsWith("application/vnd.ed-fi.", StringComparison.OrdinalIgnoreCase))
         {
-            Match match = ProfileHeaderRegex.Match(headerValue.Trim());
+            Match match = _profileHeaderRegex.Match(headerValue.Trim());
             if (!match.Success)
             {
                 return ProfileHeaderParseResult.Failure(

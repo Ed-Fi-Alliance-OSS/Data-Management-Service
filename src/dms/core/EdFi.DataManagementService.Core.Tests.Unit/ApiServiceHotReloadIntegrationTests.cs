@@ -440,18 +440,18 @@ public class ApiServiceHotReloadIntegrationTests
         var filePath = Path.Combine(_testDirectory, fileName);
         const int MaxRetries = 5;
 
-        for (int attempt = 0; attempt < MaxRetries; attempt++)
+        for (int retryAttempt = 0; retryAttempt < MaxRetries; retryAttempt++)
         {
             try
             {
                 await File.WriteAllTextAsync(filePath, content);
                 return;
             }
-            catch (IOException) when (attempt < MaxRetries - 1)
+            catch (IOException) when (retryAttempt < MaxRetries - 1)
             {
                 // On Windows, concurrent file access can cause conflicts.
                 // Retry with exponential backoff.
-                await Task.Delay(TimeSpan.FromMilliseconds(10 * Math.Pow(2, attempt)));
+                await Task.Delay(TimeSpan.FromMilliseconds(10 * Math.Pow(2, retryAttempt)));
             }
         }
     }
