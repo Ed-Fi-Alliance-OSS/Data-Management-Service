@@ -855,9 +855,30 @@ Touch cascades are triggered by the `IdentityVersion` change.
 
 This alternative makes cascades synchronous and write-amplifying, so it must have an explicit “bounded failure” story.
 
+### Locking model (why no special lock table)
+
+This alternative does **not** use a baseline-style “special” lock protocol (e.g., `dms.IdentityLock`) because it removes the baseline’s main reason for it: **application-managed impacted-set discovery** (identity-closure traversal / dependency scans) that must be made phantom-safe.
+
+Instead:
+
+- **Identity correctness is enforced by the database** via composite foreign keys and `ON UPDATE CASCADE` for identity-component sites. The database must take whatever locks are required on the referenced key and dependent rows to maintain referential integrity and apply the cascade. This prevents “missed dependents” without needing application-managed closure locking.
+- **Derived artifacts are updated in the same transaction** via normal `UPDATE/INSERT/DELETE` statements in triggers/procedures:
+  - `dms.ReferentialIdentity` upserts take locks on the affected index entries/rows.
+  - `dms.Document` version stamps (`IdentityVersion`/`ContentVersion`) take row locks on the stamped document row(s).
+  - `dms.ReferenceEdge` recompute/diff takes row/key locks on the affected edge rows for the parent document.
+
+So locking still exists, but it is the database’s **standard row/key locking** implied by:
+- the cascaded FK updates,
+- the trigger/procedure statements, and
+- normal unique/foreign-key enforcement.
+
+This does **not** eliminate deadlocks or contention risk. It means this design relies on the database to provide correctness under concurrency, while the system still needs operational hardening (ordering, timeouts, retries, and guardrails) to handle worst-case fan-out.
+
 ### Database isolation defaults
 
-- SQL Server: strongly recommend MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, optionally `ALLOW_SNAPSHOT_ISOLATION ON`) to reduce deadlocks from readers of `dms.ReferenceEdge` during concurrent writes.
+- SQL Server: strongly recommend MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, optionally `ALLOW_SNAPSHOT_ISOLATION ON`) to reduce deadlocks and blocking caused by readers during concurrent writes.
+  - Why: without MVCC, `READ COMMITTED` reads take `S` locks. This design includes trigger/procedure paths that *read* `dms.ReferenceEdge` (touch targeting) and resource tables (edge projection), while other transactions *write* those same structures. `S` locks on reads materially increase the deadlock surface area (“Tx A reads edges then updates documents; Tx B updates documents then writes edges”).
+  - With `READ_COMMITTED_SNAPSHOT`, those reads use row versioning and generally do not take `S` locks, reducing deadlocks and improving concurrency for touch cascades and edge recompute.
 - PostgreSQL: default MVCC is sufficient.
 
 ### Lock ordering rules (deadlock minimization)
