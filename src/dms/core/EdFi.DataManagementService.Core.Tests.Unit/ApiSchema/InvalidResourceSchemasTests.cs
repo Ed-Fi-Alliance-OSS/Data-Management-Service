@@ -139,6 +139,13 @@ public class InvalidResourceSchemasTests
                 NullLogger<ProfileResolutionMiddleware>.Instance
             );
 
+            // Register Profile Filtering services
+            services.AddTransient<ProfileFilteringMiddleware>();
+            services.AddSingleton<IProfileResponseFilter, ProfileResponseFilter>();
+            services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
+                NullLogger<ProfileFilteringMiddleware>.Instance
+            );
+
             var serviceProvider = services.BuildServiceProvider();
             var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 

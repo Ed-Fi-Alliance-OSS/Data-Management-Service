@@ -83,7 +83,9 @@ public static class DmsCoreServiceExtensions
             .AddScoped<ResolveDmsInstanceMiddleware>()
             .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
             .AddSingleton<IProfileService, CachedProfileService>()
-            .AddTransient<ProfileResolutionMiddleware>();
+            .AddSingleton<IProfileResponseFilter, ProfileResponseFilter>()
+            .AddTransient<ProfileResolutionMiddleware>()
+            .AddTransient<ProfileFilteringMiddleware>();
 
         return services;
 

@@ -141,6 +141,13 @@ public class ApiServiceHotReloadIntegrationTests
             NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
+        // Register Profile Filtering services
+        services.AddTransient<ProfileFilteringMiddleware>();
+        services.AddSingleton<IProfileResponseFilter, ProfileResponseFilter>();
+        services.AddTransient<ILogger<ProfileFilteringMiddleware>>(_ =>
+            NullLogger<ProfileFilteringMiddleware>.Instance
+        );
+
         var serviceProvider = services.BuildServiceProvider();
         var claimSetProvider = new NoClaimsClaimSetProvider(NullLogger.Instance);
         var documentValidator = new DocumentValidator(new CompiledSchemaCache());
