@@ -275,6 +275,97 @@ A typical implementation uses:
 - **Compilation still scales with schema size**: if the trigger body references many targets, you can still end up with large trigger code or large static unions.
 - **Harder to keep minimal**: without dynamic dispatch, you often pay per-target overhead even when only a few child types change.
 
+#### Example (Data Standard 5.2 authoritative ApiSchema)
+
+Using `ds-5.2-api-schema-authoritative.json`:
+
+- `projectSchema.resourceSchemas` contains **349** resources.
+- A static dispatcher typically generates ~**349** `IF EXISTS` blocks so it can handle *any* `ResourceKeyId` that appears in `changed_children`.
+
+Illustrative sample as a **SQL Server stored procedure** (10 non-overlapping targets shown; a real generated procedure would contain one block per resource `ResourceKeyId` in the effective schema):
+
+```sql
+CREATE OR ALTER PROCEDURE dms.ApplyTouchCascade_Static
+    @MaxTouchParents int
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    --   The dms.Document trigger materializes changed children for this statement as:
+    --   #changed_children(DocumentId bigint NOT NULL PRIMARY KEY, ResourceKeyId smallint NOT NULL)
+
+    DROP TABLE IF EXISTS #referrers;
+    CREATE TABLE #referrers (
+        ParentDocumentId bigint NOT NULL,
+        ChildDocumentId bigint NOT NULL,
+        IsIdentityComponent bit NOT NULL
+    );
+
+    -- Static dispatch (sample only; generated code repeats this pattern for every ResourceKeyId).
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_ClassPeriod)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_ClassPeriod r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_ClassPeriod AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_Section)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_Section r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_Section AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_BellSchedule)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_BellSchedule r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_BellSchedule AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_CourseOffering)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_CourseOffering r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_CourseOffering AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_Assessment)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_Assessment r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_Assessment AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_GradebookEntry)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_GradebookEntry r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_GradebookEntry AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_Student)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_Student r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_Student AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_School)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_School r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_School AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_Program)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_Program r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_Program AND c.DocumentId = r.ChildDocumentId;
+
+    IF EXISTS (SELECT 1 FROM #changed_children WHERE ResourceKeyId = @RK_Location)
+        INSERT INTO #referrers (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
+        SELECT r.ParentDocumentId, r.ChildDocumentId, r.IsIdentityComponent
+        FROM dms.Referrers_RK_Location r
+        JOIN #changed_children c ON c.ResourceKeyId = @RK_Location AND c.DocumentId = r.ChildDocumentId;
+
+    -- Remaining steps to update dms.Document not shown
+END;
+```
+
 ### Option B2: Dynamic SQL trigger (union only the needed targets)
 
 #### What it looks like
@@ -305,6 +396,38 @@ At runtime:
 
 - The set of permissible targets must come from generator-controlled metadata (not user input).
 - Enforce bounds (e.g., max number of targets to union in one statement) as a secondary guardrail to avoid pathological “compile a hundred-view union” scenarios.
+
+#### Example (Data Standard 5.2 authoritative ApiSchema)
+
+Using `ds-5.2-api-schema-authoritative.json`:
+
+If an identity update to **`Section`** stamps `dms.Document.IdentityVersion` for the entire impacted set in a **single statement**, `changed_children` could include these six resource types (one `ResourceKeyId` per type):
+
+- `Section`
+- `SectionAttendanceTakenEvent`
+- `StaffSectionAssociation`
+- `StudentSectionAssociation`
+- `StudentSectionAttendanceEvent`
+- `SurveySectionAssociation`
+
+Under B2, the dispatcher builds SQL that unions only those per-target projections (plus the polymorphic bucket if present), rather than carrying 349 static branches. Conceptual SQL shape:
+
+```sql
+-- Always include polymorphic bucket if there are FK sites to dms.Document
+SELECT ... FROM dms.Referrers_DmsDocument r JOIN #changed_children c ON c.DocumentId = r.ChildDocumentId
+UNION ALL
+SELECT ... FROM dms.Referrers_Section r                      JOIN #changed_children c ON c.ResourceKeyId=@RK_Section                       AND c.DocumentId=r.ChildDocumentId
+UNION ALL
+SELECT ... FROM dms.Referrers_SectionAttendanceTakenEvent r   JOIN #changed_children c ON c.ResourceKeyId=@RK_SectionAttendanceTakenEvent   AND c.DocumentId=r.ChildDocumentId
+UNION ALL
+SELECT ... FROM dms.Referrers_StaffSectionAssociation r       JOIN #changed_children c ON c.ResourceKeyId=@RK_StaffSectionAssociation       AND c.DocumentId=r.ChildDocumentId
+UNION ALL
+SELECT ... FROM dms.Referrers_StudentSectionAssociation r     JOIN #changed_children c ON c.ResourceKeyId=@RK_StudentSectionAssociation     AND c.DocumentId=r.ChildDocumentId
+UNION ALL
+SELECT ... FROM dms.Referrers_StudentSectionAttendanceEvent r JOIN #changed_children c ON c.ResourceKeyId=@RK_StudentSectionAttendanceEvent AND c.DocumentId=r.ChildDocumentId
+UNION ALL
+SELECT ... FROM dms.Referrers_SurveySectionAssociation r      JOIN #changed_children c ON c.ResourceKeyId=@RK_SurveySectionAssociation      AND c.DocumentId=r.ChildDocumentId;
+```
 
 ---
 
