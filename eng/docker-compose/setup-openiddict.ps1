@@ -217,7 +217,7 @@ function Invoke-DbQuery {
 
         $execCmd = 'psql -U {0} -d {1} -c "{2}"' -f $user, $db, $escapedSql
 
-        if($PostgresContainerName) {
+        if (-not [string]::IsNullOrEmpty($PostgresContainerName)) {
             # Run psql on the PostgreSQL container using docker exec
             $execCmd = 'docker exec {0} {1}' -f $PostgresContainerName, $execCmd
         }
