@@ -489,7 +489,6 @@ $parameters = @{
 
 # Optionally, use the $InitDb switch to initialize the database schema and keys before inserting data.
 # Use $InsertData to control whether client, roles, scopes, and claims are inserted.
-# Both switches are enabled by default.
 
 # Example: Initialize DB and insert data
 ./setup-openiddict.ps1 @parameters -InitDb -InsertData

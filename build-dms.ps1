@@ -477,38 +477,6 @@ function Wait-ForPostgreSQL {
 # This is now handled by start-local-dms.ps1 -AddDmsInstance
 # which creates databases, runs migrations, and sets up Kafka connectors
 
-function Wait-ForKafkaConnect {
-    Write-Host "Waiting for Kafka Connect to be ready..." -ForegroundColor Cyan
-
-    $maxAttempts = 30
-    $attempt = 0
-    $ready = $false
-
-    while (-not $ready -and $attempt -lt $maxAttempts) {
-        $attempt++
-        Write-Host "Attempt $attempt of $maxAttempts..." -ForegroundColor Gray
-
-        try {
-            $response = Invoke-WebRequest -Uri "http://localhost:8083/connectors" -Method GET -UseBasicParsing -TimeoutSec 5 -ErrorAction SilentlyContinue
-            if ($response.StatusCode -eq 200) {
-                $ready = $true
-                Write-Host "Kafka Connect is ready!" -ForegroundColor Green
-            }
-        }
-        catch {
-            Write-Host "Kafka Connect not ready yet: $_" -ForegroundColor Yellow
-        }
-
-        if (-not $ready) {
-            Start-Sleep -Seconds 2
-        }
-    }
-
-    if (-not $ready) {
-        throw "Kafka Connect did not become ready within the timeout period"
-    }
-}
-
 # Setup-InstanceKafkaConnectors function removed
 # This is now handled by start-local-dms.ps1 -AddDmsInstance
 # which creates Kafka connectors via setup-instance-kafka-connectors.ps1
@@ -553,10 +521,7 @@ function InstanceE2ETests {
 
     Write-Host "`nInstance E2E setup complete!" -ForegroundColor Green
     Write-Host "Infrastructure was created by setup-local-dms.ps1:" -ForegroundColor Cyan
-    Write-Host "  - 3 DMS instances registered in Config Service" -ForegroundColor Gray
     Write-Host "  - 3 PostgreSQL databases with DMS schema" -ForegroundColor Gray
-    Write-Host "  - 3 Kafka connectors (postgresql-source-instance-1, 2, 3)" -ForegroundColor Gray
-    Write-Host "  - 3 Kafka topics (edfi.dms.1.document, edfi.dms.2.document, edfi.dms.3.document)" -ForegroundColor Gray
 
     # Run the instance management E2E tests
     Invoke-Step { RunInstanceE2E }

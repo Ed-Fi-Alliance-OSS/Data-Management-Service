@@ -24,12 +24,16 @@ param (
     [string] $EncryptionKey = "ENV:DMS_CONFIG_IDENTITY_ENCRYPTION_KEY",
     [int] $TokenLifespan = 1800,
     [switch] $InitDb = $false,
-    [switch] $InsertData = $true,
+    [switch] $InsertData = $false,
     [string] $HashIterations = "ENV:DMS_CONFIG_IDENTITY_HASHING_ITERATIONS"
 )
 Import-Module ./env-utility.psm1
 Import-Module ./OpenIddict-Crypto.psm1
-$envValues = ReadValuesFromEnvFile $EnvironmentFile
+
+$envValues = $null
+if ($EnvironmentFile) {
+    $envValues = ReadValuesFromEnvFile $EnvironmentFile
+}
 
 function New-OpenIddictRole {
     param([string]$RoleName)
@@ -202,8 +206,6 @@ function Invoke-DbQuery {
         $dbHost = $params['Host']
         $db = $params['Database']
         $user = $params['Username']
-        # Run SQL directly on the PostgreSQL container using docker exec
-        $containerName = $PostgresContainerName
 
         # More robust SQL escaping for shell command
         # 1. Escape double quotes for shell command
@@ -213,7 +215,13 @@ function Invoke-DbQuery {
         # 3. Escape dollar signs for PowerShell
         $escapedSql = $escapedSql.Replace('$', '`$')
 
-        $execCmd = 'docker exec {0} psql -U {1} -d {2} -c "{3}"' -f $containerName, $user, $db, $escapedSql
+        $execCmd = 'psql -U {0} -d {1} -c "{2}"' -f $user, $db, $escapedSql
+
+        if (-not [string]::IsNullOrEmpty($PostgresContainerName)) {
+            # Run psql on the PostgreSQL container using docker exec
+            $execCmd = 'docker exec {0} {1}' -f $PostgresContainerName, $execCmd
+        }
+
         Write-Verbose "Executing: $execCmd"
         Invoke-Expression $execCmd
     }
@@ -270,13 +278,16 @@ if ($InitDb) {
 
 if ($InsertData) {
     $appId = New-OpenIddictApplication -ClientId $NewClientId -ClientName $NewClientName -ClientSecret $NewClientSecret
+    
     $dmsRoleId = New-OpenIddictRole -RoleName $DmsClientRole
-    $configRoleId = New-OpenIddictRole -RoleName $ConfigServiceRole
-    $scopeId = New-OpenIddictScope -ScopeName $ClientScopeName -Description $ClientScopeName
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $dmsRoleId.Trim()
+    $configRoleId = New-OpenIddictRole -RoleName $ConfigServiceRole
     Add-OpenIddictClientRole -AppId $appId.Trim() -RoleId $configRoleId.Trim()
+        
+    $scopeId = New-OpenIddictScope -ScopeName $ClientScopeName -Description $ClientScopeName
     Add-OpenIddictApplicationScope -AppId $appId.Trim() -ScopeId $scopeId.Trim()
     Update-OpenIddictApplicationPermissions -AppId $appId.Trim() -Scope  $ClientScopeName
     Add-OpenIddictCustomClaim -AppId $appId.Trim() -ClaimName $ClaimName -ClaimValue $ClaimValue
+    
     Write-Output "OpenIddict client, roles, scope, and claim created successfully."
 }
