@@ -1,0 +1,351 @@
+# Profile Filtering (Read Path) Demonstration
+# This file demonstrates the complete profile filtering flow for DMS-907
+#
+# Prerequisites:
+# 1. Start the local DMS stack: cd eng/docker-compose && pwsh start-local-dms.ps1 -EnableConfig -EnableSwaggerUI -IdentityProvider self-contained
+# 2. Run these requests in order from top to bottom
+#
+# What this demonstrates:
+# - Creating a profile with IncludeOnly filtering rules
+# - Assigning the profile to an application
+# - Creating a resource with all fields
+# - GET by ID without profile header (returns all fields)
+# - GET by ID with profile header (returns filtered fields)
+# - Query without profile header (returns all fields)
+# - Query with profile header (returns filtered fields)
+
+@configPort=8081
+@dmsPort=8080
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+
+### Step 1: Get a token from the config API
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+@profileName=test-school-readfilter-demo
+
+### Step 2: Create a Profile for School resource with IncludeOnly filtering
+# This profile only allows: nameOfInstitution and webSite
+# Identity fields (schoolId, id) are ALWAYS included regardless of profile rules
+#
+# The profile XML definition structure:
+#
+#   <Profile name="test-school-readfilter-demo">
+#     <Resource name="School">
+#       <ReadContentType memberSelection="IncludeOnly">
+#         <Property name="nameOfInstitution" />
+#         <Property name="webSite" />
+#       </ReadContentType>
+#     </Resource>
+#   </Profile>
+#
+# @name createSchoolProfile
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "{{profileName}}",
+  "definition": "<Profile name=\"{{profileName}}\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeOnly\"><Property name=\"nameOfInstitution\" /><Property name=\"webSite\" /></ReadContentType></Resource></Profile>"
+}
+
+### The Location header contains the full URL to the profile (e.g., http://localhost:8081/v2/profiles/123)
+@schoolProfileLocation={{createSchoolProfile.response.headers.Location}}
+@schoolProfileName={{profileName}}
+
+### Step 3: Verify the profile was created (use the Location URL directly)
+# @name getSchoolProfile
+GET {{schoolProfileLocation}}
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+###
+@schoolProfileId={{getSchoolProfile.response.body.id}}
+
+### Step 4: Create a Vendor
+# @name createVendor
+POST http://localhost:{{configPort}}/v2/vendors
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "company": "Profile Test Vendor",
+    "contactName": "Test User",
+    "contactEmailAddress": "test@example.com",
+    "namespacePrefixes": "uri://ed-fi.org"
+}
+
+###
+@vendorId={{createVendor.response.body.id}}
+
+### Step 5: Create a DMS Instance (if not using default)
+# @name createDmsInstance
+POST http://localhost:{{configPort}}/v2/dmsInstances
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "instanceType": "Test",
+    "instanceName": "Profile Test Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;"
+}
+
+###
+@dmsInstanceId={{createDmsInstance.response.body.id}}
+
+### Step 6: Create an Application WITH the IncludeOnly profile assigned
+# @name createApplicationWithProfile
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "Profile Test App",
+    "claimSetName": "EdFiSandbox",
+    "dmsInstanceIds": [{{dmsInstanceId}}],
+    "profileIds": [{{schoolProfileId}}]
+}
+
+###
+@clientKey={{createApplicationWithProfile.response.body.key}}
+@clientSecret={{createApplicationWithProfile.response.body.secret}}
+@applicationId={{createApplicationWithProfile.response.body.id}}
+
+### Step 6b: Create another Application WITHOUT any profile (for comparison)
+# @name createApplicationNoProfile
+POST http://localhost:{{configPort}}/v2/applications
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "vendorId": {{vendorId}},
+    "applicationName": "No Profile App",
+    "claimSetName": "EdFiSandbox",
+    "dmsInstanceIds": [{{dmsInstanceId}}]
+}
+
+###
+@noProfileClientKey={{createApplicationNoProfile.response.body.key}}
+@noProfileClientSecret={{createApplicationNoProfile.response.body.secret}}
+
+### Step 7: Verify the application has the profile assigned
+GET http://localhost:{{configPort}}/v2/applications/{{applicationId}}
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+### Step 8: Read the Token URL from the Discovery API
+# @name discovery
+GET http://localhost:{{dmsPort}}
+
+###
+@dataApi={{discovery.response.body.urls.dataManagementApi}}
+@tokenUrl={{discovery.response.body.urls.oauth}}
+
+### Step 9: Get a DMS token for the application WITH profile
+# @name dmsTokenWithProfile
+POST {{tokenUrl}}
+Authorization: basic {{clientKey}}:{{clientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsTokenWithProfileValue={{dmsTokenWithProfile.response.body.access_token}}
+
+### Step 10: Get a DMS token for the application WITHOUT profile
+# @name dmsTokenNoProfile
+POST {{tokenUrl}}
+Authorization: basic {{noProfileClientKey}}:{{noProfileClientSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@dmsTokenNoProfileValue={{dmsTokenNoProfile.response.body.access_token}}
+
+### Step 11: First, create required descriptors for School
+# Create LocalEducationAgency category descriptor
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "Local Education Agency",
+    "shortDescription": "Local Education Agency"
+}
+
+### Create School category descriptor
+POST {{dataApi}}/ed-fi/educationOrganizationCategoryDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
+    "codeValue": "School",
+    "shortDescription": "School"
+}
+
+### Create grade level descriptor
+POST {{dataApi}}/ed-fi/gradeLevelDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/GradeLevelDescriptor",
+    "codeValue": "Ninth grade",
+    "shortDescription": "Ninth grade"
+}
+
+### Create LocalEducationAgency category descriptor
+POST {{dataApi}}/ed-fi/localEducationAgencyCategoryDescriptors
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "namespace": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
+    "codeValue": "Independent",
+    "shortDescription": "Independent"
+}
+
+### Step 12: Create a LocalEducationAgency (required parent for School)
+# @name createLea
+POST {{dataApi}}/ed-fi/localEducationAgencies
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "localEducationAgencyId": 255901,
+    "nameOfInstitution": "Grand Bend ISD",
+    "localEducationAgencyCategoryDescriptor": "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
+    "categories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Local Education Agency"
+        }
+    ]
+}
+
+### Step 13: Create a School with ALL fields populated
+# @name createSchool
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901001,
+    "nameOfInstitution": "Grand Bend High School",
+    "shortNameOfInstitution": "GBHS",
+    "webSite": "https://grandbend.example.com",
+    "operationalStatusDescriptor": null,
+    "localEducationAgencyReference": {
+        "localEducationAgencyId": 255901
+    },
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+        }
+    ]
+}
+
+###
+@schoolLocation={{createSchool.response.headers.location}}
+
+### Step 13b: Create a second school for query testing
+POST {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Content-Type: application/json
+
+{
+    "schoolId": 255901002,
+    "nameOfInstitution": "Grand Bend Elementary",
+    "shortNameOfInstitution": "GBE",
+    "webSite": "https://gbe.example.com",
+    "localEducationAgencyReference": {
+        "localEducationAgencyId": 255901
+    },
+    "educationOrganizationCategories": [
+        {
+            "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+        }
+    ],
+    "gradeLevels": [
+        {
+            "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+        }
+    ]
+}
+
+### Step 14: GET School by ID - NO profile header (using app without profile)
+# EXPECTED: Returns ALL fields including shortNameOfInstitution, webSite, etc.
+# @name getSchoolNoProfile
+GET {{schoolLocation}}
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Accept: application/json
+
+### Step 15: GET School by ID - WITH profile header (IncludeOnly)
+# EXPECTED: Returns ONLY id, schoolId (identity), nameOfInstitution, webSite
+# shortNameOfInstitution should be FILTERED OUT
+# @name getSchoolWithProfile
+GET {{schoolLocation}}
+Authorization: bearer {{dmsTokenWithProfileValue}}
+Accept: application/vnd.ed-fi.school.{{schoolProfileName}}.readable+json
+
+### Step 16: GET School by ID - implicit profile (no Accept header, but app has profile)
+# EXPECTED: Profile filtering is applied implicitly based on application's assigned profile
+# @name getSchoolImplicitProfile
+GET {{schoolLocation}}
+Authorization: bearer {{dmsTokenWithProfileValue}}
+
+### Step 17: Query Schools - NO profile header (using app without profile)
+# EXPECTED: Returns ALL fields for all schools
+# @name querySchoolsNoProfile
+GET {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsTokenNoProfileValue}}
+Accept: application/json
+
+### Step 18: Query Schools - WITH profile header (IncludeOnly)
+# EXPECTED: Returns filtered fields for ALL schools in the array
+# Each school should only have: id, schoolId, nameOfInstitution, webSite
+# @name querySchoolsWithProfile
+GET {{dataApi}}/ed-fi/schools
+Authorization: bearer {{dmsTokenWithProfileValue}}
+Accept: application/vnd.ed-fi.school.{{schoolProfileName}}.readable+json
+
+### Step 19: Verify identity fields (id, schoolId) are ALWAYS included
+# Even with an IncludeOnly profile that doesn't list them, identity fields must appear
+# @name verifyIdentityFields
+GET {{schoolLocation}}
+Authorization: bearer {{dmsTokenWithProfileValue}}
+Accept: application/vnd.ed-fi.school.{{schoolProfileName}}.readable+json
+
+# Check the response - it MUST include:
+# - "id": "<guid>"
+# - "schoolId": 255901001
+# Even though the profile only specified nameOfInstitution and webSite
+
+### CLEANUP (Optional) - Delete the schools
+DELETE {{dataApi}}/ed-fi/schools/255901001
+Authorization: bearer {{dmsTokenNoProfileValue}}
+
+###
+DELETE {{dataApi}}/ed-fi/schools/255901002
+Authorization: bearer {{dmsTokenNoProfileValue}}
+
+### Delete the LEA
+DELETE {{dataApi}}/ed-fi/localEducationAgencies/255901
+Authorization: bearer {{dmsTokenNoProfileValue}}
