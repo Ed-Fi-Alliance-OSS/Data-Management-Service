@@ -58,11 +58,8 @@ public class ProfileResponseFilterTests
                 properties: [new PropertyRule("nameOfInstitution")]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -115,11 +112,8 @@ public class ProfileResponseFilterTests
                 properties: [new PropertyRule("webSite"), new PropertyRule("shortNameOfInstitution")]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -168,11 +162,8 @@ public class ProfileResponseFilterTests
 
             var contentType = CreateContentType(MemberSelection.IncludeAll);
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -208,11 +199,8 @@ public class ProfileResponseFilterTests
                 properties: [new PropertyRule("schoolId")]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -264,11 +252,10 @@ public class ProfileResponseFilterTests
                 ]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.studentUniqueId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([
+                new JsonPath("$.studentUniqueId"),
+            ]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -346,11 +333,8 @@ public class ProfileResponseFilterTests
                 ]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -426,11 +410,8 @@ public class ProfileResponseFilterTests
                 ]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -505,11 +486,8 @@ public class ProfileResponseFilterTests
                 ]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -575,11 +553,8 @@ public class ProfileResponseFilterTests
                 ]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -641,11 +616,8 @@ public class ProfileResponseFilterTests
                 ]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -678,11 +650,8 @@ public class ProfileResponseFilterTests
             // IncludeOnly at top level with no extension rules
             var contentType = CreateContentType(MemberSelection.IncludeOnly);
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths: [new JsonPath("$.schoolId")]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([new JsonPath("$.schoolId")]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -718,17 +687,13 @@ public class ProfileResponseFilterTests
                 properties: [new PropertyRule("courseTitle")]
             );
 
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths:
-                [
-                    new JsonPath("$.localCourseCode"),
-                    new JsonPath("$.schoolId"),
-                    new JsonPath("$.schoolYear"),
-                    new JsonPath("$.sessionName"),
-                ]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([
+                new JsonPath("$.localCourseCode"),
+                new JsonPath("$.schoolId"),
+                new JsonPath("$.schoolYear"),
+                new JsonPath("$.sessionName"),
+            ]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
@@ -778,16 +743,12 @@ public class ProfileResponseFilterTests
             var contentType = CreateContentType(MemberSelection.IncludeOnly);
 
             // Nested paths should not cause top-level property protection
-            _result = Filter.FilterDocument(
-                _source,
-                contentType,
-                identityJsonPaths:
-                [
-                    new JsonPath("$.sectionIdentifier"),
-                    new JsonPath("$.courseOfferingReference.localCourseCode"),
-                    new JsonPath("$.courseOfferingReference.schoolId"),
-                ]
-            );
+            var identityPropertyNames = Filter.ExtractIdentityPropertyNames([
+                new JsonPath("$.sectionIdentifier"),
+                new JsonPath("$.courseOfferingReference.localCourseCode"),
+                new JsonPath("$.courseOfferingReference.schoolId"),
+            ]);
+            _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]

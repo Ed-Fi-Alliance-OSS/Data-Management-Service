@@ -53,14 +53,20 @@ internal class ProfileFilteringMiddleware(
             requestInfo.FrontendRequest.TraceId.Value
         );
 
-        // Get identity paths for protection
-        var identityPaths = requestInfo.ResourceSchema.IdentityJsonPaths;
+        // Pre-compute identity property names once for reuse across all documents
+        HashSet<string> identityPropertyNames = profileResponseFilter.ExtractIdentityPropertyNames(
+            requestInfo.ResourceSchema.IdentityJsonPaths
+        );
 
         // Filter based on response type (single document vs array)
         JsonNode filteredBody = responseBody switch
         {
-            JsonArray array => FilterArray(array, readContentType, identityPaths),
-            JsonObject => profileResponseFilter.FilterDocument(responseBody, readContentType, identityPaths),
+            JsonArray array => FilterArray(array, readContentType, identityPropertyNames),
+            JsonObject => profileResponseFilter.FilterDocument(
+                responseBody,
+                readContentType,
+                identityPropertyNames
+            ),
             _ => responseBody,
         };
 
@@ -85,7 +91,7 @@ internal class ProfileFilteringMiddleware(
     private JsonArray FilterArray(
         JsonArray array,
         ContentTypeDefinition contentType,
-        IEnumerable<External.Model.JsonPath> identityPaths
+        HashSet<string> identityPropertyNames
     )
     {
         var filtered = new JsonArray();
@@ -97,7 +103,11 @@ internal class ProfileFilteringMiddleware(
                 continue;
             }
 
-            JsonNode filteredItem = profileResponseFilter.FilterDocument(item, contentType, identityPaths);
+            JsonNode filteredItem = profileResponseFilter.FilterDocument(
+                item,
+                contentType,
+                identityPropertyNames
+            );
             filtered.Add(filteredItem);
         }
 
