@@ -48,18 +48,6 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     {
         var result = new JsonObject();
 
-        // Build lookup sets for efficient membership checking
-        HashSet<string> propertyNames = contentType.Properties.Select(p => p.Name).ToHashSet();
-        Dictionary<string, ObjectRule> objectRules = contentType.Objects.ToDictionary(o => o.Name, o => o);
-        Dictionary<string, CollectionRule> collectionRules = contentType.Collections.ToDictionary(
-            c => c.Name,
-            c => c
-        );
-        Dictionary<string, ExtensionRule> extensionRules = contentType.Extensions.ToDictionary(
-            e => e.Name,
-            e => e
-        );
-
         foreach (var property in source)
         {
             string propertyName = property.Key;
@@ -77,7 +65,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             {
                 JsonObject? filteredExt = FilterExtensions(
                     extObject,
-                    extensionRules,
+                    contentType.ExtensionRulesByName,
                     contentType.MemberSelection
                 );
                 if (filteredExt != null && filteredExt.Count > 0)
@@ -88,7 +76,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             }
 
             // Handle nested objects with explicit rules
-            if (objectRules.TryGetValue(propertyName, out ObjectRule? objectRule))
+            if (contentType.ObjectRulesByName.TryGetValue(propertyName, out ObjectRule? objectRule))
             {
                 if (propertyValue is JsonObject nestedObject)
                 {
@@ -98,7 +86,12 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             }
 
             // Handle collections with explicit rules
-            if (collectionRules.TryGetValue(propertyName, out CollectionRule? collectionRule))
+            if (
+                contentType.CollectionRulesByName.TryGetValue(
+                    propertyName,
+                    out CollectionRule? collectionRule
+                )
+            )
             {
                 if (propertyValue is JsonArray collectionArray)
                 {
@@ -111,8 +104,8 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             bool shouldInclude = contentType.MemberSelection switch
             {
                 MemberSelection.IncludeAll => true,
-                MemberSelection.IncludeOnly => propertyNames.Contains(propertyName),
-                MemberSelection.ExcludeOnly => !propertyNames.Contains(propertyName),
+                MemberSelection.IncludeOnly => contentType.PropertyNameSet.Contains(propertyName),
+                MemberSelection.ExcludeOnly => !contentType.PropertyNameSet.Contains(propertyName),
                 _ => true,
             };
 
@@ -132,15 +125,6 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     {
         var result = new JsonObject();
 
-        // Build lookup sets
-        HashSet<string> propertyNames = objectRule.Properties?.Select(p => p.Name).ToHashSet() ?? [];
-        Dictionary<string, ObjectRule> nestedObjectRules =
-            objectRule.NestedObjects?.ToDictionary(o => o.Name, o => o) ?? [];
-        Dictionary<string, CollectionRule> collectionRules =
-            objectRule.Collections?.ToDictionary(c => c.Name, c => c) ?? [];
-        Dictionary<string, ExtensionRule> extensionRules =
-            objectRule.Extensions?.ToDictionary(e => e.Name, e => e) ?? [];
-
         foreach (var property in source)
         {
             string propertyName = property.Key;
@@ -151,7 +135,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             {
                 JsonObject? filteredExt = FilterExtensions(
                     extObject,
-                    extensionRules,
+                    objectRule.ExtensionRulesByName,
                     objectRule.MemberSelection
                 );
                 if (filteredExt != null && filteredExt.Count > 0)
@@ -162,7 +146,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             }
 
             // Handle nested objects with explicit rules
-            if (nestedObjectRules.TryGetValue(propertyName, out ObjectRule? nestedRule))
+            if (objectRule.NestedObjectRulesByName.TryGetValue(propertyName, out ObjectRule? nestedRule))
             {
                 if (propertyValue is JsonObject nestedObject)
                 {
@@ -172,7 +156,9 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             }
 
             // Handle collections with explicit rules
-            if (collectionRules.TryGetValue(propertyName, out CollectionRule? collectionRule))
+            if (
+                objectRule.CollectionRulesByName.TryGetValue(propertyName, out CollectionRule? collectionRule)
+            )
             {
                 if (propertyValue is JsonArray collectionArray)
                 {
@@ -185,8 +171,8 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             bool shouldInclude = objectRule.MemberSelection switch
             {
                 MemberSelection.IncludeAll => true,
-                MemberSelection.IncludeOnly => propertyNames.Contains(propertyName),
-                MemberSelection.ExcludeOnly => !propertyNames.Contains(propertyName),
+                MemberSelection.IncludeOnly => objectRule.PropertyNameSet.Contains(propertyName),
+                MemberSelection.ExcludeOnly => !objectRule.PropertyNameSet.Contains(propertyName),
                 _ => true,
             };
 
@@ -205,15 +191,6 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     private static JsonArray FilterCollection(JsonArray source, CollectionRule collectionRule)
     {
         var result = new JsonArray();
-
-        // Build lookup sets for item member filtering
-        HashSet<string> propertyNames = collectionRule.Properties?.Select(p => p.Name).ToHashSet() ?? [];
-        Dictionary<string, ObjectRule> nestedObjectRules =
-            collectionRule.NestedObjects?.ToDictionary(o => o.Name, o => o) ?? [];
-        Dictionary<string, CollectionRule> nestedCollectionRules =
-            collectionRule.NestedCollections?.ToDictionary(c => c.Name, c => c) ?? [];
-        Dictionary<string, ExtensionRule> extensionRules =
-            collectionRule.Extensions?.ToDictionary(e => e.Name, e => e) ?? [];
 
         foreach (JsonNode? item in source)
         {
@@ -246,7 +223,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
                 {
                     JsonObject? filteredExt = FilterExtensions(
                         extObject,
-                        extensionRules,
+                        collectionRule.ExtensionRulesByName,
                         collectionRule.MemberSelection
                     );
                     if (filteredExt != null && filteredExt.Count > 0)
@@ -257,7 +234,12 @@ internal class ProfileResponseFilter : IProfileResponseFilter
                 }
 
                 // Handle nested objects with explicit rules
-                if (nestedObjectRules.TryGetValue(propertyName, out ObjectRule? nestedRule))
+                if (
+                    collectionRule.NestedObjectRulesByName.TryGetValue(
+                        propertyName,
+                        out ObjectRule? nestedRule
+                    )
+                )
                 {
                     if (propertyValue is JsonObject nestedObject)
                     {
@@ -267,7 +249,12 @@ internal class ProfileResponseFilter : IProfileResponseFilter
                 }
 
                 // Handle nested collections with explicit rules
-                if (nestedCollectionRules.TryGetValue(propertyName, out CollectionRule? nestedCollectionRule))
+                if (
+                    collectionRule.NestedCollectionRulesByName.TryGetValue(
+                        propertyName,
+                        out CollectionRule? nestedCollectionRule
+                    )
+                )
                 {
                     if (propertyValue is JsonArray nestedArray)
                     {
@@ -280,8 +267,8 @@ internal class ProfileResponseFilter : IProfileResponseFilter
                 bool shouldInclude = collectionRule.MemberSelection switch
                 {
                     MemberSelection.IncludeAll => true,
-                    MemberSelection.IncludeOnly => propertyNames.Contains(propertyName),
-                    MemberSelection.ExcludeOnly => !propertyNames.Contains(propertyName),
+                    MemberSelection.IncludeOnly => collectionRule.PropertyNameSet.Contains(propertyName),
+                    MemberSelection.ExcludeOnly => !collectionRule.PropertyNameSet.Contains(propertyName),
                     _ => true,
                 };
 
@@ -334,7 +321,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     /// </summary>
     private static JsonObject? FilterExtensions(
         JsonObject extObject,
-        Dictionary<string, ExtensionRule> extensionRules,
+        IReadOnlyDictionary<string, ExtensionRule> extensionRules,
         MemberSelection parentMemberSelection
     )
     {
@@ -390,20 +377,13 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     {
         var result = new JsonObject();
 
-        // Build lookup sets
-        HashSet<string> propertyNames = extensionRule.Properties?.Select(p => p.Name).ToHashSet() ?? [];
-        Dictionary<string, ObjectRule> objectRules =
-            extensionRule.Objects?.ToDictionary(o => o.Name, o => o) ?? [];
-        Dictionary<string, CollectionRule> collectionRules =
-            extensionRule.Collections?.ToDictionary(c => c.Name, c => c) ?? [];
-
         foreach (var property in source)
         {
             string propertyName = property.Key;
             JsonNode? propertyValue = property.Value;
 
             // Handle nested objects with explicit rules
-            if (objectRules.TryGetValue(propertyName, out ObjectRule? objectRule))
+            if (extensionRule.ObjectRulesByName.TryGetValue(propertyName, out ObjectRule? objectRule))
             {
                 if (propertyValue is JsonObject nestedObject)
                 {
@@ -413,7 +393,12 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             }
 
             // Handle collections with explicit rules
-            if (collectionRules.TryGetValue(propertyName, out CollectionRule? collectionRule))
+            if (
+                extensionRule.CollectionRulesByName.TryGetValue(
+                    propertyName,
+                    out CollectionRule? collectionRule
+                )
+            )
             {
                 if (propertyValue is JsonArray collectionArray)
                 {
@@ -426,8 +411,8 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             bool shouldInclude = extensionRule.MemberSelection switch
             {
                 MemberSelection.IncludeAll => true,
-                MemberSelection.IncludeOnly => propertyNames.Contains(propertyName),
-                MemberSelection.ExcludeOnly => !propertyNames.Contains(propertyName),
+                MemberSelection.IncludeOnly => extensionRule.PropertyNameSet.Contains(propertyName),
+                MemberSelection.ExcludeOnly => !extensionRule.PropertyNameSet.Contains(propertyName),
                 _ => true,
             };
 
