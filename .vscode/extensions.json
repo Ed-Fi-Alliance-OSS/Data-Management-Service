@@ -12,6 +12,7 @@
       "csharpier.csharpier-vscode",
       "ms-azuretools.vscode-docker",
       "bierner.markdown-mermaid",
-      "stkb.rewrap"
+      "stkb.rewrap",
+      "ms-vscode.vscode-speech"
     ]
 }

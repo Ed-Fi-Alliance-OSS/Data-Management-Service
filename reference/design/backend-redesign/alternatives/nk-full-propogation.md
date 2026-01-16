@@ -63,7 +63,7 @@ This alternative intentionally diverges from these baseline design points:
 
 ## Core concepts
 
-### 1) Two dependency types (still)
+### 1) Two dependency types
 
 For a parent document that references a child document:
 
@@ -125,9 +125,6 @@ Including propagated identity columns remains compatible with the baseline “fl
   - `<RefBaseName>_DocumentId` (from the existing bulk `ReferentialId → DocumentId` resolution), and
   - `<RefBaseName>_<IdentityPart>` columns (directly from the request JSON at the reference-object paths),
   without additional database reads.
-- If DMS ever accepts “DocumentId-only” or “link-only” references (identity fields absent), these propagated columns cannot be populated without an additional database lookup. This alternative should either:
-  - reject that request shape for document references, or
-  - explicitly accept the round-trip to backfill missing identity values (reducing the appeal of this alternative).
 
 #### Column naming convention (avoid collisions)
 
