@@ -461,6 +461,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             { "vendorId", new(@"\{vendorId\}") },
             { "applicationId", new(@"\{applicationId\}") },
             { "dmsInstanceId", new(@"\{dmsInstanceId\}") },
+            { "profileId", new(@"\{profileId\}") },
             { "key", new(@"\{key\}") },
             { "secret", new(@"\{secret\}") },
             { "access_token", new(@"\{access_token\}") },
@@ -493,6 +494,16 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                             }
                         }
 
+                        // Special handling for profileId - it's stored in profileIds array
+                        if (idValue == null && replacement.Key == "profileId")
+                        {
+                            var profileIds = arrayItem?["profileIds"]?.AsArray();
+                            if (profileIds != null && profileIds.Count > 0)
+                            {
+                                idValue = profileIds[0]?.ToString();
+                            }
+                        }
+
                         var index = arrayElementIndex;
                         arrayElementIndex++;
                         return idValue ?? match.ToString();
@@ -514,6 +525,16 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
                             if (dmsInstanceIds != null && dmsInstanceIds.Count > 0)
                             {
                                 idValue = dmsInstanceIds[0]?.ToString();
+                            }
+                        }
+
+                        // Special handling for profileId - it's stored in profileIds array
+                        if (idValue == null && replacement.Key == "profileId")
+                        {
+                            var profileIds = responseJson["profileIds"]?.AsArray();
+                            if (profileIds != null && profileIds.Count > 0)
+                            {
+                                idValue = profileIds[0]?.ToString();
                             }
                         }
 

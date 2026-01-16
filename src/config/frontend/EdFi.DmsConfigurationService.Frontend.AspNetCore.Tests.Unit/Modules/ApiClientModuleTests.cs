@@ -118,20 +118,18 @@ public class ApiClientModuleTests
 
             A.CallTo(() => _apiClientRepository.QueryApiClient(A<PagingQuery>.Ignored))
                 .Returns(
-                    new ApiClientQueryResult.Success(
-                        [
-                            new ApiClientResponse
-                            {
-                                Id = 1,
-                                ApplicationId = 1,
-                                ClientId = "test-client-id",
-                                ClientUuid = Guid.NewGuid(),
-                                Name = "Test API Client",
-                                IsApproved = true,
-                                DmsInstanceIds = [1],
-                            },
-                        ]
-                    )
+                    new ApiClientQueryResult.Success([
+                        new ApiClientResponse
+                        {
+                            Id = 1,
+                            ApplicationId = 1,
+                            ClientId = "test-client-id",
+                            ClientUuid = Guid.NewGuid(),
+                            Name = "Test API Client",
+                            IsApproved = true,
+                            DmsInstanceIds = [1],
+                        },
+                    ])
                 );
 
             A.CallTo(() => _apiClientRepository.GetApiClientByClientId(A<string>.Ignored))

@@ -10,8 +10,4 @@ public class ProfileResponse
     public long Id { get; set; }
     public string Name { get; set; } = string.Empty;
     public string Definition { get; set; } = string.Empty;
-    public DateTime CreatedAt { get; set; }
-    public string? CreatedBy { get; set; }
-    public DateTime? LastModifiedAt { get; set; }
-    public string? ModifiedBy { get; set; }
 }

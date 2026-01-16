@@ -9,6 +9,8 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
@@ -119,6 +121,24 @@ public class ApiServiceHotReloadIntegrationTests
 
         services.AddTransient<ILogger<ResolveDmsInstanceMiddleware>>(_ =>
             NullLogger<ResolveDmsInstanceMiddleware>.Instance
+        );
+
+        // Register Profile Resolution services
+        services.AddTransient<ProfileResolutionMiddleware>();
+        var fakeProfileService = A.Fake<IProfileService>();
+        A.CallTo(() =>
+                fakeProfileService.ResolveProfileAsync(
+                    A<ParsedProfileHeader?>._,
+                    A<RequestMethod>._,
+                    A<string>._,
+                    A<long>._,
+                    A<string?>._
+                )
+            )
+            .Returns(Task.FromResult(ProfileResolutionResult.NoProfileApplies()));
+        services.AddSingleton<IProfileService>(fakeProfileService);
+        services.AddTransient<ILogger<ProfileResolutionMiddleware>>(_ =>
+            NullLogger<ProfileResolutionMiddleware>.Instance
         );
 
         var serviceProvider = services.BuildServiceProvider();
@@ -417,7 +437,23 @@ public class ApiServiceHotReloadIntegrationTests
 
     protected async Task WriteTestSchemaFile(string fileName, string content)
     {
-        await File.WriteAllTextAsync(Path.Combine(_testDirectory, fileName), content);
+        var filePath = Path.Combine(_testDirectory, fileName);
+        const int MaxRetries = 5;
+
+        for (int retryAttempt = 0; retryAttempt < MaxRetries; retryAttempt++)
+        {
+            try
+            {
+                await File.WriteAllTextAsync(filePath, content);
+                return;
+            }
+            catch (IOException) when (retryAttempt < MaxRetries - 1)
+            {
+                // On Windows, concurrent file access can cause conflicts.
+                // Retry with exponential backoff.
+                await Task.Delay(TimeSpan.FromMilliseconds(10 * Math.Pow(2, retryAttempt)));
+            }
+        }
     }
 
     protected static FrontendRequest CreateTestRequest(string path, string? body = null)

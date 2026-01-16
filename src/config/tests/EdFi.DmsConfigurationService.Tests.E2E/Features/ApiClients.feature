@@ -42,11 +42,7 @@ Feature: ApiClients endpoints
                           "clientUuid": "{clientUuid}",
                           "name": "Test Application 01",
                           "isApproved": true,
-                          "dmsInstanceIds": [{dmsInstanceId}],
-                          "createdAt": "{*}",
-                          "createdBy": "{*}",
-                          "lastModifiedAt": null,
-                          "modifiedBy": null
+                          "dmsInstanceIds": [{dmsInstanceId}]
                       }]
                   """
 
@@ -71,11 +67,7 @@ Feature: ApiClients endpoints
                     "clientUuid": "{clientUuid}",
                     "name": "Test Application 02",
                     "isApproved": true,
-                    "dmsInstanceIds": [{dmsInstanceId}],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": null,
-                    "modifiedBy": null
+                    "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
 
@@ -314,11 +306,7 @@ Feature: ApiClients endpoints
                     "clientUuid": "{clientUuid}",
                     "name": "New Name After Update",
                     "isApproved": true,
-                    "dmsInstanceIds": [{dmsInstanceId}],
-                    "createdAt": "{*}",
-                    "createdBy": "{*}",
-                    "lastModifiedAt": "{*}",
-                    "modifiedBy": "{*}"
+                    "dmsInstanceIds": [{dmsInstanceId}]
                   }
                   """
 

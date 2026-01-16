@@ -66,8 +66,7 @@ public class DmsInstanceRepository(
         try
         {
             var sql = $"""
-                SELECT Id, InstanceType, InstanceName, ConnectionString,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, TenantId
+                SELECT Id, InstanceType, InstanceName, ConnectionString, TenantId
                 FROM dmscs.DmsInstance
                 WHERE {TenantContext.TenantWhereClause()}
                 ORDER BY Id
@@ -79,10 +78,6 @@ public class DmsInstanceRepository(
                 string InstanceType,
                 string InstanceName,
                 byte[]? ConnectionString,
-                DateTime CreatedAt,
-                string? CreatedBy,
-                DateTime? LastModifiedAt,
-                string? ModifiedBy,
                 long? TenantId
             )>(
                 sql,
@@ -157,10 +152,6 @@ public class DmsInstanceRepository(
                 ConnectionString = encryptionService.Decrypt(row.ConnectionString),
                 DmsInstanceRouteContexts = routeContextsByInstanceId.GetValueOrDefault(row.Id, []),
                 DmsInstanceDerivatives = derivativesByInstanceId.GetValueOrDefault(row.Id, []),
-                CreatedAt = row.CreatedAt,
-                CreatedBy = row.CreatedBy,
-                LastModifiedAt = row.LastModifiedAt,
-                ModifiedBy = row.ModifiedBy,
                 TenantId = row.TenantId,
             });
             return new DmsInstanceQueryResult.Success(instances);
@@ -178,8 +169,7 @@ public class DmsInstanceRepository(
         try
         {
             var sql = $"""
-                SELECT Id, InstanceType, InstanceName, ConnectionString,
-                       CreatedAt, CreatedBy, LastModifiedAt, ModifiedBy, TenantId
+                SELECT Id, InstanceType, InstanceName, ConnectionString, TenantId
                 FROM dmscs.DmsInstance
                 WHERE Id = @Id AND {TenantContext.TenantWhereClause()};
                 """;
@@ -189,10 +179,6 @@ public class DmsInstanceRepository(
                 string InstanceType,
                 string InstanceName,
                 byte[]? ConnectionString,
-                DateTime CreatedAt,
-                string? CreatedBy,
-                DateTime? LastModifiedAt,
-                string? ModifiedBy,
                 long? TenantId
             )?>(sql, new { Id = id, TenantId });
             if (result == null)
@@ -236,10 +222,6 @@ public class DmsInstanceRepository(
                 ConnectionString = encryptionService.Decrypt(result.Value.ConnectionString),
                 DmsInstanceRouteContexts = routeContexts,
                 DmsInstanceDerivatives = derivatives,
-                CreatedAt = result.Value.CreatedAt,
-                CreatedBy = result.Value.CreatedBy,
-                LastModifiedAt = result.Value.LastModifiedAt,
-                ModifiedBy = result.Value.ModifiedBy,
                 TenantId = result.Value.TenantId,
             };
             return new DmsInstanceGetResult.Success(instance);
@@ -336,7 +318,10 @@ public class DmsInstanceRepository(
         }
     }
 
-    public async Task<ApplicationByDmsInstanceQueryResult> QueryApplicationByDmsInstance(long dmsInstanceId, PagingQuery query)
+    public async Task<ApplicationByDmsInstanceQueryResult> QueryApplicationByDmsInstance(
+        long dmsInstanceId,
+        PagingQuery query
+    )
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
         try
@@ -344,12 +329,14 @@ public class DmsInstanceRepository(
             var sql = $"""
                 SELECT application.*, aeo.EducationOrganizationId, acdi.DmsInstanceId
                 FROM (
-                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId, a.CreatedAt, a.CreatedBy, a.LastModifiedAt, a.ModifiedBy
+                    SELECT DISTINCT a.Id, a.ApplicationName, a.ClaimSetName, a.VendorId
                     FROM dmscs.ApiClientDmsInstance acdi
                     JOIN dmscs.ApiClient ac ON ac.Id = acdi.ApiClientId
                     JOIN dmscs.Application a ON a.Id = ac.ApplicationId
                     JOIN dmscs.DmsInstance di ON di.Id = acdi.DmsInstanceId
-                    WHERE acdi.DmsInstanceId = @DmsInstanceId AND {TenantContext.TenantWhereClause(tableAlias: "di")}
+                    WHERE acdi.DmsInstanceId = @DmsInstanceId AND {TenantContext.TenantWhereClause(
+                    tableAlias: "di"
+                )}
                     ORDER BY a.Id LIMIT @Limit OFFSET @Offset
                 ) application
                 LEFT JOIN dmscs.ApplicationEducationOrganization aeo ON aeo.ApplicationId = application.Id
@@ -367,22 +354,16 @@ public class DmsInstanceRepository(
                 TenantId,
             };
 
-            var rows = await connection.QueryAsync<
-            (
+            var rows = await connection.QueryAsync<(
                 long Id,
                 string ApplicationName,
                 string ClaimSetName,
                 long VendorId,
-                DateTime CreatedAt,
-                string? CreatedBy,
-                DateTime? LastModifiedAt,
-                string? ModifiedBy,
                 long? EducationOrganizationId,
                 long DmsInstanceId
             )>(sql, parameters);
 
-            var applications = rows
-                .GroupBy(row => row.Id)
+            var applications = rows.GroupBy(row => row.Id)
                 .Select(group =>
                 {
                     var application = group.First();
@@ -392,29 +373,50 @@ public class DmsInstanceRepository(
                         ApplicationName = application.ApplicationName,
                         ClaimSetName = application.ClaimSetName,
                         VendorId = application.VendorId,
-                        CreatedAt = application.CreatedAt,
-                        CreatedBy = application.CreatedBy,
-                        LastModifiedAt = application.LastModifiedAt,
-                        ModifiedBy = application.ModifiedBy,
 
                         EducationOrganizationIds = group
                             .Where(row => row.EducationOrganizationId != null)
                             .Select(row => row.EducationOrganizationId!.Value)
                             .Distinct()
                             .ToList(),
-                        DmsInstanceIds = group
-                            .Select(row => row.DmsInstanceId)
-                            .Distinct()
-                            .ToList(),
+                        DmsInstanceIds = group.Select(row => row.DmsInstanceId).Distinct().ToList(),
                     };
                 })
                 .ToList();
+
+            // Get Profile IDs for each application
+            if (applications.Count > 0)
+            {
+                var applicationIds = applications.Select(a => a.Id).ToArray();
+                string sqlProfiles = """
+                        SELECT
+                            ap.ApplicationId,
+                            ap.ProfileId
+                        FROM dmscs.ApplicationProfile ap
+                        WHERE ap.ApplicationId = ANY(@ApplicationIds);
+                    """;
+
+                var profileRows = await connection.QueryAsync<(long ApplicationId, long ProfileId)>(
+                    sqlProfiles,
+                    new { ApplicationIds = applicationIds }
+                );
+
+                foreach (var profileRow in profileRows)
+                {
+                    var app = applications.Find(a => a.Id == profileRow.ApplicationId);
+                    if (app != null && !app.ProfileIds.Contains(profileRow.ProfileId))
+                    {
+                        app.ProfileIds.Add(profileRow.ProfileId);
+                    }
+                }
+            }
 
             if (applications.Count == 0)
             {
                 var dmsInstanceExists = await connection.ExecuteScalarAsync<bool>(
                     $"SELECT EXISTS(SELECT 1 FROM dmscs.DmsInstance WHERE Id = @dmsInstanceId AND {TenantContext.TenantWhereClause()})",
-                    new { dmsInstanceId });
+                    new { dmsInstanceId }
+                );
 
                 if (!dmsInstanceExists)
                 {

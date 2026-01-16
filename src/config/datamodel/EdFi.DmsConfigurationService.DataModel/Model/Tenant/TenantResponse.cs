@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 
-public class TenantResponse : AuditableResponse
+public class TenantResponse
 {
     public long Id { get; set; }
     public required string Name { get; set; }

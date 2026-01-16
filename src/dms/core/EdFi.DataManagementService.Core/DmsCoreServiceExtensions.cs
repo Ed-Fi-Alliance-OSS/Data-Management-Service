@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.Middleware;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
@@ -79,7 +80,10 @@ public static class DmsCoreServiceExtensions
             .AddScoped<IDmsInstanceSelection, DmsInstanceSelection>()
             .AddScoped<IApplicationContextProvider, CachedApplicationContextProvider>()
             .AddSingleton<IConfigurationServiceApplicationProvider, ConfigurationServiceApplicationProvider>()
-            .AddScoped<ResolveDmsInstanceMiddleware>();
+            .AddScoped<ResolveDmsInstanceMiddleware>()
+            .AddSingleton<IProfileCmsProvider, ConfigurationServiceProfileProvider>()
+            .AddSingleton<IProfileService, CachedProfileService>()
+            .AddTransient<ProfileResolutionMiddleware>();
 
         return services;
 

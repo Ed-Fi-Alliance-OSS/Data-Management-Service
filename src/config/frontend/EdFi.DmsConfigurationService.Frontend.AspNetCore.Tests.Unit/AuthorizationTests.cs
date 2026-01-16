@@ -97,18 +97,16 @@ public class AuthorizationTests
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
                 .Returns(
-                    new VendorQueryResult.Success(
-                        [
-                            new VendorResponse()
-                            {
-                                Id = 1,
-                                Company = "Test Company",
-                                ContactName = "Test Contact",
-                                ContactEmailAddress = "test@test.com",
-                                NamespacePrefixes = "Test Prefix",
-                            },
-                        ]
-                    )
+                    new VendorQueryResult.Success([
+                        new VendorResponse()
+                        {
+                            Id = 1,
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        },
+                    ])
                 );
 
             A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
@@ -196,18 +194,16 @@ public class AuthorizationTests
 
             A.CallTo(() => _vendorRepository.QueryVendor(A<PagingQuery>.Ignored))
                 .Returns(
-                    new VendorQueryResult.Success(
-                        [
-                            new VendorResponse()
-                            {
-                                Id = 1,
-                                Company = "Test Company",
-                                ContactName = "Test Contact",
-                                ContactEmailAddress = "test@test.com",
-                                NamespacePrefixes = "Test Prefix",
-                            },
-                        ]
-                    )
+                    new VendorQueryResult.Success([
+                        new VendorResponse()
+                        {
+                            Id = 1,
+                            Company = "Test Company",
+                            ContactName = "Test Contact",
+                            ContactEmailAddress = "test@test.com",
+                            NamespacePrefixes = "Test Prefix",
+                        },
+                    ])
                 );
 
             A.CallTo(() => _vendorRepository.GetVendor(A<long>.Ignored))
@@ -321,9 +317,9 @@ public class AuthorizationTests
         {
             A.CallTo(() => _claimSetRepository.QueryClaimSet(A<PagingQuery>.Ignored))
                 .Returns(
-                    new ClaimSetQueryResult.Success(
-                        [new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false }]
-                    )
+                    new ClaimSetQueryResult.Success([
+                        new ClaimSetResponse() { Name = "Test ClaimSet", IsSystemReserved = false },
+                    ])
                 );
 
             List<Claim> claims =
@@ -342,26 +338,19 @@ public class AuthorizationTests
 
             A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
                 .Returns(new ClaimsHierarchyGetResult.Success(claims, DateTime.Now, 1));
-            var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse(
-                [
-                    new ClaimSetMetadata(
-                        ClaimSetName: "ClaimSet1",
-                        Claims: [new("ClaimOne", 1)],
-                        Authorizations:
-                        [
-                            new Authorization(
-                                1,
-                                [
-                                    new Action(
-                                        "Create",
-                                        [new ClaimSetMetadata.AuthorizationStrategy("Strategy1")]
-                                    ),
-                                ]
-                            ),
-                        ]
-                    ),
-                ]
-            );
+            var suppliedAuthorizationMetadataResponse = new AuthorizationMetadataResponse([
+                new ClaimSetMetadata(
+                    ClaimSetName: "ClaimSet1",
+                    Claims: [new("ClaimOne", 1)],
+                    Authorizations:
+                    [
+                        new Authorization(
+                            1,
+                            [new Action("Create", [new ClaimSetMetadata.AuthorizationStrategy("Strategy1")])]
+                        ),
+                    ]
+                ),
+            ]);
 
             A.CallTo(() => _responseFactory.Create("ClaimSet1", claims))
                 .Returns(suppliedAuthorizationMetadataResponse);

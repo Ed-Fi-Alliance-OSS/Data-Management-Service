@@ -92,8 +92,7 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             var sql = $"""
-                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
-                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue
                 FROM dmscs.DmsInstanceRouteContext rc
                 JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
                 WHERE {TenantContext.TenantWhereClause("i")}
@@ -126,8 +125,7 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             var sql = $"""
-                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
-                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue
                 FROM dmscs.DmsInstanceRouteContext rc
                 JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
                 WHERE rc.Id = @Id AND {TenantContext.TenantWhereClause("i")};
@@ -257,8 +255,7 @@ public class DmsInstanceRouteContextRepository(
         try
         {
             var sql = $"""
-                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
-                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue
                 FROM dmscs.DmsInstanceRouteContext rc
                 JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
                 WHERE rc.InstanceId = @InstanceId AND {TenantContext.TenantWhereClause("i")}
@@ -292,8 +289,7 @@ public class DmsInstanceRouteContextRepository(
             }
 
             var sql = $"""
-                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue,
-                       rc.CreatedAt, rc.CreatedBy, rc.LastModifiedAt, rc.ModifiedBy
+                SELECT rc.Id, rc.InstanceId, rc.ContextKey, rc.ContextValue
                 FROM dmscs.DmsInstanceRouteContext rc
                 JOIN dmscs.DmsInstance i ON rc.InstanceId = i.Id
                 WHERE rc.InstanceId = ANY(@InstanceIds) AND {TenantContext.TenantWhereClause("i")}

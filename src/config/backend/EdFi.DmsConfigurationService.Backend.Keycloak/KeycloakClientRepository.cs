@@ -237,22 +237,20 @@ public class KeycloakClientRepository(
                 {
                     Name = scope,
                     Protocol = "openid-connect",
-                    ProtocolMappers = new List<ProtocolMapper>(
-                        [
-                            new ProtocolMapper()
+                    ProtocolMappers = new List<ProtocolMapper>([
+                        new ProtocolMapper()
+                        {
+                            Name = "audience resolve",
+                            Protocol = "openid-connect",
+                            _ProtocolMapper = "oidc-audience-resolve-mapper",
+                            ConsentRequired = false,
+                            Config = new Dictionary<string, string>
                             {
-                                Name = "audience resolve",
-                                Protocol = "openid-connect",
-                                _ProtocolMapper = "oidc-audience-resolve-mapper",
-                                ConsentRequired = false,
-                                Config = new Dictionary<string, string>
-                                {
-                                    { "introspection.token.claim", "true" },
-                                    { "access.token.claim", "true" },
-                                },
+                                { "introspection.token.claim", "true" },
+                                { "access.token.claim", "true" },
                             },
-                        ]
-                    ),
+                        },
+                    ]),
                     Attributes = new Attributes() { IncludeInTokenScope = "true" },
                 }
             );

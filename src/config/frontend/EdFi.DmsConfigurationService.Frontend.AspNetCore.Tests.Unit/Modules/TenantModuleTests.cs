@@ -87,7 +87,6 @@ public class TenantModuleTests
                             {
                                 Id = 1,
                                 Name = "test-tenant",
-                                CreatedAt = DateTime.UtcNow,
                             };
                         A.CallTo(() => _tenantRepository.GetTenantByName("test-tenant"))
                             .Returns(new TenantGetByNameResult.Success(fakeTenantResponse));
@@ -118,28 +117,12 @@ public class TenantModuleTests
 
                 A.CallTo(() => _tenantRepository.QueryTenant(A<PagingQuery>.Ignored))
                     .Returns(
-                        new TenantQueryResult.Success(
-                            [
-                                new TenantResponse()
-                                {
-                                    Id = 1,
-                                    Name = "Test_Tenant",
-                                    CreatedAt = DateTime.UtcNow,
-                                },
-                            ]
-                        )
+                        new TenantQueryResult.Success([new TenantResponse() { Id = 1, Name = "Test_Tenant" }])
                     );
 
                 A.CallTo(() => _tenantRepository.GetTenant(A<long>.Ignored))
                     .Returns(
-                        new TenantGetResult.Success(
-                            new TenantResponse()
-                            {
-                                Id = 1,
-                                Name = "Test_Tenant",
-                                CreatedAt = DateTime.UtcNow,
-                            }
-                        )
+                        new TenantGetResult.Success(new TenantResponse() { Id = 1, Name = "Test_Tenant" })
                     );
             }
 
