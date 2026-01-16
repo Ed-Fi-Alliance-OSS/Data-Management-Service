@@ -12,6 +12,7 @@ using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.TokenInfo;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
@@ -160,6 +161,9 @@ public static class WebApplicationBuilderExtensions
         // Register DMS Instance services
         webAppBuilder.Services.AddSingleton<IDmsInstanceProvider, ConfigurationServiceDmsInstanceProvider>();
         webAppBuilder.Services.AddSingleton<IConnectionStringProvider, DmsConnectionStringProvider>();
+
+        // Register Token Info provider as scoped (depends on scoped IEducationOrganizationRepository and IDmsInstanceSelection)
+        webAppBuilder.Services.AddScoped<ITokenInfoProvider, TokenInfoProvider>();
 
         // Add JWT authentication services from Core
         webAppBuilder.Services.AddJwtAuthentication(webAppBuilder.Configuration);
