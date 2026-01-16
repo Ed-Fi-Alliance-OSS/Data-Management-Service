@@ -20,7 +20,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     public JsonNode FilterDocument(
         JsonNode document,
         ContentTypeDefinition contentType,
-        IEnumerable<JsonPath> identityJsonPaths
+        HashSet<string> identityPropertyNames
     )
     {
         if (document is not JsonObject sourceObject)
@@ -28,10 +28,13 @@ internal class ProfileResponseFilter : IProfileResponseFilter
             return document.DeepClone();
         }
 
-        // Extract top-level identity property names from JSON paths
-        HashSet<string> identityPropertyNames = ExtractTopLevelPropertyNames(identityJsonPaths);
-
         return FilterObject(sourceObject, contentType, identityPropertyNames);
+    }
+
+    /// <inheritdoc />
+    public HashSet<string> ExtractIdentityPropertyNames(IEnumerable<JsonPath> identityJsonPaths)
+    {
+        return ExtractTopLevelPropertyNames(identityJsonPaths);
     }
 
     /// <summary>

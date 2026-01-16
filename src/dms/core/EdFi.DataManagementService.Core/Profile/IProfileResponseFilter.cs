@@ -18,11 +18,19 @@ internal interface IProfileResponseFilter
     /// </summary>
     /// <param name="document">The JSON document to filter</param>
     /// <param name="contentType">The profile content type rules defining what to include/exclude</param>
-    /// <param name="identityJsonPaths">Paths to identity fields that must always be preserved</param>
+    /// <param name="identityPropertyNames">Set of top-level property names that must always be preserved</param>
     /// <returns>A new filtered JSON document</returns>
     JsonNode FilterDocument(
         JsonNode document,
         ContentTypeDefinition contentType,
-        IEnumerable<JsonPath> identityJsonPaths
+        HashSet<string> identityPropertyNames
     );
+
+    /// <summary>
+    /// Extracts top-level property names from JSON paths.
+    /// Call this once and reuse the result when filtering multiple documents.
+    /// </summary>
+    /// <param name="identityJsonPaths">Paths to identity fields</param>
+    /// <returns>A set of top-level property names to preserve</returns>
+    HashSet<string> ExtractIdentityPropertyNames(IEnumerable<JsonPath> identityJsonPaths);
 }
