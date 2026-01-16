@@ -74,7 +74,7 @@ internal class ProfileFilteringMiddleware(
         requestInfo.FrontendResponse = new FrontendResponse(
             StatusCode: requestInfo.FrontendResponse.StatusCode,
             Body: filteredBody,
-            Headers: requestInfo.FrontendResponse.Headers.ToDictionary(h => h.Key, h => h.Value),
+            Headers: requestInfo.FrontendResponse.Headers,
             LocationHeaderPath: requestInfo.FrontendResponse.LocationHeaderPath,
             ContentType: requestInfo.FrontendResponse.ContentType
         );
