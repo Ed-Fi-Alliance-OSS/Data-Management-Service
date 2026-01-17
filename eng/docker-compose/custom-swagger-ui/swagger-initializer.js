@@ -16,16 +16,9 @@ window.onload = function () {
         console.log('Ed-Fi Custom Domains plugin enabled');
     }
 
-    // Add Tenant plugin if available (must be added before School Year for correct URL ordering)
-    if (window.EdFiTenant) {
-        plugins.push(window.EdFiTenant);
-        console.log('Ed-Fi Tenant plugin enabled');
-    }
-
-    // Add School Year plugin if available
-    if (window.EdFiSchoolYear) {
-        plugins.push(window.EdFiSchoolYear);
-        console.log('Ed-Fi School Year plugin enabled');
+    if (window.EdFiRouteContext) {
+        plugins.push(window.EdFiRouteContext);
+        console.log('Ed-Fi Route Context plugin enabled');
     }
 
     window.ui = SwaggerUIBundle({
@@ -39,14 +32,17 @@ window.onload = function () {
         layout: "StandaloneLayout",
         docExpansion: "none",
         requestInterceptor: (req) => {
-            // Get the current selected tenant and year from the DOM selectors
-            const tenantSelect = document.querySelector('.tenant-select');
-            const schoolYearSelect = document.querySelector('.school-year-select');
+            const routeState = window.__edfiRouteContextState || null;
+            const selections = routeState && typeof routeState.getSelections === 'function'
+                ? routeState.getSelections()
+                : {};
+            const routePrefix = routeState && typeof routeState.getRoutePrefix === 'function'
+                ? routeState.getRoutePrefix()
+                : '';
 
-            const currentTenant = tenantSelect ? tenantSelect.value : null;
-            const currentYear = schoolYearSelect ? schoolYearSelect.value : null;
+            const currentTenant = selections && (selections.tenant || selections.Tenant) ? (selections.tenant || selections.Tenant) : null;
 
-            console.log('Request interceptor - Tenant:', currentTenant, 'Year:', currentYear, 'Original URL:', req.url);
+            console.log('Request interceptor - Route prefix:', routePrefix || '(none)', 'Tenant:', currentTenant || '(none)', 'Original URL:', req.url);
 
             if (req.url) {
                 // Replace dms-config-service with localhost for CORS
@@ -58,34 +54,18 @@ window.onload = function () {
                     console.log('Hostname replaced in request URL:', req.url);
                 }
 
-                // Add tenant and school year to data requests
-                // URL pattern: /{tenant}/{schoolYear}/data/...
-                if (req.url.includes('/data/') && !req.url.includes('/metadata/')) {
-                    // Build prefix: tenant first, then school year
-                    let prefix = '';
-                    if (currentTenant) {
-                        // Check if tenant is already in the URL
-                        if (!req.url.includes(`/${currentTenant}/`)) {
-                            prefix += `/${currentTenant}`;
-                        }
-                    }
-                    if (currentYear) {
-                        // Check if school year is already in the URL
-                        if (!req.url.match(/\/\d{4}\//)) {
-                            prefix += `/${currentYear}`;
-                        }
-                    }
-
-                    if (prefix) {
-                        req.url = req.url.replace(/\/data\//, `${prefix}/data/`);
-                        console.log('Tenant/Year added to data request:', req.url);
+                // Add route context segments to data requests
+                if (routePrefix && req.url.includes('/data/') && !req.url.includes('/metadata/')) {
+                    if (!req.url.includes(`${routePrefix}/data/`)) {
+                        req.url = req.url.replace(/\/data\//, `${routePrefix}/data/`);
+                        console.log('Route context added to data request:', req.url);
                     }
                 }
 
-                // Add school year to OAuth token requests (tenant is handled by credential routing)
-                if (req.url.includes('/connect/token') && currentYear) {
-                    if (!req.url.match(/\/connect\/token\/\d{4}/)) {
-                        req.url = req.url.replace(/\/connect\/token$/, `/connect/token/${currentYear}`);
+                // Add route context prefix to OAuth token requests
+                if (routePrefix && req.url.includes('/connect/token')) {
+                    if (!req.url.includes(`/connect/token${routePrefix}`)) {
+                        req.url = req.url.replace(/\/connect\/token(?!\/)/, `/connect/token${routePrefix}`);
                         console.log('Token request final URL:', req.url);
                     }
                 }

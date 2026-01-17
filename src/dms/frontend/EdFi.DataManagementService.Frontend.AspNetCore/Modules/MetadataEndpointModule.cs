@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -20,78 +21,60 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 public partial class MetadataEndpointModule : IEndpointModule
 {
     /// <summary>
-    /// Builds servers array for OpenAPI spec with tenant and/or school year variables as applicable.
-    /// Handles single-tenant, multi-tenant, and school-year configurations uniformly.
+    /// Builds servers array for the OpenAPI spec using the configured multi-tenancy and route qualifier settings.
     /// </summary>
-    private static JsonArray GetServers(HttpContext httpContext, IDmsInstanceProvider dmsInstanceProvider)
+    private static JsonArray GetServers(
+        HttpContext httpContext,
+        IDmsInstanceProvider dmsInstanceProvider,
+        IOptions<Configuration.AppSettings> appSettings
+    )
     {
         string scheme = httpContext.Request.Scheme;
         string host = httpContext.Request.Host.ToString();
         string baseUrl = $"{scheme}://{host}";
 
-        // Get all loaded tenant keys (excludes empty string for single-tenant mode)
-        var tenants = dmsInstanceProvider
-            .GetLoadedTenantKeys()
-            .Where(t => !string.IsNullOrEmpty(t))
-            .OrderBy(t => t)
-            .ToList();
-
-        // For single-tenant mode, get school years from default tenant
-        // For multi-tenant mode, aggregate school years from all tenants
-        var allSchoolYears =
-            tenants.Count > 0
-                ? tenants
-                    .SelectMany(tenant => dmsInstanceProvider.GetAll(tenant))
-                    .SelectMany(instance => instance.RouteContext)
-                    .Where(kvp => kvp.Key.Value.Equals("schoolYear", StringComparison.OrdinalIgnoreCase))
-                    .Select(kvp => kvp.Value.Value)
-                    .Distinct()
-                    .OrderByDescending(year => year)
-                    .ToList()
-                : dmsInstanceProvider
-                    .GetAll(null)
-                    .SelectMany(instance => instance.RouteContext)
-                    .Where(kvp => kvp.Key.Value.Equals("schoolYear", StringComparison.OrdinalIgnoreCase))
-                    .Select(kvp => kvp.Value.Value)
-                    .Distinct()
-                    .OrderByDescending(year => year)
-                    .ToList();
+        bool multiTenancyEnabled = appSettings.Value.MultiTenancy;
+        string[] routeQualifierSegments = appSettings.Value.GetRouteQualifierSegmentsArray();
 
         var variables = new JsonObject();
         var urlSegments = new List<string> { baseUrl };
 
-        // Add Tenant Selection variable if tenants exist
-        if (tenants.Count > 0)
+        if (multiTenancyEnabled)
         {
-            variables["Tenant Selection"] = new JsonObject
-            {
-                ["default"] = tenants[0],
-                ["description"] = "Tenant Selection",
-                ["enum"] = new JsonArray(tenants.Select(t => JsonValue.Create(t)).ToArray()),
-            };
-            urlSegments.Add("{Tenant Selection}");
+            List<string> tenantValues = dmsInstanceProvider
+                .GetLoadedTenantKeys()
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(t => t, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            variables["tenant"] = CreateServerVariable("tenant", "Tenant", tenantValues);
+            urlSegments.Add("{tenant}");
         }
 
-        // Add School Year Selection variable if school years exist
-        if (allSchoolYears.Count > 0)
+        if (routeQualifierSegments.Length > 0)
         {
-            variables["School Year Selection"] = new JsonObject
+            var qualifierValues = CollectRouteQualifierValues(dmsInstanceProvider, routeQualifierSegments);
+
+            foreach (string segmentName in routeQualifierSegments)
             {
-                ["default"] = allSchoolYears[0],
-                ["description"] = "School Year Selection",
-                ["enum"] = new JsonArray(allSchoolYears.Select(y => JsonValue.Create(y)).ToArray()),
-            };
-            urlSegments.Add("{School Year Selection}");
+                List<string> values = qualifierValues.TryGetValue(segmentName, out var collected)
+                    ? collected
+                    : [];
+
+                variables[segmentName] = CreateServerVariable(
+                    segmentName,
+                    BuildDisplayLabel(segmentName),
+                    values
+                );
+                urlSegments.Add($"{{{segmentName}}}");
+            }
         }
 
         urlSegments.Add("data");
 
-        // Build URL template (e.g., "http://localhost:8080/{Tenant Selection}/{School Year Selection}/data")
-        string urlTemplate = string.Join("/", urlSegments);
+        var serverObject = new JsonObject { ["url"] = string.Join("/", urlSegments) };
 
-        var serverObject = new JsonObject { ["url"] = urlTemplate };
-
-        // Only add variables if we have any
         if (variables.Count > 0)
         {
             serverObject["variables"] = variables;
@@ -100,19 +83,133 @@ public partial class MetadataEndpointModule : IEndpointModule
         return [serverObject];
     }
 
+    private static JsonObject CreateServerVariable(string key, string description, List<string> values)
+    {
+        var variable = new JsonObject
+        {
+            ["default"] = values.Count > 0 ? values[0] : string.Empty,
+            ["description"] = string.IsNullOrWhiteSpace(description) ? key : description,
+        };
+
+        if (values.Count > 0)
+        {
+            variable["enum"] = new JsonArray(values.Select(value => JsonValue.Create(value)).ToArray());
+        }
+
+        return variable;
+    }
+
+    private static Dictionary<string, List<string>> CollectRouteQualifierValues(
+        IDmsInstanceProvider dmsInstanceProvider,
+        string[] routeQualifierSegments
+    )
+    {
+        var collectedValues = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (string segment in routeQualifierSegments)
+        {
+            collectedValues[segment] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        if (collectedValues.Count == 0)
+        {
+            return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        }
+
+        IReadOnlyList<string> tenantKeys = dmsInstanceProvider.GetLoadedTenantKeys();
+        if (tenantKeys.Count == 0)
+        {
+            AppendValues(null);
+        }
+        else
+        {
+            foreach (string tenantKey in tenantKeys)
+            {
+                AppendValues(string.IsNullOrEmpty(tenantKey) ? null : tenantKey);
+            }
+        }
+
+        return collectedValues.ToDictionary(
+            pair => pair.Key,
+            pair => SortRouteContextValues(pair.Value),
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        void AppendValues(string? tenantKey)
+        {
+            IReadOnlyList<DmsInstance> instances = dmsInstanceProvider.GetAll(tenantKey);
+            foreach (var instance in instances)
+            {
+                foreach (var routeContext in instance.RouteContext)
+                {
+                    if (
+                        collectedValues.TryGetValue(routeContext.Key.Value, out var values)
+                        && !string.IsNullOrWhiteSpace(routeContext.Value.Value)
+                    )
+                    {
+                        values.Add(routeContext.Value.Value);
+                    }
+                }
+            }
+        }
+    }
+
+    private static List<string> SortRouteContextValues(IEnumerable<string> values)
+    {
+        var list = values.Where(value => !string.IsNullOrWhiteSpace(value)).ToList();
+        if (list.Count == 0)
+        {
+            return [];
+        }
+
+        if (
+            list.TrueForAll(value =>
+                int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
+            )
+        )
+        {
+            return list.Select(value => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture))
+                .OrderByDescending(number => number)
+                .Select(number => number.ToString(CultureInfo.InvariantCulture))
+                .ToList();
+        }
+
+        return list.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    private static string BuildDisplayLabel(string segmentName)
+    {
+        if (string.IsNullOrWhiteSpace(segmentName))
+        {
+            return "Value";
+        }
+
+        string withSpacing = Regex
+            .Replace(segmentName, "([a-z0-9])([A-Z])", "$1 $2")
+            .Replace("-", " ")
+            .Replace("_", " ")
+            .Trim();
+
+        if (withSpacing.Length == 0)
+        {
+            return segmentName;
+        }
+
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(withSpacing);
+    }
+
     private sealed record SpecificationSection(string name, string prefix);
 
     [GeneratedRegex(@"specifications\/(?<section>[^-]+)-spec.json?")]
     private static partial Regex PathExpression();
 
-    private static readonly SpecificationSection[] Sections =
+    private static readonly SpecificationSection[] _sections =
     [
         new SpecificationSection("Resources", string.Empty),
         new SpecificationSection("Descriptors", string.Empty),
         new SpecificationSection("Discovery", "Other"),
     ];
 
-    private static readonly string ErrorResourcePath = "Invalid resource path";
+    private static readonly string _errorResourcePath = "Invalid resource path";
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -200,10 +297,11 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetResourceOpenApiSpec(
         HttpContext httpContext,
         IApiService apiService,
-        IDmsInstanceProvider dmsInstanceProvider
+        IDmsInstanceProvider dmsInstanceProvider,
+        IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
+        JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
         JsonNode content = apiService.GetResourceOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -211,10 +309,11 @@ public partial class MetadataEndpointModule : IEndpointModule
     internal static async Task GetDescriptorOpenApiSpec(
         HttpContext httpContext,
         IApiService apiService,
-        IDmsInstanceProvider dmsInstanceProvider
+        IDmsInstanceProvider dmsInstanceProvider,
+        IOptions<Configuration.AppSettings> appSettings
     )
     {
-        JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
+        JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
@@ -223,7 +322,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
-        foreach (var section in Sections)
+        foreach (var section in _sections)
         {
             sections.Add(
                 new RouteInformation(
@@ -249,7 +348,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         if (!match.Success)
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsync(ErrorResourcePath);
+            await httpContext.Response.WriteAsync(_errorResourcePath);
             return;
         }
 
@@ -258,19 +357,19 @@ public partial class MetadataEndpointModule : IEndpointModule
         string oAuthUrl = options.Value.AuthenticationService;
         if (
             Array.Exists(
-                Sections,
+                _sections,
                 x => x.name.ToLowerInvariant().Equals(section, StringComparison.InvariantCultureIgnoreCase)
             )
         )
         {
             var content = contentProvider.LoadJsonContent(section, rootUrl, oAuthUrl);
-            content["servers"] = GetServers(httpContext, dmsInstanceProvider);
+            content["servers"] = GetServers(httpContext, dmsInstanceProvider, options);
             await httpContext.Response.WriteAsSerializedJsonAsync(content);
         }
         else
         {
             httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
-            await httpContext.Response.WriteAsync(ErrorResourcePath);
+            await httpContext.Response.WriteAsync(_errorResourcePath);
         }
     }
 }
