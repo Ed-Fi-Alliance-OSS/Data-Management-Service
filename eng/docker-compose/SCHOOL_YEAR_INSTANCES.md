@@ -144,4 +144,6 @@ Ensure your range uses the correct format: `"YYYY-YYYY"` with a hyphen separator
 
 - `Dms-Management.psm1` - PowerShell module with functions for managing DMS instances
 - `test-schoolyear-route.http` - REST Client examples for manual route creation
-- `edfi-school-year-from-spec.js` - Swagger UI plugin for school year selection
+- `edfi-route-contexts-from-spec.js` - Swagger UI plugin for tenant and route
+   qualifier selection (choosing which school year or tenant route context is used
+   when calling the DMS APIs)
