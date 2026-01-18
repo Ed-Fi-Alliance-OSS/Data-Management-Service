@@ -40,7 +40,7 @@ window.onload = function () {
                 ? routeState.getRoutePrefix()
                 : '';
 
-            const currentTenant = selections && (selections.tenant || selections.Tenant) ? (selections.tenant || selections.Tenant) : null;
+            const currentTenant = selections && selections.tenant ? selections.tenant : null;
 
             console.log('Request interceptor - Route prefix:', routePrefix || '(none)', 'Tenant:', currentTenant || '(none)', 'Original URL:', req.url);
 
@@ -65,7 +65,7 @@ window.onload = function () {
                 // Add route context prefix to OAuth token requests
                 if (routePrefix && req.url.includes('/connect/token')) {
                     if (!req.url.includes(`/connect/token${routePrefix}`)) {
-                        req.url = req.url.replace(/\/connect\/token(?!\/)/, `/connect/token${routePrefix}`);
+                        req.url = req.url.replace(/\/connect\/token(?=\/|\?|#|$)/, `/connect/token${routePrefix}`);
                         console.log('Token request final URL:', req.url);
                     }
                 }

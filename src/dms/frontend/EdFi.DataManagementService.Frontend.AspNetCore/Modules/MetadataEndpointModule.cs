@@ -139,15 +139,14 @@ public partial class MetadataEndpointModule : IEndpointModule
             IReadOnlyList<DmsInstance> instances = dmsInstanceProvider.GetAll(tenantKey);
             foreach (var instance in instances)
             {
-                foreach (var routeContext in instance.RouteContext)
-                {
-                    if (
-                        collectedValues.TryGetValue(routeContext.Key.Value, out var values)
-                        && !string.IsNullOrWhiteSpace(routeContext.Value.Value)
+                foreach (
+                    var routeContext in instance.RouteContext.Where(rc =>
+                        collectedValues.ContainsKey(rc.Key.Value)
+                        && !string.IsNullOrWhiteSpace(rc.Value.Value)
                     )
-                    {
-                        values.Add(routeContext.Value.Value);
-                    }
+                )
+                {
+                    collectedValues[routeContext.Key.Value].Add(routeContext.Value.Value);
                 }
             }
         }
@@ -160,21 +159,29 @@ public partial class MetadataEndpointModule : IEndpointModule
         {
             return [];
         }
-
-        if (
-            list.TrueForAll(value =>
-                int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out _)
-            )
-        )
+        // Attempt to parse all values as integers in a single pass.
+        var parsedIntegers = new List<int>(list.Count);
+        foreach (var value in list)
         {
-            return list.Select(value => int.Parse(value, NumberStyles.Integer, CultureInfo.InvariantCulture))
-                .OrderByDescending(number => number)
-                .Select(number => number.ToString(CultureInfo.InvariantCulture))
-                .ToList();
+            if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var number))
+            {
+                parsedIntegers.Add(number);
+            }
+            else
+            {
+                // If any value is not an integer, fall back to string-based sorting.
+                return list.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList();
+            }
         }
-
-        return list.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList();
+        // All values are integers; sort numerically in descending order.
+        return parsedIntegers
+            .OrderByDescending(number => number)
+            .Select(number => number.ToString(CultureInfo.InvariantCulture))
+            .ToList();
     }
+
+    [GeneratedRegex("([a-z0-9])([A-Z])")]
+    private static partial Regex CamelCaseSplitRegex();
 
     private static string BuildDisplayLabel(string segmentName)
     {
@@ -183,8 +190,8 @@ public partial class MetadataEndpointModule : IEndpointModule
             return "Value";
         }
 
-        string withSpacing = Regex
-            .Replace(segmentName, "([a-z0-9])([A-Z])", "$1 $2")
+        string withSpacing = CamelCaseSplitRegex()
+            .Replace(segmentName, "$1 $2")
             .Replace("-", " ")
             .Replace("_", " ")
             .Trim();
@@ -194,7 +201,7 @@ public partial class MetadataEndpointModule : IEndpointModule
             return segmentName;
         }
 
-        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(withSpacing);
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(withSpacing.ToLowerInvariant());
     }
 
     private sealed record SpecificationSection(string name, string prefix);
