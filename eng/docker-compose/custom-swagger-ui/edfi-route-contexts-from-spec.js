@@ -339,10 +339,24 @@ window.EdFiRouteContext = function () {
     };
 
     const slugify = (value) =>
+<<<<<<< HEAD
         String(value || '')
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '');
+=======
+            .replace(/-/g, ' ')
+            .replace(/_/g, ' ')
+            .trim()
+            .toLowerCase();
+        const words = spaced.split(/\s+/).map((word) => {
+            if (word.length === 0) {
+                return word;
+            }
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        });
+        return words.join(' ');
+>>>>>>> dc43acc6 (Apply copilot review notes)
 
     const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -354,6 +368,7 @@ window.EdFiRouteContext = function () {
         min-height: 36px;
         background-color: #fff;
         color: #1f2937;
+<<<<<<< HEAD
     `;
 
     return {
@@ -361,6 +376,8 @@ window.EdFiRouteContext = function () {
             spec: {
                 wrapActions: {
                     updateSpec: (oriAction, system) => (...args) => {
+=======
+>>>>>>> dc43acc6 (Apply copilot review notes)
                         try {
                             if (args && args.length > 0) {
                                 let spec = args[0];
@@ -386,6 +403,19 @@ window.EdFiRouteContext = function () {
 
                                     args[0] = originalWasString ? JSON.stringify(spec) : spec;
                                 }
+<<<<<<< HEAD
+=======
+                            }
+                        } catch (error) {
+                            console.warn('Route context plugin failed to normalize server host:', error);
+                        }
+
+                        const result = oriAction(...args);
+                                        typeof server.url === 'string'
+                                            ? server.url.replace('dms-config-service', 'localhost')
+                                            : server.url,
+                                }));
+>>>>>>> dc43acc6 (Apply copilot review notes)
                             }
                         } catch (error) {
                             console.warn('Route context plugin failed to normalize server host:', error);
