@@ -57,12 +57,11 @@ window.EdFiRouteContext = function () {
         return specWrapper;
     };
 
-    const scheduleRebuild = (system) => {
+    onst scheduleRebuild = () => {
         if (state.rebuildTimeout) {
             clearTimeout(state.rebuildTimeout);
         }
-
-        state.rebuildTimeout = setTimeout(() => rebuildSelector(system), 250);
+        state.rebuildTimeout = setTimeout(rebuildSelector, 250);
     };
 
     const rebuildSelector = async () => {
@@ -252,12 +251,6 @@ window.EdFiRouteContext = function () {
     };
 
     const insertContainer = (container) => {
-        const schoolYearSelector = document.querySelector('.school-year-selector');
-        if (schoolYearSelector && schoolYearSelector.parentNode) {
-            schoolYearSelector.parentNode.insertBefore(container, schoolYearSelector);
-            return;
-        }
-
         const infoContainer = document.querySelector('.information-container');
         if (infoContainer && infoContainer.parentNode) {
             infoContainer.parentNode.insertBefore(container, infoContainer);
@@ -332,15 +325,31 @@ window.EdFiRouteContext = function () {
         }
         const spaced = name
             .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-            .replace(/[\-_]+/g, ' ')
-            .trim();
-        return spaced.charAt(0).toUpperCase() + spaced.slice(1);
+            .replace(/-/g, ' ')
+            .replace(/_/g, ' ')
+            .trim()
+            .toLowerCase();
+        const words = spaced.split(/\s+/).map((word) => {
+            if (word.length === 0) {
+                return word;
+            }
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        });
+        return words.join(' ');
     };
 
     const slugify = (value) =>
-        (value || '')
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-');
+            .replace(/-/g, ' ')
+            .replace(/_/g, ' ')
+            .trim()
+            .toLowerCase();
+        const words = spaced.split(/\s+/).map((word) => {
+            if (word.length === 0) {
+                return word;
+            }
+            return word.charAt(0).toUpperCase() + word.slice(1);
+        });
+        return words.join(' ');
 
     const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -352,26 +361,37 @@ window.EdFiRouteContext = function () {
         min-height: 36px;
         background-color: #fff;
         color: #1f2937;
-        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.08);
-    `;
-
-    return {
-        afterLoad: scheduleRebuild,
-        statePlugins: {
-            spec: {
-                wrapActions: {
-                    updateSpec: (oriAction, system) => (...args) => {
-                        const result = oriAction(...args);
-
                         try {
-                            let [spec] = args;
-                            if (typeof spec === 'string') {
-                                spec = JSON.parse(spec);
+                            if (args && args.length > 0) {
+                                let spec = args[0];
+                                const originalWasString = typeof spec === 'string';
+
+                                if (originalWasString) {
+                                    try {
+                                        spec = JSON.parse(spec);
+                                    } catch (parseError) {
+                                        // If parsing fails, leave the spec as-is.
+                                        spec = null;
+                                    }
+                                }
+
+                                if (spec && typeof spec === 'object' && Array.isArray(spec.servers)) {
+                                    spec.servers = spec.servers.map((server) => ({
+                                        ...server,
+                                        url:
+                                            typeof server.url === 'string'
+                                                ? server.url.replace('dms-config-service', 'localhost')
+                                                : server.url,
+                                    }));
+
+                                    args[0] = originalWasString ? JSON.stringify(spec) : spec;
+                                }
                             }
-                            if (spec && Array.isArray(spec.servers)) {
-                                spec.servers = spec.servers.map((server) => ({
-                                    ...server,
-                                    url:
+                        } catch (error) {
+                            console.warn('Route context plugin failed to normalize server host:', error);
+                        }
+
+                        const result = oriAction(...args);
                                         typeof server.url === 'string'
                                             ? server.url.replace('dms-config-service', 'localhost')
                                             : server.url,
