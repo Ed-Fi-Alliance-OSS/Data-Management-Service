@@ -115,16 +115,24 @@ public class ProfileStepDefinitions(
     #region Given - Data Setup
 
     /// <summary>
-    /// Creates descriptors needed for the test data using the profile-aware token.
-    /// This is a profile-specific version of "the system has these descriptors".
+    /// Creates descriptors needed for the test data using the SystemAdministrator token.
+    /// This ensures descriptors can be created regardless of the profile test user's claimset permissions.
     /// </summary>
     [Given(@"the system has these descriptors")]
     [Scope(Feature = "Profile Response Filtering")]
     [Scope(Feature = "Profile Resolution")]
     [Scope(Feature = "Profile Header Validation")]
     [Scope(Feature = "Profile Collection Item Filtering")]
+    [Scope(Feature = "Profile Extension Filtering")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
+        // Use SystemAdministrator token for descriptor creation to ensure we have permissions
+        // for all descriptors, regardless of the profile test user's claimset
+        var adminHeaders = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", $"Bearer {SystemAdministrator.Token}"),
+        };
+
         foreach (DataTableRow row in dataTable.Rows)
         {
             string descriptorValue = row["descriptorValue"];
@@ -137,10 +145,15 @@ public class ProfileStepDefinitions(
 
             IAPIResponse response = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { DataObject = descriptorBody, Headers = GetHeaders() }
+                new() { DataObject = descriptorBody, Headers = adminHeaders }
             )!;
 
-            _logger.log.Information($"Descriptor response: {response.Status}");
+            string body = await response.TextAsync();
+            _logger.log.Information($"Descriptor response: {response.Status} - {body}");
+
+            response
+                .Status.Should()
+                .BeOneOf([200, 201], $"Descriptor creation failed for {descriptorName}:\n{body}");
         }
     }
 
@@ -475,6 +488,138 @@ public class ProfileStepDefinitions(
     }
 
     /// <summary>
+    /// Verifies that the response body contains a value at the specified JSON path.
+    /// Path uses dot notation (e.g., "_ext.sample.isExemplary").
+    /// </summary>
+    [Then(@"the response body should contain path ""([^""]*)""")]
+    public async Task ThenTheResponseBodyShouldContainPath(string jsonPath)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        // Handle both single object and array responses
+        JsonObject[] objects = responseJson is JsonArray jsonArray
+            ? jsonArray.Select(item => item!.AsObject()).ToArray()
+            : [responseJson.AsObject()];
+
+        string[] pathParts = jsonPath.Split('.');
+
+        foreach (JsonObject obj in objects)
+        {
+            JsonNode? current = obj;
+
+            foreach (string part in pathParts)
+            {
+                if (
+                    current is JsonObject currentObj
+                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
+                )
+                {
+                    current = next;
+                }
+                else
+                {
+                    throw new AssertionException(
+                        $"Path '{jsonPath}' not found in response. Failed at '{part}'. Response: {obj}"
+                    );
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the response body does not contain the specified JSON path.
+    /// Path uses dot notation (e.g., "_ext.sample.cteProgramService").
+    /// </summary>
+    [Then(@"the response body should not contain path ""([^""]*)""")]
+    public async Task ThenTheResponseBodyShouldNotContainPath(string jsonPath)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        // Handle both single object and array responses
+        JsonObject[] objects = responseJson is JsonArray jsonArray
+            ? jsonArray.Select(item => item!.AsObject()).ToArray()
+            : [responseJson.AsObject()];
+
+        string[] pathParts = jsonPath.Split('.');
+
+        foreach (JsonObject obj in objects)
+        {
+            JsonNode? current = obj;
+            bool pathExists = true;
+
+            foreach (string part in pathParts)
+            {
+                if (
+                    current is JsonObject currentObj
+                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
+                )
+                {
+                    current = next;
+                }
+                else
+                {
+                    pathExists = false;
+                    break;
+                }
+            }
+
+            pathExists
+                .Should()
+                .BeFalse($"Path '{jsonPath}' should not exist in response but was found. Response: {obj}");
+        }
+    }
+
+    /// <summary>
+    /// Verifies that the response body contains a specific value at the specified JSON path.
+    /// Path uses dot notation (e.g., "_ext.sample.isExemplary").
+    /// </summary>
+    [Then(@"the response body path ""([^""]*)"" should have value ""([^""]*)""")]
+    public async Task ThenTheResponseBodyPathShouldHaveValue(string jsonPath, string expectedValue)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        // Handle both single object and array responses
+        JsonObject[] objects = responseJson is JsonArray jsonArray
+            ? jsonArray.Select(item => item!.AsObject()).ToArray()
+            : [responseJson.AsObject()];
+
+        string[] pathParts = jsonPath.Split('.');
+
+        foreach (JsonObject obj in objects)
+        {
+            JsonNode? current = obj;
+
+            foreach (string part in pathParts)
+            {
+                if (
+                    current is JsonObject currentObj
+                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
+                )
+                {
+                    current = next;
+                }
+                else
+                {
+                    throw new AssertionException(
+                        $"Path '{jsonPath}' not found in response. Failed at '{part}'. Response: {obj}"
+                    );
+                }
+            }
+
+            string? actualValue = current?.ToString();
+            actualValue
+                .Should()
+                .Be(
+                    expectedValue,
+                    $"Path '{jsonPath}' should have value '{expectedValue}' but was '{actualValue}'"
+                );
+        }
+    }
+
+    /// <summary>
     /// Verifies the response body contains a specific error message.
     /// </summary>
     [Then(@"the response body should contain error ""([^""]*)""")]
@@ -595,11 +740,6 @@ public class ProfileStepDefinitions(
         input = input.StartsWith("metadata") ? input : $"data/{input}";
 
         return input;
-    }
-
-    private List<KeyValuePair<string, string>> GetHeaders()
-    {
-        return [new("Authorization", _dmsToken)];
     }
 
     /// <summary>

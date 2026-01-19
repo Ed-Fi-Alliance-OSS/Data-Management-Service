@@ -124,6 +124,82 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
+    /// Profile for School with extension filtering using IncludeOnly mode within the extension.
+    /// Only includes isExemplary from the Sample extension, excludes cteProgramService.
+    /// </summary>
+    public const string SchoolExtensionIncludeOnlyName = "E2E-Test-School-Extension-IncludeOnly";
+
+    public const string SchoolExtensionIncludeOnlyXml = """
+        <Profile name="E2E-Test-School-Extension-IncludeOnly">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll">
+                    <Extension name="sample" memberSelection="IncludeOnly">
+                        <Property name="isExemplary"/>
+                    </Extension>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with extension filtering using ExcludeOnly mode within the extension.
+    /// Excludes isExemplary from the Sample extension, keeps cteProgramService.
+    /// </summary>
+    public const string SchoolExtensionExcludeOnlyName = "E2E-Test-School-Extension-ExcludeOnly";
+
+    public const string SchoolExtensionExcludeOnlyXml = """
+        <Profile name="E2E-Test-School-Extension-ExcludeOnly">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll">
+                    <Extension name="sample" memberSelection="ExcludeOnly">
+                        <Property name="isExemplary"/>
+                    </Extension>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with IncludeOnly at parent level but no extension rule.
+    /// Per design doc section 7.5: When parent uses IncludeOnly, extensions without
+    /// explicit rules are EXCLUDED (not explicitly included).
+    /// </summary>
+    public const string SchoolIncludeOnlyNoExtensionRuleName = "E2E-Test-School-IncludeOnly-NoExtensionRule";
+
+    public const string SchoolIncludeOnlyNoExtensionRuleXml = """
+        <Profile name="E2E-Test-School-IncludeOnly-NoExtensionRule">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Property name="nameOfInstitution"/>
+                    <Property name="educationOrganizationCategories"/>
+                    <Property name="gradeLevels"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with ExcludeOnly at parent level but no extension rule.
+    /// Per design doc section 7.5: When parent uses ExcludeOnly, extensions without
+    /// explicit rules are INCLUDED (not explicitly excluded).
+    /// </summary>
+    public const string SchoolExcludeOnlyNoExtensionRuleName = "E2E-Test-School-ExcludeOnly-NoExtensionRule";
+
+    public const string SchoolExcludeOnlyNoExtensionRuleXml = """
+        <Profile name="E2E-Test-School-ExcludeOnly-NoExtensionRule">
+            <Resource name="School">
+                <ReadContentType memberSelection="ExcludeOnly">
+                    <Property name="shortNameOfInstitution"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
     public static IReadOnlyList<(string Name, string Xml)> AllProfiles =>
@@ -134,5 +210,9 @@ public static class ProfileDefinitions
             (SchoolGradeLevelFilterName, SchoolGradeLevelFilterXml),
             (SchoolGradeLevelExcludeFilterName, SchoolGradeLevelExcludeFilterXml),
             (SchoolIncludeOnlyAltName, SchoolIncludeOnlyAltXml),
+            (SchoolExtensionIncludeOnlyName, SchoolExtensionIncludeOnlyXml),
+            (SchoolExtensionExcludeOnlyName, SchoolExtensionExcludeOnlyXml),
+            (SchoolIncludeOnlyNoExtensionRuleName, SchoolIncludeOnlyNoExtensionRuleXml),
+            (SchoolExcludeOnlyNoExtensionRuleName, SchoolExcludeOnlyNoExtensionRuleXml),
         ];
 }
