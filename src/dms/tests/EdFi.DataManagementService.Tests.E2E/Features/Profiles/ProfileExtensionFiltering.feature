@@ -47,7 +47,7 @@ Feature: Profile Extension Filtering
         Scenario: 02 Extension IncludeOnly profile preserves the isExemplary value
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Extension-IncludeOnly" for resource "School"
             Then the profile response status is 200
-             And the response body path "_ext.sample.isExemplary" should have value "True"
+             And the response body path "_ext.sample.isExemplary" should have value "true"
 
     Rule: Extension ExcludeOnly mode returns all extension properties except those explicitly excluded
 

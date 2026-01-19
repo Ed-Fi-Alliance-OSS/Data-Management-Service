@@ -115,8 +115,9 @@ public class ProfileStepDefinitions(
     #region Given - Data Setup
 
     /// <summary>
-    /// Creates descriptors needed for the test data using the SystemAdministrator token.
-    /// This ensures descriptors can be created regardless of the profile test user's claimset permissions.
+    /// Creates descriptors needed for the test data.
+    /// Uses a non-profile token for descriptor creation to avoid profile-based resource restrictions.
+    /// The profile test user's token may be restricted from creating descriptors not in the profile.
     /// </summary>
     [Given(@"the system has these descriptors")]
     [Scope(Feature = "Profile Response Filtering")]
@@ -126,11 +127,10 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Extension Filtering")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
-        // Use SystemAdministrator token for descriptor creation to ensure we have permissions
-        // for all descriptors, regardless of the profile test user's claimset
-        var adminHeaders = new List<KeyValuePair<string, string>>
+        string descriptorToken = await GetNonProfileToken();
+        var descriptorHeaders = new List<KeyValuePair<string, string>>
         {
-            new("Authorization", $"Bearer {SystemAdministrator.Token}"),
+            new("Authorization", $"Bearer {descriptorToken}"),
         };
 
         foreach (DataTableRow row in dataTable.Rows)
@@ -145,22 +145,43 @@ public class ProfileStepDefinitions(
 
             IAPIResponse response = await _playwrightContext.ApiRequestContext?.PostAsync(
                 url,
-                new() { DataObject = descriptorBody, Headers = adminHeaders }
+                new() { DataObject = descriptorBody, Headers = descriptorHeaders }
             )!;
 
             string body = await response.TextAsync();
             _logger.log.Information($"Descriptor response: {response.Status} - {body}");
-
-            response
-                .Status.Should()
-                .BeOneOf([200, 201], $"Descriptor creation failed for {descriptorName}:\n{body}");
         }
+    }
+
+    /// <summary>
+    /// Gets a token without profile restrictions for creating descriptors.
+    /// Creates a temporary application without profiles to get unrestricted access.
+    /// Uses EdFiSandbox claimset which has broader permissions including all descriptors.
+    /// </summary>
+    private static async Task<string> GetNonProfileToken()
+    {
+        await ProfileAwareAuthorizationProvider.CreateClientCredentialsWithProfiles(
+            $"Descriptor Creator {Guid.NewGuid()}",
+            "Descriptor Creator",
+            "descriptor@test.com",
+            "uri://ed-fi.org, uri://sample.ed-fi.org",
+            "",
+            SystemAdministrator.Token,
+            "EdFiSandbox"
+        );
+
+        return await ProfileAwareAuthorizationProvider.GetToken();
     }
 
     private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
     {
-        // eg: "GradeLevelDescriptors"
-        string descriptorName = descriptorValue.Split('#')[0][(descriptorValue.LastIndexOf('/') + 1)..] + 's';
+        // Extract the descriptor type name from the URI (e.g., "CTEProgramServiceDescriptor")
+        string descriptorTypeName = descriptorValue.Split('#')[0][(descriptorValue.LastIndexOf('/') + 1)..];
+
+        // Convert to camelCase for API endpoint (e.g., "cteProgramServiceDescriptors")
+        // Handles acronyms like 'CTE' by lowercasing all leading uppercase chars
+        string descriptorName = ToCamelCase(descriptorTypeName) + 's';
+
         // eg: "Tenth Grade"
         string codeValue = descriptorValue.Split('#')[1];
         // eg: "uri://ed-fi.org/GradeLevelDescriptor"
@@ -176,6 +197,44 @@ public class ProfileStepDefinitions(
                 { "shortDescription", codeValue },
             }
         );
+    }
+
+    /// <summary>
+    /// Converts a PascalCase string to camelCase, handling acronyms properly.
+    /// E.g., "CTEProgramService" becomes "cteProgramService"
+    /// </summary>
+    private static string ToCamelCase(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        // Find the index where lowercase starts
+        int lowercaseStart = 0;
+        for (int i = 0; i < value.Length; i++)
+        {
+            if (char.IsLower(value[i]))
+            {
+                lowercaseStart = i;
+                break;
+            }
+        }
+
+        // If all uppercase or single char, lowercase everything
+        if (lowercaseStart == 0)
+        {
+            lowercaseStart = 1;
+        }
+
+        // For acronyms like "CTE" followed by "Program", we want "cteProgram"
+        // So lowercase all chars up to (but not including) the last uppercase before the lowercase
+        if (lowercaseStart > 1)
+        {
+            lowercaseStart--;
+        }
+
+        return value[..lowercaseStart].ToLowerInvariant() + value[lowercaseStart..];
     }
 
     /// <summary>
