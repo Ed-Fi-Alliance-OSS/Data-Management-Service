@@ -127,7 +127,7 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Extension Filtering")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
-        string descriptorToken = await GetNonProfileToken();
+        string descriptorToken = await GetTokenForExtensionDescriptors();
         var descriptorHeaders = new List<KeyValuePair<string, string>>
         {
             new("Authorization", $"Bearer {descriptorToken}"),
@@ -154,11 +154,11 @@ public class ProfileStepDefinitions(
     }
 
     /// <summary>
-    /// Gets a token without profile restrictions for creating descriptors.
-    /// Creates a temporary application without profiles to get unrestricted access.
-    /// Uses EdFiSandbox claimset which has broader permissions including all descriptors.
+    /// Gets a token with EdFiSandbox claimset for creating extension descriptors.
+    /// The E2E-NoFurtherAuthRequiredClaimSet doesn't include permissions for extension-only
+    /// descriptors like CTEProgramServiceDescriptor, so we use EdFiSandbox which does.
     /// </summary>
-    private static async Task<string> GetNonProfileToken()
+    private static async Task<string> GetTokenForExtensionDescriptors()
     {
         await ProfileAwareAuthorizationProvider.CreateClientCredentialsWithProfiles(
             $"Descriptor Creator {Guid.NewGuid()}",
