@@ -47,7 +47,7 @@ See the [docs folder](./docs/) for additional developer-oriented documentation.
 
 ## Legal Information
 
-Copyright (c) 2025 Ed-Fi Alliance, LLC and contributors.
+Copyright (c) 2026 Ed-Fi Alliance, LLC and contributors.
 
 Licensed under the [Apache License, Version 2.0](./LICENSE) (the "License").
 
