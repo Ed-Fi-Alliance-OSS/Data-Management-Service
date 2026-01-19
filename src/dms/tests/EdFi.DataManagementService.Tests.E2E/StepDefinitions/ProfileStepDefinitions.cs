@@ -679,16 +679,6 @@ public class ProfileStepDefinitions(
     }
 
     /// <summary>
-    /// Verifies the response body contains a specific error message.
-    /// </summary>
-    [Then(@"the response body should contain error ""([^""]*)""")]
-    public async Task ThenTheResponseBodyShouldContainError(string expectedError)
-    {
-        string responseBody = await _apiResponse.TextAsync();
-        responseBody.Should().Contain(expectedError, $"Response: {responseBody}");
-    }
-
-    /// <summary>
     /// Verifies the response body contains a specific error type URN.
     /// </summary>
     [Then(@"the response body should have error type ""([^""]*)""")]
@@ -707,6 +697,37 @@ public class ProfileStepDefinitions(
             else
             {
                 throw new AssertionException($"Response does not contain 'type' field: {responseBody}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies the response body errors array contains a specific message.
+    /// </summary>
+    [Then(@"the response body should have error message ""([^""]*)""")]
+    public async Task ThenTheResponseBodyShouldHaveErrorMessage(string expectedMessage)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (
+                jsonObject.TryGetPropertyValue("errors", out JsonNode? errorsNode)
+                && errorsNode is JsonArray errorsArray
+            )
+            {
+                List<string?> errorMessages = errorsArray.Select(e => e?.ToString()).ToList();
+                errorMessages
+                    .Should()
+                    .Contain(
+                        e => e != null && e.Contains(expectedMessage),
+                        $"Expected errors to contain '{expectedMessage}'. Actual errors: {string.Join(", ", errorMessages)}. Response: {responseBody}"
+                    );
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
             }
         }
     }

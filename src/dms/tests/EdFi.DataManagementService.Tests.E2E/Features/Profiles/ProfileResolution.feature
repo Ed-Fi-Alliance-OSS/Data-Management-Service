@@ -73,7 +73,7 @@ Feature: Profile Resolution
         Scenario: 03 Multiple profiles without Accept header returns 403
             When a GET request is made to "/ed-fi/schools/{id}" without profile header
             Then the profile response status is 403
-             And the response body should contain error "profile"
+             And the response body should have error type "urn:ed-fi:api:security:data-policy:incorrect-usage"
 
         Scenario: 04 Multiple profiles with explicit Accept header for first profile succeeds
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
