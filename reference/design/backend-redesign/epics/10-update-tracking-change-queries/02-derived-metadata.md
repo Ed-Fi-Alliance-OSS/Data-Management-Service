@@ -1,31 +1,23 @@
-# Story: Derive `_etag`, `_lastModifiedDate`, and `ChangeVersion` on Reads
+# Story: Serve `_etag`, `_lastModifiedDate`, and `ChangeVersion` from Stored Stamps
 
 ## Description
 
-Implement read-time derivation per `reference/design/backend-redesign/update-tracking.md`:
+Implement serving of update-tracking metadata per `reference/design/backend-redesign/update-tracking.md`:
 
-- `_etag` is derived from local tokens + dependency identity tokens.
-- `_lastModifiedDate` is derived from the max of local timestamps and dependency identity timestamps.
-- `ChangeVersion` is derived as the max of local change and dependency identity versions.
+- `_etag` is derived from the stored representation stamp (`dms.Document.ContentVersion`).
+- `_lastModifiedDate` is served from `dms.Document.ContentLastModifiedAt`.
+- `ChangeVersion` is served from `dms.Document.ContentVersion`.
 
-Dependencies are non-descriptor document references and should be obtained from:
-- `dms.ReferenceEdge` (recommended), and/or
-- the reconstitution process as it projects references.
+This design performs no dependency enumeration at read time; indirect impacts are materialized as FK cascade updates that trigger normal stamping.
 
 ## Acceptance Criteria
 
-- `_etag` changes when:
-  - the document’s content changes,
-  - the document’s identity projection changes,
-  - or a referenced document’s identity projection changes.
-- `_lastModifiedDate` changes when any of the above changes occur.
-- `ChangeVersion` follows the formula in `update-tracking.md`.
-- Derivation loads dependency tokens in bulk (no per-dependency queries).
+- `_etag` changes when the served representation changes (direct content changes or indirect reference-identity changes).
+- `_lastModifiedDate` changes when the served representation changes.
+- `ChangeVersion` matches the served representation stamp.
+- Reads do not perform dependency token expansion.
 
 ## Tasks
 
-1. Implement dependency enumeration using `dms.ReferenceEdge` (parent → children).
-2. Implement batched dependency token reads from `dms.Document`.
-3. Implement `_etag` hashing/encoding and timestamp derivation exactly per the design.
-4. Add integration tests covering indirect representation changes (dependency identity change affects parent metadata).
-
+1. Implement mapping from `dms.Document` stamps to API fields (`_etag`, `_lastModifiedDate`, `ChangeVersion`).
+2. Add integration tests covering indirect representation changes (a referenced identity change cascades into a referrer and bumps the referrer’s stamps).

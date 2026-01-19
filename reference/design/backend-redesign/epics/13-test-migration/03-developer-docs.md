@@ -6,7 +6,7 @@ Update developer documentation for the new relational backend workflow:
 
 - provisioning and schema fingerprint validation
 - mapping pack build/load (optional)
-- debugging write/read paths and derived metadata
+- debugging write/read paths and update tracking (stored stamps)
 - E2E setup/teardown expectations (no hot reload)
 
 ## Acceptance Criteria
@@ -23,4 +23,3 @@ Update developer documentation for the new relational backend workflow:
 2. Add step-by-step instructions for provisioning and running integration tests.
 3. Document mapping pack usage and configuration if packs are enabled.
 4. Review docs for accuracy against the implemented workflows.
-

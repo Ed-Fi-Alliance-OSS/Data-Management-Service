@@ -17,13 +17,13 @@ Source documents:
 - DDL generator verification harness: `reference/design/backend-redesign/ddl-generator-testing.md`
 - Strengths/risks: `reference/design/backend-redesign/strengths-risks.md`
 
-> Note on update tracking: `update-tracking.md` consolidates and supersedes earlier “stored `Etag/LastModifiedAt` + fan-out bump” drafts referenced in other docs. Where there’s conflict, treat `update-tracking.md` as the normative design for `_etag/_lastModifiedDate` and Change Queries.
+> Note on update tracking: `update-tracking.md` is the normative design for `_etag/_lastModifiedDate` and Change Queries. Where other docs describe read-time derivation or reverse-edge expansion, treat them as superseded.
 
 ## Goals and explicit decisions (high level)
 
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
-- Relationships are stored as stable `DocumentId` foreign keys (no relational rewrite cascades on natural-key changes).
+- Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields co-stored alongside each `..._DocumentId` and kept consistent via composite FKs with `ON UPDATE CASCADE` (no FK rewrites).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
 - Authorization is intentionally out of scope for this redesign phase.
@@ -34,8 +34,8 @@ Source documents:
 - `DocumentUuid`: stable external identifier for API `id` (does not change on identity updates).
 - `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
 - `ReferentialId`: deterministic UUIDv5 used as the canonical “natural identity key”; stored in `dms.ReferentialIdentity`.
-- **Identity component**: a document reference whose projected identity participates in a document’s identity (`identityJsonPaths`); used for strict identity-cascade correctness (`dms.ReferenceEdge.IsIdentityComponent=true`). Descriptor values can participate in identity, but descriptors are treated as immutable and do not participate in `dms.ReferenceEdge` closure/cascades.
-- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the returned JSON representation; used for derived `_etag/_lastModifiedDate` and Change Queries (not filtered to identity components). Descriptor URIs are projected into the representation, but descriptors are treated as immutable and excluded from dependency tracking.
+- **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally (as propagated reference identity columns) so referential ids can be recomputed row-locally.
+- **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the returned JSON representation. Indirect representation changes are realized as FK-cascade updates to stored reference identity columns, which trigger normal stamping of stored `_etag/_lastModifiedDate/ChangeVersion`.
 
 ## Data model summary
 
@@ -55,7 +55,7 @@ Source documents:
 - `dms.ReferentialIdentity`
   - Maps `ReferentialId → DocumentId` for all identities:
     - self-contained identities,
-    - reference-bearing identities (kept correct via strict recompute),
+    - reference-bearing identities (kept correct transactionally via DB cascades + per-resource triggers),
     - descriptor identities (resource type + normalized URI),
     - polymorphic/abstract reference support via superclass/abstract alias rows (documents have ≤ 2 referential ids: primary + optional superclass alias).
   - Physical guidance: do not cluster on random UUID in SQL Server; cluster on a sequential key like `(DocumentId, ResourceKeyId)`.
@@ -64,20 +64,6 @@ Source documents:
   - Unified descriptor table keyed by the descriptor document’s `DocumentId` so descriptor references can FK to `dms.Descriptor(DocumentId)` without per-descriptor tables.
   - Used for “is a descriptor” enforcement and (optionally) type diagnostics/validation.
 
-- `dms.ReferenceEdge`
-  - Reverse index of “parent references child”, stored as one row per `(ParentDocumentId, ChildDocumentId)` (collapsed granularity; not per-path).
-  - `IsIdentityComponent` is the OR of all reference sites from the parent to that child that are identity components.
-  - Correctness-critical: must cover all outgoing non-descriptor resource references, including those stored in child tables / nested collections (descriptor rows are treated as immutable and are excluded from this table).
-  - Used for:
-    - strict identity closure expansion (`IsIdentityComponent=true`) for `dms.ReferentialIdentity` recompute,
-    - outbound dependency enumeration for derived `_etag/_lastModifiedDate` and `If-Match` checks,
-    - Change Query indirect expansion,
-    - delete diagnostics.
-
-- `dms.IdentityLock`
-  - One row per document (`DocumentId` PK/FK) to provide a stable lock target.
-  - Used to enforce phantom-safe identity closure recompute and “stale-at-birth” avoidance for reference-bearing identities (see locking invariants below).
-
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
   - `dms.EffectiveSchema` is a singleton current-state row (includes `ResourceKeyCount`/`ResourceKeySeedHash` for fast `dms.ResourceKey` validation); `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash`.
@@ -85,19 +71,18 @@ Source documents:
 
 ### Update tracking additions (unified design)
 
-`reference/design/backend-redesign/update-tracking.md` adds representation-sensitive metadata without write-time fan-out:
+`reference/design/backend-redesign/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via FK cascades to stored reference identity columns:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
 - `dms.Document` token columns:
-  - `ContentVersion`, `IdentityVersion` (global monotonic stamps).
+  - `ContentVersion` (global monotonic stamp for representation changes; also serves as `ChangeVersion`).
+  - `IdentityVersion` (global monotonic stamp for identity projection changes).
   - `ContentLastModifiedAt`, `IdentityLastModifiedAt`.
-- Journals (append-only):
-  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId, CreatedAt)`
-  - `dms.IdentityChangeEvent(ChangeVersion, DocumentId, CreatedAt)`
-- Derived at read time:
-  - `_etag = Base64(SHA-256(EncodeV1(ContentVersion, IdentityVersion, sorted(deps: (DocumentId, IdentityVersion)))))`
-  - `_lastModifiedDate = max(ContentLastModifiedAt, IdentityLastModifiedAt, max(dep.IdentityLastModifiedAt))`
-  - per-item `ChangeVersion = max(ContentVersion, IdentityVersion, max(dep.IdentityVersion))`
+- Journal (append-only):
+  - `dms.DocumentChangeEvent(ChangeVersion, DocumentId, ResourceKeyId, CreatedAt)` emitted when `ContentVersion` changes.
+- Served metadata:
+  - `_etag` derived from (or stored alongside) `ContentVersion`.
+  - `_lastModifiedDate` served from `ContentLastModifiedAt`.
 
 ### Per-project schemas and resource tables
 
@@ -107,10 +92,10 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
   - PK `DocumentId` (FK to `dms.Document(DocumentId)` ON DELETE CASCADE).
   - Unique constraint for the resource’s natural key derived from `identityJsonPaths`:
     - scalar identity elements become scalar columns,
-    - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (avoid denormalizing referenced natural keys).
+    - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values additionally stored in `{RefBaseName}_{IdentityPart}` columns for propagation and query.
   - Reference FK columns:
-    - concrete targets: FK to `{schema}.{TargetResource}(DocumentId)` (existence + type),
-    - polymorphic targets: FK to `dms.Document(DocumentId)` (existence) plus membership validation via `{AbstractResource}_View`,
+    - for each document reference site: store both `..._DocumentId` and `{RefBaseName}_{IdentityPart}` columns, with a composite FK to the target identity key `(DocumentId, <IdentityParts...>)` using `ON UPDATE CASCADE`,
+    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityParts...>)` using `ON UPDATE CASCADE`,
     - descriptors: FK to `dms.Descriptor(DocumentId)` via `..._DescriptorId`.
 
 - Collection tables `{schema}.{Resource}_{CollectionPath}`:
@@ -119,9 +104,9 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
   - Nested collections add ancestor ordinals into the key and FK (no generated IDs; avoids `RETURNING`/`OUTPUT` capture).
   - Optional unique constraints from `arrayUniquenessConstraints`.
 
-- Abstract identity union views `{schema}.{AbstractResource}_View`:
-  - Derived from `abstractResources` + subclass metadata.
-  - Provide a single join target for read-time identity projection and for polymorphic membership validation.
+- Abstract identity artifacts:
+  - `{schema}.{AbstractResource}Identity` tables provide FK targets for polymorphic references with cascade support.
+  - `{schema}.{AbstractResource}_View` union views remain useful for query/diagnostics but are no longer required to project reference identity values in responses.
 
 ### Extensions (`_ext`) mapping
 
@@ -143,9 +128,9 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
   - `nameOverrides` keyed by restricted JSONPaths (`$.x.y` for column base names, `$.arr[*]` for collection base names).
 - Derived model includes:
   - table/column lists and types,
-  - FK/descriptor bindings (with `IsIdentityComponent` classification),
-  - identity projection plans for reference reconstitution,
-  - query compilation mappings (root-table-only query fields).
+  - FK/descriptor bindings (including propagated reference identity columns and cascade semantics),
+  - query compilation mappings (including reference-identity fields mapped to local columns),
+  - update-stamping trigger plans (resource-table changes → `dms.Document` stamps/journals).
 
 ## Write path (POST upsert / PUT by id)
 
@@ -162,29 +147,28 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - Resolve all referential ids in bulk via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`).
    - For descriptor references, validate “is a descriptor” via `dms.Descriptor` (and optionally enforce expected discriminator/type in application code).
 
-3. **Locking for identity correctness**
-   - Use `dms.IdentityLock` row locks to prevent stale derived identities and to make identity-closure expansion phantom-safe.
-   - Invariants (from `transactions-and-concurrency.md`):
-     - **Child locked before parent edge**: before inserting/updating any `IsIdentityComponent=true` edge into child `C`, writer must hold a shared lock on `dms.IdentityLock(C)`.
-     - **Lock ordering**: acquire shared locks on all identity-component children first (ascending `DocumentId`), then acquire update lock(s) on the parent document(s) (ascending).
-     - **Atomic closure recompute**: identity/URI-changing transactions must lock the full closure to a fixpoint and recompute identities transactionally (no stale window).
+3. **DB-enforced identity propagation**
+   - Composite foreign keys with `ON UPDATE CASCADE` keep stored reference identity columns consistent when referenced identities change.
+   - Identity-changing writes may optionally be serialized (advisory/application lock) as an operational guardrail, but correctness does not depend on an application-managed lock table.
 
 4. **Flatten and write relational rows (single transaction)**
-   - Insert/update `dms.Document` (and create `dms.IdentityLock` row on insert).
+   - Insert/update `dms.Document`.
    - Write root table row (insert/update).
    - Write child tables using a baseline replace strategy (delete by parent key, bulk insert rows), with batching to respect SQL Server parameter limits.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
-   - Maintain `dms.ReferenceEdge` for the document’s outgoing non-descriptor references (diff-based upsert recommended; fail the write if edge maintenance fails).
+   - For each document reference site, persist both:
+     - the stable `..._DocumentId` FK column (resolved from `dms.ReferentialIdentity`), and
+     - the referenced identity natural-key columns `{RefBaseName}_{IdentityPart}` (from the request body),
+     enforced by composite FKs.
 
-5. **Strict identity maintenance**
-   - If the write changes identity/URI projection:
-     - run identity-closure expansion via `dms.ReferenceEdge(IsIdentityComponent=true)` to a fixpoint while update-locking each impacted `DocumentId`,
-     - recompute and replace `dms.ReferentialIdentity` for all impacted documents set-based (including superclass alias rows),
-     - bump `IdentityVersion/IdentityLastModifiedAt` only when identity projection values actually change.
+5. **Strict identity maintenance (row-local triggers)**
+   - Per-resource triggers recompute `dms.ReferentialIdentity` when a document’s identity projection columns change (directly or via cascaded updates to identity-component reference identity columns).
+   - Identity changes therefore propagate transitively via FK cascades, without application-managed closure traversal.
 
-6. **Update tracking (tokens + journals)**
-   - Detect content vs identity-projection changes; allocate one stamp from `dms.ChangeVersionSequence` and apply to the appropriate token columns.
-   - Emit `dms.DocumentChangeEvent` and `dms.IdentityChangeEvent` rows via database triggers on `dms.Document` token changes.
+6. **Update tracking (stored metadata + journal)**
+   - Any representation-affecting change (including cascaded updates to stored reference identity columns) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.
+   - Identity projection changes additionally bump `dms.Document.IdentityVersion/IdentityLastModifiedAt`.
+   - Emit `dms.DocumentChangeEvent` rows via triggers when `ContentVersion` changes.
 
 ## Read path (GET by id / query)
 
@@ -192,7 +176,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
-  2. Hydrate relational tables and reconstitute JSON; batch-load dependency tokens to compute derived `_etag/_lastModifiedDate/ChangeVersion`.
+  2. Hydrate relational tables and reconstitute JSON; serve `_etag/_lastModifiedDate/ChangeVersion` from `dms.Document` and reference identity fields from stored reference identity columns.
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
@@ -200,9 +184,8 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
   - Reconstitution is page-based (not “GET by id N times”):
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
-    - batch identity projection (reference objects) per target resource type (abstract targets via `{AbstractResource}_View`),
     - batch descriptor URI lookups,
-    - compute derived `_etag/_lastModifiedDate/ChangeVersion` by batch-loading dependency tokens per page.
+    - serve `_etag/_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
 
 ## Schema management and DDL generation
 
@@ -216,7 +199,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - core `dms.*` tables,
     - per-project schemas and per-resource tables,
     - extension schemas/tables,
-    - abstract union views,
+    - abstract identity tables (and optional union views),
     - update tracking sequences and triggers,
   - records the singleton `dms.EffectiveSchema` row (including `ResourceKeyCount`/`ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
   - provision semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
@@ -225,17 +208,16 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 ## Key risks and mitigations (from the docs)
 
-- **`dms.ReferenceEdge` integrity is correctness-critical**
-  - Missing/extra edges can cause silent incorrectness (stale identity resolution, incorrect derived metadata, incomplete Change Queries, incomplete delete diagnostics).
-  - Suggested mitigations: by-construction edge extraction from write plans, optional sampling verification on writes, background audit/repair tooling, strong telemetry.
+- **Cascade feasibility and fan-out**
+  - `ON UPDATE CASCADE` can hit SQL Server “multiple cascade paths” / cycle restrictions; some sites may require trigger-based propagation.
+  - Identity updates on “hub” documents can synchronously update many dependent rows; needs guardrails, telemetry, and a deadlock retry policy.
 
-- **IdentityLock orchestration complexity**
-  - Requires strict lock ordering and cycle detection in the identity dependency graph (reject identity cycles at schema validation).
-  - Needs deadlock retry policy and benchmarking for “hub” contention scenarios.
+- **Trigger correctness and multi-row stamping**
+  - Stamping must produce per-row unique `ChangeVersion` values (especially for SQL Server multi-row cascade updates) and must cover changes across root + child + extension tables.
 
 - **Read amplification**
   - Reconstitution can be expensive for deep resources (many child tables/result sets); benchmark representative deep resources early and treat read-path performance as a first-class requirement.
 
 - **Very large scale tables**
   - `dms.Document` scale: avoid wide repeated strings in hot tables (use `ResourceKeyId` for `(ProjectName, ResourceName)` and store `ResourceVersion` on `dms.ResourceKey`, denormalizing only where needed for CDC/streaming).
-  - `dms.ReferenceEdge` at ~1B rows drives partitioning/maintenance concerns; consider partitioning, filtered/partial structures for identity edges, and re-evaluating per-row `CreatedAt` if unused.
+  - `dms.ReferentialIdentity` and `dms.DocumentChangeEvent` require careful indexing and may be large at scale; validate index and clustering choices per engine.

@@ -259,9 +259,7 @@ Workflow per engine:
 3. Run a minimal journaling smoke check (required because journaling triggers are correctness-critical):
    - insert one row into `dms.Document` (using a seeded `ResourceKeyId`) and assert:
      - `dms.DocumentChangeEvent` has one new row for that `DocumentId`
-     - `dms.IdentityChangeEvent` has one new row for that `DocumentId`
    - update `ContentVersion` and assert one new `dms.DocumentChangeEvent` row is emitted
-   - update `IdentityVersion` and assert one new `dms.IdentityChangeEvent` row is emitted
 4. Run engine-specific introspection queries and emit a stable **provisioned schema manifest** artifact:
    - tables, columns, types, nullability,
    - PK/UK/FK constraints,

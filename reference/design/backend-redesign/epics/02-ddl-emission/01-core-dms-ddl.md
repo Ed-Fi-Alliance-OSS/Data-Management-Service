@@ -13,10 +13,10 @@ Includes tables, constraints, indexes, sequences, and journaling triggers.
 ## Acceptance Criteria
 
 - Generated DDL includes (at minimum) the v1 inventory from `ddl-generation.md`:
-  - `dms.ResourceKey`, `dms.Document`, `dms.IdentityLock`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.ReferenceEdge`
+  - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
   - optional projection table: `dms.DocumentCache`
   - `dms.EffectiveSchema`, `dms.SchemaComponent`
-  - `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.IdentityChangeEvent`
+  - `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`
   - required journaling triggers/functions on `dms.Document`
 - All identifiers are quoted per dialect.
 - No authorization tables/views (`auth.*`, `dms.DocumentSubject`, etc.) are emitted.

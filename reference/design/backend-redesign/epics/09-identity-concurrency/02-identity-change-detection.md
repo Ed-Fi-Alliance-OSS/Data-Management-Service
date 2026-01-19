@@ -5,17 +5,13 @@
 Detect whether a write changes the document’s identity projection values, so that:
 
 - `dms.ReferentialIdentity` is updated only when necessary,
-- identity closure recompute runs only when necessary,
 - and `IdentityVersion/IdentityLastModifiedAt` are stamped only on actual identity projection changes.
 
-Identity projection includes scalar identity parts and identity components sourced from references (via FK `..._DocumentId` columns).
+Identity projection includes scalar identity parts and identity components sourced from references (via propagated identity columns maintained by FK cascades/triggers).
 
 ## Acceptance Criteria
 
-- No-op writes (no content change and no identity projection change) do not:
-  - allocate new stamps,
-  - update `dms.ReferentialIdentity`,
-  - or run closure recompute.
+- No-op updates that do not change identity projection values do not update `dms.ReferentialIdentity` or bump identity stamps (best effort).
 - Identity changes are detected when:
   - scalar identity values change, or
   - identity-component reference targets change.
@@ -23,8 +19,6 @@ Identity projection includes scalar identity parts and identity components sourc
 
 ## Tasks
 
-1. Implement identity projection computation for “new” values (from the flattened write model).
-2. Implement retrieval/computation of “old” values needed for comparison (from current stored rows/indexes).
-3. Implement deterministic comparison logic and surface “identity changed” as a first-class outcome.
-4. Add unit tests for identity change detection scenarios (scalar + reference-sourced).
-
+1. Emit per-dialect trigger logic that detects identity projection changes by comparing old/new identity columns.
+2. Gate `dms.ReferentialIdentity` maintenance and identity-stamp updates on that detection.
+3. Add tests for identity change detection scenarios (scalar + reference-sourced identity components).

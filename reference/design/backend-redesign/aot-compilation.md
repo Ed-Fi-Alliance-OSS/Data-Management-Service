@@ -101,7 +101,7 @@ Pack contains:
 - per-resource compiled plans:
   - `ResourceWritePlan` (including `TableWritePlan` SQL and bindings)
   - `ResourceReadPlan` (including `TableReadPlan` SQL and bindings)
-  - `IdentityProjectionPlan` entries required by reconstitution
+  - reference binding metadata required by reconstitution (e.g., `DocumentReferenceBinding` / `DescriptorEdgeSource`)
 - any additional metadata needed to execute those plans without re-deriving/compiling from `ApiSchema.json`.
 
 Logical plan pack identity is `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`.

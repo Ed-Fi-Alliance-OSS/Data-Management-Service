@@ -67,7 +67,7 @@ graph TD
 ```
 
 Notes:
-- `E07` and `E09` are tightly coupled in practice (write correctness requires strict identity locking + closure recompute), but are shown as a one-way dependency to keep the graph readable.
+- `E07` and `E09` are tightly coupled in practice (write correctness requires transactional identity maintenance + propagation + deadlock retry), but are shown as a one-way dependency to keep the graph readable.
 - `E05` is optional; `E06` can select runtime-compiled mapping sets without packs.
 
 ---
@@ -83,12 +83,12 @@ Notes:
 | E04 | [Verification Harness](04-verification-harness/EPIC.md) | E00–E03 | Fixture runner + determinism/snapshot/golden/DB-apply tests |
 | E05 | [Mapping Pack Generation and Consumption (Optional)](05-mpack-generation/EPIC.md) | E00–E02 | `.mpack` build/validate/load; enables AOT mapping distribution |
 | E06 | [Runtime Schema Validation & Mapping Set Selection](06-runtime-mapping-selection/EPIC.md) | E00, E03 (and E05 optional) | Per-DB fingerprint validation + mapping selection + caching; removes hot reload |
-| E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02 | End-to-end relational writes; produces/maintains derived artifacts (edges, tokens hooks) |
+| E07 | [Relational Write Path (POST/PUT)](07-relational-write-path/EPIC.md) | E06, E01, E02 | End-to-end relational writes; populates propagated reference identity columns and relies on DB triggers for stamps/identity maintenance |
 | E08 | [Relational Read Path (GET + Query)](08-relational-read-path/EPIC.md) | E06, E01, E02 | End-to-end relational reads and reconstitution (incl. abstract+descriptor projection) |
-| E09 | [Strict Identity Maintenance & Concurrency](09-identity-concurrency/EPIC.md) | E07, E02 | Transactional referential-identity correctness + locking + closure recompute |
-| E10 | [Update Tracking + Change Queries](10-update-tracking-change-queries/EPIC.md) | E07, E08, E09, E02 | Derived `_etag/_lastModifiedDate/ChangeVersion`, journaling triggers, change selection |
+| E09 | [Strict Identity Maintenance & Concurrency](09-identity-concurrency/EPIC.md) | E07, E02 | Transactional referential-identity correctness + cascade/trigger propagation semantics + deadlock retry |
+| E10 | [Update Tracking + Change Queries](10-update-tracking-change-queries/EPIC.md) | E07, E08, E02 | Stored `_etag/_lastModifiedDate/ChangeVersion`, journaling triggers, change selection |
 | E11 | [Delete Path & Conflict Diagnostics](11-delete-path/EPIC.md) | E07, E02 | Delete-by-id + FK conflict mapping + diagnostics |
-| E12 | [Operational Guardrails](12-ops-guardrails/EPIC.md) | E07, E09 (and E10 recommended) | Drift prevention/repair + observability + closure guardrails + benchmarks |
+| E12 | [Operational Guardrails](12-ops-guardrails/EPIC.md) | E07, E09 (and E10 recommended) | Drift prevention/repair + observability + identity-update fan-out guardrails + benchmarks |
 | E13 | [Test Strategy & Migration](13-test-migration/EPIC.md) | E03, E06–E08, E11 | E2E/integration/parity tests and docs aligned to provisioning model |
 | E14 | [Authorization (Deferred)](14-authorization/EPIC.md) | — | Explicitly deferred; must not block baseline redesign |
 
@@ -195,7 +195,7 @@ Epic: `07-relational-write-path/EPIC.md`
 | E07-S01 | [`01-reference-and-descriptor-resolution.md`](07-relational-write-path/01-reference-and-descriptor-resolution.md) | E07-S00, E02-S01 | E09-S01 | Bulk `ReferentialId→DocumentId` resolver + descriptor discriminator validation |
 | E07-S02 | [`02-flattening-executor.md`](07-relational-write-path/02-flattening-executor.md) | E06-S02, E07-S01 | E01-S05, E01-S03 | JSON→row buffers (root/children/_ext) using compiled mapping |
 | E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02 | E10-S00 | Transactional persist executor (replace semantics, batching, limits) |
-| E07-S04 | [`04-referenceedge-maintenance.md`](07-relational-write-path/04-referenceedge-maintenance.md) | E07-S03 | E01-S01 | `dms.ReferenceEdge` diff-based maintenance (by-construction completeness) |
+| E07-S04 | [`04-propagated-reference-identity-columns.md`](07-relational-write-path/04-propagated-reference-identity-columns.md) | E07-S03 | E01-S01 | Populate propagated reference identity columns for FK cascades |
 | E07-S05 | [`05-write-error-mapping.md`](07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
 
 ### E08 — Relational Read Path (GET + Query)
@@ -216,10 +216,10 @@ Epic: `09-identity-concurrency/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E09-S00 | [`00-locking-and-retry.md`](09-identity-concurrency/00-locking-and-retry.md) | E02-S01 | — | Lock primitives on `dms.IdentityLock` + deadlock retry policy |
+| E09-S00 | [`00-locking-and-retry.md`](09-identity-concurrency/00-locking-and-retry.md) | E02-S01 | — | Deadlock retry policy for cascade/trigger writes |
 | E09-S01 | [`01-referentialidentity-maintenance.md`](09-identity-concurrency/01-referentialidentity-maintenance.md) | E09-S00 | — | Transactional writes to `dms.ReferentialIdentity` (primary + alias rows) |
 | E09-S02 | [`02-identity-change-detection.md`](09-identity-concurrency/02-identity-change-detection.md) | E07-S02 | — | Detect “identity projection changed” from write inputs/outputs |
-| E09-S03 | [`03-identity-closure-recompute.md`](09-identity-concurrency/03-identity-closure-recompute.md) | E09-S00, E09-S01, E07-S04 | E12-S03 | Closure expansion + lock + set-based recompute to fixpoint |
+| E09-S03 | [`03-identity-propagation.md`](09-identity-concurrency/03-identity-propagation.md) | E09-S00, E09-S01, E07-S04 | E12-S03 | Identity propagation via cascades/triggers (no closure traversal) |
 | E09-S04 | [`04-cache-invalidation.md`](09-identity-concurrency/04-cache-invalidation.md) | E06-S02, E09-S01 | — | Post-commit cache invalidation for identity resolution |
 
 ### E10 — Update Tracking (`_etag/_lastModifiedDate`) + Change Queries (`ChangeVersion`)
@@ -228,11 +228,11 @@ Epic: `10-update-tracking-change-queries/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E10-S00 | [`00-token-stamping.md`](10-update-tracking-change-queries/00-token-stamping.md) | E02-S01, E07-S03, E09-S02 | E09-S03 | Stamp allocator + token updates on `dms.Document` (incl. closure recompute) |
+| E10-S00 | [`00-token-stamping.md`](10-update-tracking-change-queries/00-token-stamping.md) | E02-S01, E07-S03 | — | Stamping triggers for `dms.Document` (Content/Identity stamps) |
 | E10-S01 | [`01-journaling-contract.md`](10-update-tracking-change-queries/01-journaling-contract.md) | E02-S01, E03-S01 | E10-S00 | Triggers own journal writes; integration smoke tests |
-| E10-S02 | [`02-derived-metadata.md`](10-update-tracking-change-queries/02-derived-metadata.md) | E08-S01, E07-S04 | — | Read-time derived `_etag/_lastModifiedDate/ChangeVersion` (bulk deps) |
-| E10-S03 | [`03-if-match.md`](10-update-tracking-change-queries/03-if-match.md) | E10-S02 | — | `If-Match` enforcement using derived `_etag` |
-| E10-S04 | [`04-change-query-selection.md`](10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01, E07-S04 | — | Change Query candidate selection (journals + `ReferenceEdge`) |
+| E10-S02 | [`02-derived-metadata.md`](10-update-tracking-change-queries/02-derived-metadata.md) | E10-S00, E08-S01 | — | Serve `_etag/_lastModifiedDate/ChangeVersion` from stored stamps |
+| E10-S03 | [`03-if-match.md`](10-update-tracking-change-queries/03-if-match.md) | E10-S02 | — | `If-Match` enforcement using stored `_etag` |
+| E10-S04 | [`04-change-query-selection.md`](10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01 | — | Change Query candidate selection (journal + verify) |
 | E10-S05 | [`05-change-query-api.md`](10-update-tracking-change-queries/05-change-query-api.md) | E10-S04 | — | Optional HTTP endpoints for change queries |
 
 ### E11 — Delete Path & Conflict Diagnostics
@@ -242,8 +242,8 @@ Epic: `11-delete-path/EPIC.md`
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | E11-S00 | [`00-delete-by-id.md`](11-delete-path/00-delete-by-id.md) | E02-S01, E02-S02 | — | Delete-by-id transaction shape (delete via `dms.Document`) |
-| E11-S01 | [`01-conflict-mapping.md`](11-delete-path/01-conflict-mapping.md) | E11-S00 | E11-S02 | FK violation mapping to DMS conflict response (edge preferred, naming fallback) |
-| E11-S02 | [`02-referenceedge-diagnostics.md`](11-delete-path/02-referenceedge-diagnostics.md) | E07-S04 | — | “who references me?” diagnostics via `dms.ReferenceEdge` |
+| E11-S01 | [`01-conflict-mapping.md`](11-delete-path/01-conflict-mapping.md) | E11-S00 | E11-S02 | FK violation mapping to DMS conflict response (deterministic constraint naming) |
+| E11-S02 | [`02-referencing-diagnostics.md`](11-delete-path/02-referencing-diagnostics.md) | E11-S01 | — | “who references me?” diagnostics from FK constraint info |
 | E11-S03 | [`03-delete-tests.md`](11-delete-path/03-delete-tests.md) | E11-S00–E11-S02 | — | Delete/conflict parity tests (pgsql + mssql) |
 
 ### E12 — Operational Guardrails, Repair Tools, and Observability
@@ -252,10 +252,10 @@ Epic: `12-ops-guardrails/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E12-S00 | [`00-referenceedge-audit-repair.md`](12-ops-guardrails/00-referenceedge-audit-repair.md) | E07-S04, E06-S02 | — | Offline audit/repair tool for `dms.ReferenceEdge` |
-| E12-S01 | [`01-referenceedge-watchdog.md`](12-ops-guardrails/01-referenceedge-watchdog.md) | E12-S00 | — | Online sampling verification + optional self-heal |
-| E12-S02 | [`02-instrumentation.md`](12-ops-guardrails/02-instrumentation.md) | E07-S03, E09-S03 | — | Metrics/logs for locks, closures, edge churn, retries |
-| E12-S03 | [`03-guardrails.md`](12-ops-guardrails/03-guardrails.md) | E09-S03 | — | Configurable bounds for closure/locks with fail-fast + rollback |
+| E12-S00 | [`00-referentialidentity-audit-repair.md`](12-ops-guardrails/00-referentialidentity-audit-repair.md) | E06-S02, E09-S01 | — | Offline audit/repair tool for `dms.ReferentialIdentity` |
+| E12-S01 | [`01-referentialidentity-watchdog.md`](12-ops-guardrails/01-referentialidentity-watchdog.md) | E12-S00 | — | Online sampling verification + optional self-heal |
+| E12-S02 | [`02-instrumentation.md`](12-ops-guardrails/02-instrumentation.md) | E07-S03, E09-S03 | — | Metrics/logs for cascades, stamps/journals, retries |
+| E12-S03 | [`03-guardrails.md`](12-ops-guardrails/03-guardrails.md) | E09-S03 | — | Guardrails for identity-update fan-out and retry behavior |
 | E12-S04 | [`04-performance-benchmarks.md`](12-ops-guardrails/04-performance-benchmarks.md) | E07-S03, E08-S00 | — | Benchmark harness for read/write hot paths |
 
 ### E13 — Test Strategy & Migration (Runtime + E2E)
@@ -310,7 +310,7 @@ The following can typically proceed in parallel once the necessary foundations e
 - **Harness-first correctness**: E04 (fixtures/snapshots/DB-apply) can start once E03-S00 exists
 - **Runtime selection**: E06 can start once provisioning/fingerprint tables exist
 - **Write vs read**: E07 and E08 can proceed in parallel once E06 provides mapping sets/plans
-- **Ops guardrails**: E12 can start once `dms.ReferenceEdge` is present and maintained (E07-S04)
+- **Ops guardrails**: E12 can start once `dms.ReferentialIdentity` is present and maintained (E02-S01 + E09-S01)
 - **Optional AOT packs**: E05 can proceed largely in parallel once E00/E01/E02 foundations exist
 
 ---
@@ -347,6 +347,6 @@ These are areas where diverging implementations will create long-term drift; the
    - Source: E10-S01 (enforcement)
    - Consumers: E02-S01 (trigger DDL), E10 change selection, E04 DB-apply smoke tests
 
-8. **`dms.ReferenceEdge` completeness is correctness-critical**
-   - Source: E07-S04 (maintenance) and E12 (audit/watchdog)
-   - Consumers: E09 identity closure recompute, E10 derived metadata and change selection, E11 delete diagnostics
+8. **Propagation + stamping triggers are correctness-critical**
+   - Source: E01 reference bindings, E02 DDL emission, E10 stamping/journaling enforcement
+   - Consumers: indirect update semantics (`_etag/_lastModifiedDate/ChangeVersion`), identity maintenance (`dms.ReferentialIdentity`), delete/conflict diagnostics

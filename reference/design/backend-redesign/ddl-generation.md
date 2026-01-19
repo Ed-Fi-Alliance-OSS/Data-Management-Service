@@ -33,15 +33,17 @@ This redesign therefore requires a separate utility (“DDL generation utility�
 The DDL generation utility is responsible for database objects derived from the effective schema:
 
 - Core `dms.*` objects required for correctness and update tracking:
-  - `dms.ResourceKey`, `dms.Document`, `dms.IdentityLock`, `dms.ReferentialIdentity`, `dms.Descriptor`, `dms.ReferenceEdge`
-  - update tracking / Change Queries: `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`, `dms.IdentityChangeEvent`
+  - `dms.ResourceKey`, `dms.Document`, `dms.ReferentialIdentity`, `dms.Descriptor`
+  - update tracking / Change Queries: `dms.ChangeVersionSequence`, `dms.DocumentChangeEvent`
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
-  - required triggers for journal emission (see [update-tracking.md](update-tracking.md))
+  - required triggers for:
+    - journaling (`dms.DocumentChangeEvent`), and
+    - update tracking stamping (see [update-tracking.md](update-tracking.md))
 - Optional projection objects (performance / integrations):
   - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
 - Per-project schemas (derived from `ProjectEndpointName`) and per-resource tables (root + child tables).
 - Extension project schemas and extension tables derived from `_ext` (see [extensions.md](extensions.md)).
-- Abstract union views (e.g., `{schema}.{AbstractResource}_View`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)).
+- Abstract identity tables (e.g., `{schema}.{AbstractResource}Identity`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)), plus optional union views for diagnostics/integrations.
 
 Explicitly out of scope for this redesign phase:
 - any authorization objects (`auth.*`, `dms.DocumentSubject`, etc.)
@@ -104,8 +106,8 @@ SQL snippets in design documents are explanatory and may omit dialect details (e
 
 The DDL generator is the authoritative source of dialect-specific SQL text for provisioning, including:
 - schemas/tables/sequences/constraints/indexes,
-- abstract union views,
-- trigger/function definitions (e.g., update-tracking journaling triggers),
+- abstract identity tables (and optional union views),
+- trigger/function definitions (update tracking stamping, journaling, and identity maintenance),
 - deterministic seeding and schema-fingerprint recording.
 
 Any SQL called out as “sketch” in design documents must be implemented as generator output and covered by DDL text snapshots and/or golden tests.
@@ -126,17 +128,14 @@ This inventory is the explicit “what exists in the database” contract that t
 **Tables**
 - `dms.ResourceKey`
 - `dms.Document`
-- `dms.IdentityLock`
 - `dms.ReferentialIdentity`
 - `dms.Descriptor`
-- `dms.ReferenceEdge`
 - Optional projections:
   - `dms.DocumentCache`
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
   - `dms.DocumentChangeEvent`
-  - `dms.IdentityChangeEvent`
 
 **Sequence**
 - `dms.ChangeVersionSequence`
@@ -148,7 +147,7 @@ This inventory is the explicit “what exists in the database” contract that t
 
 **Indexes**
 - All PK/UK indexes implied by constraints
-- Additional explicit indexes called out in the design docs (e.g., `IX_Document_ResourceKeyId_DocumentId`, `IX_ReferenceEdge_ChildDocumentId`, etc.)
+- Additional explicit indexes called out in the design docs (e.g., `IX_Document_ResourceKeyId_DocumentId`)
 - Supporting indexes for all FKs (see “FK index policy” below)
 
 ### 3) Project objects (per project schema)
@@ -160,7 +159,27 @@ For each concrete resource in the effective schema (core + extensions):
 - Tables for `_ext` sites (in extension project schemas), aligned to the base scope keys (see [extensions.md](extensions.md))
 
 For each abstract resource in `projectSchema.abstractResources`:
-- Union view `{schema}.{AbstractResource}_View` over participating concrete root tables (see [data-model.md](data-model.md))
+- Identity table `{schema}.{AbstractResource}Identity` maintained from participating concrete root tables (see [data-model.md](data-model.md))
+- Optional union view `{schema}.{AbstractResource}_View` for diagnostics/integrations (not required for API correctness)
+
+**Reference constraints (required)**
+
+The DDL generator must emit document-reference columns and constraints that enable identity propagation:
+- For every document reference site, persist:
+  - `..._DocumentId`, and
+  - `{RefBaseName}_{IdentityPart}` propagated identity columns.
+- Enforce “all-or-none” for the reference group via a CHECK constraint (to avoid null-bypassing of composite FKs).
+- Enforce a composite FK with `ON UPDATE CASCADE` to:
+  - a concrete target root table key `(DocumentId, <IdentityParts...>)`, or
+  - an abstract target identity table key `(DocumentId, <IdentityParts...>)`.
+- Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
+
+**Triggers (required)**
+
+In addition to `dms.Document` journal triggers, emit per-table triggers derived from ApiSchema that:
+- stamp `dms.Document` representation/identity versions on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
+- maintain `dms.ReferentialIdentity` rows transactionally on identity projection changes, and
+- maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
 
 **Indexes**
 - All PK/UK indexes implied by constraints
@@ -319,13 +338,15 @@ Within each phase:
   - then by physical table name as a final tie-breaker.
 - **Columns within a table**:
   1. key columns in key order (`DocumentId` / parent key parts in order, then `Ordinal`)
-  2. document reference FKs (`..._DocumentId`) by column name
+  2. document reference groups (by reference base name):
+     - `..._DocumentId`
+     - `{RefBaseName}_{IdentityPart}` propagated identity columns in the referenced identity path order
   3. descriptor FKs (`..._DescriptorId`) by column name
   4. scalar columns by column name
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).
-  - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityPathOrder`, then optional `Discriminator`.
+  - If abstract union views (`{schema}.{AbstractResource}_View`) are emitted, order `UNION ALL` arms by concrete `ResourceName` (ordinal), and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityPathOrder`, then optional `Discriminator`.
 - **Triggers**: order by table name, then trigger name (ordinal).
 - **Seed data**:
   - `dms.ResourceKey` inserts ordered by `ResourceKeyId` ascending (where ids are assigned from the seed list sorted by `(ProjectName, ResourceName)` ordinal).
@@ -338,7 +359,7 @@ The DDL generation utility should reuse the same compilation pipeline as runtime
 - Effective schema loading/merging (core + extensions) and `EffectiveSchemaHash` calculation (including canonicalization rules) as defined in `data-model.md`.
 - Relational model derivation (resource → tables/columns/constraints).
 - Dialect-specific DDL generation (`ISqlDialect`-style boundary).
-- View generation for abstract resources.
+- Abstract identity table generation (and optional union-view generation).
 - Identifier rules (schema/table/column naming, quoting, truncation, and constraint/index naming): see `data-model.md` (“Naming Rules (Deterministic, Cross-DB Safe)”).
 - Scalar type mapping rules (ApiSchema → SQL): see `data-model.md` (“Type Mapping Defaults (Deterministic, Cross-DB Safe)”) and `flattening-reconstitution.md` (“Scalar type mapping (dialect defaults)”).
 - SQL text canonicalization shared with the compiled-plan layer (`flattening-reconstitution.md`), ideally via a single dialect-specific SQL writer/formatter.

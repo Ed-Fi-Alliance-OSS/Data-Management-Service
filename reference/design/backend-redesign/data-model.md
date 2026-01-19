@@ -67,7 +67,7 @@ CREATE TABLE dms.ResourceKey (
 
 Canonical metadata per persisted resource instance. One row per document, regardless of resource type.
 
-Update tracking note: `reference/design/backend-redesign/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using derived tokens and journals (no write-time representation fan-out). This table stores the required per-document token columns used for read-time derivation.
+Update tracking note: `reference/design/backend-redesign/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using stored per-document stamps on `dms.Document`, updated in-transaction. Indirect representation changes are realized via FK-cascade updates to stored reference identity columns on referrers, which then trigger normal stamping.
 
 **PostgreSQL**
 
@@ -124,9 +124,9 @@ Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/update-tracking.md` for the normative rules):
-  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s own persisted content changes.
-  - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (including strict identity closure recompute impacts).
-  - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are derived at read time from these tokens plus dependency tokens.
+  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to stored reference identity columns).
+  - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
+  - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are served from these stored stamps (no read-time dependency derivation).
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
 - Authorization is intentionally out of scope for this redesign phase.
 
@@ -151,16 +151,16 @@ CREATE SEQUENCE dms.ChangeVersionSequence
 
 ##### 1b) `dms.DocumentChangeEvent` (append-only journal)
 
-Append-only journal of per-document representation-affecting changes (local content and/or identity/URI projection). Used to support future Change Query APIs. See `reference/design/backend-redesign/update-tracking.md` for the selection algorithm and retention guidance.
+Append-only journal of per-document representation changes (served `_etag/_lastModifiedDate/ChangeVersion` impacts). Used to support future Change Query APIs. See `reference/design/backend-redesign/update-tracking.md` for the selection algorithm and retention guidance.
 
 Why this table exists (vs. scanning resource tables / `dms.Document`):
-- Change Queries need an efficient way to find “documents of resource R whose local tokens contributed to a derived `ChangeVersion` in `[min,max]`”. Scanning all documents (or all rows of the resource table) to find those candidates does not scale with total dataset size.
+- Change Queries need an efficient way to find “documents of resource R whose representation `ChangeVersion` is in `[min,max]`”. Scanning all documents (or all rows of the resource table) to find those candidates does not scale with total dataset size.
 - The token columns (`ContentVersion`/`IdentityVersion`) live on `dms.Document`, change on most writes, and would require additional hot, frequently-updated indexes (or large scans) to support window queries efficiently across PostgreSQL and SQL Server.
 - `dms.DocumentChangeEvent` is a narrow, append-only structure purpose-built for the common access pattern: `WHERE ResourceKeyId=@R AND ChangeVersion BETWEEN @min AND @max`, supported by `IX (ResourceKeyId, ChangeVersion, DocumentId)`.
-- It also stores the derived per-document “local change” stamp (`ChangeVersion = max(ContentVersion, IdentityVersion)`), avoiding cross-engine computed-column/OR-indexing pitfalls and simplifying query plans.
+- It stores the served `ChangeVersion` for the document (recommended: `ChangeVersion = ContentVersion`), avoiding cross-engine computed-column/OR-indexing pitfalls and simplifying query plans.
 
 Columns:
-- `ChangeVersion`: derived per-document “local change” stamp (recommended: `max(ContentVersion, IdentityVersion)`).
+- `ChangeVersion`: the document’s served representation change stamp (recommended: `ContentVersion`).
 - `DocumentId`: changed document.
 - `ResourceKeyId`: resource key for filtering change queries.
 - `CreatedAt`: journal insert time (operational/auditing).
@@ -199,40 +199,7 @@ CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
     ON dms.DocumentChangeEvent (ResourceKeyId, ChangeVersion, DocumentId);
 ```
 
-Recommended population: enforce journal insertion with database triggers on `dms.Document` when token columns change (to avoid “forgotten journal write” bugs and to naturally cover bulk/closure updates); see `reference/design/backend-redesign/update-tracking.md`.
-
-##### 1c) `dms.IdentityChangeEvent` (append-only journal)
-
-Append-only journal of identity/URI projection changes for a document. Used to find indirectly impacted parents via `dms.ReferenceEdge` during Change Query selection and for targeted projection rebuilds.
-
-Columns:
-- `ChangeVersion`: the new `IdentityVersion` stamp for the changed document.
-- `DocumentId`: the document whose identity/URI projection changed.
-- `CreatedAt`: journal insert time.
-
-**PostgreSQL**
-
-```sql
-CREATE TABLE dms.IdentityChangeEvent (
-    ChangeVersion bigint NOT NULL,
-    DocumentId bigint NOT NULL REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-    CONSTRAINT PK_IdentityChangeEvent PRIMARY KEY (ChangeVersion, DocumentId)
-);
-```
-
-**SQL Server**
-
-```sql
-CREATE TABLE dms.IdentityChangeEvent (
-    ChangeVersion bigint NOT NULL,
-    DocumentId bigint NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_IdentityChangeEvent_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_IdentityChangeEvent PRIMARY KEY CLUSTERED (ChangeVersion, DocumentId),
-    CONSTRAINT FK_IdentityChangeEvent_Document FOREIGN KEY (DocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
-);
-```
+Recommended population: enforce journal insertion with database triggers on `dms.Document` when `ContentVersion` changes (to avoid “forgotten journal write” bugs and to naturally cover cascaded updates); see `reference/design/backend-redesign/update-tracking.md`.
 
 ##### 2) `dms.ReferentialIdentity`
 
@@ -330,7 +297,7 @@ If DB-level enforcement of “descriptor must be of type X” becomes necessary 
 
 Descriptor immutability (assumption for this redesign):
 - Descriptor documents are treated as **immutable reference data** after creation (no identity/URI updates, and no representation-affecting updates).
-- Because descriptors cannot change, descriptor FK dependencies do **not** participate in any reverse-index-driven cascade, and are **excluded** from `dms.ReferenceEdge` by design.
+- Because descriptors cannot change, descriptor FK dependencies do **not** participate in any identity propagation cascade and are excluded from representation-change propagation.
 
 ##### 4) `dms.EffectiveSchema` + `dms.SchemaComponent`
 
@@ -461,126 +428,7 @@ Conformance tests (required):
   - and deterministic inclusion of `RelationalMappingVersion`.
 - Any intentional change to canonicalization or the hashed schema surface must update fixtures in a controlled “bless” workflow (see `ddl-generator-testing.md`).
 
-##### 5) `dms.ReferenceEdge` (reverse reference index for cascades)
-
-A small, relational reverse index of **“this document references that document”**, maintained on writes.
-
-Important properties:
-- **Required for derived artifacts and reverse lookups**:
-  - strict `dms.ReferentialIdentity` cascading recompute when upstream identity components change (`IsIdentityComponent=true`)
-  - outbound dependency enumeration for derived `_etag/_lastModifiedDate` and Change Query processing (see `reference/design/backend-redesign/update-tracking.md`)
-- **Stores resolved `DocumentId`s only**: no `ReferentialId` resolution, no partition keys, no alias joins.
-- **Excludes descriptor references**: this table indexes outgoing **document** references only (`..._DocumentId` FKs). Descriptor FKs (`..._DescriptorId`) are excluded because descriptor documents are immutable (see `dms.Descriptor` above).
-- **Coverage requirement is correctness-critical**:
-  - DMS must record **all** outgoing document references, including those inside nested collections/child tables.
-  - If edge maintenance fails, the write must fail (otherwise strict identity maintenance and update tracking can become incorrect).
-- **Collapsed edge granularity**:
-  - This design stores **one row per `(ParentDocumentId, ChildDocumentId)`** (not “per reference site/path”) to reduce write amplification and index churn.
-  - The `IsIdentityComponent` flag is the **OR** of all reference sites in the parent document that reference the same `ChildDocumentId`.
-
-Primary uses:
-- **`dms.ReferentialIdentity` identity cascades**: when a referenced document’s identity changes, update `dms.ReferentialIdentity` for documents whose identities depend on it (reverse traversal of `IsIdentityComponent=true` edges).
-- **Update tracking / Change Queries**: expand changed dependencies (`ChildDocumentId → ParentDocumentId`) and scan outbound dependencies (`ParentDocumentId → ChildDocumentId`) when computing derived representation metadata and selecting Change Query candidates (see `reference/design/backend-redesign/update-tracking.md`).
-
-##### DDL (PostgreSQL)
-
-```sql
-CREATE TABLE dms.ReferenceEdge (
-    ParentDocumentId bigint NOT NULL
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    ChildDocumentId  bigint NOT NULL
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    IsIdentityComponent boolean NOT NULL,
-
-    CreatedAt timestamp with time zone NOT NULL DEFAULT now(),
-
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY (ParentDocumentId, ChildDocumentId)
-);
-
--- Reverse lookup: "who references Child X?" (also supports identity-dependency closure expansion via IsIdentityComponent)
-CREATE INDEX IX_ReferenceEdge_ChildDocumentId
-    ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
-    INCLUDE (ParentDocumentId);
-```
-
-Notes on `IsIdentityComponent`:
-- Compute it from ApiSchema as “this reference contributes to any stored identity for the parent”, including superclass/abstract alias identity (for `isSubclass=true` resources where DMS stores an alias row in `dms.ReferentialIdentity`).
-- When a parent document references the same child document in multiple places, the stored value is `true` if **any** of those reference sites is an identity component.
-- Update tracking uses **all** edges as representation dependencies (not just `IsIdentityComponent=true`) when deriving `_etag/_lastModifiedDate` and selecting Change Query candidates; see `reference/design/backend-redesign/update-tracking.md`.
-
-##### DDL (SQL Server)
-
-```sql
-CREATE TABLE dms.ReferenceEdge (
-    ParentDocumentId bigint NOT NULL,
-    ChildDocumentId  bigint NOT NULL,
-    IsIdentityComponent bit NOT NULL,
-    CreatedAt datetime2(7) NOT NULL CONSTRAINT DF_ReferenceEdge_CreatedAt DEFAULT (sysutcdatetime()),
-    CONSTRAINT PK_ReferenceEdge PRIMARY KEY CLUSTERED (ParentDocumentId, ChildDocumentId),
-    CONSTRAINT FK_ReferenceEdge_Parent FOREIGN KEY (ParentDocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT FK_ReferenceEdge_Child FOREIGN KEY (ChildDocumentId)
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
-);
-
-CREATE INDEX IX_ReferenceEdge_ChildDocumentId
-    ON dms.ReferenceEdge (ChildDocumentId, IsIdentityComponent)
-    INCLUDE (ParentDocumentId);
-```
-
-##### ReferenceEdge FAQ
-
-**We’re moving away from the three-table design because `dms.Reference` is slow/high churn. Won’t this be the same?**
-
-Key differences:
-- It stores **resolved `DocumentId` pairs**, so there is no `ReferentialId → DocumentId` join (no Alias-equivalent lookup), and no partition keys.
-- It can be maintained with a **low-churn diff** so “update that does not change references” performs **0 row writes** to this table.
-- It is not used for referential integrity; it exists for reverse lookups, for identity/version cascades (`IsIdentityComponent=true`), and for optional `dms.DocumentCache` rebuild/invalidation targeting.
-
-**Doesn’t this require the same InsertReferences pattern?**
-
-We can use a similar *concept* (stage + diff) to avoid churn, but it is far simpler than today’s `InsertReferences` because:
-- inputs are already-resolved `DocumentId`s (no Alias joins, no invalid `ReferentialId` reporting),
-- there is no partition-routing logic,
-- the table is keyed by the parent `DocumentId` (single delete scope), and
-- the diff is between two small sets of `ChildDocumentId`s (with associated `IsIdentityComponent` flags, aggregated by OR when a parent references the same child multiple times).
-
-**Why does `dms.DocumentCache` need an update cascade?**
-
-`dms.DocumentCache` stores **fully reconstituted JSON**, including:
-- reference objects expanded from the *current* identity values of referenced resources, and
-- descriptor URI strings (reconstituted from `dms.Descriptor`, which is treated as immutable in this redesign).
-
-If a referenced document’s identity/URI changes, the JSON that referencing documents should return changes as well. This is a *cache/projection refresh cascade*, not a relational data cascade:
-- relational FK columns remain stable (`..._DocumentId` still points to the same row),
-- only cached JSON requires recomputation/upsert.
-
-In the preferred eventual-cache mode, this is handled as an **async rebuild cascade** (enqueue/mark dependents for rebuild) rather than an in-transaction “no stale window” rewrite. Targeting rules are described in [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
-
-##### 6) `dms.IdentityLock` (lock orchestration for strict identity correctness)
-
-To support **strict synchronous** `dms.ReferentialIdentity` maintenance (including cascading referential-id recompute for reference-bearing and abstract identities), the backend needs a stable per-document row to lock.
-
-This design uses a dedicated lock table:
-
-**PostgreSQL / SQL Server (logical)**
-
-```sql
-CREATE TABLE dms.IdentityLock (
-    DocumentId bigint NOT NULL PRIMARY KEY
-        REFERENCES dms.Document (DocumentId) ON DELETE CASCADE
-);
-```
-
-Rules:
-- Every `dms.Document` insert also inserts the same `DocumentId` into `dms.IdentityLock` (same transaction).
-- Identity-changing writes and any write that binds to other documents’ identity values must use row locks on `dms.IdentityLock` (shared/update) to prevent “stale-at-birth” referential ids and to make identity cascades phantom-safe (details in Write Path).
-- Concurrency is controlled by row locks on the affected documents’ `dms.IdentityLock` rows + lock ordering + deadlock retry.
-
-Notes:
-- See [transactions-and-concurrency.md](transactions-and-concurrency.md) for the normative lock ordering and closure-locking algorithms (including recommended lock query shapes).
-
-##### 7) `dms.DocumentCache` (optional, eventually consistent projection)
+##### 5) `dms.DocumentCache` (optional, eventually consistent projection)
 
 Optional materialized JSON representation of the document (as returned by GET/query), stored as a convenience **projection**.
 
@@ -590,7 +438,7 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
-Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store the **derived** `_etag/_lastModifiedDate` values computed at materialization time, and cache reads should validate freshness by recomputing the current derived `_etag` from dependency tokens (see `reference/design/backend-redesign/update-tracking.md`).
+Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store `_etag/_lastModifiedDate` as served from `dms.Document` at materialization time, and cache reads should validate freshness by comparing to the current `dms.Document.ContentVersion`/`ContentLastModifiedAt` (see `reference/design/backend-redesign/update-tracking.md`).
 
 Denormalized resource naming:
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
@@ -658,12 +506,18 @@ One row per document; PK is `DocumentId` (shared surrogate key).
 
 Typical structure:
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
-- Natural key columns (from `identityJsonPaths`) → unique constraint. For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column rather than duplicating the referenced natural-key fields.
+- Natural key columns (from `identityJsonPaths`) → unique constraint. For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable), while referenced identity values are additionally stored in companion columns for propagation and query.
 - Scalar columns for top-level non-collection properties
-- Reference FK columns:
-  - Non-descriptor references (concrete target): `..._DocumentId BIGINT` FK → `{schema}.{TargetResource}(DocumentId)` to enforce existence *and* resource type
-  - Non-descriptor references (polymorphic/abstract target): `..._DocumentId BIGINT` FK → `dms.Document(DocumentId)` plus optional discriminator/membership enforcement (see Reference Validation in [transactions-and-concurrency.md](transactions-and-concurrency.md))
-  - Descriptor references: `..._DescriptorId BIGINT` FK → `dms.Descriptor(DocumentId)`
+- Reference columns (document references):
+  - For each reference site, store:
+    - `..._DocumentId BIGINT` (stable FK key part), and
+    - one column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`),
+    enforced with a composite FK:
+    - `FOREIGN KEY (..._DocumentId, ..._{IdentityParts...}) REFERENCES <TargetIdentityKey>(DocumentId, <IdentityParts...>) ON UPDATE CASCADE`
+  - Add an all-or-none CHECK constraint per reference site:
+    - if `..._DocumentId` is `NULL`, all identity-part columns are `NULL`
+    - if `..._DocumentId` is not `NULL`, all identity-part columns are not `NULL`
+  - Descriptor references remain `..._DescriptorId BIGINT` FKs to `dms.Descriptor(DocumentId)` (no propagation; descriptors are treated as immutable).
 
 #### Child tables for collections
 
@@ -679,49 +533,43 @@ For each JSON array of objects/scalars under the resource:
 
 Nested collections add the parent’s ordinal(s) into the key and FK, avoiding generated IDs and `RETURNING`/`OUTPUT` key-capture round trips.
 
-#### Abstract identity views for polymorphic references (union view approach)
+#### Abstract identity tables for polymorphic references
 
 Some Ed-Fi references target **abstract resources** (polymorphic references), notably:
 - `EducationOrganization` (e.g., `educationOrganizationReference`)
 - `GeneralStudentProgramAssociation` (e.g., `generalStudentProgramAssociationReference`)
 
-Abstract resources have **no physical root table**, but DMS must still:
-- validate membership/type for abstract-target references (application-level), and
-- **reconstitute reference identity objects** on reads (e.g., output `educationOrganizationId`, not `schoolId`).
+Abstract resources have **no physical root table**, but `ON UPDATE CASCADE` requires a concrete FK target with the required identity columns.
 
-This design uses a narrow **union view per abstract resource**:
+This redesign provisions an **identity table per abstract resource**:
 
-- View name: `{schema}.{AbstractResource}_View` (deterministic; validated as part of the expected schema shape)
+- Table name: `{schema}.{AbstractResource}Identity` (deterministic; provisioned with the rest of the schema).
 - Columns:
-  - `DocumentId` (the referenced document)
-  - `Discriminator` (concrete resource name; optional but recommended for diagnostics)
-  - one column per abstract identity element (typed), using the abstract identity field names
-- Rows:
-  - `UNION ALL` over each concrete resource table that participates in the hierarchy, projecting:
-    - `DocumentId`
-    - abstract identity columns (including identity renames, e.g. `School.SchoolId AS EducationOrganizationId`)
-    - discriminator constant (e.g., `'School'`)
+  - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
+  - abstract identity fields in `abstractResources[A].identityPathOrder`
+  - optional `Discriminator` (concrete resource name; recommended for diagnostics)
+- Maintenance:
+  - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
+- FKs for abstract reference sites:
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>) ON UPDATE CASCADE`.
 
-**Why a view**
-- Works well for small, stable hierarchies.
-- Requires no triggers and no additional write-path maintenance.
-- Provides a single join target for identity projection during reconstitution.
+Optional: `{schema}.{AbstractResource}_View` union view
 
-**How DMS derives the view definition (metadata-driven)**
-- Source of truth is `ApiSchema.json`:
-  - `projectSchema.abstractResources[A].identityPathOrder` defines the abstract identity field names and order.
-  - `resourceSchema.isSubclass` + `superclass*` fields define which concrete resources belong to `A` and how identity renames map.
-- DMS chooses a canonical SQL type for each abstract identity field from the participating concrete resources’ derived identity column types and casts each `SELECT` accordingly to keep the union portable across engines. (`abstractResources[A].openApiFragment` is excluded from `EffectiveSchemaHash` and must not affect schema derivation.)
-- For each concrete resource `R` in the hierarchy, DMS derives, per abstract identity field:
-  - If `R.identityJsonPaths` contains `$.{fieldName}`, use the corresponding root-table column directly.
-  - Else, if `R.isSubclass=true` and `R.superclassIdentityJsonPath == $.{fieldName}`, use the concrete identity column(s) from `R.identityJsonPaths` (identity rename case; e.g., `$.schoolId` → `EducationOrganizationId`).
-- If a concrete type cannot supply all abstract identity fields, startup schema validation fails fast (schema mismatch).
+If desired, also provision a union view per abstract resource for diagnostics/ad-hoc querying:
 
-DDL generation requirement:
-- The DDL generator emits these `{schema}.{AbstractResource}_View` definitions as part of provisioning (not as handwritten SQL).
+- View name: `{schema}.{AbstractResource}_View`
+- Columns: `DocumentId`, optional `Discriminator`, abstract identity fields in `identityPathOrder` order
+- Rows: `UNION ALL` over concrete member root tables, projecting `DocumentId` and the abstract identity fields (including identity renames)
+
+Usage:
+- Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via cascades).
+- Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
+
+DDL generation requirement (if enabled):
 - View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityPathOrder`, and explicit casts where needed for cross-engine union compatibility.
 
-**PostgreSQL example: `EducationOrganization_View`**
+**Optional PostgreSQL example: `EducationOrganization_View`**
 
 ```sql
 CREATE OR REPLACE VIEW edfi.EducationOrganization_View AS
@@ -744,7 +592,7 @@ SELECT
 FROM edfi.StateEducationAgency sea;
 ```
 
-**SQL Server example: `EducationOrganization_View`**
+**Optional SQL Server example: `EducationOrganization_View`**
 
 ```sql
 CREATE OR ALTER VIEW edfi.EducationOrganization_View AS
@@ -767,14 +615,8 @@ SELECT
 FROM edfi.StateEducationAgency sea;
 ```
 
-**How the view is used**
-- **Write-time resolution**: abstract references resolve via `dms.ReferentialIdentity` (superclass aliases) and do not depend on the view.
-- **Read-time identity projection**: when reconstituting an abstract-target reference object, join to `{AbstractResource}_View` by `DocumentId` to fetch the abstract identity fields.
-- **Membership/type validation (standard)**: to ensure a `..._DocumentId` FK to `dms.Document` actually belongs to the allowed hierarchy, validate `EXISTS (SELECT 1 FROM {AbstractResource}_View WHERE DocumentId=@id)` (batch when possible).
-  - The stored FK value is always a concrete document’s `DocumentId`; the view is what turns that `DocumentId` back into the abstract identity fields required by the API.
-
 Operational note:
-- Adding a new concrete subtype requires updating the view definition in the database (startup validation will fail fast if it does not match).
+- Adding a new concrete subtype requires updating the view definition in the database (startup validation can fail fast if it does not match the effective schema).
 - If view performance ever becomes a bottleneck, consider materialization (PostgreSQL materialized view; SQL Server indexed view) as a later, measured optimization.
 
 #### PostgreSQL examples (Student, School, StudentSchoolAssociation)
@@ -946,8 +788,9 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
   - naming follows `extensions.md`:
     - extension root table: `{ResourceBaseName}Extension`
     - extension collection tables: `{ResourceBaseName}Extension{CollectionSuffix}`
-- Abstract union views:
-  - `{ProjectSchema}.{AbstractResource}_View`
+- Abstract identity artifacts:
+  - `{ProjectSchema}.{AbstractResource}Identity` (tables; FK targets for polymorphic references)
+  - `{ProjectSchema}.{AbstractResource}_View` (optional union views for diagnostics/ad-hoc querying)
 
 ### 4) Column names (PascalCase + stable suffixes)
 
@@ -968,6 +811,8 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
 - Resource references: `{ReferenceBaseName}_DocumentId`
   - `ReferenceBaseName` comes from the reference-object JSON path (e.g., `$.studentReference` → `Student`)
   - override: `resourceSchema.relational.nameOverrides["$.studentReference"]`
+- Propagated reference identity columns (identity fields inside the reference object):
+  - `{ReferenceBaseName}_{IdentityFieldBaseName}` (e.g., `Student_StudentUniqueId`, `School_SchoolId`)
 - Descriptor references: `{DescriptorBaseName}_DescriptorId`
   - `DescriptorBaseName` comes from the descriptor value JSON path (e.g., `$.schoolTypeDescriptor` → `SchoolTypeDescriptor`)
   - override: `resourceSchema.relational.nameOverrides["$.schoolTypeDescriptor"]`

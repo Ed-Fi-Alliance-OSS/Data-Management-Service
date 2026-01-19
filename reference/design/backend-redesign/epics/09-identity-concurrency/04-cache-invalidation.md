@@ -4,8 +4,8 @@
 
 Ensure any caches used for identity resolution (`ReferentialId → DocumentId`) remain correct after identity changes:
 
-- Normal writes and identity closure recompute may change referential ids.
-- Cache entries must be updated/evicted after commit for all impacted keys.
+- Identity updates can fan out via cascades/triggers and change referential ids for more than the directly written document.
+- Cache entries must be updated/evicted after commit for impacted keys, or the cache must be short-TTL/disabled for correctness.
 
 ## Acceptance Criteria
 
@@ -13,13 +13,14 @@ Ensure any caches used for identity resolution (`ReferentialId → DocumentId`) 
 - Cache invalidation covers:
   - primary referential ids,
   - superclass alias referential ids,
-  - any affected dependents from closure recompute.
+  - any affected dependents whose identities change due to cascades/triggers.
 - Cache invalidation is performed after commit (no population from uncommitted state).
 
 ## Tasks
 
 1. Identify all cache layers used for identity resolution and define an invalidation API.
-2. Capture affected referential ids during writes/closure recompute for invalidation.
+2. Define how impacted referential ids are discovered for invalidation:
+   - direct-write keys only (with short TTL as the correctness backstop), or
+   - a DB-driven “changed identity” outbox/journal to enumerate impacted keys.
 3. Implement after-commit invalidation hooks in the backend transaction boundary.
 4. Add tests validating cache correctness across an identity update.
-

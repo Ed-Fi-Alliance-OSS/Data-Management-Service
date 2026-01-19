@@ -1,26 +1,20 @@
-# Story: Implement Locking Protocol + Deadlock Retry
+# Story: Implement Deadlock Retry Policy for Cascade/Trigger Writes
 
 ## Description
 
-Implement the strict identity-correctness locking protocol described in `reference/design/backend-redesign/transactions-and-concurrency.md`:
+Implement a bounded deadlock retry policy for write transactions, including identity updates that can fan out via FK cascades and triggers.
 
-- Use `dms.IdentityLock` rows for shared/update locks.
-- Acquire shared locks on all identity-component children first (sorted by `DocumentId`).
-- Acquire update locks on parent document(s) next (sorted by `DocumentId`).
-- Apply deadlock retry with bounded attempts and instrumentation.
+Align with `reference/design/backend-redesign/transactions-and-concurrency.md` (“Deadlock + retry policy”).
 
 ## Acceptance Criteria
 
-- Lock acquisition follows a deterministic order and prevents “stale-at-birth” identities.
 - Deadlocks/serialization failures are retried according to a configurable policy.
-- Lock acquisition times and retry counts are observable via metrics/logs.
+- Retry counts and transaction durations are observable via metrics/logs.
 
 ## Tasks
 
-1. Implement dialect-specific lock queries for shared and update locks on `dms.IdentityLock`.
-2. Implement deterministic lock ordering and bounded deadlock retry logic.
+1. Implement bounded deadlock retry around the full write transaction (pgsql + mssql).
+2. Define which error codes are retryable (PostgreSQL `40P01`; SQL Server `1205`, optionally `1222`).
 3. Add tests for:
-   1. ordering behavior,
-   2. retry behavior (simulated),
-   3. metrics/log emission.
-
+   1. retry behavior (simulated),
+   2. metrics/log emission.

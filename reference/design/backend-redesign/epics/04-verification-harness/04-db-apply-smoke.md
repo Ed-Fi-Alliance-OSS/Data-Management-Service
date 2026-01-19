@@ -24,7 +24,7 @@ Testcontainers is explicitly not allowed; use docker compose.
   - triggers,
   - `dms.EffectiveSchema` / `dms.SchemaComponent` / `dms.ResourceKey` rows.
 - Journaling trigger smoke check passes:
-  - inserting into `dms.Document` emits rows in `dms.DocumentChangeEvent` and `dms.IdentityChangeEvent`.
+  - inserting into `dms.Document` emits rows in `dms.DocumentChangeEvent`.
 
 ## Tasks
 
@@ -36,4 +36,3 @@ Testcontainers is explicitly not allowed; use docker compose.
    4. run trigger smoke SQL.
 3. Implement engine-specific introspection queries and emit `provisioned-schema.{dialect}.manifest.json`.
 4. Add optional NUnit wrappers (category `DbApply`) that invoke the scripts and fail with captured logs on error.
-

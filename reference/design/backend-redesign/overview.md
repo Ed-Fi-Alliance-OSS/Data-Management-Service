@@ -21,18 +21,18 @@ Draft. This is an initial design proposal for replacing the current three-table 
 1. **Relational-first storage**: Store resources in traditional relational tables (one root table per resource, plus child tables for collections).
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
-4. **Minimize cascade impact**: Use stable surrogate keys (`DocumentId`) and FK relationships so natural-key changes do not require rewriting referencing resource rows. Cascades still exist for derived artifacts (`ReferentialId`, API `_etag` / `_lastModifiedDate`), but should be bounded and set-based.
+4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist referenced identity natural-key fields alongside each `..._DocumentId` and keep them synchronized via `ON UPDATE CASCADE`. This enables correct indirect-update semantics without a reverse-edge index, while constraining cascades to narrow identity columns (not full-row rewrites).
 5. **SQL Server + PostgreSQL parity**: The design must be implementable (DDL + CRUD + query) on both engines.
    - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
 ### Constraints / Explicit Decisions
 
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity cascades (descriptor rows are treated as immutable in this redesign).
-  - This redesign uses derived update tracking tokens (`ContentVersion` / `IdentityVersion`) and read-time derivation of `_etag/_lastModifiedDate` to avoid write-time fan-out. See [update-tracking.md](update-tracking.md).
+  - This redesign stores representation metadata on `dms.Document` and updates it in-transaction. Indirect representation changes are realized as FK-cascade updates to stored reference identity columns on referrers, which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authorization is out of scope**: authorization storage and query filtering is intentionally deferred and not part of this redesign phase.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
-- **Polymorphic references use union views**: For abstract reference targets (e.g., `EducationOrganization`), store `..._DocumentId` as an FK to `dms.Document(DocumentId)` for existence and standardize membership validation + identity projection on `{AbstractResource}_View` (derived from `ApiSchema.json` `abstractResources`; see [data-model.md](data-model.md)).
+- **Polymorphic references use abstract identity tables (and may still expose union views)**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table (`DocumentId` + abstract identity fields + optional discriminator) and reference it with composite FKs (including identity columns) so `ON UPDATE CASCADE` can propagate identity changes. Union views remain useful for query/diagnostics but are no longer required for reference identity projection. See [data-model.md](data-model.md).
 
 ## Key Implications vs the Current Three-Table Design
 
@@ -43,10 +43,10 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
-  - responses reconstitute reference identity values from current referenced rows at read time (no rewrite of referencing rows).
-- Identity/URI changes do not require rewriting relational data. Cascades still exist for **derived artifacts** (set-based; made concurrency-correct via `dms.IdentityLock`):
-  - `dms.ReferentialIdentity` (required; transactional recompute so `ReferentialId → DocumentId` is never stale after commit)
-  - update tracking tokens and journals (`dms.Document` token columns + `dms.DocumentChangeEvent` / `dms.IdentityChangeEvent`) used to derive API `_etag` / `_lastModifiedDate` and future Change Queries (see [update-tracking.md](update-tracking.md))
+  - responses can reconstitute reference identity values directly from stored reference identity columns (kept consistent via composite FKs + `ON UPDATE CASCADE`), avoiding read-time joins to referenced tables in the common case.
+- Identity/URI changes do not rewrite `..._DocumentId` foreign keys, but **do** propagate into stored reference identity columns via `ON UPDATE CASCADE`. Cascades still exist for derived artifacts, but they are handled row-locally:
+  - `dms.ReferentialIdentity` is maintained transactionally by per-resource triggers that recompute referential ids from locally present identity columns (including propagated reference identity values).
+  - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Identity uniqueness is enforced by:
   - `dms.ReferentialIdentity` (for all identities, including reference-bearing), and
   - the resource root table’s natural-key unique constraint (including FK `..._DocumentId` columns) as a relational guardrail.
@@ -99,7 +99,7 @@ This redesign is split into focused docs in this directory:
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades (reference validation, transactional cascades, runtime caching): [transactions-and-concurrency.md](transactions-and-concurrency.md)
-- Update tracking (derived `_etag/_lastModifiedDate`, `ChangeVersion`, change journals): [update-tracking.md](update-tracking.md)
+- Update tracking (stored stamps for `_etag/_lastModifiedDate/ChangeVersion`, change journals): [update-tracking.md](update-tracking.md)
 - DDL Generation (builds the relational model and emits/provisions DDL): [ddl-generation.md](ddl-generation.md)
 - DDL generator verification harness (goldens, provision smoke, pack validation): [ddl-generator-testing.md](ddl-generator-testing.md)
 - Strengths and risks (operational + correctness + performance): [strengths-risks.md](strengths-risks.md)
@@ -113,8 +113,7 @@ This redesign is split into focused docs in this directory:
 
 ## Risks / Open Questions
 
-1. **Edge correctness**: strict identity maintenance, derived representation metadata, and Change Queries depend on complete `dms.ReferenceEdge` coverage (including nested collection refs).
-   - Mitigation: add invariant checks/audits and build high-coverage tests around derived bindings; fail writes on edge maintenance failures.
-2. **ReferenceEdge operational load**: required edge maintenance adds overhead; naive “delete-all then insert-all” can churn.
-   - Mitigation: diff-based upsert (stage + insert missing + delete stale) and careful indexing.
-3. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).
+1. **Cascade feasibility (SQL Server)**: `ON UPDATE CASCADE` can hit “multiple cascade paths” / cycle restrictions. Some reference sites may require trigger-based propagation instead of declarative cascades.
+2. **Operational fan-out**: an identity update on a “hub” document can synchronously update many referencing rows (now via FK cascades), increasing deadlock and latency risk.
+3. **Schema width/index pressure**: persisting referenced identity fields for all document reference sites increases table width and may require additional indexing for query performance.
+4. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).

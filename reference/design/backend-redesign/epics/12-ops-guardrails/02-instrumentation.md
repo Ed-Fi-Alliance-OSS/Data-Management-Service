@@ -1,12 +1,13 @@
-# Story: Instrumentation for Locks, Closures, and Edge Maintenance
+# Story: Instrumentation for Cascades, Stamps/Journals, and Retries
 
 ## Description
 
 Add instrumentation for correctness-critical and performance-sensitive operations:
 
-- identity lock acquisition times and counts,
-- identity closure size/iterations/duration,
-- reference edge diff sizes and write counts,
+- deadlock/serialization retries and failures,
+- write transaction latency (including identity updates),
+- stamp/journal write rates (`dms.Document` updates, `dms.DocumentChangeEvent` inserts),
+- and (where measurable) cascade fan-out signals during identity updates.
 - deadlock/serialization retries and failures.
 
 Align with the instrumentation suggestions in `reference/design/backend-redesign/strengths-risks.md`.
@@ -14,15 +15,13 @@ Align with the instrumentation suggestions in `reference/design/backend-redesign
 ## Acceptance Criteria
 
 - Metrics/logs exist for:
-  - `IdentityLockSharedAcquisitionMs`, `IdentityLockUpdateAcquisitionMs`, `IdentityLockRowsLocked`
-  - `IdentityClosureSize`, `IdentityClosureIterations`, `IdentityClosureMs`
-  - edge maintenance row counts and diff sizes
   - deadlock/serialization retries + exhausted retries
+  - write transaction duration (tagged by resource type and operation)
+  - journal/stamp write counters (at minimum: `dms.DocumentChangeEvent` rows emitted)
 - Instrumentation does not require schema changes beyond what the redesign already specifies.
 
 ## Tasks
 
 1. Define metric names and dimensions (resource type, dialect, instance id where applicable).
-2. Add timing and counter instrumentation to identity lock, closure recompute, and edge maintenance code paths.
+2. Add timing and counter instrumentation to write transaction boundaries and journaling/stamping touch points.
 3. Add minimal tests that assert metrics/log hooks fire for representative operations.
-

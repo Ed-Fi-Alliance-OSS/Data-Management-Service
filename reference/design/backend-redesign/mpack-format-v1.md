@@ -107,11 +107,11 @@ All collections are `repeated` and MUST be emitted in stable sort order:
 - Within each `RelationalResourceModel`:
   - `tables_in_read_dependency_order`: root-first, then increasing depth; stable within depth by `(json_scope, table_name)`
   - `tables_in_write_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)`
-  - `columns`: stable per table; key columns first (in key order), then non-key columns in deterministic JSON-path order
+  - `columns`: stable per table; key columns first (in key order), then document reference groups, descriptor FKs, then scalars
   - `constraints`: ascending by `(name)`
-  - `document_reference_edge_sources`: ascending by `(reference_object_path)`
+  - `document_reference_bindings`: ascending by `(reference_object_path)`
   - `descriptor_edge_sources`: ascending by `(descriptor_value_path)`
-  - `reference_field_mappings`: preserve ApiSchema `referenceJsonPaths` order (identity field order)
+  - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order (identity field order)
 
 ### 4.3 SQL text canonicalization
 
@@ -193,9 +193,8 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - recompute `resource_key_seed_hash` from `resource_keys` and compare
    - `resources` are unique by `(project_name, resource_name)` and sorted
    - For each `ResourcePack`:
-     - has `identity_projection_plan`
      - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
-     - all referenced tables/columns/edge-sources referenced by plans exist in the model
+     - all referenced tables/columns/bindings referenced by plans exist in the model
 7. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
    - `(ProjectName, ResourceName) -> ResourceKeyId`
    - `ResourceKeyId -> (ProjectName, ResourceName, ResourceVersion)`
@@ -294,10 +293,7 @@ message ResourcePack {
   string resource_name = 2;
   bool is_abstract_resource = 3;
 
-  // Identity projection required for reference reconstitution:
-  // - concrete resources: project from root tables (and joins for reference-bearing identities)
-  // - abstract resources: project from {AbstractResource}_View
-  IdentityProjectionPlan identity_projection_plan = 10;
+  reserved 10; // formerly identity_projection_plan (removed; reference identity is reconstituted from local columns)
 
   // Concrete resources only (required when is_abstract_resource=false).
   RelationalResourceModel relational_model = 20;
@@ -329,7 +325,7 @@ message RelationalResourceModel {
   repeated DbTableModel tables_in_read_dependency_order = 11;
   repeated DbTableModel tables_in_write_dependency_order = 12;
 
-  repeated DocumentReferenceEdgeSource document_reference_edge_sources = 20;
+  repeated DocumentReferenceBinding document_reference_bindings = 20;
   repeated DescriptorEdgeSource descriptor_edge_sources = 21;
 }
 
@@ -417,18 +413,18 @@ message ForeignKeyConstraint {
   repeated DbColumnName target_columns = 3;
 }
 
-message DocumentReferenceEdgeSource {
+message DocumentReferenceBinding {
   bool is_identity_component = 1;
   string reference_object_path = 2;                      // wildcard path (e.g. "$.schoolReference", "$.students[*].studentReference")
   DbTableName table = 3;
   DbColumnName fk_column = 4;                            // "..._DocumentId"
   QualifiedResourceName target_resource = 5;
-  repeated ReferenceFieldMapping field_mappings = 6;     // identity field order
+  repeated ReferenceIdentityBinding identity_bindings = 6; // identity field order
 }
 
-message ReferenceFieldMapping {
+message ReferenceIdentityBinding {
   string reference_json_path = 1;                        // where to write in the referencing document
-  string target_identity_json_path = 2;                  // where to read from referenced identity projection
+  DbColumnName column = 2;                               // physical column holding the identity value
 }
 
 message DescriptorEdgeSource {
@@ -487,7 +483,7 @@ message WriteScalar {
 }
 
 message WriteDocumentReference {
-  string reference_object_path = 1;                      // matches DocumentReferenceEdgeSource.reference_object_path
+  string reference_object_path = 1;                      // matches DocumentReferenceBinding.reference_object_path
 }
 
 message WriteDescriptorReference {
@@ -503,17 +499,6 @@ message ResourceReadPlan {
 message TableReadPlan {
   DbTableName table = 1;
   string select_by_keyset_sql = 10;                      // expects a materialized keyset table with BIGINT DocumentId
-}
-
-message IdentityProjectionPlan {
-  QualifiedResourceName resource = 1;
-  string sql = 10;                                       // returns DocumentId + identity fields (stable aliases)
-  repeated IdentityField fields = 11;                    // ApiSchema identity order
-}
-
-message IdentityField {
-  string identity_json_path = 1;                         // where to write in reference object (e.g. "$.schoolId")
-  string sql_alias = 2;                                  // column alias in projection result
 }
 ```
 

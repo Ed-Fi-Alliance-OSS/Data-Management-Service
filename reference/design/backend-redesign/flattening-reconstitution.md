@@ -131,11 +131,11 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Root table name + full column list (scalars + FK columns)
 - Child tables for each array path (and nested arrays)
 - Column types/nullability/constraints
-- Document-reference edge source plan: JSON reference paths → FK columns → referenced resource
+- Document-reference binding plan: JSON reference paths → FK columns + stored reference identity columns → referenced resource
 - Descriptor edge source plan: descriptor JSON paths → FK columns (descriptor `DocumentId`, resolved via `dms.ReferentialIdentity`) and expected descriptor resource type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
-- Identity projection plans (for references in responses)
-- Abstract identity projection plans for abstract targets (via `{AbstractResource}_View` union views derived from `abstractResources`)
+- Reference reconstitution plan (local columns): reference-object writers populated from stored reference identity columns (per `DocumentReferenceBinding`)
+- Abstract identity tables for polymorphic reference targets (from `abstractResources`)
 
 This is not code generation; it is compiled (or deserialized) metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
@@ -197,9 +197,10 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
 3. Apply `documentPathsMapping`:
    - For each reference object path (`referenceJsonPaths`):
      - create a `..._DocumentId` FK column at the table scope that owns that path and will represent the entire reference object as a single `..._DocumentId` foreign key
-     - suppress scalar-column derivation for the reference object’s descendants (identity fields and `link` internals). Relationally, a reference object is represented by one FK, not duplicated natural-key columns.
-     - record a `DocumentReferenceEdgeSource` (used for write-time FK population, `dms.ReferenceEdge` maintenance, and read-time reference reconstitution)
-       - compute and persist `DocumentReferenceEdgeSource.IsIdentityComponent` as `true` when any `identityJsonPaths` element is sourced from this reference object (i.e., when any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`)
+     - derive scalar columns for the reference object’s **identity fields** (one per referenced identity component) using the `{ReferenceBaseName}_{IdentityFieldBaseName}` naming rule
+     - suppress scalar-column derivation for the reference object’s `link` internals (if present); link values are not persisted
+     - record a `DocumentReferenceBinding` (used for write-time FK + identity column population and for query compilation of reference-identity fields)
+       - compute and persist `DocumentReferenceBinding.IsIdentityComponent` as `true` when any `identityJsonPaths` element is sourced from this reference object (i.e., when any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`)
    - For each descriptor path:
      - create a `..._DescriptorId` FK column at the table scope that owns that path
      - suppress the raw descriptor string scalar column at that JSON path; reconstitute the string from `dms.Descriptor` during reads.
@@ -219,11 +220,14 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
    - resolve all table and column names deterministically
    - validate no collisions and fail fast if any occur
 
-7. Apply `abstractResources` (polymorphic identity views):
-   - For each abstract resource `A`, create/replace `{schema}.{A}_View` as a narrow `UNION ALL` projection over all concrete resource root tables that participate in `A`’s hierarchy.
-   - Project `DocumentId`, an optional `Discriminator`, and the abstract identity fields (from `abstractResources[A].identityPathOrder`) using identity renames where needed.
-   - Use these views to compile abstract identity projection plans for read-time reference reconstitution.
-   - Standardize polymorphic membership validation on these views as well: when a polymorphic FK can only enforce existence (FK → `dms.Document`), validate membership with `EXISTS (SELECT 1 FROM {schema}.{A}_View WHERE DocumentId=@id)`.
+7. Apply `abstractResources` (polymorphic identity tables; optional views):
+   - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
+     - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
+     - abstract identity fields (from `abstractResources[A].identityPathOrder`),
+     - optional `Discriminator`.
+   - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
+   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites so `ON UPDATE CASCADE` can propagate identity changes and enforce membership/type at the DB level.
+   - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
 ### 4.2 Recommended child-table keys (composite parent+ordinal)
 
@@ -297,7 +301,7 @@ Cache these lookups aggressively (L1/L2 optional), but only populate caches afte
 
 When a document reference appears inside a collection (or nested collection), its FK is stored in a **child table row** whose key includes one or more **ordinals**. To set the correct FK column without per-row JSONPath evaluation and per-row referential id hashing, we need a stable way to answer:
 
-> For this `DocumentReferenceEdgeSource`, and for this row’s **ordinal path**, what is the referenced `DocumentId`?
+> For this `DocumentReferenceBinding`, and for this row’s **ordinal path**, what is the referenced `DocumentId`?
 
 DMS uses a single required approach: Core emits each reference instance *with its concrete JSON location (indices)* so the backend can address it by ordinal path.
 
@@ -326,7 +330,7 @@ Update Core’s `ReferenceExtractor` to populate `DocumentReference.Path` by usi
    - build `DocumentIdentity` using the `referenceJsonPaths[*]` order (identity json paths + values)
    - compute `ReferentialId` using the existing UUIDv5 algorithm
    - emit `DocumentReference(Path=...)`
-4. Emit `DocumentReferenceArray` for the edge source using the wildcard reference-object path (as today), but with `DocumentReferences` ordered by concrete path/document order.
+4. Emit `DocumentReferenceArray` for the reference site using the wildcard reference-object path (as today), but with `DocumentReferences` ordered by concrete path/document order.
 
 **How backend uses it**
 
@@ -362,9 +366,6 @@ public sealed class ResourceFlattener : IResourceFlattener
           IDocumentReferenceInstanceIndex documentReferences,
           ResolvedReferenceSet resolved)
       {
-          // pseudocode: edgesByChild = new Dictionary<ChildDocumentId, IsIdentityComponent>()
-          var edgesByChild = new Dictionary<long, bool>();
-
           // pseudocode: plan.TableRows[...] = ...
           var childRows = new Dictionary<DbTableName, IReadOnlyList<RowBuffer>>();
 
@@ -380,8 +381,7 @@ public sealed class ResourceFlattener : IResourceFlattener
               ordinal: 0,
               ordinalPath: ReadOnlySpan<int>.Empty,
               documentReferences: documentReferences,
-              resolved: resolved,
-              edgesByChild: edgesByChild);
+              resolved: resolved);
 
           // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
           foreach (var tableModel in plan.Model.TablesInWriteDependencyOrder)
@@ -408,17 +408,14 @@ public sealed class ResourceFlattener : IResourceFlattener
                       ordinal: ordinal,
                       ordinalPath: ordinalPath,
                       documentReferences: documentReferences,
-                      resolved: resolved,
-                      edgesByChild: edgesByChild));
+                      resolved: resolved));
               }
 
               // pseudocode: plan.TableRows[childPlan.Table] = rows
               childRows[tableModel.Table] = rows;
           }
 
-          // pseudocode: return (plan.TableRows, edgesByChild)
-          var edges = edgesByChild.Select(kvp => new ReferenceEdgeRow(kvp.Key, kvp.Value)).ToArray();
-          return new FlattenedWriteSet(rootTable, rootRow, childRows, edges);
+          return new FlattenedWriteSet(rootTable, rootRow, childRows);
       }
 
       private static long[] BuildParentKeyParts(long documentId, ReadOnlySpan<int> ordinalPath)
@@ -468,7 +465,9 @@ Within a single transaction:
    - 1:1 extension root table rows (keyed by `DocumentId`)
    - extension scope/collection rows keyed to the same composite keys as the base scope they extend (document id + ordinals)
    - use the same baseline “replace” strategy as core collections (delete existing, insert current)
-5. Maintain `dms.ReferenceEdge` for this document (diff-based upsert recommended; see Write Path) so strict referential-id cascades and derived update tracking (representation metadata + Change Queries) can be computed without scanning all tables.
+5. No derived reverse-edge maintenance is required:
+   - referential-id impacts propagate via `ON UPDATE CASCADE` into stored reference identity columns, and
+   - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
 - **Multi-row INSERT** with parameters (good default)
@@ -510,34 +509,30 @@ The page case must not become “GET by id repeated N times”.
 All subsequent reads “hydrate” root + child tables by joining to that keyset.
 Extension tables (in extension project schemas) are hydrated the same way: select by the page keyset and attach by the same key/ordinal columns (see [extensions.md](extensions.md)).
 
-#### Query predicates for reference identity fields (set-based default)
+#### Query predicates for reference identity fields (local columns)
 
-`ApiSchema.queryFieldMapping` can expose query parameters that correspond to identity fields inside a **reference object** (e.g., `studentUniqueId` mapped from `$.studentReference.studentUniqueId`). These do **not** map to a local scalar column on the querying resource’s root table, because reference objects are stored as a single `..._DocumentId` FK column.
+`ApiSchema.queryFieldMapping` can expose query parameters that correspond to identity fields inside a **reference object** (e.g., `studentUniqueId` mapped from `$.studentReference.studentUniqueId`).
 
-The query compiler should treat these as **reference query fields** and translate them into a predicate on the FK column using a **set-based lookup** over the referenced resource’s root table:
+In this redesign, identity fields inside reference objects are persisted as local columns alongside the FK:
 
-- Build a subquery (or `EXISTS`/join) that returns matching referenced `DocumentId`s using whatever identity parts are present in the query.
-- Filter the referencing FK with `IN (subquery)` (or an equivalent join).
-- This works for both complete and partial referenced identities:
-  - complete identity ⇒ the subquery returns 0 or 1 `DocumentId` (due to the referenced table’s identity uniqueness)
-  - partial identity ⇒ the subquery can return 0..N `DocumentId`s
+- `..._DocumentId` (stable FK), plus
+- `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
+  kept consistent via composite FKs with `ON UPDATE CASCADE`.
 
-Example (conceptual): query `StudentAssessmentRegistration` by `studentUniqueId` when the root table stores only `Student_DocumentId`:
+Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
+
+- Complete or partial referenced identities compile to conjunctions over the provided identity-part columns.
+
+Example (conceptual): query `StudentAssessmentRegistration` by `studentUniqueId`:
 
 ```sql
 SELECT r.DocumentId
 FROM edfi.StudentAssessmentRegistration r
-WHERE r.Student_DocumentId IN (
-  SELECT s.DocumentId
-  FROM edfi.Student s
-  WHERE s.StudentUniqueId = @StudentUniqueId
-)
+WHERE r.Student_StudentUniqueId = @StudentUniqueId
 ORDER BY r.DocumentId
 OFFSET @Offset
 LIMIT @Limit;
 ```
-
-Optional optimization (complete identity only): when *all* identity components for the referenced resource are present, compute the referenced `ReferentialId` from the query values and resolve a single `DocumentId` via `dms.ReferentialIdentity`, then compile `r.<Ref>_DocumentId = @resolvedDocumentId` (or `= (SELECT DocumentId FROM dms.ReferentialIdentity WHERE ReferentialId=@id)`).
 
 #### Single round-trip: materialize a `page` keyset, then hydrate by join
 
@@ -653,112 +648,30 @@ Reconstitution walks the derived table/tree model:
    - attach to the parent as a list, ordered by `Ordinal`
 3. Once all rows are attached, write JSON using a streaming writer.
 
-### 6.3 Reference expansion (identity projection, batched)
+### 6.3 Reference expansion (local columns)
 
 To reconstitute reference objects, DMS must output the referenced resource’s identity values (natural keys), not the referenced `DocumentId`.
 
-Identity projection is planned from `ApiSchema`:
-- For each `DocumentReferenceEdgeSource`, identify the referenced resource type and which identity fields are required.
-- Compile one `IdentityProjectionPlan` per target resource type (for abstract/polymorphic targets, the plan queries `{AbstractResource}_View`).
+In this redesign, identity fields inside reference objects are stored as local columns alongside the FK:
 
-Execution strategy:
-- For the page, collect all FK `DocumentId`s per target resource type across all results.
-- For each target resource type, run one batched identity projection query (chunk if needed).
-- Populate a dictionary `(targetType, targetDocumentId) → identity value bag`.
+- `..._DocumentId`, plus
+- `{ReferenceBaseName}_{IdentityFieldBaseName}` columns,
+  kept consistent via composite FKs with `ON UPDATE CASCADE`.
 
-#### Example: reference expansion via batched identity projection
+Therefore reference expansion during JSON writing is a pure “read local columns and emit the reference object” operation. No batched identity projection queries (joins to referenced tables or `{AbstractResource}_View`) are required to populate reference identity fields.
 
-Assume we are reconstituting a page of `edfi.StudentSchoolAssociation` rows, and the relational root table stores:
-- `Student_DocumentId` (FK → `edfi.Student(DocumentId)`)
-- `School_DocumentId` (FK → `edfi.School(DocumentId)`)
-
-Root rows for the page (simplified):
-
-```text
-DocumentId | Student_DocumentId | School_DocumentId | EntryDate
----------- | ------------------ | ---------------- | ----------
-5001       | 3001               | 2001             | 2025-08-15
-5002       | 3002               | 2001             | 2025-08-15
-```
-
-1) Collect distinct referenced ids per target type:
-
-```sql
--- Distinct Student DocumentIds referenced by this page
-SELECT DISTINCT ssa.Student_DocumentId
-FROM edfi.StudentSchoolAssociation ssa
-JOIN page p ON p.DocumentId = ssa.DocumentId
-WHERE ssa.Student_DocumentId IS NOT NULL
-ORDER BY ssa.Student_DocumentId;
-
--- Distinct School DocumentIds referenced by this page
-SELECT DISTINCT ssa.School_DocumentId
-FROM edfi.StudentSchoolAssociation ssa
-JOIN page p ON p.DocumentId = ssa.DocumentId
-WHERE ssa.School_DocumentId IS NOT NULL
-ORDER BY ssa.School_DocumentId;
-```
-
-Example results:
-```text
-Student: [3001, 3002]
-School:  [2001]
-```
-
-
-2) Run one identity projection query per target type (PostgreSQL examples):
-
-```sql
--- Students: project the identity fields needed to build studentReference
-SELECT DocumentId, StudentUniqueId
-FROM edfi.Student
-WHERE DocumentId = ANY (@studentDocumentIds);
-
--- Schools: project the identity fields needed to build schoolReference
-SELECT DocumentId, SchoolId
-FROM edfi.School
-WHERE DocumentId = ANY (@schoolDocumentIds);
-```
-
-Example results:
-
-```text
--- Student projection results
-DocumentId | StudentUniqueId
----------- | --------------
-3001       | 604821
-3002       | 604822
-
--- School projection results
-DocumentId | SchoolId
----------- | --------
-2001       | 255901
-```
-
-3) Build an in-memory lookup used during JSON writing:
-
-```text
-(Student, 3001) -> { studentUniqueId: "604821" }
-(Student, 3002) -> { studentUniqueId: "604822" }
-(School,  2001) -> { schoolId: 255901 }
-```
-
-During reconstitution for `DocumentId=5001`, DMS writes reference objects by looking up the FK `DocumentId` values:
-- `studentReference` comes from `(Student, 3001)`
-- `schoolReference` comes from `(School, 2001)`
-
-(For polymorphic/abstract targets, the identity projection query is against `{AbstractResource}_View` instead of a concrete table so the same lookup works across concrete types.)
+For polymorphic/abstract targets, referrers store the abstract identity fields (e.g., `EducationOrganizationId`) and enforce membership via a composite FK to `{schema}.{AbstractResource}Identity`.
 
 ### 6.4 JSON assembly (fast, shape-safe)
 
 Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
 - write scalars from root/child rows using the compiled column→jsonPath writers
 - write arrays in `Ordinal` order
-- write references by looking up identity value bags
+- write references from stored reference identity columns (per `DocumentReferenceBinding`)
 - write descriptor strings by looking up `dms.Descriptor.Uri`
 - write `_ext` blocks from extension tables (only when at least one extension value is present at that scope)
 - inject `id` from `dms.Document.DocumentUuid`
-- derive `_etag` and `_lastModifiedDate` from persisted `dms.Document` token columns plus dependency tokens (see [update-tracking.md](update-tracking.md), including “Worked example: Section → ClassPeriod”); these values must not be generated as “now” at read/materialization time.
+- serve `_etag` and `_lastModifiedDate` from stored `dms.Document` stamps (`ContentVersion`/`ContentLastModifiedAt`); these values must not be generated as “now” at read/materialization time.
 
 Array presence rule (recommended):
 - If the array has rows, write it.
@@ -779,7 +692,7 @@ This section defines the **concrete model and plan objects** that allow DMS to:
 Think of these objects in **three layers**:
 
 1. **Shape layer** (`RelationalResourceModel`): what tables/columns/keys exist for a resource and how they correspond to JSON paths.
-2. **Plan layer** (`ResourceWritePlan`, `ResourceReadPlan`, `IdentityProjectionPlan`): compiled SQL plus precomputed details needed for efficient execution.
+2. **Plan layer** (`ResourceWritePlan`, `ResourceReadPlan`): compiled SQL plus precomputed details needed for efficient execution.
 3. **Execution layer** (`IResourceFlattener`, `IBulkInserter`, `IResourceReconstituter`): runtime services that consume the plans.
 
 All three layers are cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)` so the per-request cost is only: reference resolution + row materialization + SQL execution + JSON writing.
@@ -961,9 +874,9 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// Tables ordered for writing (root first, then child tables in depth-first order).
 /// This order is used to delete/insert child rows in a stable way (replace semantics).
 /// </param>
-/// <param name="DocumentReferenceEdgeSources">
-/// The set of document-reference edge sources derived from documentPathsMapping.referenceJsonPaths.
-/// Each edge source declares: which JSON reference object it came from, which table stores the FK, and how to reconstitute the identity object.
+/// <param name="DocumentReferenceBindings">
+/// The set of document-reference bindings derived from documentPathsMapping.referenceJsonPaths.
+/// Each binding declares: which JSON reference object it came from, which table stores the FK and propagated identity columns, and how to populate/reconstitute the reference object from local columns.
 /// </param>
 /// <param name="DescriptorEdgeSources">
 /// The set of descriptor-reference sources derived from documentPathsMapping (descriptor paths).
@@ -975,7 +888,7 @@ public sealed record RelationalResourceModel(
     DbTableModel Root,
     IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
     IReadOnlyList<DbTableModel> TablesInWriteDependencyOrder,
-    IReadOnlyList<DocumentReferenceEdgeSource> DocumentReferenceEdgeSources,
+    IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
 );
 
@@ -1072,7 +985,7 @@ public abstract record TableConstraint
 }
 
 /// <summary>
-/// Declares how a document reference object is stored and later reconstituted.
+/// Declares how a document reference object is stored and reconstituted.
 /// </summary>
 /// <param name="ReferenceObjectPath">
 /// Path to the reference object itself in the JSON document (not to the individual identity fields).
@@ -1084,33 +997,33 @@ public abstract record TableConstraint
 /// <param name="Table">The table where the FK column is stored (root or child).</param>
 /// <param name="FkColumn">The FK column holding the referenced DocumentId.</param>
 /// <param name="TargetResource">The referenced resource type (project + resource).</param>
-/// <param name="FieldMappings">
-/// The ordered identity field mappings derived from ApiSchema documentPathsMapping.referenceJsonPaths.
-/// These mappings are used for:
-/// - write-time identity hash computation (already done by Core)
-/// - read-time identity projection: which values must be selected from the referenced resource to reconstitute the reference object
+/// <param name="IdentityBindings">
+/// The ordered identity field bindings derived from ApiSchema documentPathsMapping.referenceJsonPaths.
+/// These bindings are used for:
+/// - write-time column population of stored reference identity fields
+/// - query compilation for reference-identity query fields (local predicates)
+/// - read-time reference reconstitution from local columns
 /// </param>
 /// <param name="IsIdentityComponent">
-/// True when this edge source contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
-/// Used for strict identity-closure recompute of <c>dms.ReferentialIdentity</c> (via <c>dms.ReferenceEdge</c> filtering by <c>IsIdentityComponent=true</c>).
+/// True when this reference contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
 /// </param>
-public sealed record DocumentReferenceEdgeSource(
+public sealed record DocumentReferenceBinding(
     bool IsIdentityComponent,
     JsonPathExpression ReferenceObjectPath,        // e.g. "$.schoolReference" or "$.students[*].studentReference"
     DbTableName Table,
     DbColumnName FkColumn,                         // e.g. "School_DocumentId"
     QualifiedResourceName TargetResource,
-    IReadOnlyList<ReferenceFieldMapping> FieldMappings
+    IReadOnlyList<ReferenceIdentityBinding> IdentityBindings
 );
 
 /// <summary>
-/// Maps one identity field in the referencing document’s reference object to the corresponding identity JSONPath in the referenced resource.
+/// Maps one identity field inside the reference object to a physical column on the referencing table.
 /// </summary>
 /// <param name="ReferenceJsonPath">Absolute path to the identity field inside the reference object in the referencing document.</param>
-/// <param name="TargetIdentityJsonPath">Absolute path to the corresponding identity field in the referenced document.</param>
-public sealed record ReferenceFieldMapping(
-    JsonPathExpression ReferenceJsonPath,          // where to write in the referencing document
-    JsonPathExpression TargetIdentityJsonPath      // where to read from the referenced document identity
+/// <param name="Column">Physical column holding the identity value (e.g. <c>Student_StudentUniqueId</c>).</param>
+public sealed record ReferenceIdentityBinding(
+    JsonPathExpression ReferenceJsonPath,
+    DbColumnName Column
 );
 
 /// <summary>
@@ -1127,7 +1040,7 @@ public sealed record ReferenceFieldMapping(
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this descriptor value participates in the parent document's identity (the descriptor URI is part of the parent's <c>identityJsonPaths</c>).
-/// Used when projecting identity values from relational storage for referential-id computation (note: descriptor rows are treated as immutable and do not participate in <c>dms.ReferenceEdge</c> cascades in this redesign).
+/// Used when projecting identity values from relational storage for referential-id computation (descriptor rows are treated as immutable in this redesign).
 /// </param>
 public sealed record DescriptorEdgeSource(
     bool IsIdentityComponent,
@@ -1139,8 +1052,7 @@ public sealed record DescriptorEdgeSource(
 ```
 
 Notes:
-- `DocumentReferenceEdgeSource.FieldMappings` is derived from existing `documentPathsMapping.referenceJsonPaths`.
-- `TargetIdentityJsonPath` is used to drive identity projection join planning (section 7.5).
+- `DocumentReferenceBinding.IdentityBindings` is derived from existing `documentPathsMapping.referenceJsonPaths`.
 
 ### 7.4 Write and read plans (plan layer)
 
@@ -1235,11 +1147,11 @@ public abstract record WriteValueSource
     ///
     /// With the concrete-path approach (section 5.2.1), the referential id is computed by Core and emitted with concrete JSON location.
     /// The backend uses a per-request index keyed by:
-    /// - this edge source (which identifies the wildcard reference-object path and the FK column)
+    /// - this binding (which identifies the wildcard reference-object path and the FK column)
     /// - the current row's OrdinalPath (array indices from root to the current scope)
     /// to return the referenced DocumentId without per-row hashing.
     /// </summary>
-    public sealed record DocumentReference(DocumentReferenceEdgeSource EdgeSource) : WriteValueSource;
+    public sealed record DocumentReference(DocumentReferenceBinding Binding) : WriteValueSource;
 
     /// <summary>
     /// A descriptor FK value.
@@ -1255,8 +1167,7 @@ public abstract record WriteValueSource
 /// </summary>
 public sealed record ResourceReadPlan(
     RelationalResourceModel Model,
-    IReadOnlyDictionary<DbTableName, TableReadPlan> TablePlans,
-    IReadOnlyDictionary<QualifiedResourceName, IdentityProjectionPlan> IdentityProjectionPlans
+    IReadOnlyDictionary<DbTableName, TableReadPlan> TablePlans
 );
 
 /// <summary>
@@ -1273,48 +1184,14 @@ public sealed record TableReadPlan(
 );
 ```
 
-### 7.5 Identity projection (reference reconstitution)
+### 7.5 Reference reconstitution (local columns)
 
-```csharp
-/// <summary>
-/// A compiled SQL plan that projects the identity fields for a referenced resource type.
-/// Given a set of referenced DocumentIds, this returns the values needed to reconstitute reference objects.
-/// </summary>
-/// <param name="Resource">The referenced resource type being projected.</param>
-/// <param name="Sql">
-/// Parameterized SQL that returns:
-/// - DocumentId
-/// - one column per identity field (with stable aliases)
-/// The plan compiler may include joins to other resource tables if the identity contains reference identities.
-/// </param>
-/// <param name="Fields">
-/// The identity fields (in ApiSchema identity order) and their SQL aliases.
-/// Used to populate JSON reference objects deterministically.
-/// </param>
-public sealed record IdentityProjectionPlan(
-    QualifiedResourceName Resource,
-    string Sql,
-    IReadOnlyList<IdentityField> Fields
-);
+Reference objects are reconstituted from stored reference identity columns on the referencing tables.
 
-/// <summary>
-/// One identity field returned by an IdentityProjectionPlan.
-/// </summary>
-public sealed record IdentityField(
-    JsonPathExpression IdentityJsonPath,    // e.g. "$.schoolId" or "$.schoolReference.schoolId"
-    string SqlAlias                         // column alias in the projection result set
-);
-```
-
-The `IdentityProjectionPlan` builder:
-- takes either:
-  - a concrete resource’s `identityJsonPaths`, or
-  - an abstract resource’s `abstractResources[...].identityPathOrder` (treated as `$.{fieldName}` JSON paths)
-- maps each identity field to one of:
-  - a scalar column on the target’s root table,
-  - a join chain through FK columns to other resources’ identity columns (for reference-bearing identities), or
-  - for abstract/polymorphic targets, a scalar column projected from `{AbstractResource}_View`
-- emits a single SQL query that returns all identity values for the requested `DocumentId`s
+The plan compiler uses `RelationalResourceModel.DocumentReferenceBindings` to:
+- identify the JSON reference object location, and
+- write identity fields from the bound physical columns (`ReferenceIdentityBinding.Column`),
+without joining to referenced resource tables.
 
 ### 7.6 Execution interfaces (execution layer)
 
@@ -1381,10 +1258,10 @@ public readonly record struct DescriptorKey(string NormalizedUri, QualifiedResou
 public interface IDocumentReferenceInstanceIndex
 {
     /// <summary>
-    /// Returns the referenced DocumentId for the given edge source at the given ordinal path, or null if the reference
+    /// Returns the referenced DocumentId for the given reference binding at the given ordinal path, or null if the reference
     /// object is not present at that location (optional reference).
     /// </summary>
-    long? GetReferencedDocumentId(DocumentReferenceEdgeSource edgeSource, ReadOnlySpan<int> ordinalPath);
+    long? GetReferencedDocumentId(DocumentReferenceBinding binding, ReadOnlySpan<int> ordinalPath);
 }
 
 /// <summary>
@@ -1399,18 +1276,18 @@ public interface IDocumentReferenceInstanceIndex
 /// </summary>
 public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceIndex
 {
-    private readonly IReadOnlyDictionary<DocumentReferenceEdgeSource, OrdinalPathMap<long>> _mapByEdgeSource;
+    private readonly IReadOnlyDictionary<DocumentReferenceBinding, OrdinalPathMap<long>> _mapByBinding;
 
     private DocumentReferenceInstanceIndex(
-        IReadOnlyDictionary<DocumentReferenceEdgeSource, OrdinalPathMap<long>> mapByEdgeSource
+        IReadOnlyDictionary<DocumentReferenceBinding, OrdinalPathMap<long>> mapByBinding
     )
     {
-        _mapByEdgeSource = mapByEdgeSource;
+        _mapByBinding = mapByBinding;
     }
 
-    public long? GetReferencedDocumentId(DocumentReferenceEdgeSource edgeSource, ReadOnlySpan<int> ordinalPath)
+    public long? GetReferencedDocumentId(DocumentReferenceBinding binding, ReadOnlySpan<int> ordinalPath)
     {
-        if (!_mapByEdgeSource.TryGetValue(edgeSource, out var map))
+        if (!_mapByBinding.TryGetValue(binding, out var map))
         {
             return null;
         }
@@ -1429,30 +1306,30 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
     ///   e.g. <c>"$.addresses[2].periods[0].calendarReference"</c>.
     /// </summary>
     public static DocumentReferenceInstanceIndex Build(
-        IReadOnlyList<DocumentReferenceEdgeSource> edgeSources,
+        IReadOnlyList<DocumentReferenceBinding> bindings,
         EdFi.DataManagementService.Core.External.Model.DocumentReferenceArray[] extractedReferenceArrays,
         IReadOnlyDictionary<Guid, long> documentIdByReferentialId)
     {
-        // Map wildcard reference-object path → edge source for fast association.
-        // The wildcard path is the DocumentReferenceEdgeSource.ReferenceObjectPath (e.g. "$.addresses[*].periods[*].calendarReference").
-        var edgeSourceByPath = edgeSources.ToDictionary(s => s.ReferenceObjectPath.Canonical, s => s);
+        // Map wildcard reference-object path → binding for fast association.
+        // The wildcard path is the DocumentReferenceBinding.ReferenceObjectPath (e.g. "$.addresses[*].periods[*].calendarReference").
+        var bindingByPath = bindings.ToDictionary(s => s.ReferenceObjectPath.Canonical, s => s);
 
-        var mapsByEdgeSource = new Dictionary<DocumentReferenceEdgeSource, OrdinalPathMap<long>>();
+        var mapsByBinding = new Dictionary<DocumentReferenceBinding, OrdinalPathMap<long>>();
 
         foreach (var array in extractedReferenceArrays)
         {
-            if (!edgeSourceByPath.TryGetValue(array.arrayPath.Value, out var edgeSource))
+            if (!bindingByPath.TryGetValue(array.arrayPath.Value, out var binding))
             {
                 // If this happens, ApiSchema and extraction disagree. Treat as a startup/schema error.
                 throw new InvalidOperationException(
-                    $"No DocumentReferenceEdgeSource found for extracted path '{array.arrayPath.Value}'."
+                    $"No DocumentReferenceBinding found for extracted path '{array.arrayPath.Value}'."
                 );
             }
 
-            if (!mapsByEdgeSource.TryGetValue(edgeSource, out var map))
+            if (!mapsByBinding.TryGetValue(binding, out var map))
             {
                 map = new OrdinalPathMap<long>();
-                mapsByEdgeSource.Add(edgeSource, map);
+                mapsByBinding.Add(binding, map);
             }
 
             foreach (var reference in array.DocumentReferences)
@@ -1463,7 +1340,7 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
             }
         }
 
-        return new(mapsByEdgeSource);
+        return new(mapsByBinding);
     }
 
     /// <summary>
@@ -1565,19 +1442,8 @@ public sealed class DocumentReferenceInstanceIndex : IDocumentReferenceInstanceI
 public sealed record FlattenedWriteSet(
     DbTableName RootTable,
     RowBuffer RootRow,
-    IReadOnlyDictionary<DbTableName, IReadOnlyList<RowBuffer>> ChildRows,
-    IReadOnlyList<ReferenceEdgeRow> ReferenceEdges
+    IReadOnlyDictionary<DbTableName, IReadOnlyList<RowBuffer>> ChildRows
 );
-
-/// <summary>
-/// One outgoing reference edge from the document being written.
-/// ChildDocumentId can refer to either a resource document or a descriptor document (both live in dms.Document).
-///
-/// Notes:
-/// - Edges are collapsed by ChildDocumentId.
-/// - IsIdentityComponent is the OR across all reference/descriptor sites in the document that point to the same child.
-/// </summary>
-public sealed record ReferenceEdgeRow(long ChildDocumentId, bool IsIdentityComponent);
 
 public sealed record RowBuffer(IReadOnlyList<object?> Values);
 
@@ -1616,118 +1482,11 @@ public interface IBulkInserter
 {
     Task InsertAsync(DbConnection connection, DbTransaction tx, DbTableModel table, IReadOnlyList<RowBuffer> rows, CancellationToken ct);
 }
-
-/// <summary>
-/// Writer for dms.ReferenceEdge maintenance (reverse reference index).
-/// Required for strict identity-cascade features
-/// </summary>
-public interface IReferenceEdgeWriter
-{
-    Task UpsertEdgesAsync(
-        DbConnection connection,
-        DbTransaction tx,
-        long parentDocumentId,
-        IReadOnlyList<ReferenceEdgeRow> edges,
-        CancellationToken ct);
-}
 ```
 
 Dapper is optional:
 - use it for `QueryMultiple` and basic row reads if desired
 - avoid mapping to per-resource CLR types; materialize into `RowBuffer`/`DbDataReader`-backed structures
-
-Example: PostgreSQL `IReferenceEdgeWriter` (diff-based, low-churn)
-
-```csharp
-public sealed class PostgresqlReferenceEdgeWriter : IReferenceEdgeWriter
-{
-    public async Task UpsertEdgesAsync(
-        DbConnection connection,
-        DbTransaction tx,
-        long parentDocumentId,
-        IReadOnlyList<ReferenceEdgeRow> edges,
-        CancellationToken ct)
-    {
-        const string createStage = @"
-            CREATE TEMP TABLE IF NOT EXISTS reference_edge_stage (
-                ChildDocumentId bigint NOT NULL,
-                IsIdentityComponent boolean NOT NULL,
-                PRIMARY KEY (ChildDocumentId)
-            ) ON COMMIT DELETE ROWS;";
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(createStage, transaction: tx, cancellationToken: ct));
-        await connection.ExecuteAsync(
-            new CommandDefinition("DELETE FROM reference_edge_stage;", transaction: tx, cancellationToken: ct));
-
-        if (edges.Count != 0)
-        {
-            var childIds = edges.Select(e => e.ChildDocumentId).ToArray();
-            var identityFlags = edges.Select(e => e.IsIdentityComponent).ToArray();
-
-            const string stageInsert = @"
-                INSERT INTO reference_edge_stage (ChildDocumentId, IsIdentityComponent)
-                SELECT * FROM unnest(@ChildIds::bigint[], @IdentityFlags::boolean[]);";
-
-            await connection.ExecuteAsync(
-                new CommandDefinition(
-                    stageInsert,
-                    new { ChildIds = childIds, IdentityFlags = identityFlags },
-                    transaction: tx,
-                    cancellationToken: ct));
-        }
-
-        const string insertMissing = @"
-            INSERT INTO dms.ReferenceEdge (ParentDocumentId, ChildDocumentId, IsIdentityComponent)
-            SELECT @ParentDocumentId, s.ChildDocumentId, s.IsIdentityComponent
-            FROM reference_edge_stage s
-            LEFT JOIN dms.ReferenceEdge e
-              ON e.ParentDocumentId = @ParentDocumentId
-             AND e.ChildDocumentId  = s.ChildDocumentId
-            WHERE e.ParentDocumentId IS NULL;";
-
-        const string updateChanged = @"
-            UPDATE dms.ReferenceEdge e
-            SET IsIdentityComponent = s.IsIdentityComponent
-            FROM reference_edge_stage s
-            WHERE e.ParentDocumentId = @ParentDocumentId
-              AND e.ChildDocumentId  = s.ChildDocumentId
-              AND e.IsIdentityComponent IS DISTINCT FROM s.IsIdentityComponent;";
-
-        const string deleteStale = @"
-            DELETE FROM dms.ReferenceEdge e
-            WHERE e.ParentDocumentId = @ParentDocumentId
-              AND NOT EXISTS (
-                SELECT 1
-                FROM reference_edge_stage s
-                WHERE s.ChildDocumentId = e.ChildDocumentId
-              );";
-
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                insertMissing,
-                new { ParentDocumentId = parentDocumentId },
-                tx,
-                cancellationToken: ct));
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                updateChanged,
-                new { ParentDocumentId = parentDocumentId },
-                tx,
-                cancellationToken: ct));
-        await connection.ExecuteAsync(
-            new CommandDefinition(
-                deleteStale,
-                new { ParentDocumentId = parentDocumentId },
-                tx,
-                cancellationToken: ct));
-    }
-}
-```
-
-SQL Server analog:
-- stage into `#reference_edge_stage(ChildDocumentId, IsIdentityComponent)` (or a table-valued parameter)
-- run “insert missing” + “update changed” + “delete stale” with the same shape (avoid `MERGE` unless you have strong operational confidence in it).
 
 ### 7.7 Example: Plan compilation and caching (runtime)
 
@@ -1772,7 +1531,7 @@ public sealed class RelationalPlanProvider(
 
 Key points:
 - `RelationalResourceModelBuilder.Build(...)` is where `jsonSchemaForInsert` + `documentPathsMapping` + `identityJsonPaths` are turned into explicit tables/columns/keys.
-- `RelationalPlanCompiler` is where physical names are quoted, parameter styles are applied, batching limits are chosen, and identity projection SQL is derived.
+- `RelationalPlanCompiler` is where physical names are quoted, parameter styles are applied, batching limits are chosen, and read/write SQL plans are compiled from the derived model.
 
 ### 7.8 Example: POST/PUT execution (flatten + write)
 
@@ -1797,10 +1556,10 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     // 3) Resolve all FK ids in bulk.
     var resolved = await _referenceResolver.ResolveAsync(request.DocumentInfo, connection, tx, ct);
 
-    // 3b) Build a per-request index that maps (edgeSource + ordinalPath) → referenced DocumentId.
+    // 3b) Build a per-request index that maps (binding + ordinalPath) → referenced DocumentId.
     //     This depends on Core emitting concrete JSON paths (including indices) for reference instances.
     var documentReferences = DocumentReferenceInstanceIndex.Build(
-        writePlan.Model.DocumentReferenceEdgeSources,
+        writePlan.Model.DocumentReferenceBindings,
         request.DocumentInfo.DocumentReferenceArrays,
         resolved.DocumentIdByReferentialId);
 
@@ -1815,13 +1574,8 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     // 5) Execute root + child table writes in plan order (set-based).
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
-    // 6) Maintain reverse reference index (required for strict referential-id maintenance and update tracking).
-    await _referenceEdgeWriter.UpsertEdgesAsync(connection, tx, documentId, writeSet.ReferenceEdges, ct);
-
-    // 7) Maintenance:
-    //    - Strict referential-id correctness for reference-bearing identities means compute+lock the impacted identity closure via:
-    //        dms.IdentityLock + dms.ReferenceEdge (IsIdentityComponent=true)
-    //      and recompute dms.ReferentialIdentity for all impacted documents.
+    // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
+    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE).
 
     await tx.CommitAsync(ct);
 }
@@ -1842,8 +1596,7 @@ private static RowBuffer MaterializeRow(
     int ordinal,
     ReadOnlySpan<int> ordinalPath, // e.g. [] (root), [2] (child), [2,0] (nested)
     IDocumentReferenceInstanceIndex documentReferences,
-    ResolvedReferenceSet resolved,
-    Dictionary<long, bool> edgesByChild)
+    ResolvedReferenceSet resolved)
 {
     var values = new object?[tablePlan.ColumnBindings.Count];
 
@@ -1859,8 +1612,8 @@ private static RowBuffer MaterializeRow(
             WriteValueSource.DescriptorReference(var edgeSource, var relPath)
                 => ResolveDescriptorId(scopeNode, edgeSource, relPath, resolved),
 
-            WriteValueSource.DocumentReference(var edgeSource)
-                => ResolveReferencedDocumentId(edgeSource, ordinalPath, documentReferences, edgesByChild),
+            WriteValueSource.DocumentReference(var binding)
+                => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences),
 
             _ => throw new InvalidOperationException("Unsupported write value source")
         };
@@ -1881,32 +1634,11 @@ private static long ResolveDescriptorId(
 }
 
 private static long? ResolveReferencedDocumentId(
-    DocumentReferenceEdgeSource edgeSource,
+    DocumentReferenceBinding binding,
     ReadOnlySpan<int> ordinalPath,
-    IDocumentReferenceInstanceIndex documentReferences,
-    Dictionary<long, bool> edgesByChild)
+    IDocumentReferenceInstanceIndex documentReferences)
 {
-    var id = documentReferences.GetReferencedDocumentId(edgeSource, ordinalPath);
-    if (id is not null)
-    {
-        AddOrUpdateEdge(edgesByChild, id.Value, edgeSource.IsIdentityComponent);
-    }
-
-    return id;
-}
-
-private static void AddOrUpdateEdge(
-    Dictionary<long, bool> edgesByChild,
-    long childDocumentId,
-    bool isIdentityComponent)
-{
-    if (edgesByChild.TryGetValue(childDocumentId, out var existing))
-    {
-        edgesByChild[childDocumentId] = existing || isIdentityComponent;
-        return;
-    }
-
-    edgesByChild.Add(childDocumentId, isIdentityComponent);
+    return documentReferences.GetReferencedDocumentId(binding, ordinalPath);
 }
 ```
 
