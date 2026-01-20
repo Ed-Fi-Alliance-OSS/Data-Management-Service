@@ -31,7 +31,7 @@ public class TokenInfoEducationOrganizationRepositoryTests : DatabaseTest
                 resourceName: "EducationServiceCenter",
                 documentUuidGuid: Guid.NewGuid(),
                 referentialIdGuid: Guid.NewGuid(),
-                edfiDocString: """{\"educationServiceCenterId\":99001,\"nameOfInstitution\":\"ESC-99\"}""",
+                edfiDocString: """{"educationServiceCenterId":99001,"nameOfInstitution":"ESC-99"}""",
                 isInEducationOrganizationHierarchy: true,
                 educationOrganizationId: EducationServiceCenterId
             ),
@@ -44,7 +44,7 @@ public class TokenInfoEducationOrganizationRepositoryTests : DatabaseTest
                 resourceName: "LocalEducationAgency",
                 documentUuidGuid: Guid.NewGuid(),
                 referentialIdGuid: Guid.NewGuid(),
-                edfiDocString: """{\"localEducationAgencyId\":99101,\"nameOfInstitution\":\"LEA-99\"}""",
+                edfiDocString: """{"localEducationAgencyId":99101,"nameOfInstitution":"LEA-99"}""",
                 isInEducationOrganizationHierarchy: true,
                 educationOrganizationId: LocalEducationAgencyId,
                 parentEducationOrganizationId: EducationServiceCenterId
@@ -58,7 +58,7 @@ public class TokenInfoEducationOrganizationRepositoryTests : DatabaseTest
                 resourceName: "School",
                 documentUuidGuid: Guid.NewGuid(),
                 referentialIdGuid: Guid.NewGuid(),
-                edfiDocString: """{\"schoolId\":99201,\"nameOfInstitution\":\"School-99\"}""",
+                edfiDocString: """{"schoolId":99201,"nameOfInstitution":"School-99"}""",
                 isInEducationOrganizationHierarchy: true,
                 educationOrganizationId: SchoolId,
                 parentEducationOrganizationId: LocalEducationAgencyId
