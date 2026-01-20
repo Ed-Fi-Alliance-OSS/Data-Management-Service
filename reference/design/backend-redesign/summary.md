@@ -221,3 +221,4 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - **Very large scale tables**
   - `dms.Document` scale: avoid wide repeated strings in hot tables (use `ResourceKeyId` for `(ProjectName, ResourceName)` and store `ResourceVersion` on `dms.ResourceKey`, denormalizing only where needed for CDC/streaming).
   - `dms.ReferentialIdentity` and `dms.DocumentChangeEvent` require careful indexing and may be large at scale; validate index and clustering choices per engine.
+  
