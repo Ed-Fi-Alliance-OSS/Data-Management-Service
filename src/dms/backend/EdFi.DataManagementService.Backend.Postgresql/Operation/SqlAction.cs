@@ -1425,6 +1425,7 @@ public partial class SqlAction() : ISqlAction
                         FROM OrgHierarchy ancestor
                         WHERE ancestor.RootEducationOrganizationId = base.RootEducationOrganizationId
                             AND ancestor.ResourceName = 'LocalEducationAgency'
+                            AND ancestor.Depth > 0
                         ORDER BY ancestor.Depth
                         LIMIT 1
                     ) AS LocalEducationAgencyId,
