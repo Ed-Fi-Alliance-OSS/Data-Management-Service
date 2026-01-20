@@ -62,6 +62,10 @@ public class TokenInfoProviderTests
                     "http://ed-fi.org/ods/identity/claims/ed-fi/school",
                     "http://ed-fi.org/ods/identity/claims/domains/edFiTypes"
                 ),
+                new(
+                    "http://ed-fi.org/identity/claims/ed-fi/cteProgramServiceDescriptor",
+                    "http://ed-fi.org/ods/identity/claims/domains/edFiTypes"
+                ),
                 new("http://ed-fi.org/identity/claims/services/sis", "true"),
             };
 
@@ -202,6 +206,7 @@ public class TokenInfoProviderTests
                     {
                         ["Student"] = "students",
                         ["School"] = "schools",
+                        ["CteProgramServiceDescriptor"] = "cteProgramServiceDescriptors",
                     },
                     ["resourceSchemas"] = new JsonObject
                     {
@@ -214,6 +219,11 @@ public class TokenInfoProviderTests
                         {
                             ["resourceName"] = "School",
                             ["isDescriptor"] = false,
+                        },
+                        ["cteProgramServiceDescriptors"] = new JsonObject
+                        {
+                            ["resourceName"] = "CteProgramServiceDescriptor",
+                            ["isDescriptor"] = true,
                         },
                     },
                 },
@@ -282,9 +292,10 @@ public class TokenInfoProviderTests
         [Test]
         public void Should_Extract_Resources_With_Correct_Paths()
         {
-            _response!.Resources.Should().HaveCount(2);
+            _response!.Resources.Should().HaveCount(3);
             _response!.Resources.Should().Contain(r => r.Resource == "/ed-fi/students");
             _response!.Resources.Should().Contain(r => r.Resource == "/ed-fi/schools");
+            _response!.Resources.Should().Contain(r => r.Resource == "/ed-fi/cteProgramServiceDescriptors");
         }
 
         [Test]

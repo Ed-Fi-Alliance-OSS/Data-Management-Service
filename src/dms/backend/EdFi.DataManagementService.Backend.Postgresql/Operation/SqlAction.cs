@@ -1384,46 +1384,64 @@ public partial class SqlAction() : ISqlAction
             return Array.Empty<TokenInfoEducationOrganization>();
         }
         await using NpgsqlCommand command = new(
-            @"WITH EdOrgBase AS (
+            @"WITH RECURSIVE OrgHierarchy AS (
                     SELECT
+                        eoh.Id,
                         eoh.EducationOrganizationId,
-                        d.ResourceName as OrganizationType,
-                        d.EdfiDoc->>'nameOfInstitution' as NameOfInstitution,
-                        eoh.ParentId
+                        eoh.ParentId,
+                        d.ResourceName,
+                        d.EdfiDoc->>'nameOfInstitution' AS NameOfInstitution,
+                        eoh.EducationOrganizationId AS RootEducationOrganizationId,
+                        0 AS Depth
                     FROM dms.EducationOrganizationHierarchy eoh
                     INNER JOIN dms.Document d
                         ON eoh.DocumentId = d.Id
                         AND eoh.DocumentPartitionKey = d.DocumentPartitionKey
                     WHERE eoh.EducationOrganizationId = ANY($1)
-                ),
-                ParentData AS (
+
+                    UNION ALL
+
                     SELECT
-                        child.EducationOrganizationId as ChildEdOrgId,
-                        parent_eoh.EducationOrganizationId as ParentEdOrgId,
-                        parent_doc.ResourceName as ParentType
-                    FROM EdOrgBase child
-                    INNER JOIN dms.EducationOrganizationHierarchy parent_eoh
-                        ON child.ParentId = parent_eoh.Id
+                        parent.Id,
+                        parent.EducationOrganizationId,
+                        parent.ParentId,
+                        parent_doc.ResourceName,
+                        parent_doc.EdfiDoc->>'nameOfInstitution' AS NameOfInstitution,
+                        child.RootEducationOrganizationId,
+                        child.Depth + 1
+                    FROM OrgHierarchy child
+                    INNER JOIN dms.EducationOrganizationHierarchy parent
+                        ON child.ParentId = parent.Id
                     LEFT JOIN dms.Document parent_doc
-                        ON parent_eoh.DocumentId = parent_doc.Id
-                        AND parent_eoh.DocumentPartitionKey = parent_doc.DocumentPartitionKey
+                        ON parent.DocumentId = parent_doc.Id
+                        AND parent.DocumentPartitionKey = parent_doc.DocumentPartitionKey
                 )
                 SELECT
-                    eb.EducationOrganizationId,
-                    eb.NameOfInstitution,
-                    'edfi.' || eb.OrganizationType as Type,
+                    base.RootEducationOrganizationId AS EducationOrganizationId,
+                    COALESCE(base.NameOfInstitution, '') AS NameOfInstitution,
+                    'edfi.' || base.ResourceName AS Type,
+                    (
+                        SELECT ancestor.EducationOrganizationId
+                        FROM OrgHierarchy ancestor
+                        WHERE ancestor.RootEducationOrganizationId = base.RootEducationOrganizationId
+                            AND ancestor.ResourceName = 'LocalEducationAgency'
+                        ORDER BY ancestor.Depth
+                        LIMIT 1
+                    ) AS LocalEducationAgencyId,
                     CASE
-                        WHEN eb.OrganizationType = 'School' THEN
-                            (SELECT ParentEdOrgId FROM ParentData WHERE ChildEdOrgId = eb.EducationOrganizationId AND ParentType = 'LocalEducationAgency')
+                        WHEN base.ResourceName = 'LocalEducationAgency' THEN (
+                            SELECT ancestor.EducationOrganizationId
+                            FROM OrgHierarchy ancestor
+                            WHERE ancestor.RootEducationOrganizationId = base.RootEducationOrganizationId
+                                AND ancestor.ResourceName = 'EducationServiceCenter'
+                            ORDER BY ancestor.Depth
+                            LIMIT 1
+                        )
                         ELSE NULL
-                    END as LocalEducationAgencyId,
-                    CASE
-                        WHEN eb.OrganizationType = 'LocalEducationAgency' THEN
-                            (SELECT ParentEdOrgId FROM ParentData WHERE ChildEdOrgId = eb.EducationOrganizationId AND ParentType = 'EducationServiceCenter')
-                        ELSE NULL
-                    END as EducationServiceCenterId
-                FROM EdOrgBase eb
-                ORDER BY eb.EducationOrganizationId;",
+                    END AS EducationServiceCenterId
+                FROM OrgHierarchy base
+                WHERE base.Depth = 0
+                ORDER BY base.RootEducationOrganizationId;",
             connection
         )
         {

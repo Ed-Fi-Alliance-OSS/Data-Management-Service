@@ -462,12 +462,27 @@ public class TokenInfoProvider(
                 logger.LogWarning("Project schema not found for project name: {ProjectName}", projectName);
                 return string.Empty;
             }
-            // Convert to ResourceName and get the endpoint name from ApiSchema
-            var resourceNameTyped = new ResourceName(resourceName);
-            var endpointName = projectSchema.GetEndpointNameFromResourceName(resourceNameTyped);
+            string endpointSegment;
+            if (
+                TokenInfoResourcePathResolver.TryGetEndpointName(
+                    apiSchemaDocuments,
+                    projectSchema.ProjectEndpointName.Value,
+                    resourceName,
+                    out var resolvedEndpoint
+                )
+            )
+            {
+                endpointSegment = resolvedEndpoint;
+            }
+            else
+            {
+                var resourceNameTyped = new ResourceName(resourceName);
+                var endpointName = projectSchema.GetEndpointNameFromResourceName(resourceNameTyped);
+                endpointSegment = endpointName.Value;
+            }
 
             // Construct the full path with project endpoint prefix
-            return $"/{projectSchema.ProjectEndpointName.Value}/{endpointName.Value}";
+            return $"/{projectSchema.ProjectEndpointName.Value}/{endpointSegment}";
         }
         catch (Exception ex)
         {
