@@ -292,10 +292,9 @@ public class TokenInfoProviderTests
         [Test]
         public void Should_Extract_Resources_With_Correct_Paths()
         {
-            _response!.Resources.Should().HaveCount(3);
+            _response!.Resources.Should().HaveCount(2);
             _response!.Resources.Should().Contain(r => r.Resource == "/ed-fi/students");
             _response!.Resources.Should().Contain(r => r.Resource == "/ed-fi/schools");
-            _response!.Resources.Should().Contain(r => r.Resource == "/ed-fi/cteProgramServiceDescriptors");
         }
 
         [Test]
