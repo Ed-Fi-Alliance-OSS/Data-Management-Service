@@ -23,11 +23,12 @@
 ###   - You've called /management/reload-schema after creating new instances
 ###   - Or use the seed data instance (ID 1) which is pre-loaded with -LoadSeedData
 
-@dmsPort=8080
 @configPort=8081
 @sysAdminId=DmsConfigurationService
 @sysAdminSecret=s3creT@09
 @tokenScope=edfi_admin_api/full_access
+@profileReadSuffix={{$guid}}
+@profileWriteSuffix={{$guid}}
 
 ###############################################################################
 ### IDENTITY PROVIDER CONFIGURATION
@@ -102,7 +103,56 @@ Authorization: bearer {{configToken}}
 
 
 ###############################################################################
-### STEP 4: Create API Client with Multiple Education Organizations
+### STEP 4: Create Profiles for the Application
+###############################################################################
+
+### Create a read-focused profile
+# @name createReadProfile
+POST http://localhost:{{configPort}}/v2/profiles
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "name": "TokenInfo-ReadProfile-{{profileReadSuffix}}",
+    "definition": "<Profile name=\"TokenInfo-ReadProfile-{{profileReadSuffix}}\"><Resource name=\"Student\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+}
+
+### Extract read profile ID from the Location header
+@profileReadLocationId={{createReadProfile.response.headers.Location}}
+
+### Get the created profile
+# @name createdReadProfile
+GET {{profileReadLocationId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+###
+@profileReadId={{createdReadProfile.response.body.id}}
+
+### Create a write-focused profile
+# @name createWriteProfile
+POST http://localhost:{{configPort}}/v2/profiles
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+    "name": "TokenInfo-WriteProfile-{{profileWriteSuffix}}",
+    "definition": "<Profile name=\"TokenInfo-WriteProfile-{{profileWriteSuffix}}\"><Resource name=\"Student\"><WriteContentType memberSelection=\"IncludeAll\" /></Resource></Profile>"
+}
+
+### Extract write profile ID from the Location header
+@profileWriteLocationId={{createWriteProfile.response.headers.Location}}
+
+### Get the created profile
+# @name createdWriteProfile
+GET {{profileWriteLocationId}}
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+###
+@profileWriteId={{createdWriteProfile.response.body.id}}
+###############################################################################
+### STEP 5: Create API Client with Multiple Education Organizations
 ###############################################################################
 
 ### Create application with SIS Vendor claim set and multiple EdOrgs
@@ -116,7 +166,8 @@ Authorization: bearer {{configToken}}
     "applicationName": "Token Info Test App {{$randomInt 0 9999}}",
     "claimSetName": "EdFiSandbox",
     "educationOrganizationIds": [255901, 255902, 255950],
-    "dmsInstanceIds": [1]
+    "dmsInstanceIds": [{{dmsInstanceId}}],
+    "profileIds": [{{profileReadId}}, {{profileWriteId}}]
 }
 
 ### Extract client credentials
@@ -124,7 +175,7 @@ Authorization: bearer {{configToken}}
 @clientSecret={{createApplication.response.body.secret}}
 
 ###############################################################################
-### STEP 5: Verify Authorization Metadata
+### STEP 6: Verify Authorization Metadata
 ###############################################################################
 
 ### Check what the SIS Vendor claim set includes
@@ -132,7 +183,7 @@ GET http://localhost:{{configPort}}/authorizationMetadata?claimSetName=EdFiSandb
 Authorization: bearer {{configToken}}
 
 ###############################################################################
-### STEP 6: Generate Access Token for API Client
+### STEP 7: Generate Access Token for API Client
 ###############################################################################
 
 ### Get access token for the API client
@@ -148,7 +199,7 @@ client_id={{clientId}}
 @clientToken={{clientTokenRequest.response.body.access_token}}
 
 ###############################################################################
-### STEP 7: Test Token Info Endpoint (JSON Format)
+### STEP 8: Test Token Info Endpoint (JSON Format)
 ###############################################################################
 
 ### Call token_info endpoint with JSON body
@@ -161,8 +212,11 @@ Authorization: bearer {{clientToken}}
     "token": "{{clientToken}}"
 }
 
+### The response should now include both TokenInfo-ReadProfile-{{profileReadSuffix}} and
+### TokenInfo-WriteProfile-{{profileWriteSuffix}} inside the assigned_profiles collection.
+
 ###############################################################################
-### STEP 8: Test Token Info Endpoint (Form-Encoded Format)
+### STEP 9: Test Token Info Endpoint (Form-Encoded Format)
 ###############################################################################
 
 ### Call token_info endpoint with form-encoded body (RFC 7662 standard)
@@ -174,7 +228,7 @@ Authorization: bearer {{clientToken}}
 token={{clientToken}}
 
 ###############################################################################
-### STEP 9: Test with Different Claim Set (EdOrgs Only)
+### STEP 10: Test with Different Claim Set (EdOrgs Only)
 ###############################################################################
 
 ### Create another application with a different claim set
@@ -216,7 +270,7 @@ Authorization: bearer {{edOrgToken}}
 }
 
 ###############################################################################
-### STEP 10: Error Cases - Token Mismatch (Authorization header vs body token)
+### STEP 11: Error Cases - Token Mismatch (Authorization header vs body token)
 ###############################################################################
 
 ### Test: Authorization header token does NOT match body token (should fail with 401)
@@ -230,7 +284,7 @@ Authorization: bearer {{clientToken}}
 }
 
 ###############################################################################
-### STEP 11: Error Cases - Missing Authorization Header
+### STEP 12: Error Cases - Missing Authorization Header
 ###############################################################################
 
 ### Test: Missing Authorization header (should fail with 401)
@@ -242,7 +296,7 @@ Content-Type: application/json
 }
 
 ###############################################################################
-### STEP 12: Error Cases - Missing Body Token
+### STEP 13: Error Cases - Missing Body Token
 ###############################################################################
 
 ### Test: Authorization header present but no token in body (should fail with 401)
@@ -254,7 +308,7 @@ Authorization: bearer {{clientToken}}
 }
 
 ###############################################################################
-### STEP 13: Error Cases - Invalid Token Format
+### STEP 14: Error Cases - Invalid Token Format
 ###############################################################################
 
 ### Test: Invalid token format (should fail with 401)
@@ -267,7 +321,7 @@ Authorization: bearer invalid-token-format
 }
 
 ###############################################################################
-### STEP 14: Error Cases - Expired Token (if available)
+### STEP 15: Error Cases - Expired Token (if available)
 ###############################################################################
 
 ### Note: To test expired token, you need to wait for token expiration

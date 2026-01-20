@@ -19,6 +19,13 @@ public interface IConfigurationServiceApplicationProvider
     Task<ApplicationContext?> GetApplicationByClientIdAsync(string clientId);
 
     /// <summary>
+    /// Retrieves the profile names assigned to the application associated with a client ID.
+    /// </summary>
+    /// <param name="clientId">The client ID to look up.</param>
+    /// <returns>List of profile names if found, or an empty list when none are assigned.</returns>
+    Task<IReadOnlyList<string>> GetApplicationProfilesByClientIdAsync(string clientId);
+
+    /// <summary>
     /// Forces a reload of application context from the Configuration Service API.
     /// Use this when the application may have been recently created or modified.
     /// </summary>

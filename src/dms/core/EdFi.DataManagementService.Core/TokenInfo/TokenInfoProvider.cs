@@ -24,6 +24,7 @@ public class TokenInfoProvider(
     ConfigurationServiceApiClient configClient,
     IConfigurationServiceTokenHandler tokenHandler,
     ConfigurationServiceContext configContext,
+    IConfigurationServiceApplicationProvider configurationServiceApplicationProvider,
     IEducationOrganizationRepository educationOrganizationRepository,
     IDmsInstanceProvider dmsInstanceProvider,
     IDmsInstanceSelection dmsInstanceSelection,
@@ -67,6 +68,20 @@ public class TokenInfoProvider(
             var namespacePrefixes = GetClaimValues(claims, "namespacePrefixes");
             var educationOrganizationIds = GetEducationOrganizationIds(claims);
             var dmsInstanceIds = GetDmsInstanceIds(claims);
+            IReadOnlyList<string> assignedProfiles = Array.Empty<string>();
+
+            if (!string.IsNullOrWhiteSpace(clientId))
+            {
+                assignedProfiles =
+                    await configurationServiceApplicationProvider.GetApplicationProfilesByClientIdAsync(
+                        clientId
+                    );
+                logger.LogDebug(
+                    "TokenInfoProvider assigned profiles for clientId {ClientId}: {Profiles}",
+                    clientId,
+                    string.Join(", ", assignedProfiles)
+                );
+            }
 
             // Check expiration
             var exp = jwtToken.ValidTo;
@@ -124,7 +139,7 @@ public class TokenInfoProvider(
                 ClientId = clientId,
                 NamespacePrefixes = namespacePrefixes.ToList(),
                 EducationOrganizations = educationOrganizations,
-                AssignedProfiles = Array.Empty<string>(), // Profiles not currently supported in DMS
+                AssignedProfiles = assignedProfiles,
                 ClaimSet = new TokenInfoClaimSet { Name = claimSetName },
                 Resources = resources,
                 Services = services,

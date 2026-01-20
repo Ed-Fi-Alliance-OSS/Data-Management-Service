@@ -82,11 +82,24 @@ public class TokenInfoProviderTests
             // Setup mocks
             var fakeTokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             var fakeConfigContext = new ConfigurationServiceContext("client", "secret", "scope");
+            var fakeConfigurationServiceApplicationProvider =
+                A.Fake<IConfigurationServiceApplicationProvider>();
             var fakeEdOrgRepo = A.Fake<IEducationOrganizationRepository>();
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
             var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            A.CallTo(() =>
+                    fakeConfigurationServiceApplicationProvider.GetApplicationProfilesByClientIdAsync(
+                        A<string>._
+                    )
+                )
+                .Returns(
+                    Task.FromResult<IReadOnlyList<string>>(
+                        new List<string> { "TokenInfo-ReadProfile", "TokenInfo-WriteProfile" }
+                    )
+                );
 
             // Setup JWT validation service to return a valid principal
             var validPrincipal = new ClaimsPrincipal(new ClaimsIdentity(claims));
@@ -238,6 +251,7 @@ public class TokenInfoProviderTests
                 configServiceApiClient,
                 fakeTokenHandler,
                 fakeConfigContext,
+                fakeConfigurationServiceApplicationProvider,
                 fakeEdOrgRepo,
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
@@ -314,6 +328,14 @@ public class TokenInfoProviderTests
             _response!.Services![0].Operations.Should().ContainSingle();
             _response!.Services![0].Operations.Should().Contain("true");
         }
+
+        [Test]
+        public void Should_Include_Assigned_Profiles_From_Configuration_Service()
+        {
+            _response!
+                .AssignedProfiles.Should()
+                .ContainInOrder("TokenInfo-ReadProfile", "TokenInfo-WriteProfile");
+        }
     }
 
     [TestFixture]
@@ -343,11 +365,20 @@ public class TokenInfoProviderTests
             var configServiceApiClient = new ConfigurationServiceApiClient(httpClient);
             var fakeTokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             var fakeConfigContext = new ConfigurationServiceContext("client", "secret", "scope");
+            var fakeConfigurationServiceApplicationProvider =
+                A.Fake<IConfigurationServiceApplicationProvider>();
             var fakeEdOrgRepo = A.Fake<IEducationOrganizationRepository>();
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
             var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            A.CallTo(() =>
+                    fakeConfigurationServiceApplicationProvider.GetApplicationProfilesByClientIdAsync(
+                        A<string>._
+                    )
+                )
+                .Returns(Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>()));
 
             // Setup JWT validation service to return null principal for invalid token
             A.CallTo(() =>
@@ -362,6 +393,7 @@ public class TokenInfoProviderTests
                 configServiceApiClient,
                 fakeTokenHandler,
                 fakeConfigContext,
+                fakeConfigurationServiceApplicationProvider,
                 fakeEdOrgRepo,
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
@@ -418,11 +450,20 @@ public class TokenInfoProviderTests
             // Setup mocks
             var fakeTokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             var fakeConfigContext = new ConfigurationServiceContext("client", "secret", "scope");
+            var fakeConfigurationServiceApplicationProvider =
+                A.Fake<IConfigurationServiceApplicationProvider>();
             var fakeEdOrgRepo = A.Fake<IEducationOrganizationRepository>();
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
             var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            A.CallTo(() =>
+                    fakeConfigurationServiceApplicationProvider.GetApplicationProfilesByClientIdAsync(
+                        A<string>._
+                    )
+                )
+                .Returns(Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>()));
 
             // Setup JWT validation service to return a valid principal
             var validPrincipal = new ClaimsPrincipal(new ClaimsIdentity(claims));
@@ -471,6 +512,7 @@ public class TokenInfoProviderTests
                 configServiceApiClient,
                 fakeTokenHandler,
                 fakeConfigContext,
+                fakeConfigurationServiceApplicationProvider,
                 fakeEdOrgRepo,
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
@@ -526,11 +568,20 @@ public class TokenInfoProviderTests
                 .Returns("valid-token");
 
             var fakeConfigContext = new ConfigurationServiceContext("client", "secret", "scope");
+            var fakeConfigurationServiceApplicationProvider =
+                A.Fake<IConfigurationServiceApplicationProvider>();
             var fakeEdOrgRepo = A.Fake<IEducationOrganizationRepository>();
             var fakeDmsInstanceProvider = A.Fake<IDmsInstanceProvider>();
             var fakeDmsInstanceSelection = A.Fake<IDmsInstanceSelection>();
             var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
             var fakeJwtValidationService = A.Fake<IJwtValidationService>();
+
+            A.CallTo(() =>
+                    fakeConfigurationServiceApplicationProvider.GetApplicationProfilesByClientIdAsync(
+                        A<string>._
+                    )
+                )
+                .Returns(Task.FromResult<IReadOnlyList<string>>(Array.Empty<string>()));
 
             // Setup JWT validation service to return a valid principal for testing config service failure
             var validPrincipal = new ClaimsPrincipal(
@@ -552,6 +603,7 @@ public class TokenInfoProviderTests
                 configServiceApiClient,
                 fakeTokenHandler,
                 fakeConfigContext,
+                fakeConfigurationServiceApplicationProvider,
                 fakeEdOrgRepo,
                 fakeDmsInstanceProvider,
                 fakeDmsInstanceSelection,
@@ -686,6 +738,7 @@ public class TokenInfoProviderTests
                 A.Fake<ConfigurationServiceApiClient>(),
                 A.Fake<IConfigurationServiceTokenHandler>(),
                 A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IConfigurationServiceApplicationProvider>(),
                 A.Fake<IEducationOrganizationRepository>(),
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
@@ -726,6 +779,7 @@ public class TokenInfoProviderTests
                 A.Fake<ConfigurationServiceApiClient>(),
                 A.Fake<IConfigurationServiceTokenHandler>(),
                 A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IConfigurationServiceApplicationProvider>(),
                 A.Fake<IEducationOrganizationRepository>(),
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
@@ -766,6 +820,7 @@ public class TokenInfoProviderTests
                 A.Fake<ConfigurationServiceApiClient>(),
                 A.Fake<IConfigurationServiceTokenHandler>(),
                 A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IConfigurationServiceApplicationProvider>(),
                 A.Fake<IEducationOrganizationRepository>(),
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
@@ -806,6 +861,7 @@ public class TokenInfoProviderTests
                 A.Fake<ConfigurationServiceApiClient>(),
                 A.Fake<IConfigurationServiceTokenHandler>(),
                 A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IConfigurationServiceApplicationProvider>(),
                 A.Fake<IEducationOrganizationRepository>(),
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
@@ -846,6 +902,7 @@ public class TokenInfoProviderTests
                 A.Fake<ConfigurationServiceApiClient>(),
                 A.Fake<IConfigurationServiceTokenHandler>(),
                 A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IConfigurationServiceApplicationProvider>(),
                 A.Fake<IEducationOrganizationRepository>(),
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
@@ -886,6 +943,7 @@ public class TokenInfoProviderTests
                 A.Fake<ConfigurationServiceApiClient>(),
                 A.Fake<IConfigurationServiceTokenHandler>(),
                 A.Fake<ConfigurationServiceContext>(),
+                A.Fake<IConfigurationServiceApplicationProvider>(),
                 A.Fake<IEducationOrganizationRepository>(),
                 A.Fake<IDmsInstanceProvider>(),
                 A.Fake<IDmsInstanceSelection>(),
