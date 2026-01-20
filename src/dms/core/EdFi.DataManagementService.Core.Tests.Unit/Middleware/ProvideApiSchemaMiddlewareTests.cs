@@ -29,6 +29,611 @@ public class ProvideApiSchemaMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Api_Schema_With_JsonSchemaForInsert_Extensions : ProvideApiSchemaMiddlewareTests
+    {
+        private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
+            .WithStartProject("Ed-Fi", "5.0.0")
+            .WithStartResource("Contact")
+            .WithJsonSchemaForInsert(
+                new JsonSchemaBuilder()
+                    .Type(SchemaValueType.Object)
+                    .Properties(
+                        (
+                            "contactUniqueId",
+                            new JsonSchemaBuilder()
+                                .Description("A unique alphanumeric code assigned to a contact.")
+                                .Type(SchemaValueType.String)
+                                .MaxLength(32)
+                        ),
+                        (
+                            "firstName",
+                            new JsonSchemaBuilder()
+                                .Description("A name given to an individual at birth.")
+                                .Type(SchemaValueType.String)
+                                .MaxLength(75)
+                        ),
+                        (
+                            "addresses",
+                            new JsonSchemaBuilder()
+                                .Type(SchemaValueType.Array)
+                                .Items(
+                                    new JsonSchemaBuilder()
+                                        .Type(SchemaValueType.Object)
+                                        .Properties(
+                                            (
+                                                "addressTypeDescriptor",
+                                                new JsonSchemaBuilder()
+                                                    .Description(
+                                                        "The type of address listed for an individual or organization."
+                                                    )
+                                                    .Type(SchemaValueType.String)
+                                            ),
+                                            (
+                                                "city",
+                                                new JsonSchemaBuilder()
+                                                    .Description(
+                                                        "The name of the city in which an address is located."
+                                                    )
+                                                    .Type(SchemaValueType.String)
+                                                    .MaxLength(30)
+                                            ),
+                                            (
+                                                "streetNumberName",
+                                                new JsonSchemaBuilder()
+                                                    .Description("The street number and street name.")
+                                                    .Type(SchemaValueType.String)
+                                                    .MaxLength(150)
+                                            ),
+                                            (
+                                                "postalCode",
+                                                new JsonSchemaBuilder()
+                                                    .Description("The five or nine digit zip code.")
+                                                    .Type(SchemaValueType.String)
+                                                    .MaxLength(17)
+                                            ),
+                                            (
+                                                "stateAbbreviationDescriptor",
+                                                new JsonSchemaBuilder()
+                                                    .Description("The abbreviation for the state.")
+                                                    .Type(SchemaValueType.String)
+                                            )
+                                        )
+                                )
+                        )
+                    )
+                    .Required("contactUniqueId", "firstName", "addresses")
+                    .Build()
+            )
+            .WithEndResource()
+            .WithEndProject()
+            .WithStartProject("sample", "1.0.0")
+            .WithStartResource("Contact", isResourceExtension: true)
+            .WithJsonSchemaForInsert(
+                new JsonSchemaBuilder()
+                    .Type(SchemaValueType.Object)
+                    .Properties(
+                        (
+                            "_ext",
+                            new JsonSchemaBuilder()
+                                .Type(SchemaValueType.Object)
+                                .AdditionalProperties(JsonSchema.True)
+                                .Description("optional extension collection")
+                                .Properties(
+                                    (
+                                        "sample",
+                                        new JsonSchemaBuilder()
+                                            .Type(SchemaValueType.Object)
+                                            .AdditionalProperties(JsonSchema.True)
+                                            .Description("sample extension properties collection")
+                                            .Properties(
+                                                (
+                                                    "addresses",
+                                                    new JsonSchemaBuilder()
+                                                        .Type(SchemaValueType.Array)
+                                                        .Items(
+                                                            new JsonSchemaBuilder()
+                                                                .Type(SchemaValueType.Object)
+                                                                .Properties(
+                                                                    (
+                                                                        "_ext",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Type(SchemaValueType.Object)
+                                                                            .AdditionalProperties(
+                                                                                JsonSchema.False
+                                                                            )
+                                                                            .Description(
+                                                                                "Extension properties"
+                                                                            )
+                                                                            .Properties(
+                                                                                (
+                                                                                    "sample",
+                                                                                    new JsonSchemaBuilder()
+                                                                                        .Type(
+                                                                                            SchemaValueType.Object
+                                                                                        )
+                                                                                        .AdditionalProperties(
+                                                                                            JsonSchema.False
+                                                                                        )
+                                                                                        .Description(
+                                                                                            "sample extension properties"
+                                                                                        )
+                                                                                        .Properties(
+                                                                                            (
+                                                                                                "complex",
+                                                                                                new JsonSchemaBuilder()
+                                                                                                    .Description(
+                                                                                                        "The apartment or housing complex name."
+                                                                                                    )
+                                                                                                    .Type(
+                                                                                                        SchemaValueType.String
+                                                                                                    )
+                                                                                                    .MaxLength(
+                                                                                                        255
+                                                                                                    )
+                                                                                                    .MinLength(
+                                                                                                        1
+                                                                                                    )
+                                                                                            ),
+                                                                                            (
+                                                                                                "onBusRoute",
+                                                                                                new JsonSchemaBuilder()
+                                                                                                    .Description(
+                                                                                                        "An indicator if the address is on a bus route."
+                                                                                                    )
+                                                                                                    .Type(
+                                                                                                        SchemaValueType.Boolean
+                                                                                                    )
+                                                                                            ),
+                                                                                            (
+                                                                                                "schoolDistricts",
+                                                                                                new JsonSchemaBuilder()
+                                                                                                    .Type(
+                                                                                                        SchemaValueType.Array
+                                                                                                    )
+                                                                                                    .MinItems(
+                                                                                                        1
+                                                                                                    )
+                                                                                                    .Items(
+                                                                                                        new JsonSchemaBuilder()
+                                                                                                            .Type(
+                                                                                                                SchemaValueType.Object
+                                                                                                            )
+                                                                                                            .Properties(
+                                                                                                                (
+                                                                                                                    "schoolDistrict",
+                                                                                                                    new JsonSchemaBuilder()
+                                                                                                                        .Description(
+                                                                                                                            "The school district in which the address is located."
+                                                                                                                        )
+                                                                                                                        .Type(
+                                                                                                                            SchemaValueType.String
+                                                                                                                        )
+                                                                                                                        .MaxLength(
+                                                                                                                            250
+                                                                                                                        )
+                                                                                                                )
+                                                                                                            )
+                                                                                                    )
+                                                                                            ),
+                                                                                            (
+                                                                                                "terms",
+                                                                                                new JsonSchemaBuilder()
+                                                                                                    .Type(
+                                                                                                        SchemaValueType.Array
+                                                                                                    )
+                                                                                                    .Items(
+                                                                                                        new JsonSchemaBuilder()
+                                                                                                            .Type(
+                                                                                                                SchemaValueType.Object
+                                                                                                            )
+                                                                                                            .Properties(
+                                                                                                                (
+                                                                                                                    "termDescriptor",
+                                                                                                                    new JsonSchemaBuilder()
+                                                                                                                        .Description(
+                                                                                                                            "An Ed-Fi Descriptor"
+                                                                                                                        )
+                                                                                                                        .Type(
+                                                                                                                            SchemaValueType.String
+                                                                                                                        )
+                                                                                                                )
+                                                                                                            )
+                                                                                                    )
+                                                                                            )
+                                                                                        )
+                                                                                        .Required(
+                                                                                            "onBusRoute",
+                                                                                            "schoolDistricts"
+                                                                                        )
+                                                                                )
+                                                                            )
+                                                                    ),
+                                                                    (
+                                                                        "addressTypeDescriptor",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Description(
+                                                                                "The type of address listed for an individual or organization."
+                                                                            )
+                                                                            .Type(SchemaValueType.String)
+                                                                    ),
+                                                                    (
+                                                                        "city",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Description(
+                                                                                "The name of the city in which an address is located."
+                                                                            )
+                                                                            .Type(SchemaValueType.String)
+                                                                            .MaxLength(30)
+                                                                    ),
+                                                                    (
+                                                                        "streetNumberName",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Description(
+                                                                                "The street number and street name."
+                                                                            )
+                                                                            .Type(SchemaValueType.String)
+                                                                            .MaxLength(150)
+                                                                    ),
+                                                                    (
+                                                                        "postalCode",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Description(
+                                                                                "The five or nine digit zip code."
+                                                                            )
+                                                                            .Type(SchemaValueType.String)
+                                                                            .MaxLength(17)
+                                                                    ),
+                                                                    (
+                                                                        "stateAbbreviationDescriptor",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Description(
+                                                                                "The abbreviation for the state."
+                                                                            )
+                                                                            .Type(SchemaValueType.String)
+                                                                    )
+                                                                )
+                                                                .Required(
+                                                                    "streetNumberName",
+                                                                    "city",
+                                                                    "stateAbbreviationDescriptor",
+                                                                    "postalCode",
+                                                                    "addressTypeDescriptor"
+                                                                )
+                                                        )
+                                                ),
+                                                (
+                                                    "authors",
+                                                    new JsonSchemaBuilder()
+                                                        .Type(SchemaValueType.Array)
+                                                        .Items(
+                                                            new JsonSchemaBuilder()
+                                                                .Type(SchemaValueType.Object)
+                                                                .Properties(
+                                                                    (
+                                                                        "author",
+                                                                        new JsonSchemaBuilder()
+                                                                            .Description(
+                                                                                "The contact's favorite authors."
+                                                                            )
+                                                                            .Type(SchemaValueType.String)
+                                                                            .MaxLength(100)
+                                                                    )
+                                                                )
+                                                                .Required("author")
+                                                        )
+                                                ),
+                                                (
+                                                    "favoriteBookTitle",
+                                                    new JsonSchemaBuilder()
+                                                        .Description(
+                                                            "The title of the contact's favorite book."
+                                                        )
+                                                        .Type(SchemaValueType.String)
+                                                        .MaxLength(100)
+                                                ),
+                                                (
+                                                    "becameParent",
+                                                    new JsonSchemaBuilder()
+                                                        .Description(
+                                                            "The year in which the contact first became a parent."
+                                                        )
+                                                        .Type(SchemaValueType.Integer)
+                                                ),
+                                                (
+                                                    "isSportsFan",
+                                                    new JsonSchemaBuilder()
+                                                        .Description(
+                                                            "An indication as to whether the contact is a sports fan."
+                                                        )
+                                                        .Type(SchemaValueType.Boolean)
+                                                )
+                                            )
+                                    )
+                                )
+                        )
+                    )
+                    .Required("contactUniqueId", "firstName", "lastSurname")
+                    .Build()
+            )
+            .WithBooleanJsonPaths(["$._ext.sample.isSportsFan"])
+            .WithNumericJsonPaths(["$._ext.sample.becameParent"])
+            .WithEndResource()
+            .WithEndProject()
+            .AsApiSchemaNodes();
+
+        [SetUp]
+        public void Setup()
+        {
+            var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+            A.CallTo(() => fakeApiSchemaProvider.GetApiSchemaNodes()).Returns(_apiSchemaNodes);
+
+            _provideApiSchemaMiddleware = new ProvideApiSchemaMiddleware(
+                fakeApiSchemaProvider,
+                NullLogger<ProvideApiSchemaMiddleware>.Instance,
+                new CompiledSchemaCache()
+            );
+        }
+
+        [Test]
+        public async Task Merges_extension_properties_into_existing_array_items()
+        {
+            // Arrange
+            var fakeRequestInfo = A.Fake<RequestInfo>();
+
+            // Act
+            await _provideApiSchemaMiddleware!.Execute(fakeRequestInfo, NullNext);
+
+            // Assert
+            fakeRequestInfo.ApiSchemaDocuments.Should().NotBeNull();
+
+            var coreContactResource = fakeRequestInfo
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new ResourceName("Contact"));
+
+            coreContactResource.Should().NotBeNull();
+
+            // Verify addresses array has _ext.sample merged into items
+            var addressesItems = coreContactResource!
+                .GetRequiredNode("jsonSchemaForInsert")
+                .GetRequiredNode("properties")
+                .GetRequiredNode("addresses")
+                .GetRequiredNode("items");
+
+            var addressItemProperties = addressesItems.GetRequiredNode("properties").AsObject();
+
+            // Core properties should still exist
+            addressItemProperties.Should().ContainKey("addressTypeDescriptor");
+            addressItemProperties.Should().ContainKey("city");
+            addressItemProperties.Should().ContainKey("streetNumberName");
+            addressItemProperties.Should().ContainKey("postalCode");
+            addressItemProperties.Should().ContainKey("stateAbbreviationDescriptor");
+
+            // Extension properties should be added to _ext. sample
+            addressItemProperties.Should().ContainKey("_ext");
+
+            var extNode = addressItemProperties["_ext"]!;
+            extNode["description"]!.GetValue<string>().Should().Be("Extension properties");
+            extNode["additionalProperties"]!.GetValue<bool>().Should().BeFalse();
+
+            var sampleExtNode = extNode.GetRequiredNode("properties").GetRequiredNode("sample");
+
+            sampleExtNode["description"]!.GetValue<string>().Should().Be("sample extension properties");
+            sampleExtNode["additionalProperties"]!.GetValue<bool>().Should().BeFalse();
+
+            var sampleProperties = sampleExtNode.GetRequiredNode("properties").AsObject();
+
+            // Verify extension properties exist
+            sampleProperties.Should().ContainKey("complex");
+            sampleProperties.Should().ContainKey("onBusRoute");
+            sampleProperties.Should().ContainKey("schoolDistricts");
+            sampleProperties.Should().ContainKey("terms");
+
+            // Verify complex property details
+            sampleProperties["complex"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The apartment or housing complex name.");
+            sampleProperties["complex"]!["maxLength"]!.GetValue<int>().Should().Be(255);
+            sampleProperties["complex"]!["minLength"]!.GetValue<int>().Should().Be(1);
+            sampleProperties["complex"]!["type"]!.GetValue<string>().Should().Be("string");
+
+            // Verify onBusRoute property
+            sampleProperties["onBusRoute"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("An indicator if the address is on a bus route.");
+            sampleProperties["onBusRoute"]!["type"]!.GetValue<string>().Should().Be("boolean");
+
+            // Verify schoolDistricts array structure
+            sampleProperties["schoolDistricts"]!["type"]!.GetValue<string>().Should().Be("array");
+            sampleProperties["schoolDistricts"]!["minItems"]!.GetValue<int>().Should().Be(1);
+            sampleProperties["schoolDistricts"]!
+                .GetRequiredNode("items")
+                .GetRequiredNode("properties")
+                .AsObject()
+                .Should()
+                .ContainKey("schoolDistrict");
+
+            // Verify terms array structure
+            sampleProperties["terms"]!["type"]!.GetValue<string>().Should().Be("array");
+            sampleProperties["terms"]!
+                .GetRequiredNode("items")
+                .GetRequiredNode("properties")
+                .AsObject()
+                .Should()
+                .ContainKey("termDescriptor");
+
+            // Verify required fields
+            var requiredFields = sampleExtNode["required"]!.AsArray();
+            requiredFields.Should().HaveCount(2);
+            requiredFields.Select(x => x!.GetValue<string>()).Should().Contain("onBusRoute");
+            requiredFields.Select(x => x!.GetValue<string>()).Should().Contain("schoolDistricts");
+        }
+
+        [Test]
+        public async Task Adds_extension_only_properties_to_root_ext()
+        {
+            // Arrange
+            var fakeRequestInfo = A.Fake<RequestInfo>();
+
+            // Act
+            await _provideApiSchemaMiddleware!.Execute(fakeRequestInfo, NullNext);
+
+            // Assert
+            fakeRequestInfo.ApiSchemaDocuments.Should().NotBeNull();
+
+            var coreContactResource = fakeRequestInfo
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new ResourceName("Contact"));
+
+            var rootProperties = coreContactResource!
+                .GetRequiredNode("jsonSchemaForInsert")
+                .GetRequiredNode("properties")
+                .AsObject();
+
+            // Verify root _ext exists
+            rootProperties.Should().ContainKey("_ext");
+
+            var rootExt = rootProperties["_ext"]!;
+            rootExt["description"]!.GetValue<string>().Should().Be("optional extension collection");
+            rootExt["additionalProperties"]!.GetValue<bool>().Should().BeTrue();
+
+            var sampleExt = rootExt.GetRequiredNode("properties").GetRequiredNode("sample");
+
+            sampleExt["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("sample extension properties collection");
+            sampleExt["additionalProperties"]!.GetValue<bool>().Should().BeTrue();
+
+            var sampleProperties = sampleExt.GetRequiredNode("properties").AsObject();
+
+            // Verify extension-only properties exist at root level
+            sampleProperties.Should().ContainKey("authors");
+            sampleProperties.Should().ContainKey("favoriteBookTitle");
+            sampleProperties.Should().ContainKey("becameParent");
+            sampleProperties.Should().ContainKey("isSportsFan");
+
+            // Verify authors array
+            var authors = sampleProperties["authors"]!;
+            authors["type"]!.GetValue<string>().Should().Be("array");
+            var authorItemProps = authors.GetRequiredNode("items").GetRequiredNode("properties").AsObject();
+            authorItemProps.Should().ContainKey("author");
+            authorItemProps["author"]!["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The contact's favorite authors.");
+            authorItemProps["author"]!["maxLength"]!.GetValue<int>().Should().Be(100);
+
+            // Verify favoriteBookTitle
+            var favoriteBookTitle = sampleProperties["favoriteBookTitle"]!;
+            favoriteBookTitle["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The title of the contact's favorite book.");
+            favoriteBookTitle["maxLength"]!.GetValue<int>().Should().Be(100);
+            favoriteBookTitle["type"]!.GetValue<string>().Should().Be("string");
+
+            // Verify becameParent
+            var becameParent = sampleProperties["becameParent"]!;
+            becameParent["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The year in which the contact first became a parent.");
+            becameParent["type"]!.GetValue<string>().Should().Be("integer");
+
+            // Verify isSportsFan
+            var isSportsFan = sampleProperties["isSportsFan"]!;
+            isSportsFan["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("An indication as to whether the contact is a sports fan.");
+            isSportsFan["type"]!.GetValue<string>().Should().Be("boolean");
+        }
+
+        [Test]
+        public async Task Preserves_core_properties_after_merge()
+        {
+            // Arrange
+            var fakeRequestInfo = A.Fake<RequestInfo>();
+
+            // Act
+            await _provideApiSchemaMiddleware!.Execute(fakeRequestInfo, NullNext);
+
+            // Assert
+            fakeRequestInfo.ApiSchemaDocuments.Should().NotBeNull();
+
+            var coreContactResource = fakeRequestInfo
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new ResourceName("Contact"));
+
+            var rootProperties = coreContactResource!
+                .GetRequiredNode("jsonSchemaForInsert")
+                .GetRequiredNode("properties")
+                .AsObject();
+
+            // Verify all core properties still exist
+            rootProperties.Should().ContainKey("contactUniqueId");
+            rootProperties.Should().ContainKey("firstName");
+            rootProperties.Should().ContainKey("addresses");
+
+            // Verify core property details
+            var contactUniqueId = rootProperties["contactUniqueId"]!;
+            contactUniqueId["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("A unique alphanumeric code assigned to a contact.");
+            contactUniqueId["maxLength"]!.GetValue<int>().Should().Be(32);
+            contactUniqueId["type"]!.GetValue<string>().Should().Be("string");
+
+            var firstName = rootProperties["firstName"]!;
+            firstName["description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("A name given to an individual at birth.");
+            firstName["maxLength"]!.GetValue<int>().Should().Be(75);
+            firstName["type"]!.GetValue<string>().Should().Be("string");
+
+            var addresses = rootProperties["addresses"]!;
+            addresses["type"]!.GetValue<string>().Should().Be("array");
+        }
+
+        [Test]
+        public async Task Merges_other_extension_paths_correctly()
+        {
+            // Arrange
+            var fakeRequestInfo = A.Fake<RequestInfo>();
+
+            // Act
+            await _provideApiSchemaMiddleware!.Execute(fakeRequestInfo, NullNext);
+
+            // Assert
+            fakeRequestInfo.ApiSchemaDocuments.Should().NotBeNull();
+
+            var coreContactResource = fakeRequestInfo
+                .ApiSchemaDocuments.GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new ResourceName("Contact"));
+
+            // Verify booleanJsonPaths are merged
+            var booleanJsonPaths = coreContactResource!
+                .GetRequiredNode("booleanJsonPaths")
+                .AsArray()
+                .Select(node => node!.GetValue<string>());
+
+            booleanJsonPaths.Should().Contain("$._ext.sample.isSportsFan");
+
+            // Verify numericJsonPaths are merged
+            var numericJsonPaths = coreContactResource!
+                .GetRequiredNode("numericJsonPaths")
+                .AsArray()
+                .Select(node => node!.GetValue<string>());
+
+            numericJsonPaths.Should().Contain("$._ext.sample.becameParent");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_An_Api_Schema_With_Resource_Extensions : ProvideApiSchemaMiddlewareTests
     {
         private readonly ApiSchemaDocumentNodes _apiSchemaNodes = new ApiSchemaBuilder()
