@@ -24,3 +24,4 @@ Authorization remains out of scope.
 - `03-persist-and-batch.md` — Persist rows with batching/parameter-limit handling (pgsql + mssql)
 - `04-propagated-reference-identity-columns.md` — Populate propagated reference identity columns (no reverse-edge table)
 - `05-write-error-mapping.md` — Map DB constraint errors to DMS error shapes (consistent across dialects)
+- `06-descriptor-writes.md` — Descriptor POST/PUT: maintain `dms.Descriptor` + descriptor referential identities (no per-descriptor tables)

@@ -11,6 +11,7 @@ Key behaviors (per `reference/design/backend-redesign/ddl-generation.md`):
   - schemas/tables/views/sequences/triggers
   - deterministic seeds and schema fingerprint recording
 - Robust to partial runs via existence checks.
+- SQL Server operational guidance: strongly recommend MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, optionally `ALLOW_SNAPSHOT_ISOLATION ON`) per `reference/design/backend-redesign/transactions-and-concurrency.md`.
 
 ## Acceptance Criteria
 
@@ -25,4 +26,4 @@ Key behaviors (per `reference/design/backend-redesign/ddl-generation.md`):
 2. Implement optional “create database if missing” behavior (dialect-specific).
 3. Implement script execution against the target DB with a single transaction boundary for the main provisioning step.
 4. Add integration tests or a script-first harness hook that provisions a local docker DB (pgsql + mssql) and validates success.
-
+5. For SQL Server environments the CLI creates (or for local test harness DBs), enable recommended MVCC reads (or warn loudly if disabled).

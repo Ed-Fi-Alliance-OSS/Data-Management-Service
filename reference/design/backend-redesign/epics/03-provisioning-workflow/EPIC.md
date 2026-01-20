@@ -18,3 +18,4 @@ Authorization objects remain out of scope.
 - `02-preflight-and-idempotency.md` — Preflight mismatch + rerun safety + diagnostics
 - `03-ddl-manifest.md` — Emit `ddl.manifest.json` (normalized hashes + counts)
 - `04-remove-legacy-schemagenerator.md` — Remove legacy SchemaGenerator toolchain and migrate references
+- `05-seed-descriptors.md` — Optional: `ddl provision --seed-descriptors` (bootstrap descriptor reference data)

@@ -26,6 +26,7 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 2. **Change Queries alignment**: `ChangeVersion` MUST be a global, monotonically increasing `bigint`.
 3. **Cross-engine**: must work on PostgreSQL and SQL Server.
 4. **Optimistic concurrency**: `If-Match` must be representation-sensitive.
+5. **ODS watermark-only compatibility**: `ChangeVersion` MUST be unique per representation change so clients can safely persist only the max `ChangeVersion` as their watermark.
 
 ### Non-goals
 
@@ -89,6 +90,9 @@ When a document’s **identity projection changes**, in the same transaction:
 Notes:
 - Multiple updates to the same `DocumentId` in one transaction may allocate multiple sequence values; the only required property is that the final committed stamps are monotonic and correct.
 - FK-cascade updates to propagated identity columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE).
+- For watermark-only compatibility, allocating stamps must be **per-document**, not “one stamp for the whole statement”:
+  - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
+  - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).
 
 ## Serving API metadata (normative)
 
@@ -192,4 +196,3 @@ Guidance:
 - Retention policy should be defined per instance (time-based and/or size-based).
 - Expose `oldestChangeVersion` as the minimum retained `ChangeVersion` across the tracking tables that the Change Query API depends on (for v1: `dms.DocumentChangeEvent`).
 - When a client requests a window older than `oldestChangeVersion`, return a clear error instructing the client to resync.
-

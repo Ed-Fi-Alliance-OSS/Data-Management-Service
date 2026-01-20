@@ -249,6 +249,13 @@ Recommended: bounded retry (e.g., 3 attempts) with jittered backoff. Treat these
 - PostgreSQL: `40P01` (deadlock detected)
 - SQL Server: `1205` (deadlock victim), and optionally `1222` (lock request timeout, if configured)
 
+### SQL Server isolation defaults (recommended)
+
+To reduce reader/writer blocking and deadlocks under concurrent write load, strongly recommend enabling MVCC reads:
+
+- `READ_COMMITTED_SNAPSHOT ON` (recommended)
+- optionally `ALLOW_SNAPSHOT_ISOLATION ON` (if a snapshot isolation level is ever used explicitly)
+
 ---
 
 ## Read Path (GET by id / GET query)
@@ -406,4 +413,3 @@ This keeps schema mismatch a **fail-fast** condition while avoiding “one mis-p
   - healthy autovacuum settings and monitoring
   - periodic `REINDEX` when bloat warrants it
 - If sustained ingest is extreme, consider hash partitioning `dms.ReferentialIdentity` by `ReferentialId` (e.g., 8–32 partitions) to reduce contention and make maintenance cheaper.
-

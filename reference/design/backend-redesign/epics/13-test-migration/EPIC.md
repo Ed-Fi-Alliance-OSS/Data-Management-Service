@@ -18,3 +18,4 @@ Authorization testing remains out of scope.
 - `01-backend-integration-tests.md` — CRUD integration tests against provisioned DBs (pgsql + mssql)
 - `02-parity-and-fixtures.md` — Shared fixtures and parity assertions across engines
 - `03-developer-docs.md` — Update docs/runbooks for the new workflow
+- `04-descriptor-tests.md` — Descriptor-specific integration coverage (writes, queries, seeding)

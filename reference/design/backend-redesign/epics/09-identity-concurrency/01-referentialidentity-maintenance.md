@@ -20,7 +20,7 @@ Align with `reference/design/backend-redesign/data-model.md` (`dms.ReferentialId
 
 ## Tasks
 
-1. Implement referential identity maintenance (insert/replace) used by normal writes and cascaded identity-component updates (trigger-driven).
+1. Implement referential identity maintenance (insert/replace) used by normal writes and cascaded identity-component updates (trigger-driven), using the engine UUIDv5 helper (`E02-S06`) for any DB-side `ReferentialId` recomputation.
 2. Implement alias-row logic for subclass resources based on ApiSchema subclass metadata.
 3. Add unit/integration tests covering:
    1. insert primary + alias rows,

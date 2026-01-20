@@ -14,6 +14,7 @@ Enforce the journaling rules in `reference/design/backend-redesign/update-tracki
   - one `dms.DocumentChangeEvent` row.
 - When `ContentVersion` changes, triggers emit a `dms.DocumentChangeEvent` row.
 - Identity projection changes must also bump `ContentVersion`, so identity updates are still represented in `dms.DocumentChangeEvent` via the `ContentVersion` change.
+- For watermark-only clients, `ChangeVersion` values used for journaling are unique per representation change (see “Token Stamping” story).
 - Application code has no direct writes to journal tables in the relational backend path.
 
 ## Tasks

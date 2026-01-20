@@ -10,6 +10,8 @@ Implement query execution consistent with the redesign constraints:
 
 Align with `reference/design/backend-redesign/summary.md` and `reference/design/backend-redesign/flattening-reconstitution.md` query sections.
 
+Note: applies to non-descriptor resources; descriptor endpoint query behavior is covered separately.
+
 ## Acceptance Criteria
 
 - Query filtering uses only fields mapped to root-table columns.
@@ -25,4 +27,3 @@ Align with `reference/design/backend-redesign/summary.md` and `reference/design/
 2. Implement SQL generation for filters + paging and execute it safely (parameterized).
 3. Integrate page keyset selection with hydration + reconstitution.
 4. Add integration tests for query correctness and stable paging.
-

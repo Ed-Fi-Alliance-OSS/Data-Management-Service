@@ -6,6 +6,8 @@ Implement a bounded deadlock retry policy for write transactions, including iden
 
 Align with `reference/design/backend-redesign/transactions-and-concurrency.md` (“Deadlock + retry policy”).
 
+SQL Server operational guidance: prefer MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, optionally `ALLOW_SNAPSHOT_ISOLATION ON`) to reduce reader/writer blocking and deadlocks, but still implement retries for correctness.
+
 ## Acceptance Criteria
 
 - Deadlocks/serialization failures are retried according to a configurable policy.

@@ -1,4 +1,4 @@
-# Epic: Derived Relational Model (v1)
+# Epic: Derived Relational Model
 
 ## Description
 
@@ -20,4 +20,4 @@ Authorization objects remain out of scope.
 - `03-ext-mapping.md` — `_ext` (extensions) relational mapping model
 - `04-abstract-union-views.md` — Abstract resource union view model derivation
 - `05-relational-model-manifest.md` — Emit `relational-model.manifest.json` (stable)
-
+- `06-descriptor-resource-mapping.md` — Map descriptor resources to `dms.Descriptor` (no per-descriptor tables)

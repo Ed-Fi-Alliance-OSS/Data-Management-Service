@@ -23,3 +23,4 @@ Authorization filtering remains out of scope.
 - `02-reference-identity-projection.md` — Reconstitute reference identity fields from local propagated columns
 - `03-descriptor-projection.md` — Project descriptor URIs (and optional descriptor fields as needed)
 - `04-query-execution.md` — Execute root-table-only queries with deterministic paging
+- `05-descriptor-endpoints.md` — Serve descriptor GET/query endpoints from `dms.Descriptor` (no per-descriptor tables)

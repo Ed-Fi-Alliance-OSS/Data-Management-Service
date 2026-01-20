@@ -25,6 +25,7 @@ Testcontainers is explicitly not allowed; use docker compose.
   - `dms.EffectiveSchema` / `dms.SchemaComponent` / `dms.ResourceKey` rows.
 - Journaling trigger smoke check passes:
   - inserting into `dms.Document` emits rows in `dms.DocumentChangeEvent`.
+  - updating multiple `dms.Document` rows in one statement emits one `dms.DocumentChangeEvent` row per updated document and uses distinct `ChangeVersion` values (watermark-only compatibility).
 
 ## Tasks
 

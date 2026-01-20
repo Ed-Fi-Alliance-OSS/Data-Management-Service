@@ -23,6 +23,6 @@ Align with:
 1. Emit/validate DDL for identity-component propagation:
    - composite FKs with `ON UPDATE CASCADE` where allowed, and
    - trigger-based propagation fallback where required (SQL Server cascade-path restrictions).
-2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes.
+2. Emit per-resource triggers to maintain `dms.ReferentialIdentity` transactionally on identity projection changes, recomputing `ReferentialId` using the engine UUIDv5 helper (`E02-S06`).
 3. Integrate identity-stamp behavior (`IdentityVersion/IdentityLastModifiedAt`) with trigger maintenance.
 4. Add integration tests for a small identity dependency chain scenario.

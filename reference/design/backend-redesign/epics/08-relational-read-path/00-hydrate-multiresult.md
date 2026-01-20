@@ -4,6 +4,7 @@
 
 Implement the “hydrate root + children” step using a single DB command per resource read (where possible):
 
+- Applies to non-descriptor resources; descriptor resources are hydrated from `dms.Descriptor` + `dms.Document`.
 - GET by id: load root row and all child/extension tables needed for reconstitution.
 - Query paging: load rows for a page keyset and hydrate all tables for those documents in bulk.
 
@@ -23,4 +24,3 @@ Align with the “one command / multiple result sets” approach in `reference/d
 3. Add integration tests that:
    1. write a document with nested collections,
    2. read it back and assert all tables were hydrated (pgsql + mssql where available).
-

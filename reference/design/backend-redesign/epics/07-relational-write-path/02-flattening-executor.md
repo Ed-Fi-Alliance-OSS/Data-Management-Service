@@ -4,6 +4,7 @@
 
 Implement the write-time flattener described in `reference/design/backend-redesign/flattening-reconstitution.md`:
 
+- Applies to non-descriptor resources; descriptor resources are handled by a dedicated `dms.Descriptor` write path.
 - Traverse the validated JSON once, tracking collection ordinals.
 - Emit row buffers for:
   - the resource root table,
@@ -30,4 +31,3 @@ Implement the write-time flattener described in `reference/design/backend-redesi
 3. Implement ordinal-path mapping from extracted reference paths to the owning scope row buffer.
 4. Implement `_ext` handling aligned to the extension mapping rules.
 5. Add unit tests comparing produced row buffers to expected shapes for small fixtures.
-

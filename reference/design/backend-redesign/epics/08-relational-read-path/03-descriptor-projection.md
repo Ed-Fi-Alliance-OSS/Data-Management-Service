@@ -7,7 +7,7 @@ Implement read-time projection of descriptor URI strings:
 - Descriptor values are stored as `..._DescriptorId` FKs.
 - Responses must include the descriptor URI string at the descriptor JSON path.
 
-Descriptors are treated as immutable in this redesign (`reference/design/backend-redesign/data-model.md`).
+Descriptor identities (URIs) are treated as immutable in this redesign (`reference/design/backend-redesign/data-model.md`).
 
 ## Acceptance Criteria
 
@@ -20,4 +20,3 @@ Descriptors are treated as immutable in this redesign (`reference/design/backend
 1. Implement batched descriptor lookup by `DocumentId` for all `..._DescriptorId` values in a page/read.
 2. Integrate descriptor URI projection into reconstitution at the correct JSON paths.
 3. Add unit/integration tests for descriptor projection behavior (required and optional descriptors).
-

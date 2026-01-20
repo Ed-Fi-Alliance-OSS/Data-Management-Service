@@ -17,6 +17,7 @@ No-op detection is best-effort and optional; correctness requires only that stam
 - Representation changes update `ContentVersion` and `ContentLastModifiedAt`.
 - Identity projection changes update `IdentityVersion` and `IdentityLastModifiedAt` and also update `ContentVersion`.
 - FK-cascade updates to propagated identity columns cause the same stamping behavior as direct writes.
+- **ODS watermark-only compatibility**: when one statement/trigger stamps N distinct `DocumentId`s, it allocates N distinct `ContentVersion` values (no “one version per statement” stamping).
 
 ## Tasks
 
@@ -30,3 +31,4 @@ No-op detection is best-effort and optional; correctness requires only that stam
    1. content-only changes,
    2. identity projection changes,
    3. indirect reference-identity changes via cascades.
+   4. multi-row DML updates that stamp multiple documents in one statement and assert `ContentVersion` values are distinct (especially on SQL Server).

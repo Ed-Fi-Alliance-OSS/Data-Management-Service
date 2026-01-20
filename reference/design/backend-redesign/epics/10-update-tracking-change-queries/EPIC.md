@@ -23,3 +23,4 @@ Authorization remains out of scope.
 - `03-if-match.md` — Enforce optimistic concurrency using stored `_etag`
 - `04-change-query-selection.md` — Implement Change Query candidate selection (journal + verify)
 - `05-change-query-api.md` — Implement Change Query endpoints (optional/future-facing)
+- `06-descriptor-stamping.md` — Ensure descriptor writes stamp/journal correctly (triggers on `dms.Descriptor`)

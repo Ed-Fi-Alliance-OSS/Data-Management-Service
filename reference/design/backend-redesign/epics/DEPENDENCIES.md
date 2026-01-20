@@ -3,7 +3,7 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 15 epics, 76 stories).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 15 epics, 84 stories).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -120,6 +120,7 @@ Epic: `01-relational-model/EPIC.md`
 | E01-S03 | [`03-ext-mapping.md`](01-relational-model/03-ext-mapping.md) | E01-S00, E01-S02 | E01-S01 | `_ext` model derivation (extension schemas/tables aligned to base keys) |
 | E01-S04 | [`04-abstract-union-views.md`](01-relational-model/04-abstract-union-views.md) | E01-S01, E01-S02 | — | Abstract union view model (identity select-list + ordering + casts) |
 | E01-S05 | [`05-relational-model-manifest.md`](01-relational-model/05-relational-model-manifest.md) | E01-S00–E01-S04 | — | `relational-model.manifest.json` emitter (stable ordering) |
+| E01-S06 | [`06-descriptor-resource-mapping.md`](01-relational-model/06-descriptor-resource-mapping.md) | E01-S00 | E01-S01 | Descriptor resource mapping to `dms.Descriptor` (no per-descriptor tables) |
 
 ### E02 — Deterministic DDL Emission (PostgreSQL + SQL Server)
 
@@ -132,6 +133,8 @@ Epic: `02-ddl-emission/EPIC.md`
 | E02-S02 | [`02-project-and-resource-ddl.md`](02-ddl-emission/02-project-and-resource-ddl.md) | E02-S00, E01-S05 | — | Project schemas + resource/extension tables + abstract views |
 | E02-S03 | [`03-seed-and-fingerprint-ddl.md`](02-ddl-emission/03-seed-and-fingerprint-ddl.md) | E02-S00, E02-S01, E00-S02, E00-S03 | — | Seed/recording DML (`ResourceKey`, `EffectiveSchema`, `SchemaComponent`) |
 | E02-S04 | [`04-sql-canonicalization.md`](02-ddl-emission/04-sql-canonicalization.md) | E02-S00 | E02-S01–E02-S03 | Canonical SQL formatting + deterministic statement ordering tests |
+| E02-S05 | [`05-descriptor-ddl.md`](02-ddl-emission/05-descriptor-ddl.md) | E02-S01 | E01-S06 | ODS-parity `dms.Descriptor` DDL (descriptor resources stored in `dms`) |
+| E02-S06 | [`06-uuidv5-function.md`](02-ddl-emission/06-uuidv5-function.md) | E02-S01 | — | Engine UUIDv5 helper function for deterministic `ReferentialId` recomputation |
 
 ### E03 — Provisioning Workflow (Create-Only)
 
@@ -139,11 +142,12 @@ Epic: `03-provisioning-workflow/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E03-S00 | [`00-ddl-emit-command.md`](03-provisioning-workflow/00-ddl-emit-command.md) | E00-S04, E01-S05, E02-S01–E02-S04 | — | CLI outputs: `{dialect}.sql` + manifests (no DB required) |
+| E03-S00 | [`00-ddl-emit-command.md`](03-provisioning-workflow/00-ddl-emit-command.md) | E00-S04, E01-S05, E02-S01–E02-S04, E02-S06 | — | CLI outputs: `{dialect}.sql` + manifests (no DB required) |
 | E03-S01 | [`01-ddl-provision-command.md`](03-provisioning-workflow/01-ddl-provision-command.md) | E03-S00 | — | CLI provisions empty DB (create-only) using generated DDL |
 | E03-S02 | [`02-preflight-and-idempotency.md`](03-provisioning-workflow/02-preflight-and-idempotency.md) | E03-S01 | — | Preflight mismatch, rerun safety, seed validation diagnostics |
 | E03-S03 | [`03-ddl-manifest.md`](03-provisioning-workflow/03-ddl-manifest.md) | E03-S00 | — | `ddl.manifest.json` emission (hashes/counts for DDL) |
 | E03-S04 | [`04-remove-legacy-schemagenerator.md`](03-provisioning-workflow/04-remove-legacy-schemagenerator.md) | E03-S00, E03-S01 | E04-S00 | Remove legacy SchemaGenerator + migrate docs/scripts/CI references |
+| E03-S05 | [`05-seed-descriptors.md`](03-provisioning-workflow/05-seed-descriptors.md) | E03-S01, E02-S05 | E07-S06 | Optional: provisioning-time descriptor seeding (`--seed-descriptors`) |
 
 ### E04 — Verification Harness (Determinism + DB-Apply)
 
@@ -197,6 +201,7 @@ Epic: `07-relational-write-path/EPIC.md`
 | E07-S03 | [`03-persist-and-batch.md`](07-relational-write-path/03-persist-and-batch.md) | E07-S02 | E10-S00 | Transactional persist executor (replace semantics, batching, limits) |
 | E07-S04 | [`04-propagated-reference-identity-columns.md`](07-relational-write-path/04-propagated-reference-identity-columns.md) | E07-S03 | E01-S01 | Populate propagated reference identity columns for FK cascades |
 | E07-S05 | [`05-write-error-mapping.md`](07-relational-write-path/05-write-error-mapping.md) | E07-S03 | E01-S02 | DB constraint error mapping (pgsql/mssql parity) |
+| E07-S06 | [`06-descriptor-writes.md`](07-relational-write-path/06-descriptor-writes.md) | E06-S02, E02-S05 | E01-S06 | Descriptor POST/PUT writes to `dms.Descriptor` + descriptor referential identities |
 
 ### E08 — Relational Read Path (GET + Query)
 
@@ -209,6 +214,7 @@ Epic: `08-relational-read-path/EPIC.md`
 | E08-S02 | [`02-reference-identity-projection.md`](08-relational-read-path/02-reference-identity-projection.md) | E08-S00, E02-S02 | E01-S04 | Reference identity projection (incl. abstract targets via `{Abstract}_View`) |
 | E08-S03 | [`03-descriptor-projection.md`](08-relational-read-path/03-descriptor-projection.md) | E08-S00, E02-S01 | — | Descriptor URI projection from `dms.Descriptor` |
 | E08-S04 | [`04-query-execution.md`](08-relational-read-path/04-query-execution.md) | E06-S02 | E05-S02 | Root-table-only query execution + deterministic paging |
+| E08-S05 | [`05-descriptor-endpoints.md`](08-relational-read-path/05-descriptor-endpoints.md) | E06-S02, E01-S06 | E02-S05 | Descriptor GET/query endpoints served from `dms.Descriptor` |
 
 ### E09 — Strict Identity Maintenance & Concurrency
 
@@ -217,7 +223,7 @@ Epic: `09-identity-concurrency/EPIC.md`
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
 | E09-S00 | [`00-locking-and-retry.md`](09-identity-concurrency/00-locking-and-retry.md) | E02-S01 | — | Deadlock retry policy for cascade/trigger writes |
-| E09-S01 | [`01-referentialidentity-maintenance.md`](09-identity-concurrency/01-referentialidentity-maintenance.md) | E09-S00 | — | Transactional writes to `dms.ReferentialIdentity` (primary + alias rows) |
+| E09-S01 | [`01-referentialidentity-maintenance.md`](09-identity-concurrency/01-referentialidentity-maintenance.md) | E09-S00, E02-S06 | — | Transactional writes to `dms.ReferentialIdentity` (primary + alias rows) |
 | E09-S02 | [`02-identity-change-detection.md`](09-identity-concurrency/02-identity-change-detection.md) | E07-S02 | — | Detect “identity projection changed” from write inputs/outputs |
 | E09-S03 | [`03-identity-propagation.md`](09-identity-concurrency/03-identity-propagation.md) | E09-S00, E09-S01, E07-S04 | E12-S03 | Identity propagation via cascades/triggers (no closure traversal) |
 | E09-S04 | [`04-cache-invalidation.md`](09-identity-concurrency/04-cache-invalidation.md) | E06-S02, E09-S01 | — | Post-commit cache invalidation for identity resolution |
@@ -234,6 +240,7 @@ Epic: `10-update-tracking-change-queries/EPIC.md`
 | E10-S03 | [`03-if-match.md`](10-update-tracking-change-queries/03-if-match.md) | E10-S02 | — | `If-Match` enforcement using stored `_etag` |
 | E10-S04 | [`04-change-query-selection.md`](10-update-tracking-change-queries/04-change-query-selection.md) | E10-S01 | — | Change Query candidate selection (journal + verify) |
 | E10-S05 | [`05-change-query-api.md`](10-update-tracking-change-queries/05-change-query-api.md) | E10-S04 | — | Optional HTTP endpoints for change queries |
+| E10-S06 | [`06-descriptor-stamping.md`](10-update-tracking-change-queries/06-descriptor-stamping.md) | E10-S00 | E07-S06 | Ensure `dms.Descriptor` updates stamp/journal descriptor documents |
 
 ### E11 — Delete Path & Conflict Diagnostics
 
@@ -268,6 +275,7 @@ Epic: `13-test-migration/EPIC.md`
 | E13-S01 | [`01-backend-integration-tests.md`](13-test-migration/01-backend-integration-tests.md) | E07-S03, E08-S01, E11-S01 | — | End-to-end runtime CRUD/query integration tests (docker compose, no Testcontainers) |
 | E13-S02 | [`02-parity-and-fixtures.md`](13-test-migration/02-parity-and-fixtures.md) | E13-S01 | — | Cross-engine parity tests and shared fixtures |
 | E13-S03 | [`03-developer-docs.md`](13-test-migration/03-developer-docs.md) | E13-S00 | E03-S00, E05-S03 | Dev docs/runbooks for provisioning, packs (optional), debugging |
+| E13-S04 | [`04-descriptor-tests.md`](13-test-migration/04-descriptor-tests.md) | E07-S06, E08-S05 | E03-S05 | Descriptor integration coverage (writes, queries, optional seeding) |
 
 ### E14 — Authorization (Deferred)
 
@@ -285,7 +293,7 @@ This is the smallest “end-to-end usable” spine that enables: generate DDL �
 
 1. E00-S00 → E00-S01 → E00-S02 → E00-S03 → E00-S04
 2. E01-S00 → E01-S01 → E01-S02 → E01-S03 → E01-S04 → E01-S05
-3. E02-S00 → E02-S01 → E02-S02 → E02-S03 → E02-S04
+3. E02-S00 → E02-S01 → E02-S06 → E02-S02 → E02-S03 → E02-S04
 4. E03-S00 → E03-S01 → E03-S02
 5. E06-S00 → E06-S01 → E06-S02 → E06-S03 → E06-S04
 6. E07-S00 → E07-S01 → E07-S02 → E07-S03 → E07-S04 → E07-S05
@@ -310,7 +318,7 @@ The following can typically proceed in parallel once the necessary foundations e
 - **Harness-first correctness**: E04 (fixtures/snapshots/DB-apply) can start once E03-S00 exists
 - **Runtime selection**: E06 can start once provisioning/fingerprint tables exist
 - **Write vs read**: E07 and E08 can proceed in parallel once E06 provides mapping sets/plans
-- **Ops guardrails**: E12 can start once `dms.ReferentialIdentity` is present and maintained (E02-S01 + E09-S01)
+- **Ops guardrails**: E12 can start once `dms.ReferentialIdentity` is present and maintained (E02-S01 + E02-S06 + E09-S01)
 - **Optional AOT packs**: E05 can proceed largely in parallel once E00/E01/E02 foundations exist
 
 ---

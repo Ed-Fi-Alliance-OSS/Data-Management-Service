@@ -20,4 +20,5 @@ Authorization objects remain out of scope.
 - `02-project-and-resource-ddl.md` — Generate project schemas + resource/extension tables + views
 - `03-seed-and-fingerprint-ddl.md` — Seed + fingerprint recording SQL (insert-if-missing + validate)
 - `04-sql-canonicalization.md` — SQL canonicalization + deterministic ordering tests
-
+- `05-descriptor-ddl.md` — ODS-parity `dms.Descriptor` DDL (descriptor resources stored in `dms`)
+- `06-uuidv5-function.md` — Engine UUIDv5 helper function for deterministic `ReferentialId` recomputation

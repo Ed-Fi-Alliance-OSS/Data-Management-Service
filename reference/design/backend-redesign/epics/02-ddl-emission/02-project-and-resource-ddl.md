@@ -5,7 +5,7 @@
 Generate deterministic DDL for per-project schemas and per-resource objects derived from the relational model:
 
 - Create one physical schema per project (`ProjectEndpointName` normalization).
-- For each concrete resource:
+- For each non-descriptor concrete resource:
   - root table `{schema}.{Resource}`
   - child tables for arrays (including nested collections)
   - `_ext` extension tables in extension project schemas
@@ -37,4 +37,3 @@ Generate deterministic DDL for per-project schemas and per-resource objects deri
    1. nested collections,
    2. polymorphic abstract views,
    3. `_ext` mapping.
-
