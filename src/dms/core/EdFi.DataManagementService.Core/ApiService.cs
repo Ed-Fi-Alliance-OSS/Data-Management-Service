@@ -198,6 +198,7 @@ internal class ApiService : IApiService
 
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
+            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
@@ -301,6 +302,7 @@ internal class ApiService : IApiService
 
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
+            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),

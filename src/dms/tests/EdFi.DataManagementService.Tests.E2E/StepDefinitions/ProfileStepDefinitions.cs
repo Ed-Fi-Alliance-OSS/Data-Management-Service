@@ -340,6 +340,47 @@ public class ProfileStepDefinitions(
         _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
     }
 
+    /// <summary>
+    /// Makes a POST request with an explicit profile Content-Type header for write filtering tests.
+    /// Format: application/vnd.ed-fi.{resource}.{profile}.writable+json
+    /// </summary>
+    [When(
+        @"a POST request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)"" with body"
+    )]
+    public async Task WhenAPOSTRequestIsMadeToWithProfileForResourceWithBody(
+        string url,
+        string profileName,
+        string resourceName,
+        string body
+    )
+    {
+        url = AddDataPrefixIfNecessary(url);
+
+        // Build Content-Type header with profile's writable format
+        string contentType =
+            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
+
+        _logger.log.Information($"POST url: {url}");
+        _logger.log.Information($"Content-Type header: {contentType}");
+        _logger.log.Information($"POST body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+
+        ExtractIdFromResponse();
+    }
+
     #endregion
 
     #region Then - Response Validation

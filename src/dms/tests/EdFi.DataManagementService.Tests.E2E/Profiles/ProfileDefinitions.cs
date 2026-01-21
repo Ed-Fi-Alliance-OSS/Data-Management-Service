@@ -199,6 +199,73 @@ public static class ProfileDefinitions
         </Profile>
         """;
 
+    // ================================================================================
+    // WRITE FILTERING PROFILES
+    // These profiles have restricted WriteContentType for testing write-side filtering.
+    // Fields not allowed by the write profile are silently stripped from the request.
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for School with IncludeOnly WriteContentType - only allows writing
+    /// nameOfInstitution, shortNameOfInstitution, and required collections.
+    /// Other fields like webSite will be silently stripped from POST/PUT requests.
+    /// </summary>
+    public const string SchoolWriteIncludeOnlyName = "E2E-Test-School-Write-IncludeOnly";
+
+    public const string SchoolWriteIncludeOnlyXml = """
+        <Profile name="E2E-Test-School-Write-IncludeOnly">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeOnly">
+                    <Property name="nameOfInstitution"/>
+                    <Property name="shortNameOfInstitution"/>
+                    <Collection name="educationOrganizationCategories" memberSelection="IncludeAll"/>
+                    <Collection name="gradeLevels" memberSelection="IncludeAll"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with ExcludeOnly WriteContentType - excludes webSite and
+    /// shortNameOfInstitution from being written. These fields will be silently stripped.
+    /// </summary>
+    public const string SchoolWriteExcludeOnlyName = "E2E-Test-School-Write-ExcludeOnly";
+
+    public const string SchoolWriteExcludeOnlyXml = """
+        <Profile name="E2E-Test-School-Write-ExcludeOnly">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="ExcludeOnly">
+                    <Property name="webSite"/>
+                    <Property name="shortNameOfInstitution"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with collection item filter on WriteContentType.
+    /// Only allows writing grade levels matching "Ninth grade" descriptor.
+    /// Other grade levels will be silently stripped from the request.
+    /// </summary>
+    public const string SchoolWriteGradeLevelFilterName = "E2E-Test-School-Write-GradeLevelFilter";
+
+    public const string SchoolWriteGradeLevelFilterXml = """
+        <Profile name="E2E-Test-School-Write-GradeLevelFilter">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeAll">
+                        <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+                            <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+                        </Filter>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
     /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
@@ -214,5 +281,9 @@ public static class ProfileDefinitions
             (SchoolExtensionExcludeOnlyName, SchoolExtensionExcludeOnlyXml),
             (SchoolIncludeOnlyNoExtensionRuleName, SchoolIncludeOnlyNoExtensionRuleXml),
             (SchoolExcludeOnlyNoExtensionRuleName, SchoolExcludeOnlyNoExtensionRuleXml),
+            // Write filtering profiles
+            (SchoolWriteIncludeOnlyName, SchoolWriteIncludeOnlyXml),
+            (SchoolWriteExcludeOnlyName, SchoolWriteExcludeOnlyXml),
+            (SchoolWriteGradeLevelFilterName, SchoolWriteGradeLevelFilterXml),
         ];
 }
