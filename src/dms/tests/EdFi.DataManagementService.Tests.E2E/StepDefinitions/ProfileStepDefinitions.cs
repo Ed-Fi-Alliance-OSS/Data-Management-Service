@@ -125,6 +125,7 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Header Validation")]
     [Scope(Feature = "Profile Collection Item Filtering")]
     [Scope(Feature = "Profile Extension Filtering")]
+    [Scope(Feature = "Profile Write Filtering")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();

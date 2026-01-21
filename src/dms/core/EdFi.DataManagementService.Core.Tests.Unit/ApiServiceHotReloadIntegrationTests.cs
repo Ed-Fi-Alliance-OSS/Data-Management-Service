@@ -148,6 +148,12 @@ public class ApiServiceHotReloadIntegrationTests
             NullLogger<ProfileFilteringMiddleware>.Instance
         );
 
+        // Register Profile Write Validation services
+        services.AddTransient<ProfileWriteValidationMiddleware>();
+        services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
+            NullLogger<ProfileWriteValidationMiddleware>.Instance
+        );
+
         var serviceProvider = services.BuildServiceProvider();
         var claimSetProvider = new NoClaimsClaimSetProvider(NullLogger.Instance);
         var documentValidator = new DocumentValidator(new CompiledSchemaCache());
