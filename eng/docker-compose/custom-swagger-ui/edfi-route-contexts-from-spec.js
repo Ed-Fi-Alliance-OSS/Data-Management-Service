@@ -340,10 +340,14 @@ window.EdFiRouteContext = function () {
 
     const slugify = (value) =>
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> f32f4527 (PR feedback)
         String(value || '')
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '');
+<<<<<<< HEAD
 =======
             .replace(/-/g, ' ')
             .replace(/_/g, ' ')
@@ -357,6 +361,8 @@ window.EdFiRouteContext = function () {
         });
         return words.join(' ');
 >>>>>>> dc43acc6 (Apply copilot review notes)
+=======
+>>>>>>> f32f4527 (PR feedback)
 
     const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -369,6 +375,9 @@ window.EdFiRouteContext = function () {
         background-color: #fff;
         color: #1f2937;
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> f32f4527 (PR feedback)
     `;
 
     return {
@@ -376,8 +385,11 @@ window.EdFiRouteContext = function () {
             spec: {
                 wrapActions: {
                     updateSpec: (oriAction, system) => (...args) => {
+<<<<<<< HEAD
 =======
 >>>>>>> dc43acc6 (Apply copilot review notes)
+=======
+>>>>>>> f32f4527 (PR feedback)
                         try {
                             if (args && args.length > 0) {
                                 let spec = args[0];
@@ -411,6 +423,7 @@ window.EdFiRouteContext = function () {
                         }
 
                         const result = oriAction(...args);
+<<<<<<< HEAD
                                         typeof server.url === 'string'
                                             ? server.url.replace('dms-config-service', 'localhost')
                                             : server.url,
@@ -422,6 +435,8 @@ window.EdFiRouteContext = function () {
                         }
 
                         const result = oriAction(...args);
+=======
+>>>>>>> f32f4527 (PR feedback)
                         scheduleRebuild();
                         return result;
                     },
