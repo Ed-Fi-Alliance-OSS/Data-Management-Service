@@ -39,7 +39,7 @@ public static class Program
                 {
                     case "postgresql":
                         HandleResult(
-                            new Postgresql.Deploy.DatabaseDeploy().DeployDatabase(
+                            new Old.Postgresql.Deploy.DatabaseDeploy().DeployDatabase(
                                 runOptions.ConnectionString!
                             )
                         );
