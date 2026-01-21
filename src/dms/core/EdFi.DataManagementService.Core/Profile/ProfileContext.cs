@@ -100,7 +100,29 @@ public record ContentTypeDefinition(
     IReadOnlyList<ObjectRule> Objects,
     IReadOnlyList<CollectionRule> Collections,
     IReadOnlyList<ExtensionRule> Extensions
-);
+)
+{
+    // Pre-computed lookups for efficient filtering (lazy-initialized)
+    private HashSet<string>? _propertyNameSet;
+    private Dictionary<string, ObjectRule>? _objectRulesByName;
+    private Dictionary<string, CollectionRule>? _collectionRulesByName;
+    private Dictionary<string, ExtensionRule>? _extensionRulesByName;
+
+    /// <summary>Pre-computed set of property names for O(1) membership checking</summary>
+    public HashSet<string> PropertyNameSet => _propertyNameSet ??= Properties.Select(p => p.Name).ToHashSet();
+
+    /// <summary>Pre-computed dictionary of object rules by name</summary>
+    public IReadOnlyDictionary<string, ObjectRule> ObjectRulesByName =>
+        _objectRulesByName ??= Objects.ToDictionary(o => o.Name, o => o);
+
+    /// <summary>Pre-computed dictionary of collection rules by name</summary>
+    public IReadOnlyDictionary<string, CollectionRule> CollectionRulesByName =>
+        _collectionRulesByName ??= Collections.ToDictionary(c => c.Name, c => c);
+
+    /// <summary>Pre-computed dictionary of extension rules by name</summary>
+    public IReadOnlyDictionary<string, ExtensionRule> ExtensionRulesByName =>
+        _extensionRulesByName ??= Extensions.ToDictionary(e => e.Name, e => e);
+}
 
 /// <summary>
 /// A rule for a property (scalar, descriptor, or reference)
@@ -126,7 +148,33 @@ public record ObjectRule(
     IReadOnlyList<ObjectRule>? NestedObjects,
     IReadOnlyList<CollectionRule>? Collections,
     IReadOnlyList<ExtensionRule>? Extensions
-);
+)
+{
+    // Pre-computed lookups for efficient filtering (lazy-initialized)
+    private HashSet<string>? _propertyNameSet;
+    private Dictionary<string, ObjectRule>? _nestedObjectRulesByName;
+    private Dictionary<string, CollectionRule>? _collectionRulesByName;
+    private Dictionary<string, ExtensionRule>? _extensionRulesByName;
+
+    /// <summary>Pre-computed set of property names for O(1) membership checking</summary>
+    public HashSet<string> PropertyNameSet =>
+        _propertyNameSet ??= Properties?.Select(p => p.Name).ToHashSet() ?? [];
+
+    /// <summary>Pre-computed dictionary of nested object rules by name</summary>
+    public IReadOnlyDictionary<string, ObjectRule> NestedObjectRulesByName =>
+        _nestedObjectRulesByName ??=
+            NestedObjects?.ToDictionary(o => o.Name, o => o) ?? new Dictionary<string, ObjectRule>();
+
+    /// <summary>Pre-computed dictionary of collection rules by name</summary>
+    public IReadOnlyDictionary<string, CollectionRule> CollectionRulesByName =>
+        _collectionRulesByName ??=
+            Collections?.ToDictionary(c => c.Name, c => c) ?? new Dictionary<string, CollectionRule>();
+
+    /// <summary>Pre-computed dictionary of extension rules by name</summary>
+    public IReadOnlyDictionary<string, ExtensionRule> ExtensionRulesByName =>
+        _extensionRulesByName ??=
+            Extensions?.ToDictionary(e => e.Name, e => e) ?? new Dictionary<string, ExtensionRule>();
+}
 
 /// <summary>
 /// A rule for a collection within a resource
@@ -148,7 +196,33 @@ public record CollectionRule(
     IReadOnlyList<CollectionRule>? NestedCollections,
     IReadOnlyList<ExtensionRule>? Extensions,
     CollectionItemFilter? ItemFilter
-);
+)
+{
+    // Pre-computed lookups for efficient filtering (lazy-initialized)
+    private HashSet<string>? _propertyNameSet;
+    private Dictionary<string, ObjectRule>? _nestedObjectRulesByName;
+    private Dictionary<string, CollectionRule>? _nestedCollectionRulesByName;
+    private Dictionary<string, ExtensionRule>? _extensionRulesByName;
+
+    /// <summary>Pre-computed set of property names for O(1) membership checking</summary>
+    public HashSet<string> PropertyNameSet =>
+        _propertyNameSet ??= Properties?.Select(p => p.Name).ToHashSet() ?? [];
+
+    /// <summary>Pre-computed dictionary of nested object rules by name</summary>
+    public IReadOnlyDictionary<string, ObjectRule> NestedObjectRulesByName =>
+        _nestedObjectRulesByName ??=
+            NestedObjects?.ToDictionary(o => o.Name, o => o) ?? new Dictionary<string, ObjectRule>();
+
+    /// <summary>Pre-computed dictionary of nested collection rules by name</summary>
+    public IReadOnlyDictionary<string, CollectionRule> NestedCollectionRulesByName =>
+        _nestedCollectionRulesByName ??=
+            NestedCollections?.ToDictionary(c => c.Name, c => c) ?? new Dictionary<string, CollectionRule>();
+
+    /// <summary>Pre-computed dictionary of extension rules by name</summary>
+    public IReadOnlyDictionary<string, ExtensionRule> ExtensionRulesByName =>
+        _extensionRulesByName ??=
+            Extensions?.ToDictionary(e => e.Name, e => e) ?? new Dictionary<string, ExtensionRule>();
+}
 
 /// <summary>
 /// A rule for an extension namespace within a resource
@@ -166,7 +240,27 @@ public record ExtensionRule(
     IReadOnlyList<PropertyRule>? Properties,
     IReadOnlyList<ObjectRule>? Objects,
     IReadOnlyList<CollectionRule>? Collections
-);
+)
+{
+    // Pre-computed lookups for efficient filtering (lazy-initialized)
+    private HashSet<string>? _propertyNameSet;
+    private Dictionary<string, ObjectRule>? _objectRulesByName;
+    private Dictionary<string, CollectionRule>? _collectionRulesByName;
+
+    /// <summary>Pre-computed set of property names for O(1) membership checking</summary>
+    public HashSet<string> PropertyNameSet =>
+        _propertyNameSet ??= Properties?.Select(p => p.Name).ToHashSet() ?? [];
+
+    /// <summary>Pre-computed dictionary of object rules by name</summary>
+    public IReadOnlyDictionary<string, ObjectRule> ObjectRulesByName =>
+        _objectRulesByName ??=
+            Objects?.ToDictionary(o => o.Name, o => o) ?? new Dictionary<string, ObjectRule>();
+
+    /// <summary>Pre-computed dictionary of collection rules by name</summary>
+    public IReadOnlyDictionary<string, CollectionRule> CollectionRulesByName =>
+        _collectionRulesByName ??=
+            Collections?.ToDictionary(c => c.Name, c => c) ?? new Dictionary<string, CollectionRule>();
+}
 
 /// <summary>
 /// A filter for collection items based on descriptor property values

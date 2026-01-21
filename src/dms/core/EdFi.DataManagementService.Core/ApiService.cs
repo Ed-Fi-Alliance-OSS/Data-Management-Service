@@ -242,6 +242,7 @@ internal class ApiService : IApiService
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
             new ProvideAuthorizationSecurableInfoMiddleware(_logger),
+            _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new GetByIdHandler(_serviceProvider, _logger, _resiliencePipeline, _authorizationServiceFactory),
         ]);
 
@@ -265,6 +266,7 @@ internal class ApiService : IApiService
             new ValidateQueryMiddleware(_logger, _appSettings.Value.MaximumPageSize),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ProvideAuthorizationFiltersMiddleware(_authorizationServiceFactory, _logger),
+            _serviceProvider.GetRequiredService<ProfileFilteringMiddleware>(),
             new QueryRequestHandler(_serviceProvider, _logger, _resiliencePipeline),
         ]);
 
