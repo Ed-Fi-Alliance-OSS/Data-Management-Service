@@ -57,7 +57,7 @@ window.EdFiRouteContext = function () {
         return specWrapper;
     };
 
-    onst scheduleRebuild = () => {
+    const scheduleRebuild = () => {
         if (state.rebuildTimeout) {
             clearTimeout(state.rebuildTimeout);
         }
@@ -339,17 +339,10 @@ window.EdFiRouteContext = function () {
     };
 
     const slugify = (value) =>
-            .replace(/-/g, ' ')
-            .replace(/_/g, ' ')
-            .trim()
-            .toLowerCase();
-        const words = spaced.split(/\s+/).map((word) => {
-            if (word.length === 0) {
-                return word;
-            }
-            return word.charAt(0).toUpperCase() + word.slice(1);
-        });
-        return words.join(' ');
+        String(value || '')
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-|-$/g, '');
 
     const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -361,6 +354,13 @@ window.EdFiRouteContext = function () {
         min-height: 36px;
         background-color: #fff;
         color: #1f2937;
+    `;
+
+    return {
+        statePlugins: {
+            spec: {
+                wrapActions: {
+                    updateSpec: (oriAction, system) => (...args) => {
                         try {
                             if (args && args.length > 0) {
                                 let spec = args[0];
@@ -392,16 +392,7 @@ window.EdFiRouteContext = function () {
                         }
 
                         const result = oriAction(...args);
-                                        typeof server.url === 'string'
-                                            ? server.url.replace('dms-config-service', 'localhost')
-                                            : server.url,
-                                }));
-                            }
-                        } catch (error) {
-                            console.warn('Route context plugin failed to normalize server host:', error);
-                        }
-
-                        scheduleRebuild(system);
+                        scheduleRebuild();
                         return result;
                     },
                 },
