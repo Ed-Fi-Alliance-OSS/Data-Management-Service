@@ -55,15 +55,25 @@ internal class ProvideApiSchemaMiddleware(
                         .SelectRequiredNodeFromPath("$.projectSchema.resourceSchemas", logger)
                         .SelectNodesFromPropertyValues();
 
-                    // Handle jsonSchemaForInsert. properties separately with new logic
-                    MergeJsonSchemaForInsertProperties(extensionResources, coreResources, logger);
+                    // Build the core resource lookup once per extension and reuse for all nodeKeys.
+                    Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(
+                        coreResource => coreResource.GetRequiredNode("resourceName").GetValue<string>()
+                    );
+
+                    // Handle jsonSchemaForInsert.properties separately with new logic
+                    MergeJsonSchemaForInsertProperties(extensionResources, coreResourceByName, logger);
 
                     // Iterates over a list of node keys and calls
                     // CopyResourceExtensionNodeToCore for each key, transferring
                     // data from extensionResources to coreResources
                     foreach (var nodeKey in nodeKeys)
                     {
-                        CopyResourceExtensionNodeToCore(extensionResources, coreResources, nodeKey);
+                        CopyResourceExtensionNodeToCore(
+                            extensionResources,
+                            nodeKey,
+                            coreResourceByName,
+                            logger
+                        );
                     }
                 }
 
@@ -133,14 +143,10 @@ internal class ProvideApiSchemaMiddleware(
     /// </summary>
     private static void MergeJsonSchemaForInsertProperties(
         List<JsonNode> extensionResources,
-        List<JsonNode> coreResources,
+        Dictionary<string, JsonNode> coreResourceByName,
         ILogger logger
     )
     {
-        Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
-            coreResource.GetRequiredNode("resourceName").GetValue<string>()
-        );
-
         foreach (
             JsonNode extensionResource in extensionResources.Where(extensionResource =>
                 extensionResource.GetRequiredNode("isResourceExtension").GetValue<bool>()
@@ -157,6 +163,8 @@ internal class ProvideApiSchemaMiddleware(
 
             try
             {
+                logger.LogDebug("Core resource found for extension: {ResourceName}", resourceName);
+
                 var extensionJsonSchemaForInsert = GetNodeByPath(extensionResource, "jsonSchemaForInsert");
                 var coreJsonSchemaForInsert = GetNodeByPath(coreResource, "jsonSchemaForInsert");
 
@@ -212,15 +220,32 @@ internal class ProvideApiSchemaMiddleware(
                         // Check if this property exists in core schema
                         if (coreProperties.ContainsKey(propertyName))
                         {
+                            logger.LogDebug(
+                                "Core resource found for extension: {ResourceName} and property {PropertyName}",
+                                resourceName,
+                                propertyName
+                            );
                             // Property exists in core - merge _ext into array items if applicable
                             var coreProperty = coreProperties[propertyName] as JsonObject;
                             if (coreProperty != null)
                             {
-                                MergeExtensionIntoArrayItems(coreProperty, extPropertyValue, extensionName);
+                                MergeExtensionIntoArrayItems(
+                                    coreProperty,
+                                    extPropertyValue,
+                                    extensionName,
+                                    propertyName,
+                                    logger
+                                );
                             }
                         }
                         else
                         {
+                            logger.LogDebug(
+                                "Extension property '{PropertyName}' for extension '{ExtensionName}' does not exist in core properties. Adding to root _ext.",
+                                propertyName,
+                                extensionName
+                            );
+
                             // Property doesn't exist in core - add to root _ext
                             EnsureRootExtStructure(coreProperties, extensionName);
 
@@ -239,7 +264,7 @@ internal class ProvideApiSchemaMiddleware(
             {
                 logger.LogWarning(
                     ex,
-                    "Error merging jsonSchemaForInsert. properties for resource: {ResourceName}",
+                    "Error merging jsonSchemaForInsert.properties for resource: {ResourceName}",
                     resourceName
                 );
             }
@@ -249,22 +274,43 @@ internal class ProvideApiSchemaMiddleware(
     /// <summary>
     /// Merges extension properties into array item schemas by adding _ext structure.
     /// This handles cases like addresses where core has an array and extension adds _ext to items.
+    ///
+    /// Note: This method intentionally only handles array types for both core and extension properties.
+    /// If either side is not an array, the merge is skipped and a Debug log is emitted so the case
+    /// is visible during investigation. Non-array merging (for nested objects with _ext) is not
+    /// currently supported here.
     /// </summary>
     private static void MergeExtensionIntoArrayItems(
         JsonObject coreProperty,
         JsonObject extensionProperty,
-        string extensionName
+        string extensionName,
+        string propertyName,
+        ILogger logger
     )
     {
-        // Check if both are arrays
-        if (
-            coreProperty["type"]?.GetValue<string>() != "array"
-            || extensionProperty["type"]?.GetValue<string>() != "array"
-        )
+        // Check if both are arrays; if not, log debug and skip.
+        var coreType = coreProperty["type"]?.GetValue<string>();
+        var extType = extensionProperty["type"]?.GetValue<string>();
+
+        if (coreType != "array" || extType != "array")
         {
+            logger.LogWarning(
+                "Skipping extension merge for property '{PropertyName}' in extension '{ExtensionName}' because core type '{CoreType}' or extension type '{ExtType}' is not 'array'.",
+                propertyName,
+                extensionName,
+                coreType,
+                extType
+            );
             return;
         }
 
+        logger.LogDebug(
+            "Merging extension for property '{PropertyName}' in extension '{ExtensionName}' because core type '{CoreType}' and extension type '{ExtType}' are 'array'.",
+            propertyName,
+            extensionName,
+            coreType,
+            extType
+        );
         var coreItems = coreProperty["items"] as JsonObject;
         var extItems = extensionProperty["items"] as JsonObject;
 
@@ -365,7 +411,7 @@ internal class ProvideApiSchemaMiddleware(
         {
             extObj = new JsonObject
             {
-                ["additionalProperties"] = false,
+                ["additionalProperties"] = true,
                 ["description"] = "Extension properties",
                 ["properties"] = new JsonObject(),
                 ["type"] = "object",
@@ -383,7 +429,7 @@ internal class ProvideApiSchemaMiddleware(
         {
             extPropsObj[extensionName] = new JsonObject
             {
-                ["additionalProperties"] = false,
+                ["additionalProperties"] = true,
                 ["description"] = $"{extensionName} extension properties",
                 ["properties"] = new JsonObject(),
                 ["type"] = "object",
@@ -397,23 +443,28 @@ internal class ProvideApiSchemaMiddleware(
     /// </summary>
     private static void CopyResourceExtensionNodeToCore(
         List<JsonNode> extensionResources,
-        List<JsonNode> coreResources,
-        string nodeKey
+        string nodeKey,
+        Dictionary<string, JsonNode> coreResourceByName,
+        ILogger logger
     )
     {
-        Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
-            coreResource.GetRequiredNode("resourceName").GetValue<string>()
-        );
-
         foreach (
             JsonNode extensionResource in extensionResources.Where(extensionResource =>
                 extensionResource.GetRequiredNode("isResourceExtension").GetValue<bool>()
             )
         )
         {
-            var coreResource = coreResourceByName[
-                extensionResource.GetRequiredNode("resourceName").GetValue<string>()
-            ];
+            var resourceName = extensionResource.GetRequiredNode("resourceName").GetValue<string>();
+
+            if (!coreResourceByName.TryGetValue(resourceName, out var coreResource))
+            {
+                logger.LogWarning(
+                    "Core resource not found for extension when copying node '{NodeKey}': {ResourceName}",
+                    nodeKey,
+                    resourceName
+                );
+                continue;
+            }
 
             var sourceExtensionNode = GetNodeByPath(extensionResource, nodeKey);
 
@@ -424,7 +475,7 @@ internal class ProvideApiSchemaMiddleware(
             switch (nodeValueKind)
             {
                 case JsonValueKind.Object:
-                    MergeExtensionObjectIntoCore(sourceExtensionNode, targetCoreNode);
+                    MergeExtensionObjectIntoCore(sourceExtensionNode, targetCoreNode, logger);
                     break;
                 case JsonValueKind.Array:
                     var targetArray = targetCoreNode.AsArray();
@@ -444,27 +495,54 @@ internal class ProvideApiSchemaMiddleware(
     /// <summary>
     /// Merges JSON object properties from an extension schema into a core schema object.
     /// </summary>
-    private static void MergeExtensionObjectIntoCore(JsonNode sourceExtensionNode, JsonNode targetCoreNode)
+    private static void MergeExtensionObjectIntoCore(
+        JsonNode sourceExtensionNode,
+        JsonNode targetCoreNode,
+        ILogger logger
+    )
     {
         var targetObject = targetCoreNode.AsObject();
         foreach (KeyValuePair<string, JsonNode?> sourceObject in sourceExtensionNode.AsObject())
         {
+            // Clone the source value once so we don't DeepClone() multiple times while pattern-matching.
+            JsonNode? clonedSourceValue = sourceObject.Value?.DeepClone();
+
             // If _ext exists in the target, merge its properties from the source.
             // Otherwise, add _ext with its properties.
             if (
                 string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase)
                 && targetObject["_ext"]?["properties"] is JsonObject existingProps
-                && sourceObject.Value?.DeepClone()?["properties"] is JsonObject newProps
+                && clonedSourceValue?["properties"] is JsonObject newProps
             )
             {
                 foreach (var item in newProps)
                 {
+                    // If the extension property key already exists, log a warning and skip to avoid silently overwriting.
+                    if (existingProps.ContainsKey(item.Key))
+                    {
+                        logger.LogDebug(
+                            "Extension property key '{PropertyKey}' already exists in target _ext properties; skipping overwrite.",
+                            item.Key
+                        );
+                        continue;
+                    }
+
+                    // Clone each item value when assigning into target to keep ownership semantics.
                     existingProps[item.Key] = item.Value?.DeepClone();
                 }
             }
             else if (!targetObject.ContainsKey(sourceObject.Key))
             {
-                targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
+                // For non-_ext entries, add the cloned value (or null) to the target.
+                targetObject.Add(new(sourceObject.Key, clonedSourceValue));
+            }
+            else
+            {
+                // If target already contains a non-_ext key, optionally log to make conflicts visible.
+                logger.LogDebug(
+                    "Target already contains key '{Key}', leaving existing value unchanged.",
+                    sourceObject.Key
+                );
             }
         }
     }

@@ -352,7 +352,7 @@ public class ProvideApiSchemaMiddlewareTests
                                 )
                         )
                     )
-                    .Required("contactUniqueId", "firstName", "lastSurname")
+                    .Required("contactUniqueId", "firstName")
                     .Build()
             )
             .WithBooleanJsonPaths(["$._ext.sample.isSportsFan"])
@@ -640,9 +640,9 @@ public class ProvideApiSchemaMiddlewareTests
             .WithStartProject("Ed-Fi", "5.0.0")
             .WithStartResource("School")
             .WithJsonSchemaForInsert(new JsonSchemaBuilder().Type(SchemaValueType.Object).Build())
-            .WithEqualityConstraints(
-                [new(new JsonPath("$.schoolReference.schoolId"), new JsonPath("$.sessionReference.schoolId"))]
-            )
+            .WithEqualityConstraints([
+                new(new JsonPath("$.schoolReference.schoolId"), new JsonPath("$.sessionReference.schoolId")),
+            ])
             .WithJsonSchemaForInsert(
                 new JsonSchemaBuilder()
                     .Properties(
@@ -659,14 +659,12 @@ public class ProvideApiSchemaMiddlewareTests
             .WithEndProject()
             .WithStartProject("tpdm", "5.0.0")
             .WithStartResource("School", isResourceExtension: true)
-            .WithEqualityConstraints(
-                [
-                    new(
-                        new JsonPath("$.evaluationObjectiveRatingReference.evaluationTitle"),
-                        new JsonPath("$.evaluationElementReference.evaluationTitle")
-                    ),
-                ]
-            )
+            .WithEqualityConstraints([
+                new(
+                    new JsonPath("$.evaluationObjectiveRatingReference.evaluationTitle"),
+                    new JsonPath("$.evaluationElementReference.evaluationTitle")
+                ),
+            ])
             .WithJsonSchemaForInsert(
                 new JsonSchemaBuilder()
                     .Properties(
@@ -764,9 +762,10 @@ public class ProvideApiSchemaMiddlewareTests
                     )
                     .Build()
             )
-            .WithBooleanJsonPaths(
-                ["$._ext.sample.cteProgramService.primaryIndicator", "$._ext.sample.isExemplary"]
-            )
+            .WithBooleanJsonPaths([
+                "$._ext.sample.cteProgramService.primaryIndicator",
+                "$._ext.sample.isExemplary",
+            ])
             .WithStartDocumentPathsMapping()
             .WithDocumentPathReference(
                 "DirectlyOwnedBus",
