@@ -5,13 +5,16 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 
@@ -23,14 +26,46 @@ public class ProfileWriteValidationMiddlewareTests
 {
     private static ProfileWriteValidationMiddleware CreateMiddleware(
         IProfileResponseFilter? filter = null,
-        IProfileCreatabilityValidator? creatabilityValidator = null
+        IProfileCreatabilityValidator? creatabilityValidator = null,
+        IDocumentStoreRepository? documentStoreRepository = null
     )
     {
+        var services = new ServiceCollection();
+        if (documentStoreRepository != null)
+        {
+            services.AddSingleton(documentStoreRepository);
+        }
+        else
+        {
+            services.AddSingleton<IDocumentStoreRepository>(new StubDocumentStoreRepository());
+        }
+        var serviceProvider = services.BuildServiceProvider();
+
         return new ProfileWriteValidationMiddleware(
             filter ?? new ProfileResponseFilter(),
             creatabilityValidator ?? new ProfileCreatabilityValidator(),
+            serviceProvider,
             NullLogger<ProfileWriteValidationMiddleware>.Instance
         );
+    }
+
+    /// <summary>
+    /// Stub repository that returns not found for all get requests.
+    /// Used for POST tests where the merge logic won't be triggered.
+    /// </summary>
+    private sealed class StubDocumentStoreRepository : IDocumentStoreRepository
+    {
+        public Task<UpsertResult> UpsertDocument(IUpsertRequest upsertRequest) =>
+            throw new NotImplementedException();
+
+        public Task<GetResult> GetDocumentById(IGetRequest getRequest) =>
+            Task.FromResult<GetResult>(new GetResult.GetFailureNotExists());
+
+        public Task<UpdateResult> UpdateDocumentById(IUpdateRequest updateRequest) =>
+            throw new NotImplementedException();
+
+        public Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest) =>
+            throw new NotImplementedException();
     }
 
     private static RequestInfo CreateRequestInfo(

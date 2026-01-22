@@ -6,7 +6,9 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
@@ -150,6 +152,10 @@ public class ApiServiceHotReloadIntegrationTests
 
         // Register Profile Write Validation services
         services.AddSingleton<IProfileCreatabilityValidator, ProfileCreatabilityValidator>();
+        var fakeDocumentStoreRepository = A.Fake<IDocumentStoreRepository>();
+        A.CallTo(() => fakeDocumentStoreRepository.GetDocumentById(A<IGetRequest>._))
+            .Returns(Task.FromResult<GetResult>(new GetResult.GetFailureNotExists()));
+        services.AddSingleton<IDocumentStoreRepository>(fakeDocumentStoreRepository);
         services.AddTransient<ProfileWriteValidationMiddleware>();
         services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
             NullLogger<ProfileWriteValidationMiddleware>.Instance
