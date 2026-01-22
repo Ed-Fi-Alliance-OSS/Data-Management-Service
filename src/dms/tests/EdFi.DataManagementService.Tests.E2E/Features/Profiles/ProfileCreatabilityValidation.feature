@@ -34,6 +34,37 @@ Feature: Profile Creatability Validation
              And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
              And the response body should have error message "Profile definition for 'E2E-Test-School-Write-ExcludeRequired'"
 
+    Rule: POST with IncludeOnly profile omitting required field returns data-policy-enforced error
+
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-IncludeOnlyMissingRequired" and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
+
+        Scenario: 02 POST with IncludeOnly profile omitting required field returns 400 with data-policy-enforced error
+            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnlyMissingRequired" for resource "School" with body
+                  """
+                  {
+                      "schoolId": 99000704,
+                      "nameOfInstitution": "Test School IncludeOnly Missing Required",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 400
+             And the response body should have error type "urn:ed-fi:api:data-policy-enforced"
+             And the response body should have error message "Profile definition for 'E2E-Test-School-Write-IncludeOnlyMissingRequired'"
+
     Rule: POST with profile excluding required collection returns data-policy-enforced error
 
         Background:
@@ -43,7 +74,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        Scenario: 02 POST with profile excluding required collection returns 400 with data-policy-enforced error
+        Scenario: 03 POST with profile excluding required collection returns 400 with data-policy-enforced error
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-ExcludeRequiredCollection" for resource "School" with body
                   """
                   {
@@ -74,7 +105,7 @@ Feature: Profile Creatability Validation
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
-        Scenario: 03 PUT with profile excluding required field succeeds
+        Scenario: 04 PUT with profile excluding required field succeeds
             # First create a school without the profile (using a profile that includes all fields)
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
                   """
@@ -121,3 +152,70 @@ Feature: Profile Creatability Validation
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-ExcludeRequired" for resource "School"
             Then the profile response status is 200
              And the response body should contain fields "schoolId, nameOfInstitution, shortNameOfInstitution"
+
+    Rule: POST with IncludeAll profile succeeds because no required fields are excluded
+
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-IncludeAll" and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
+
+        Scenario: 05 POST with IncludeAll profile succeeds
+            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body
+                  """
+                  {
+                      "schoolId": 99000705,
+                      "nameOfInstitution": "Test School IncludeAll Success",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 201
+
+    Rule: POST with CollectionRule on required collection succeeds because collection is filtered not excluded
+
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-RequiredCollectionWithRule" and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                       |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Tenth grade                      |
+
+        Scenario: 06 POST with CollectionRule on required collection succeeds and filters collection items
+            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School" with body
+                  """
+                  {
+                      "schoolId": 99000706,
+                      "nameOfInstitution": "Test School CollectionRule Success",
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ],
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"
+                          },
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 201
+            # Verify the collection was filtered (only Ninth grade should remain)
+            When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-RequiredCollectionWithRule" for resource "School"
+            Then the profile response status is 200
+             And the "gradeLevels" collection should have 1 item
+             And the "gradeLevels" collection should only contain items where "gradeLevelDescriptor" is "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade"

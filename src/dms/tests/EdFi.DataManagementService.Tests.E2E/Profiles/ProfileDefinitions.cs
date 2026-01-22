@@ -310,6 +310,64 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
+    /// Profile for School with WriteContentType using IncludeOnly that omits the required nameOfInstitution field.
+    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// </summary>
+    public const string SchoolWriteIncludeOnlyMissingRequiredName =
+        "E2E-Test-School-Write-IncludeOnlyMissingRequired";
+
+    public const string SchoolWriteIncludeOnlyMissingRequiredXml = """
+        <Profile name="E2E-Test-School-Write-IncludeOnlyMissingRequired">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeOnly">
+                    <Property name="shortNameOfInstitution"/>
+                    <Property name="webSite"/>
+                    <Collection name="educationOrganizationCategories" memberSelection="IncludeAll"/>
+                    <Collection name="gradeLevels" memberSelection="IncludeAll"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType using IncludeAll.
+    /// POST requests should succeed because no required fields are excluded.
+    /// </summary>
+    public const string SchoolWriteIncludeAllName = "E2E-Test-School-Write-IncludeAll";
+
+    public const string SchoolWriteIncludeAllXml = """
+        <Profile name="E2E-Test-School-Write-IncludeAll">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType that has a CollectionRule on the required gradeLevels collection.
+    /// The collection is filtered (not excluded), so POST requests should succeed.
+    /// </summary>
+    public const string SchoolWriteRequiredCollectionWithRuleName =
+        "E2E-Test-School-Write-RequiredCollectionWithRule";
+
+    public const string SchoolWriteRequiredCollectionWithRuleXml = """
+        <Profile name="E2E-Test-School-Write-RequiredCollectionWithRule">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeAll">
+                        <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+                            <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+                        </Filter>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
     public static IReadOnlyList<(string Name, string Xml)> AllProfiles =>
@@ -331,5 +389,8 @@ public static class ProfileDefinitions
             // Creatability validation profiles
             (SchoolWriteExcludeRequiredName, SchoolWriteExcludeRequiredXml),
             (SchoolWriteExcludeRequiredCollectionName, SchoolWriteExcludeRequiredCollectionXml),
+            (SchoolWriteIncludeOnlyMissingRequiredName, SchoolWriteIncludeOnlyMissingRequiredXml),
+            (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
+            (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
         ];
 }
