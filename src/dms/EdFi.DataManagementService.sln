@@ -48,13 +48,13 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.OpenApiGenerator.Tests.Integration", "clis\EdFi.DataManagementService.OpenApiGenerator.Tests.Integration\EdFi.DataManagementService.OpenApiGenerator.Tests.Integration.csproj", "{116E8864-FF2F-B2C0-8009-741468CA9346}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Postgresql", "backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj", "{1BCE8257-DDEC-4788-BE96-3E3B18606379}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql", "backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj", "{1BCE8257-DDEC-4788-BE96-3E3B18606379}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Old.Postgresql", "backend\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj", "{4FB19B9A-9BC4-5F47-462C-A48694BF060A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Old.Postgresql", "backend\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj", "{4FB19B9A-9BC4-5F47-462C-A48694BF060A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj", "{0C5B826C-CE00-40E7-A5EA-A869555DC0C1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration\EdFi.DataManagementService.Backend.Postgresql.Tests.Integration.csproj", "{0C5B826C-CE00-40E7-A5EA-A869555DC0C1}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EdFi.DataManagementService.Old.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Old.Postgresql.Tests.Integration\EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj", "{41C0D449-784A-3A49-ABFC-BAA767EC20BF}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Old.Postgresql.Tests.Integration", "backend\EdFi.DataManagementService.Old.Postgresql.Tests.Integration\EdFi.DataManagementService.Old.Postgresql.Tests.Integration.csproj", "{41C0D449-784A-3A49-ABFC-BAA767EC20BF}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
