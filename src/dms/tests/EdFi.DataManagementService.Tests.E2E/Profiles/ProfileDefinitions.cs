@@ -291,6 +291,25 @@ public static class ProfileDefinitions
         """;
 
     /// <summary>
+    /// Profile for School with WriteContentType that excludes the required educationOrganizationCategories collection.
+    /// Uses Property element (not Collection element) to fully exclude the collection.
+    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// </summary>
+    public const string SchoolWriteExcludeRequiredCollectionName =
+        "E2E-Test-School-Write-ExcludeRequiredCollection";
+
+    public const string SchoolWriteExcludeRequiredCollectionXml = """
+        <Profile name="E2E-Test-School-Write-ExcludeRequiredCollection">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="ExcludeOnly">
+                    <Property name="educationOrganizationCategories"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
     public static IReadOnlyList<(string Name, string Xml)> AllProfiles =>
@@ -311,5 +330,6 @@ public static class ProfileDefinitions
             (SchoolWriteGradeLevelFilterName, SchoolWriteGradeLevelFilterXml),
             // Creatability validation profiles
             (SchoolWriteExcludeRequiredName, SchoolWriteExcludeRequiredXml),
+            (SchoolWriteExcludeRequiredCollectionName, SchoolWriteExcludeRequiredCollectionXml),
         ];
 }

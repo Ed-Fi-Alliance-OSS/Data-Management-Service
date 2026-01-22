@@ -363,4 +363,53 @@ public class ProfileCreatabilityValidatorTests
             _result.Should().NotContain("gradeLevels");
         }
     }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_ExcludeOnly_With_Required_Collection_As_Property : ProfileCreatabilityValidatorTests
+    {
+        private IReadOnlyList<string> _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var requiredFields = new List<string>
+            {
+                "schoolId",
+                "nameOfInstitution",
+                "educationOrganizationCategories",
+                "gradeLevels",
+            };
+            var identityPropertyNames = new HashSet<string> { "schoolId" };
+
+            // ExcludeOnly profile that excludes educationOrganizationCategories via Property element
+            // (not Collection element) - this fully excludes the collection
+            var contentType = CreateContentType(
+                MemberSelection.ExcludeOnly,
+                properties: [new PropertyRule("educationOrganizationCategories")]
+            );
+
+            _result = Validator.GetExcludedRequiredFields(requiredFields, contentType, identityPropertyNames);
+        }
+
+        [Test]
+        public void It_returns_the_excluded_required_collection()
+        {
+            // educationOrganizationCategories is excluded via Property, not handled by a CollectionRule
+            _result.Should().Contain("educationOrganizationCategories");
+        }
+
+        [Test]
+        public void It_does_not_return_non_excluded_required_fields()
+        {
+            _result.Should().NotContain("nameOfInstitution");
+            _result.Should().NotContain("gradeLevels");
+        }
+
+        [Test]
+        public void It_does_not_return_identity_fields()
+        {
+            _result.Should().NotContain("schoolId");
+        }
+    }
 }
