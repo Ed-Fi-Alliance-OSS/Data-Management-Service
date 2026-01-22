@@ -266,6 +266,30 @@ public static class ProfileDefinitions
         </Profile>
         """;
 
+    // ================================================================================
+    // CREATABILITY VALIDATION PROFILES
+    // These profiles have WriteContentType that excludes required fields.
+    // POST requests with these profiles should fail with data-policy-enforced error.
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for School with WriteContentType that excludes the required nameOfInstitution field.
+    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// PUT requests should succeed because existing resources already have the value.
+    /// </summary>
+    public const string SchoolWriteExcludeRequiredName = "E2E-Test-School-Write-ExcludeRequired";
+
+    public const string SchoolWriteExcludeRequiredXml = """
+        <Profile name="E2E-Test-School-Write-ExcludeRequired">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="ExcludeOnly">
+                    <Property name="nameOfInstitution"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
     /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
@@ -285,5 +309,7 @@ public static class ProfileDefinitions
             (SchoolWriteIncludeOnlyName, SchoolWriteIncludeOnlyXml),
             (SchoolWriteExcludeOnlyName, SchoolWriteExcludeOnlyXml),
             (SchoolWriteGradeLevelFilterName, SchoolWriteGradeLevelFilterXml),
+            // Creatability validation profiles
+            (SchoolWriteExcludeRequiredName, SchoolWriteExcludeRequiredXml),
         ];
 }

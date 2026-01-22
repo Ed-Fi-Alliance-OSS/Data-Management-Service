@@ -21,17 +21,22 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
 [Parallelizable]
 public class ProfileWriteValidationMiddlewareTests
 {
-    private static ProfileWriteValidationMiddleware CreateMiddleware(IProfileResponseFilter? filter = null)
+    private static ProfileWriteValidationMiddleware CreateMiddleware(
+        IProfileResponseFilter? filter = null,
+        IProfileCreatabilityValidator? creatabilityValidator = null
+    )
     {
         return new ProfileWriteValidationMiddleware(
             filter ?? new ProfileResponseFilter(),
+            creatabilityValidator ?? new ProfileCreatabilityValidator(),
             NullLogger<ProfileWriteValidationMiddleware>.Instance
         );
     }
 
     private static RequestInfo CreateRequestInfo(
         RequestMethod method = RequestMethod.POST,
-        string resourceName = "Student"
+        string resourceName = "Student",
+        string[]? requiredFields = null
     )
     {
         var frontendRequest = new FrontendRequest(
@@ -43,11 +48,25 @@ public class ProfileWriteValidationMiddlewareTests
             RouteQualifiers: []
         );
 
+        // Build jsonSchemaForInsert with required array
+        var jsonSchemaForInsert = new JsonObject { ["type"] = "object", ["properties"] = new JsonObject() };
+
+        if (requiredFields != null && requiredFields.Length > 0)
+        {
+            var requiredArray = new JsonArray();
+            foreach (var field in requiredFields)
+            {
+                requiredArray.Add(field);
+            }
+            jsonSchemaForInsert["required"] = requiredArray;
+        }
+
         var resourceSchema = new ResourceSchema(
             new JsonObject
             {
                 ["resourceName"] = resourceName,
                 ["identityJsonPaths"] = new JsonArray { "$.studentUniqueId" },
+                ["jsonSchemaForInsert"] = jsonSchemaForInsert,
             }
         );
 
@@ -595,6 +614,204 @@ public class ProfileWriteValidationMiddlewareTests
         {
             var body = _requestInfo.ParsedBody as JsonObject;
             body!["id"]?.GetValue<string>().Should().Be("12345678-1234-1234-1234-123456789012");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_POST_With_Profile_Excluding_Required_Field : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create request with required fields including "lastName"
+            _requestInfo = CreateRequestInfo(
+                method: RequestMethod.POST,
+                resourceName: "Student",
+                requiredFields: ["studentUniqueId", "firstName", "lastName"]
+            );
+
+            // Profile that excludes lastName (a required field)
+            _requestInfo.ProfileContext = CreateWriteProfileContext(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("firstName")]
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["studentUniqueId"] = "STU001",
+                ["firstName"] = "John",
+                ["lastName"] = "Doe",
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_next()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_400_status()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_returns_data_policy_enforced_error_type()
+        {
+            var body = _requestInfo.FrontendResponse.Body as JsonObject;
+            body!["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:data-policy-enforced");
+        }
+
+        [Test]
+        public void It_returns_error_message_with_profile_name()
+        {
+            var body = _requestInfo.FrontendResponse.Body as JsonObject;
+            var errors = body!["errors"] as JsonArray;
+            errors.Should().NotBeNull();
+            errors!.Count.Should().Be(1);
+            errors[0]?.GetValue<string>().Should().Contain("TestWriteProfile");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_PUT_With_Profile_Excluding_Required_Field : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create request with required fields including "lastName"
+            _requestInfo = CreateRequestInfo(
+                method: RequestMethod.PUT,
+                resourceName: "Student",
+                requiredFields: ["studentUniqueId", "firstName", "lastName"]
+            );
+
+            // Profile that excludes lastName (a required field)
+            _requestInfo.ProfileContext = CreateWriteProfileContext(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("firstName")]
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["id"] = "12345678-1234-1234-1234-123456789012",
+                ["studentUniqueId"] = "STU001",
+                ["firstName"] = "John",
+                ["lastName"] = "Doe",
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            // PUT requests skip the creatability check
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_strips_excluded_fields()
+        {
+            // Normal filtering still applies
+            var body = _requestInfo.ParsedBody as JsonObject;
+            body!["lastName"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_preserves_allowed_fields()
+        {
+            var body = _requestInfo.ParsedBody as JsonObject;
+            body!["firstName"]?.GetValue<string>().Should().Be("John");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_POST_With_Profile_Including_All_Required_Fields : ProfileWriteValidationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = null!;
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Create request with required fields
+            _requestInfo = CreateRequestInfo(
+                method: RequestMethod.POST,
+                resourceName: "Student",
+                requiredFields: ["studentUniqueId", "firstName"]
+            );
+
+            // Profile that includes all required fields
+            _requestInfo.ProfileContext = CreateWriteProfileContext(
+                MemberSelection.IncludeOnly,
+                [new PropertyRule("firstName")]
+            );
+
+            _requestInfo.ParsedBody = new JsonObject
+            {
+                ["studentUniqueId"] = "STU001",
+                ["firstName"] = "John",
+                ["lastName"] = "Doe",
+            };
+
+            _nextCalled = false;
+            var middleware = CreateMiddleware();
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_next()
+        {
+            _nextCalled.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_performs_normal_filtering()
+        {
+            var body = _requestInfo.ParsedBody as JsonObject;
+            body!["lastName"].Should().BeNull();
+            body["firstName"]?.GetValue<string>().Should().Be("John");
         }
     }
 }

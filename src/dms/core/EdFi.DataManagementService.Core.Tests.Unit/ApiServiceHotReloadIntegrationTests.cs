@@ -149,6 +149,7 @@ public class ApiServiceHotReloadIntegrationTests
         );
 
         // Register Profile Write Validation services
+        services.AddSingleton<IProfileCreatabilityValidator, ProfileCreatabilityValidator>();
         services.AddTransient<ProfileWriteValidationMiddleware>();
         services.AddTransient<ILogger<ProfileWriteValidationMiddleware>>(_ =>
             NullLogger<ProfileWriteValidationMiddleware>.Instance
