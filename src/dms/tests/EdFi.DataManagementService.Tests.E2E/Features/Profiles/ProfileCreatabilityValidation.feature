@@ -147,7 +147,7 @@ Feature: Profile Creatability Validation
                       ]
                   }
                   """
-            Then the profile response status is 200
+            Then the profile response status is 204
             # Verify the update succeeded - nameOfInstitution should be stripped but existing value preserved
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-ExcludeRequired" for resource "School"
             Then the profile response status is 200
