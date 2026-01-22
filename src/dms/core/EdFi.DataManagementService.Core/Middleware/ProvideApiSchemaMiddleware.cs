@@ -82,16 +82,23 @@ internal class ProvideApiSchemaMiddleware(
                 {
                     try
                     {
-                        var jsonSchemaForInsert = coreResource.GetRequiredNode("jsonSchemaForInsert");
+                        var jsonSchemaForInsertNode = coreResource.GetRequiredNode("jsonSchemaForInsert") as JsonObject;
 
-                        if (jsonSchemaForInsert is JsonObject schemaObj && !schemaObj.ContainsKey("required"))
+                        if (jsonSchemaForInsertNode != null && !jsonSchemaForInsertNode.ContainsKey("required"))
                         {
-                            schemaObj["required"] = new JsonArray();
+                            jsonSchemaForInsertNode["required"] = new JsonArray();
                         }
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        // Expected scenario when jsonSchemaForInsert is not present for a resource
+                        logger.LogWarning(ex, "jsonSchemaForInsert node not found while ensuring required array exists for resource");
                     }
                     catch (Exception ex)
                     {
-                        logger.LogWarning(ex, "Error ensuring required array exists for resource");
+                        // Unexpected schema structure issues should be treated as errors
+                        logger.LogError(ex, "Unexpected error while ensuring required array exists for resource");
+                        throw;
                     }
                 }
 
@@ -254,7 +261,19 @@ internal class ProvideApiSchemaMiddleware(
                                 is JsonObject targetExtProps
                             )
                             {
-                                targetExtProps[propertyName] = extPropertyValue.DeepClone();
+                                if (targetExtProps.ContainsKey(propertyName))
+                                {
+                                    logger.LogWarning(
+                                        "Duplicate extension property '{PropertyName}' for extension '{ExtensionName}' on resource '{ResourceName}'. Existing definition will be preserved.",
+                                        propertyName,
+                                        extensionName,
+                                        resourceName
+                                    );
+                                }
+                                else
+                                {
+                                    targetExtProps[propertyName] = extPropertyValue.DeepClone();
+                                }
                             }
                         }
                     }
@@ -341,6 +360,14 @@ internal class ProvideApiSchemaMiddleware(
         {
             foreach (var prop in sourceProps)
             {
+                if (targetProps.ContainsKey(prop.Key))
+                {
+                    logger.LogWarning(
+                        "Extension property '{PropertyName}' in extension '{ExtensionName}' is being overwritten in the merged schema.",
+                        prop.Key,
+                        extensionName
+                    );
+                }
                 targetProps[prop.Key] = prop.Value?.DeepClone();
             }
         }
@@ -517,6 +544,12 @@ internal class ProvideApiSchemaMiddleware(
             {
                 foreach (var item in newProps)
                 {
+                    if (existingProps.ContainsKey(item.Key))
+                    {
+                        throw new InvalidOperationException(
+                            $"Duplicate extension property key '{item.Key}' detected while merging '_ext' properties."
+                        );
+                    }
                     // If the extension property key already exists, log a warning and skip to avoid silently overwriting.
                     if (existingProps.ContainsKey(item.Key))
                     {
@@ -542,6 +575,20 @@ internal class ProvideApiSchemaMiddleware(
                 logger.LogDebug(
                     "Target already contains key '{Key}', leaving existing value unchanged.",
                     sourceObject.Key
+                );
+            }
+            else if (
+                !string.Equals(
+                    sourceObject.Key,
+                    "_ext",
+                    StringComparison.InvariantCultureIgnoreCase
+                )
+            )
+            {
+                // A duplicate non-_ext property was found. Keep the existing core value,
+                // but emit a warning to help diagnose potential schema configuration issues.
+                System.Console.WriteLine(
+                    $"Warning: Duplicate property '{sourceObject.Key}' encountered while merging extension schema into core schema. Existing core value will be preserved."
                 );
             }
         }
