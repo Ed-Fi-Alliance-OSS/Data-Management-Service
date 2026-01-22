@@ -99,14 +99,15 @@ Feature: Profile Creatability Validation
     Rule: PUT with profile excluding required fields succeeds because existing resource has the value
 
         Background:
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-IncludeOnly" and namespacePrefixes "uri://ed-fi.org"
+            # Authorize with BOTH profiles so the same DMS instance is used throughout
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-Write-IncludeOnly, E2E-Test-School-Write-ExcludeRequired" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                       |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
                   | uri://ed-fi.org/GradeLevelDescriptor#Ninth grade                      |
 
         Scenario: 04 PUT with profile excluding required field succeeds
-            # First create a school without the profile (using a profile that includes all fields)
+            # First create a school using a profile that includes nameOfInstitution
             When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeOnly" for resource "School" with body
                   """
                   {
@@ -126,8 +127,8 @@ Feature: Profile Creatability Validation
                   }
                   """
             Then the profile response status is 201
-            # Now update using a profile that would exclude nameOfInstitution if it were a POST
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-ExcludeRequired" and namespacePrefixes "uri://ed-fi.org"
+            # Now update using a profile that excludes nameOfInstitution - it should still succeed
+            # because PUT merges with the existing document, preserving the excluded field's value
             When a PUT request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-ExcludeRequired" for resource "School" with body
                   """
                   {
@@ -148,7 +149,7 @@ Feature: Profile Creatability Validation
                   }
                   """
             Then the profile response status is 204
-            # Verify the update succeeded - nameOfInstitution should be stripped but existing value preserved
+            # Verify the update succeeded - nameOfInstitution should be preserved from the original document
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-ExcludeRequired" for resource "School"
             Then the profile response status is 200
              And the response body should contain fields "schoolId, nameOfInstitution, shortNameOfInstitution"

@@ -167,6 +167,11 @@ internal class ProfileWriteValidationMiddleware(
         if (getResult is GetFailureNotExists)
         {
             // Document doesn't exist - let the normal update handler return 404
+            logger.LogDebug(
+                "GetDocumentById returned NotExists for document {DocumentUuid} - {TraceId}",
+                requestInfo.PathComponents.DocumentUuid.Value,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
             return filteredBody;
         }
 
@@ -184,6 +189,10 @@ internal class ProfileWriteValidationMiddleware(
         var existingDoc = success.EdfiDoc as JsonObject;
         if (existingDoc == null)
         {
+            logger.LogDebug(
+                "Existing document is null or not a JsonObject - {TraceId}",
+                requestInfo.FrontendRequest.TraceId.Value
+            );
             return filteredBody;
         }
 
