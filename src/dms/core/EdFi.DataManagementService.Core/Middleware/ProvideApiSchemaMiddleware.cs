@@ -82,23 +82,24 @@ internal class ProvideApiSchemaMiddleware(
                 {
                     try
                     {
-                        var jsonSchemaForInsertNode = coreResource.GetRequiredNode("jsonSchemaForInsert") as JsonObject;
+                        var jsonSchemaForInsertNode =
+                            coreResource.GetRequiredNode("jsonSchemaForInsert") as JsonObject;
 
-                        if (jsonSchemaForInsertNode != null && !jsonSchemaForInsertNode.ContainsKey("required"))
+                        if (
+                            jsonSchemaForInsertNode != null
+                            && !jsonSchemaForInsertNode.ContainsKey("required")
+                        )
                         {
                             jsonSchemaForInsertNode["required"] = new JsonArray();
                         }
                     }
-                    catch (InvalidOperationException ex)
-                    {
-                        // Expected scenario when jsonSchemaForInsert is not present for a resource
-                        logger.LogWarning(ex, "jsonSchemaForInsert node not found while ensuring required array exists for resource");
-                    }
                     catch (Exception ex)
                     {
-                        // Unexpected schema structure issues should be treated as errors
-                        logger.LogError(ex, "Unexpected error while ensuring required array exists for resource");
-                        throw;
+                        // Expected scenario when jsonSchemaForInsert is not present for a resource
+                        logger.LogWarning(
+                            ex,
+                            "jsonSchemaForInsert node not found while ensuring required array exists for resource"
+                        );
                     }
                 }
 
@@ -569,26 +570,19 @@ internal class ProvideApiSchemaMiddleware(
                 // For non-_ext entries, add the cloned value (or null) to the target.
                 targetObject.Add(new(sourceObject.Key, clonedSourceValue));
             }
-            else
+            else if (targetObject.ContainsKey(sourceObject.Key))
             {
-                // If target already contains a non-_ext key, optionally log to make conflicts visible.
                 logger.LogDebug(
                     "Target already contains key '{Key}', leaving existing value unchanged.",
                     sourceObject.Key
                 );
             }
-            else if (
-                !string.Equals(
-                    sourceObject.Key,
-                    "_ext",
-                    StringComparison.InvariantCultureIgnoreCase
-                )
-            )
+            else if (!string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase))
             {
                 // A duplicate non-_ext property was found. Keep the existing core value,
                 // but emit a warning to help diagnose potential schema configuration issues.
                 System.Console.WriteLine(
-                    $"Warning: Duplicate property '{sourceObject.Key}' encountered while merging extension schema into core schema. Existing core value will be preserved."
+                    $"Warning: Target already contains property '{sourceObject.Key}' encountered while merging extension schema into core schema. Existing core value will be preserved."
                 );
             }
         }
