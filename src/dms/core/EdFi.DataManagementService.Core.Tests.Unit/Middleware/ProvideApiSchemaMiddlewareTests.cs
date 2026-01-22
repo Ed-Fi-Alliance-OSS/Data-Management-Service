@@ -413,12 +413,12 @@ public class ProvideApiSchemaMiddlewareTests
 
             var extNode = addressItemProperties["_ext"]!;
             extNode["description"]!.GetValue<string>().Should().Be("Extension properties");
-            extNode["additionalProperties"]!.GetValue<bool>().Should().BeFalse();
+            extNode["additionalProperties"]!.GetValue<bool>().Should().BeTrue();
 
             var sampleExtNode = extNode.GetRequiredNode("properties").GetRequiredNode("sample");
 
             sampleExtNode["description"]!.GetValue<string>().Should().Be("sample extension properties");
-            sampleExtNode["additionalProperties"]!.GetValue<bool>().Should().BeFalse();
+            sampleExtNode["additionalProperties"]!.GetValue<bool>().Should().BeTrue();
 
             var sampleProperties = sampleExtNode.GetRequiredNode("properties").AsObject();
 
