@@ -78,7 +78,7 @@ window.EdFiRouteContext = function () {
 
         state.routeOrder = serverDetails.order;
         state.urlTemplate = serverDetails.urlTemplate;
-    state.selections = buildUpdatedSelections(serverDetails.fields, serverDetails.defaults);
+        state.selections = buildUpdatedSelections(serverDetails.fields, serverDetails.defaults);
 
         renderSelector(serverDetails.fields);
         updateComputedUrl();
@@ -402,30 +402,10 @@ window.EdFiRouteContext = function () {
     };
 
     const slugify = (value) =>
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> f32f4527 (PR feedback)
         String(value || '')
             .toLowerCase()
             .replace(/[^a-z0-9]+/g, '-')
             .replace(/^-|-$/g, '');
-<<<<<<< HEAD
-=======
-            .replace(/-/g, ' ')
-            .replace(/_/g, ' ')
-            .trim()
-            .toLowerCase();
-        const words = spaced.split(/\s+/).map((word) => {
-            if (word.length === 0) {
-                return word;
-            }
-            return word.charAt(0).toUpperCase() + word.slice(1);
-        });
-        return words.join(' ');
->>>>>>> dc43acc6 (Apply copilot review notes)
-=======
->>>>>>> f32f4527 (PR feedback)
 
     const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -437,10 +417,6 @@ window.EdFiRouteContext = function () {
         min-height: 36px;
         background-color: #fff;
         color: #1f2937;
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> f32f4527 (PR feedback)
     `;
 
     return {
@@ -448,11 +424,6 @@ window.EdFiRouteContext = function () {
             spec: {
                 wrapActions: {
                     updateSpec: (oriAction, system) => (...args) => {
-<<<<<<< HEAD
-=======
->>>>>>> dc43acc6 (Apply copilot review notes)
-=======
->>>>>>> f32f4527 (PR feedback)
                         try {
                             if (args && args.length > 0) {
                                 let spec = args[0];
@@ -462,7 +433,6 @@ window.EdFiRouteContext = function () {
                                     try {
                                         spec = JSON.parse(spec);
                                     } catch (parseError) {
-                                        // If parsing fails, leave the spec as-is.
                                         spec = null;
                                     }
                                 }
@@ -478,28 +448,12 @@ window.EdFiRouteContext = function () {
 
                                     args[0] = originalWasString ? JSON.stringify(spec) : spec;
                                 }
-<<<<<<< HEAD
-=======
                             }
                         } catch (error) {
                             console.warn('Route context plugin failed to normalize server host:', error);
                         }
 
                         const result = oriAction(...args);
-<<<<<<< HEAD
-                                        typeof server.url === 'string'
-                                            ? server.url.replace('dms-config-service', 'localhost')
-                                            : server.url,
-                                }));
->>>>>>> dc43acc6 (Apply copilot review notes)
-                            }
-                        } catch (error) {
-                            console.warn('Route context plugin failed to normalize server host:', error);
-                        }
-
-                        const result = oriAction(...args);
-=======
->>>>>>> f32f4527 (PR feedback)
                         scheduleRebuild();
                         return result;
                     },
