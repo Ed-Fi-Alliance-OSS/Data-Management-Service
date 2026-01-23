@@ -84,6 +84,10 @@ When a client's application has **multiple** profiles covering the resource:
 
 - Client **must** specify which profile to use via header
 - Request without profile header returns an error
+  
+**Note:** If the application has one or more profiles but none apply to the
+requested resource/verb, assignment enforcement is skipped; the request proceeds
+without forcing or blocking a profile choice.
 
 ---
 
@@ -187,10 +191,18 @@ With Profile Support:
 4. **Validate authorization**
    - Check if client's application has the profile assigned
    - Handle implicit profile selection
+   - Enforcement: compare chosen (or implicit) profile to the caller's allowed
+  profiles for the target resource/verb; auto-apply when exactly one applicable
+  profile exists; block with 403 if the chosen profile is not assigned or
+  selection is ambiguous
    - If the application has no assigned profiles, skip assignment enforcement
+   - If the application has assigned profiles but none apply to the requested
+  resource/verb, skip assignment enforcement (do not block on an unassigned
+  header in this edge case)
 
 5. **Store in RequestInfo**
    - Add `ProfileContext` to `RequestInfo` for downstream use
+   - Header parsing is evaluated per-request and is not cached
 
 ### 4.3 ProfileContext Data Structure
 
@@ -1193,7 +1205,14 @@ When a profile excludes required members of a child item type:
 ### 9.1 Cache Architecture
 
 DMS caches all profiles for an application in a single cache entry, keyed by
-`TenantId` and `ApplicationId`.
+`TenantId` and `ProfileName`.
+
+Lifecycle expectations:
+
+- Profile definitions are loaded once from CMS and cached with TTL.
+- Parsed profile-specific resource models are built from those definitions and
+cached alongside them with the same TTL.
+- Per-request header parsing remains uncached and is evaluated on every call.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1236,8 +1255,10 @@ DMS caches all profiles for an application in a single cache entry, keyed by
                     │     └── Cache miss:                                     │
                     │         a. Call CMS: GET /v2/applications/{id}/profiles │
                     │         b. Parse all profile XMLs                       │
-                    │         c. Store in cache as Dictionary<Name, Parsed>   │
-                    │         d. Lookup requested profile by name             │
+                    │         c. Build and cache parsed profile definitions and resource models (same TTL) │
+                    │         d. Build/reset profile-specific API metadata/OpenAPI cache entries (pre-warm optional) │
+                    │         e. Store in cache as Dictionary<Name, Parsed>   │
+                    │         f. Lookup requested profile by name             │
                     │                                                         │
                     │  3. Return ProfileContext for pipeline                  │
                     └─────────────────────────────────────────────────────────┘

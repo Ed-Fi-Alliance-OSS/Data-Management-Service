@@ -262,17 +262,14 @@ The existing Application endpoints are extended to support profile assignment:
 
 ## 5. DMS Integration Endpoint
 
-### 5.1 Application Profiles Endpoint
+### 5.1 Profile Retrieval and Caching
 
-DMS needs to fetch all profiles assigned to an application. A single endpoint
-provides this:
+DMS caches the full profile catalog (all profiles) from `/v2/profiles`,
+including profile id, profile name, and profile definition. The catalog is
+keyed for lookups by either id or name, so a single cache can serve:
 
-| Method | Endpoint | Description | Auth |
-|--------|----------|-------------|------|
-| GET | `/v2/applications/{id}/profiles` | Get app profiles | Service |
-
-DMS caches all profiles for an application at once, then resolves profile
-requests from the cache.
+- Fetch by id (e.g., `profilesById[id]`)
+- Fetch by name (case-insensitive lookup)
 
 #### Response
 
@@ -299,10 +296,12 @@ requests from the cache.
 
 ### 5.2 DMS Caching Strategy
 
-1. On first request from a client, DMS calls `GET /v2/applications/{applicationId}/profiles`
-2. DMS caches the full profile array keyed by `applicationId`
-3. Subsequent requests resolve profiles from cache by `profileName`
-4. Cache entries expire based on configured TTL (default: 30 minutes, matching ODS/API)
+1. On first request, DMS calls `GET /v2/profiles` to load and cache the full profile
+catalog (definitions).
+2. DMS parses and caches those profile definitions/resource models.
+3. At request time, DMS can either resolve the requested profile by name or by
+id (if the application is configured for enforcing profiles).
+4. Cache entries share the configured TTL (default: 30 minutes, matching ODS/API).
 
 ---
 
