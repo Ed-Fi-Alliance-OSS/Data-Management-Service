@@ -96,7 +96,7 @@ Notes:
 | E11 | [Delete Path & Conflict Diagnostics](11-delete-path/EPIC.md) | E07, E02 | Delete-by-id + FK conflict mapping + diagnostics |
 | E12 | [Operational Guardrails](12-ops-guardrails/EPIC.md) | E07, E09 (and E10 recommended) | Drift prevention/repair + observability + identity-update fan-out guardrails + benchmarks |
 | E13 | [Test Strategy & Migration](13-test-migration/EPIC.md) | E03, E06–E08, E11 | E2E/integration/parity tests and docs aligned to provisioning model |
-| E14 | [Authorization (Deferred)](14-authorization/EPIC.md) | — | Explicitly deferred; must not block baseline redesign |
+| E14 | [Authorization Design Spike (Relational Primary Store)](14-authorization/EPIC.md) | — | Implementation-ready authorization design (implementation deferred); does not block baseline redesign |
 | E15 | [Runtime Plan Compilation + Caching (Shared)](15-plan-compilation/EPIC.md) | E01, E02 | Dialect-specific compiled plans + runtime cache used by runtime mapping selection and optional pack builders |
 
 ---
@@ -285,13 +285,13 @@ Epic: `13-test-migration/EPIC.md`
 | E13-S03 | [`03-developer-docs.md`](13-test-migration/03-developer-docs.md) | E13-S00 | E03-S00, E05-S03 | Dev docs/runbooks for provisioning, packs (optional), debugging |
 | E13-S04 | [`04-descriptor-tests.md`](13-test-migration/04-descriptor-tests.md) | E07-S06, E08-S05 | E03-S05 | Descriptor integration coverage (writes, queries, optional seeding) |
 
-### E14 — Authorization (Deferred)
+### E14 — Authorization Design Spike (Relational Primary Store)
 
 Epic: `14-authorization/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E14-S00 | [`00-auth-placeholder.md`](14-authorization/00-auth-placeholder.md) | — | — | Placeholder (ensures “auth is deferred” is explicit and enforced) |
+| E14-S00 | [`00-auth-placeholder.md`](14-authorization/00-auth-placeholder.md) | — | — | Authorization design spike (v1); no implementation |
 
 ### E15 — Runtime Plan Compilation + Caching (Shared)
 
