@@ -1,3 +1,8 @@
+---
+jira: DMS-924
+jira_url: https://edfi.atlassian.net/browse/DMS-924
+---
+
 # Story: Deterministic Canonical JSON Serialization
 
 ## Description
@@ -28,4 +33,3 @@ Arrays remain in-order; objects are recursively property-sorted using ordinal st
    1. object property order permutations,
    2. whitespace/line-ending differences,
    3. nested object/array cases.
-

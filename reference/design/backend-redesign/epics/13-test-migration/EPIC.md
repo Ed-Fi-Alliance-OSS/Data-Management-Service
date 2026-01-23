@@ -1,3 +1,9 @@
+---
+jira: DMS-1020
+jira_url: https://edfi.atlassian.net/browse/DMS-1020
+---
+
+
 # Epic: Test Strategy & Migration (Runtime + E2E)
 
 ## Description
@@ -14,8 +20,8 @@ Authorization testing remains out of scope.
 
 ## Stories
 
-- `00-e2e-environment-updates.md` — Update docker/E2E workflow for per-schema provisioning
-- `01-backend-integration-tests.md` — CRUD integration tests against provisioned DBs (pgsql + mssql)
-- `02-parity-and-fixtures.md` — Shared fixtures and parity assertions across engines
-- `03-developer-docs.md` — Update docs/runbooks for the new workflow
-- `04-descriptor-tests.md` — Descriptor-specific integration coverage (writes, queries, seeding)
+- `DMS-1021` — `00-e2e-environment-updates.md` — Update docker/E2E workflow for per-schema provisioning
+- `DMS-1022` — `01-backend-integration-tests.md` — CRUD integration tests against provisioned DBs (pgsql + mssql)
+- `DMS-1023` — `02-parity-and-fixtures.md` — Shared fixtures and parity assertions across engines
+- `DMS-1024` — `03-developer-docs.md` — Update docs/runbooks for the new workflow
+- `DMS-1025` — `04-descriptor-tests.md` — Descriptor-specific integration coverage (writes, queries, seeding)

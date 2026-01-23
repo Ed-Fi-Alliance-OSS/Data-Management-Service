@@ -1,3 +1,8 @@
+---
+jira: DMS-1018
+jira_url: https://edfi.atlassian.net/browse/DMS-1018
+---
+
 # Story: Guardrails for Identity-Update Fan-out and Retry Behavior
 
 ## Description
@@ -10,7 +15,7 @@ Add configurable operational guardrails for identity updates that can cause larg
 - optional transaction timeout / lock timeout guidance,
 - and fail-fast behavior with actionable diagnostics when guardrails are exceeded.
 
-This is informed by risk analysis in `reference/design/backend-redesign/strengths-risks.md`.
+This is informed by risk analysis in `reference/design/backend-redesign/design-docs/strengths-risks.md`.
 
 ## Acceptance Criteria
 

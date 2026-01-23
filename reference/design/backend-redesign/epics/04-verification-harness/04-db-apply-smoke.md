@@ -1,3 +1,8 @@
+---
+jira: DMS-961
+jira_url: https://edfi.atlassian.net/browse/DMS-961
+---
+
 # Story: DB-Apply Smoke Tests (Docker Compose; PGSQL + MSSQL)
 
 ## Description

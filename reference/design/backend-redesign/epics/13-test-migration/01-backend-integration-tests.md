@@ -1,3 +1,8 @@
+---
+jira: DMS-1022
+jira_url: https://edfi.atlassian.net/browse/DMS-1022
+---
+
 # Story: Runtime Integration Tests for Relational Backend (CRUD + Query)
 
 ## Description

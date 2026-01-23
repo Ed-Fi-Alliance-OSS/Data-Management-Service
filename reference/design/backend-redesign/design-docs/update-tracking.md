@@ -87,6 +87,21 @@ When a document’s **identity projection changes**, in the same transaction:
 - set `dms.Document.IdentityLastModifiedAt = now (UTC)`
 - and also treat it as a representation change (update `ContentVersion`/`ContentLastModifiedAt`)
 
+### Initialization on insert (normative)
+
+Inserting a new document is a representation change (and also an identity projection change). Therefore, on `INSERT` of a new `dms.Document` row, the inserted row MUST have:
+
+- `ContentVersion` set to a newly allocated `dms.ChangeVersionSequence` value (unique per inserted document),
+- `IdentityVersion` set to a newly allocated `dms.ChangeVersionSequence` value (unique per inserted document),
+- `ContentLastModifiedAt` and `IdentityLastModifiedAt` set to the insert time (UTC).
+
+Implementation options:
+- **Column defaults** on `dms.Document` that use the sequence (recommended for cross-engine multi-row inserts), plus update-time triggers for later changes.
+- Triggers that stamp inserted rows (ensure they allocate one sequence value per inserted `DocumentId` and do not assign a single statement-level value).
+- Explicit values provided by the write path.
+
+A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/monotonicity requirements for `ChangeVersion` and MUST NOT be treated as correct initialization.
+
 Notes:
 - Multiple updates to the same `DocumentId` in one transaction may allocate multiple sequence values; the only required property is that the final committed stamps are monotonic and correct.
 - FK-cascade updates to propagated identity columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE).

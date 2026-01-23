@@ -1,3 +1,8 @@
+---
+jira: DMS-1007
+jira_url: https://edfi.atlassian.net/browse/DMS-1007
+---
+
 # Story: Change Query API Endpoints (Optional / Future-Facing)
 
 ## Description

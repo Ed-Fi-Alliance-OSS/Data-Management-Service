@@ -1,3 +1,8 @@
+---
+jira: DMS-969
+jira_url: https://edfi.atlassian.net/browse/DMS-969
+---
+
 # Story: Pack ↔ Runtime Compilation Equivalence Tests
 
 ## Description
@@ -15,7 +20,7 @@ This is required to catch:
 
 - For fixtures that enable pack build (`buildMappingPack=true`):
   - Path A: runtime compile → `mappingset.manifest.json`
-  - Path B: pack build → decode → `MappingSet.FromPayload(...)` → `mappingset.manifest.json`
+  - Path B: pack build → decode → `MappingSet.FromPayload(...)` → `mappingset.manifest.json` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`)
   - The manifests match exactly (after normalization).
 - Tests run for both dialects configured by the fixture.
 - Failures show a useful diff of the manifest mismatch.
@@ -31,4 +36,3 @@ This is required to catch:
    - `_ext` mapping.
 3. Add NUnit tests that compare manifests exactly for both dialects.
 4. Add a negative test that intentionally drops/changes a payload field and asserts the equivalence test fails (guardrail).
-

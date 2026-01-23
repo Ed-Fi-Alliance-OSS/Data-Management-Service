@@ -1,3 +1,8 @@
+---
+jira: DMS-989
+jira_url: https://edfi.atlassian.net/browse/DMS-989
+---
+
 # Story: Hydrate Relational Rows Using Multi-Result Queries
 
 ## Description
@@ -8,7 +13,7 @@ Implement the “hydrate root + children” step using a single DB command per r
 - GET by id: load root row and all child/extension tables needed for reconstitution.
 - Query paging: load rows for a page keyset and hydrate all tables for those documents in bulk.
 
-Align with the “one command / multiple result sets” approach in `reference/design/backend-redesign/flattening-reconstitution.md`.
+Align with the “one command / multiple result sets” approach in `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`.
 
 ## Acceptance Criteria
 

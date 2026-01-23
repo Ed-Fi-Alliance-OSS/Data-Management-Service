@@ -1,3 +1,8 @@
+---
+jira: DMS-1017
+jira_url: https://edfi.atlassian.net/browse/DMS-1017
+---
+
 # Story: Instrumentation for Cascades, Stamps/Journals, and Retries
 
 ## Description
@@ -10,7 +15,7 @@ Add instrumentation for correctness-critical and performance-sensitive operation
 - and (where measurable) cascade fan-out signals during identity updates.
 - deadlock/serialization retries and failures.
 
-Align with the instrumentation suggestions in `reference/design/backend-redesign/strengths-risks.md`.
+Align with the instrumentation suggestions in `reference/design/backend-redesign/design-docs/strengths-risks.md`.
 
 ## Acceptance Criteria
 

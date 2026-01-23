@@ -1,8 +1,13 @@
+---
+jira: DMS-1004
+jira_url: https://edfi.atlassian.net/browse/DMS-1004
+---
+
 # Story: Serve `_etag`, `_lastModifiedDate`, and `ChangeVersion` from Stored Stamps
 
 ## Description
 
-Implement serving of update-tracking metadata per `reference/design/backend-redesign/update-tracking.md`:
+Implement serving of update-tracking metadata per `reference/design/backend-redesign/design-docs/update-tracking.md`:
 
 - `_etag` is derived from the stored representation stamp (`dms.Document.ContentVersion`).
 - `_lastModifiedDate` is served from `dms.Document.ContentLastModifiedAt`.

@@ -420,7 +420,7 @@ This keeps authorization enforcement:
 
 The authorization predicate must be applied inside the same query used to select page keys (DocumentIds), before `ORDER BY/OFFSET/LIMIT`.
 
-Implementation detail depends on the query shape chosen for the relational primary store (see `reference/design/backend-redesign/transactions-and-concurrency.md`), but the critical invariant is:
+Implementation detail depends on the query shape chosen for the relational primary store (see `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`), but the critical invariant is:
 
 > The page is computed over already-authorized rows.
 

@@ -1,3 +1,8 @@
+---
+jira: DMS-952
+jira_url: https://edfi.atlassian.net/browse/DMS-952
+---
+
 # Story: Provision Preflight + Idempotency + Diagnostics
 
 ## Description
@@ -26,4 +31,3 @@ Implement the provisioning guardrails that make the workflow operationally safe:
    2. attempts provisioning for hash B and asserts failure,
    3. tampers `dms.ResourceKey` and asserts validation failure.
 4. Ensure logs and exit codes are usable for CI/CD pipelines.
-

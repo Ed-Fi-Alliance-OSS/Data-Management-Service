@@ -1,8 +1,13 @@
+---
+jira: DMS-953
+jira_url: https://edfi.atlassian.net/browse/DMS-953
+---
+
 # Story: Emit `ddl.manifest.json` (Deterministic DDL Summary)
 
 ## Description
 
-Emit a deterministic `ddl.manifest.json` artifact as described in `reference/design/backend-redesign/ddl-generator-testing.md` and referenced by `reference/design/backend-redesign/ddl-generation.md`.
+Emit a deterministic `ddl.manifest.json` artifact as described in `reference/design/backend-redesign/design-docs/ddl-generator-testing.md` and referenced by `reference/design/backend-redesign/design-docs/ddl-generation.md`.
 
 The manifest provides a stable summary of emitted DDL per dialect for diagnostics and fast diffs without relying solely on large SQL snapshots.
 
@@ -28,4 +33,3 @@ The manifest provides a stable summary of emitted DDL per dialect for diagnostic
    1. determinism across runs,
    2. determinism across input ordering permutations.
 4. Add snapshot/golden coverage for `ddl.manifest.json` on at least one fixture.
-

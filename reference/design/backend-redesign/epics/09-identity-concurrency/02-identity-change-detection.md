@@ -1,3 +1,8 @@
+---
+jira: DMS-998
+jira_url: https://edfi.atlassian.net/browse/DMS-998
+---
+
 # Story: Detect Identity Projection Changes Reliably
 
 ## Description

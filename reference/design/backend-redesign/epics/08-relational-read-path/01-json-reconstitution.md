@@ -1,3 +1,8 @@
+---
+jira: DMS-990
+jira_url: https://edfi.atlassian.net/browse/DMS-990
+---
+
 # Story: Reconstitute JSON from Hydrated Rows (Including `_ext`)
 
 ## Description
@@ -22,6 +27,6 @@ Implement JSON reconstitution from hydrated relational rows:
 
 1. Implement a reconstitution engine that consumes hydrated rows and writes JSON deterministically.
 2. Implement collection assembly using `Ordinal` ordering and scope keys.
-3. Implement `_ext` overlay rules per `reference/design/backend-redesign/extensions.md`.
+3. Implement `_ext` overlay rules per `reference/design/backend-redesign/design-docs/extensions.md`.
 4. Add tests validating end-to-end “write then read” JSON equivalence for representative fixtures.
 

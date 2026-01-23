@@ -1,3 +1,8 @@
+---
+jira: DMS-997
+jira_url: https://edfi.atlassian.net/browse/DMS-997
+---
+
 # Story: Maintain `dms.ReferentialIdentity` (Primary + Superclass Alias Rows)
 
 ## Description
@@ -8,7 +13,7 @@ Maintain `dms.ReferentialIdentity` as the canonical identity index:
 - For subclass resources, also insert the superclass/abstract alias `ReferentialId` row (preserving polymorphic reference behavior).
 - Ensure updates replace old identity rows transactionally and uniqueness is enforced.
 
-Align with `reference/design/backend-redesign/data-model.md` (`dms.ReferentialIdentity` invariants).
+Align with `reference/design/backend-redesign/design-docs/data-model.md` (`dms.ReferentialIdentity` invariants).
 
 ## Acceptance Criteria
 

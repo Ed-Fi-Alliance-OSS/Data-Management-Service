@@ -1,3 +1,8 @@
+---
+jira: DMS-1010
+jira_url: https://edfi.atlassian.net/browse/DMS-1010
+---
+
 # Story: Implement Delete-by-Id for Relational Store
 
 ## Description
@@ -8,7 +13,7 @@ Implement `DeleteDocumentById` behavior for the relational primary store:
 2. Delete from `dms.Document` (cascades to resource tables, identities, edges).
 3. Rely on FK constraints to prevent deleting referenced documents.
 
-Align with `reference/design/backend-redesign/transactions-and-concurrency.md`.
+Align with `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`.
 
 ## Acceptance Criteria
 

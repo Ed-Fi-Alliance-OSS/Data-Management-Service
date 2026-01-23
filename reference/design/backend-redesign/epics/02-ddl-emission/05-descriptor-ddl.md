@@ -1,3 +1,8 @@
+---
+jira: DMS-943
+jira_url: https://edfi.atlassian.net/browse/DMS-943
+---
+
 # Story: Emit ODS-Parity `dms.Descriptor` DDL (Descriptor Resources Stored in `dms`)
 
 ## Description

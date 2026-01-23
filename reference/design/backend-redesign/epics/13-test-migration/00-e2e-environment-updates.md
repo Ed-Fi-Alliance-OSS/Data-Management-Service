@@ -1,3 +1,8 @@
+---
+jira: DMS-1021
+jira_url: https://edfi.atlassian.net/browse/DMS-1021
+---
+
 # Story: Update E2E Workflow for Per-Schema Provisioning (No Hot Reload)
 
 ## Description
@@ -7,7 +12,7 @@ Update the E2E workflow to match the redesign’s schema management model:
 - DMS does not hot-reload or swap schemas in-place.
 - E2E tests provision separate databases/containers per schema/version under test.
 
-Align with the “Related Changes Implied by This Redesign” section in `reference/design/backend-redesign/overview.md`.
+Align with the “Related Changes Implied by This Redesign” section in `reference/design/backend-redesign/design-docs/overview.md`.
 
 ## Acceptance Criteria
 

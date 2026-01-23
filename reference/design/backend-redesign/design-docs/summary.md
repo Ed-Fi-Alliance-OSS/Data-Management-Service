@@ -5,17 +5,18 @@ Status: Draft (summary of the draft design docs in this directory).
 This redesign replaces the current three-table JSON document store (`Document`/`Alias`/`Reference`) with a relational primary store using tables per resource, while keeping DMS behavior metadata-driven via `ApiSchema.json`.
 
 Source documents:
-- Overview: `reference/design/backend-redesign/overview.md`
-- Data model: `reference/design/backend-redesign/data-model.md`
-- Flattening & reconstitution: `reference/design/backend-redesign/flattening-reconstitution.md`
-- AOT compilation (optional mapping pack distribution): `reference/design/backend-redesign/aot-compilation.md`
-- Mapping pack file format (normative `.mpack` schema): `reference/design/backend-redesign/mpack-format-v1.md`
-- Extensions (`_ext`): `reference/design/backend-redesign/extensions.md`
-- Transactions & concurrency: `reference/design/backend-redesign/transactions-and-concurrency.md`
-- Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/update-tracking.md`
-- DDL generation: `reference/design/backend-redesign/ddl-generation.md`
-- DDL generator verification harness: `reference/design/backend-redesign/ddl-generator-testing.md`
-- Strengths/risks: `reference/design/backend-redesign/strengths-risks.md`
+- Overview: `reference/design/backend-redesign/design-docs/overview.md`
+- Data model: `reference/design/backend-redesign/design-docs/data-model.md`
+- Flattening & reconstitution: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
+- Unified mapping models (in-memory shape): `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`
+- AOT compilation (optional mapping pack distribution): `reference/design/backend-redesign/design-docs/aot-compilation.md`
+- Mapping pack file format (normative `.mpack` schema): `reference/design/backend-redesign/design-docs/mpack-format-v1.md`
+- Extensions (`_ext`): `reference/design/backend-redesign/design-docs/extensions.md`
+- Transactions & concurrency: `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
+- Update tracking (`_etag/_lastModifiedDate`, ChangeVersion): `reference/design/backend-redesign/design-docs/update-tracking.md`
+- DDL generation: `reference/design/backend-redesign/design-docs/ddl-generation.md`
+- DDL generator verification harness: `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`
+- Strengths/risks: `reference/design/backend-redesign/design-docs/strengths-risks.md`
 
 > Note on update tracking: `update-tracking.md` is the normative design for `_etag/_lastModifiedDate` and Change Queries. Where other docs describe read-time derivation or reverse-edge expansion, treat them as superseded.
 
@@ -41,7 +42,7 @@ Source documents:
 
 ### `dms.*` core tables
 
-`reference/design/backend-redesign/data-model.md` defines the baseline core tables, with update tracking extended by `reference/design/backend-redesign/update-tracking.md`:
+`reference/design/backend-redesign/design-docs/data-model.md` defines the baseline core tables, with update tracking extended by `reference/design/backend-redesign/design-docs/update-tracking.md`:
 
 - `dms.ResourceKey`
   - Lookup table mapping `(ProjectName, ResourceName)` to `ResourceKeyId` (small surrogate id).
@@ -66,12 +67,12 @@ Source documents:
 
 - `dms.EffectiveSchema` + `dms.SchemaComponent`
   - Records `EffectiveSchemaHash` (SHA-256 fingerprint) of the effective core+extension `ApiSchema.json` set as it affects relational mapping.
-  - `dms.EffectiveSchema` is a singleton current-state row (includes `ResourceKeyCount`/`ResourceKeySeedHash` for fast `dms.ResourceKey` validation); `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash`.
+  - `dms.EffectiveSchema` is a singleton current-state row (includes `ResourceKeyCount` and `ResourceKeySeedHash` for fast `dms.ResourceKey` validation; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes); `dms.SchemaComponent` rows are keyed by `EffectiveSchemaHash`.
   - On first use of a given database connection string, DMS reads the database fingerprint, caches it, and selects the matching mapping set (rejecting requests for that database if mismatched/unsupported).
 
 ### Update tracking additions (unified design)
 
-`reference/design/backend-redesign/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via FK cascades to stored reference identity columns:
+`reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via FK cascades to stored reference identity columns:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
 - `dms.Document` token columns:
@@ -110,7 +111,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
 
 ### Extensions (`_ext`) mapping
 
-`reference/design/backend-redesign/extensions.md` defines `_ext` mapping rules:
+`reference/design/backend-redesign/design-docs/extensions.md` defines `_ext` mapping rules:
 
 - Extension tables live in the extension project schema (e.g., `sample`, `tpdm`), not in the core schema.
 - Resource-level `_ext.{project}` becomes `{projectSchema}.{Resource}Extension` keyed by `DocumentId` (1:1) with FK to the base resource root.
@@ -120,7 +121,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
 
 ## Derived mapping and plan compilation (no codegen)
 
-`reference/design/backend-redesign/flattening-reconstitution.md` describes how DMS derives a full relational mapping from `ApiSchema.json` at startup and compiles it into read/write plans:
+`reference/design/backend-redesign/design-docs/flattening-reconstitution.md` describes how DMS derives a full relational mapping from `ApiSchema.json` at startup and compiles it into read/write plans:
 
 - Inputs: `jsonSchemaForInsert`, `documentPathsMapping`, `identityJsonPaths`, `arrayUniquenessConstraints`, `abstractResources`, and optional `resourceSchema.relational` naming overrides.
 - Optional `resourceSchema.relational` block provides deterministic name overrides without enumerating full flattening metadata:
@@ -189,7 +190,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 
 ## Schema management and DDL generation
 
-`reference/design/backend-redesign/ddl-generation.md` + `data-model.md` define:
+`reference/design/backend-redesign/design-docs/ddl-generation.md` + `data-model.md` define:
 
 - A separate DDL generation utility that:
   - loads the configured core+extension `ApiSchema.json` files,
@@ -201,9 +202,9 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
     - extension schemas/tables,
     - abstract identity tables (and optional union views),
     - update tracking sequences and triggers,
-  - records the singleton `dms.EffectiveSchema` row (including `ResourceKeyCount`/`ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
+  - records the singleton `dms.EffectiveSchema` row (including `ResourceKeyCount` and `ResourceKeySeedHash`) and `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`.
   - provision semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
-- (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/aot-compilation.md`).
+- (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/design-docs/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
 
 ## Key risks and mitigations (from the docs)

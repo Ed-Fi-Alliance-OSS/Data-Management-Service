@@ -1,14 +1,19 @@
+---
+jira: DMS-965
+jira_url: https://edfi.atlassian.net/browse/DMS-965
+---
+
 # Story: Payload Object Graph + Deterministic Ordering Rules
 
 ## Description
 
 Implement the in-memory-to-payload mapping that builds a `MappingPackPayload` from:
 
-- the effective schema + `EffectiveSchemaHash`,
-- the derived relational models (tables/columns/constraints/views),
-- and the compiled SQL plans (write/read/identity projection),
+- the unified `MappingSet` object graph (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`),
 
-ensuring the payload satisfies the determinism and ordering rules in `reference/design/backend-redesign/mpack-format-v1.md`.
+ensuring the payload satisfies the determinism and ordering rules in `reference/design/backend-redesign/design-docs/mpack-format-v1.md`.
+
+Note: the payload is a *runtime-required subset* of the full derived model inventory; DDL-only details remain in `DerivedRelationalModelSet` and are not required for pack execution.
 
 ## Acceptance Criteria
 
@@ -26,7 +31,7 @@ ensuring the payload satisfies the determinism and ordering rules in `reference/
 
 ## Tasks
 
-1. Define a payload builder that takes the derived mapping set and emits `MappingPackPayload`.
+1. Define a payload builder that takes a `MappingSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`) and emits `MappingPackPayload`.
 2. Implement canonical ordering for:
    - `resource_keys`,
    - `resources`,
@@ -37,4 +42,3 @@ ensuring the payload satisfies the determinism and ordering rules in `reference/
    1. build payload for a small fixture,
    2. assert stable ordering,
    3. assert invariant failures on intentional corruption.
-

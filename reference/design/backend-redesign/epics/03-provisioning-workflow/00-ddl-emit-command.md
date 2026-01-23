@@ -1,3 +1,8 @@
+---
+jira: DMS-950
+jira_url: https://edfi.atlassian.net/browse/DMS-950
+---
+
 # Story: CLI Command — `ddl emit`
 
 ## Description
@@ -14,7 +19,7 @@ The CLI should accept an explicit list of `ApiSchema.json` inputs (or a fixture 
 ## Acceptance Criteria
 
 - CLI generates deterministic outputs for the same inputs (byte-for-byte stable).
-- Output filenames and layout match `reference/design/backend-redesign/ddl-generator-testing.md`.
+- Output filenames and layout match `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 - CLI does not require database connectivity for `ddl emit`.
 - CLI surfaces actionable errors for invalid inputs (missing schema, invalid overrides, etc.).
 
@@ -29,4 +34,3 @@ The CLI should accept an explicit list of `ApiSchema.json` inputs (or a fixture 
    1. argument validation,
    2. deterministic outputs for a small fixture.
 4. Update CLI README/documentation with the new `ddl emit` workflow.
-

@@ -1,3 +1,8 @@
+---
+jira: DMS-994
+jira_url: https://edfi.atlassian.net/browse/DMS-994
+---
+
 # Story: Serve Descriptor GET/Query Endpoints from `dms.Descriptor` (No Per-Descriptor Tables)
 
 ## Description

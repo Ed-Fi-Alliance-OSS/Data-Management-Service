@@ -1,8 +1,13 @@
+---
+jira: DMS-1002
+jira_url: https://edfi.atlassian.net/browse/DMS-1002
+---
+
 # Story: Emit Stamping Triggers for `dms.Document` (Content + Identity Stamps)
 
 ## Description
 
-Implement write-side stamping per `reference/design/backend-redesign/update-tracking.md` using database triggers:
+Implement write-side stamping per `reference/design/backend-redesign/design-docs/update-tracking.md` using database triggers:
 
 - On any representation change (root/child/extension table writes, including FK-cascade updates to propagated identity columns), bump:
   - `dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt`.

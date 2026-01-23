@@ -1,11 +1,16 @@
+---
+jira: DMS-966
+jira_url: https://edfi.atlassian.net/browse/DMS-966
+---
+
 # Story: CLI Command — `pack build` Emits `.mpack`
 
 ## Description
 
 Provide a CLI workflow to build mapping packs for one effective schema and one dialect, per:
 
-- `reference/design/backend-redesign/aot-compilation.md`
-- `reference/design/backend-redesign/mpack-format-v1.md` (envelope/payload + validation rules)
+- `reference/design/backend-redesign/design-docs/aot-compilation.md`
+- `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (envelope/payload + validation rules)
 
 The pack builder must:
 - build a deterministic payload,
@@ -44,4 +49,3 @@ The pack builder must:
    3. zstd compress with bounded metadata,
    4. serialize envelope protobuf.
 4. Add basic CLI tests validating successful pack creation and header correctness.
-

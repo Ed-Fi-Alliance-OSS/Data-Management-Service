@@ -1,3 +1,8 @@
+---
+jira: DMS-1005
+jira_url: https://edfi.atlassian.net/browse/DMS-1005
+---
+
 # Story: Enforce `If-Match` Using Stored Representation Stamps
 
 ## Description

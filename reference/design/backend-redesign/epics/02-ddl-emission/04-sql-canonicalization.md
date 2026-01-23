@@ -1,3 +1,8 @@
+---
+jira: DMS-940
+jira_url: https://edfi.atlassian.net/browse/DMS-940
+---
+
 # Story: SQL Canonicalization + Deterministic Ordering for DDL
 
 ## Description
@@ -14,7 +19,7 @@ This story is the “golden stability” guardrail for fixtures and reproducible
 
 - For a fixed fixture input, emitted `{dialect}.sql` output is byte-for-byte stable across runs.
 - Script uses `\n` line endings only and contains no trailing whitespace.
-- Statement ordering follows the phase order and within-phase ordering rules in `reference/design/backend-redesign/ddl-generation.md`.
+- Statement ordering follows the phase order and within-phase ordering rules in `reference/design/backend-redesign/design-docs/ddl-generation.md`.
 - Snapshot tests cover at least one multi-project fixture and detect ordering/format drift.
 
 ## Tasks
@@ -23,4 +28,3 @@ This story is the “golden stability” guardrail for fixtures and reproducible
 2. Implement SQL formatting rules in the shared writer (avoid “pretty print” drift).
 3. Add snapshot tests asserting exact text output for representative fixtures (pgsql + mssql).
 4. Add a regression test that intentionally permutes input ordering and asserts identical output.
-

@@ -1,3 +1,8 @@
+---
+jira: DMS-959
+jira_url: https://edfi.atlassian.net/browse/DMS-959
+---
+
 # Story: Snapshot Tests for Small Fixtures (No DB)
 
 ## Description
@@ -27,4 +32,3 @@ Use normalized outputs and a consistent “update snapshots” workflow.
 2. Add snapshot tests (Snapshooter or repo-standard equivalent) for each dialect output and manifests.
 3. Implement/standardize output normalization used by snapshots (line endings, whitespace trimming).
 4. Add “update snapshots” mode and document it.
-

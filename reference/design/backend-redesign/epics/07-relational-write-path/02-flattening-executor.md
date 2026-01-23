@@ -1,8 +1,13 @@
+---
+jira: DMS-983
+jira_url: https://edfi.atlassian.net/browse/DMS-983
+---
+
 # Story: Flatten JSON into Relational Row Buffers (Root + Children + `_ext`)
 
 ## Description
 
-Implement the write-time flattener described in `reference/design/backend-redesign/flattening-reconstitution.md`:
+Implement the write-time flattener described in `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`:
 
 - Applies to non-descriptor resources; descriptor resources are handled by a dedicated `dms.Descriptor` write path.
 - Traverse the validated JSON once, tracking collection ordinals.

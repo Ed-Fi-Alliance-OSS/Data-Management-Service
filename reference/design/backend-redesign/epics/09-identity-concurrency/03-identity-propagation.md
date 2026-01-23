@@ -1,3 +1,8 @@
+---
+jira: DMS-999
+jira_url: https://edfi.atlassian.net/browse/DMS-999
+---
+
 # Story: Identity Propagation via Cascades/Triggers (No Closure Traversal)
 
 ## Description
@@ -8,8 +13,8 @@ Implement strict identity maintenance for identity updates without application-m
 - Use per-resource triggers to recompute `dms.ReferentialIdentity` row-locally when identity projection values change (including changes caused by cascaded updates to identity-component propagated identity columns).
 
 Align with:
-- `reference/design/backend-redesign/transactions-and-concurrency.md`
-- `reference/design/backend-redesign/data-model.md`
+- `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`
+- `reference/design/backend-redesign/design-docs/data-model.md`
 
 ## Acceptance Criteria
 

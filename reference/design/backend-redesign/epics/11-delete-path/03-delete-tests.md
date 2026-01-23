@@ -1,3 +1,8 @@
+---
+jira: DMS-1013
+jira_url: https://edfi.atlassian.net/browse/DMS-1013
+---
+
 # Story: Delete Path Tests (pgsql + mssql)
 
 ## Description

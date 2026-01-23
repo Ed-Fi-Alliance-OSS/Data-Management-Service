@@ -1,8 +1,13 @@
+---
+jira: DMS-981
+jira_url: https://edfi.atlassian.net/browse/DMS-981
+---
+
 # Story: Core Emits Concrete JSON Locations for Document References
 
 ## Description
 
-Implement the only required DMS Core change called out in `reference/design/backend-redesign/overview.md` and `reference/design/backend-redesign/flattening-reconstitution.md`:
+Implement the only required DMS Core change called out in `reference/design/backend-redesign/design-docs/overview.md` and `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`:
 
 - Document reference extraction must include a concrete JSON location including numeric indices (e.g., `$.addresses[2].periods[0].calendarReference`).
 

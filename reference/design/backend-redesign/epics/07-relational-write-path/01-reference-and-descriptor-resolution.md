@@ -1,3 +1,8 @@
+---
+jira: DMS-982
+jira_url: https://edfi.atlassian.net/browse/DMS-982
+---
+
 # Story: Bulk Reference and Descriptor Resolution (Write-Time Validation)
 
 ## Description
@@ -9,7 +14,7 @@ Implement request-scoped resolution and validation for all extracted references 
 - Validate descriptors via `dms.Descriptor` (and expected discriminator/type in application code where required).
 - Provide actionable error reporting that includes the reference’s concrete JSON location.
 
-Align with `reference/design/backend-redesign/transactions-and-concurrency.md` (“Reference Validation”).
+Align with `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (“Reference Validation”).
 
 ## Acceptance Criteria
 

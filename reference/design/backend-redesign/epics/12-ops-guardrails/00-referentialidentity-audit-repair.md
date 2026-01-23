@@ -1,8 +1,13 @@
+---
+jira: DMS-1015
+jira_url: https://edfi.atlassian.net/browse/DMS-1015
+---
+
 # Story: Audit/Repair Tool for `dms.ReferentialIdentity`
 
 ## Description
 
-Provide an operational tool to audit and repair `dms.ReferentialIdentity` integrity, addressing a high-correctness-risk item called out in `reference/design/backend-redesign/strengths-risks.md`.
+Provide an operational tool to audit and repair `dms.ReferentialIdentity` integrity, addressing a high-correctness-risk item called out in `reference/design/backend-redesign/design-docs/strengths-risks.md`.
 
 Modes:
 - Targeted: rebuild `ReferentialId`s for one document (by `DocumentUuid`/`DocumentId`).

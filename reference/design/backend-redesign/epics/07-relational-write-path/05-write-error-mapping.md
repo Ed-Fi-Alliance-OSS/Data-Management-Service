@@ -1,3 +1,8 @@
+---
+jira: DMS-986
+jira_url: https://edfi.atlassian.net/browse/DMS-986
+---
+
 # Story: Map DB Constraint Errors to DMS Write Error Shapes
 
 ## Description

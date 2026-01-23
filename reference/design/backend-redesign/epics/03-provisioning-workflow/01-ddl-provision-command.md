@@ -1,17 +1,22 @@
+---
+jira: DMS-951
+jira_url: https://edfi.atlassian.net/browse/DMS-951
+---
+
 # Story: CLI Command — `ddl provision` (Create-Only)
 
 ## Description
 
 Provide a CLI command that provisions a target database for a given `EffectiveSchemaHash` using the generated DDL.
 
-Key behaviors (per `reference/design/backend-redesign/ddl-generation.md`):
+Key behaviors (per `reference/design/backend-redesign/design-docs/ddl-generation.md`):
 - Create-only semantics (no migrations).
 - Optional database creation (pre-step; outside transaction where required).
 - Main provisioning runs in a single transaction:
   - schemas/tables/views/sequences/triggers
   - deterministic seeds and schema fingerprint recording
 - Robust to partial runs via existence checks.
-- SQL Server operational guidance: strongly recommend MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, optionally `ALLOW_SNAPSHOT_ISOLATION ON`) per `reference/design/backend-redesign/transactions-and-concurrency.md`.
+- SQL Server operational guidance: strongly recommend MVCC reads (`READ_COMMITTED_SNAPSHOT ON`, optionally `ALLOW_SNAPSHOT_ISOLATION ON`) per `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`.
 
 ## Acceptance Criteria
 

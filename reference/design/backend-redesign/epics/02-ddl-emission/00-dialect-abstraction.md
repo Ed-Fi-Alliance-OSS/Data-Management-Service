@@ -1,11 +1,16 @@
+---
+jira: DMS-936
+jira_url: https://edfi.atlassian.net/browse/DMS-936
+---
+
 # Story: SQL Dialect Abstraction + Writer
 
 ## Description
 
 Introduce a shared dialect abstraction used by both:
 
-- DDL generation (`reference/design/backend-redesign/ddl-generation.md`), and
-- compiled SQL plan emission (future; `reference/design/backend-redesign/flattening-reconstitution.md`)
+- DDL generation (`reference/design/backend-redesign/design-docs/ddl-generation.md`), and
+- compiled SQL plan emission (future; `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`)
 
 Responsibilities:
 - identifier quoting rules (always-quote)
@@ -22,7 +27,7 @@ Responsibilities:
 - Writer always quotes identifiers:
   - PostgreSQL: `"Name"`
   - SQL Server: `[Name]`
-- Type mappings match `reference/design/backend-redesign/data-model.md` defaults.
+- Type mappings match `reference/design/backend-redesign/design-docs/data-model.md` defaults.
 - Dialect supports the required programmable-object patterns:
   - PostgreSQL: `CREATE OR REPLACE FUNCTION`, `DROP TRIGGER IF EXISTS ...`, `CREATE TRIGGER ...`
   - SQL Server: `CREATE OR ALTER VIEW/TRIGGER` where applicable.
@@ -38,4 +43,3 @@ Responsibilities:
    - existence-check templates.
 3. Implement a shared SQL writer/formatter that enforces canonicalization (`\n`, indentation, keyword casing).
 4. Add unit tests for quoting, type mapping, and deterministic output for a small sample model.
-

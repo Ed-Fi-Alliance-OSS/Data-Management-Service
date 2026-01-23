@@ -1,8 +1,16 @@
-# Story: Derive Abstract Resource Union View Models
+---
+jira: DMS-933
+jira_url: https://edfi.atlassian.net/browse/DMS-933
+---
+
+# Story: Derive Abstract Identity Table + Union View Models
 
 ## Description
 
-Model abstract resource union views (`{schema}.{AbstractResource}_View`) per `reference/design/backend-redesign/data-model.md`:
+Model abstract-resource artifacts per `reference/design/backend-redesign/design-docs/data-model.md` and `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`:
+
+- Required: abstract identity tables (`{schema}.{AbstractResource}Identity`)
+- Optional: abstract union views (`{schema}.{AbstractResource}_View`)
 
 - Use `projectSchema.abstractResources[*].identityPathOrder` as the select-list contract.
 - Determine participating concrete resources using `isSubclass`/superclass metadata.
@@ -12,22 +20,31 @@ Model abstract resource union views (`{schema}.{AbstractResource}_View`) per `re
 
 ## Acceptance Criteria
 
-- For each abstract resource, the view model includes:
-  - `DocumentId`,
+- For each abstract resource, the derived model includes a deterministic identity-table model:
+  - table name `{schema}.{AbstractResource}Identity`,
+  - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE),
   - identity columns in `identityPathOrder` order,
   - optional `Discriminator` column (as specified in the design).
+- When union views are enabled, the view model includes the same select-list contract:
+  - `DocumentId`,
+  - identity columns in `identityPathOrder` order,
+  - optional `Discriminator` column.
 - `UNION ALL` arms are ordered by concrete `ResourceName` ordinal.
 - Each arm projects the correct concrete identity columns (including subclass rename rules).
 - Model compilation fails fast if any participating concrete resource cannot supply all abstract identity fields.
-- A small “polymorphic” fixture produces the expected view inventory and select-list shape.
+- A small “polymorphic” fixture produces the expected identity-table and (when enabled) view inventory and select-list shape.
 
 ## Tasks
 
 1. Implement abstract-resource hierarchy discovery from effective schema metadata.
-2. Implement identity field resolution for each concrete resource arm (direct identity vs superclass rename mapping).
-3. Implement canonical type selection rules and model-level cast requirements.
+2. Implement abstract identity-table model derivation:
+   - identity column resolution and ordering,
+   - deterministic naming and constraints.
+3. Implement union view model derivation:
+   - identity field resolution for each concrete resource arm (direct identity vs superclass rename mapping),
+   - canonical type selection rules and model-level cast requirements.
 4. Add unit tests for:
    1. arm ordering determinism,
    2. rename mapping correctness,
-   3. fail-fast behavior when identity fields are missing.
-
+   3. identity-table shape and naming,
+   4. fail-fast behavior when identity fields are missing.

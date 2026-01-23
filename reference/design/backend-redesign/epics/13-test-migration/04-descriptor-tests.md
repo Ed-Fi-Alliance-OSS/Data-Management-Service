@@ -1,3 +1,8 @@
+---
+jira: DMS-1025
+jira_url: https://edfi.atlassian.net/browse/DMS-1025
+---
+
 # Story: Descriptor Integration Coverage (Writes, Queries, Seeding)
 
 ## Description

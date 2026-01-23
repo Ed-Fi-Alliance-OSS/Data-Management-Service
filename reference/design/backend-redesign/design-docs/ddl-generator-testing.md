@@ -113,6 +113,8 @@ The harness compares manifests byte-for-byte after normalization. Manifests MUST
 
 Minimum required fields:
 
+- Hash encoding note: in JSON manifests, SHA-256 values are represented as lowercase hex strings (64 chars) for stable, diff-friendly comparisons. Where the design stores a hash as raw bytes (e.g., `ResourceKeySeedHash` in `dms.EffectiveSchema` and mapping packs), the manifest uses its lowercase-hex encoding.
+
 - `effective-schema.manifest.json`
   - `api_schema_format_version`
   - `relational_mapping_version`

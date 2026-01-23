@@ -1,3 +1,8 @@
+---
+jira: DMS-979
+jira_url: https://edfi.atlassian.net/browse/DMS-979
+---
+
 # Story: Remove In-Process Schema Reload / Hot Reload
 
 ## Description
@@ -9,9 +14,9 @@ Remove the legacy “schema reload/hot-reload” behavior from DMS runtime. Unde
 - Schema changes are an operational concern handled via provisioning new databases/schemas (create-only), not via in-place reloads.
 
 Align with:
-- `reference/design/backend-redesign/overview.md` (“Related Changes Implied by This Redesign”)
-- `reference/design/backend-redesign/transactions-and-concurrency.md` (“Schema Validation (EffectiveSchema)”)
-- `reference/design/backend-redesign/ddl-generation.md` (create-only provisioning semantics)
+- `reference/design/backend-redesign/design-docs/overview.md` (“Related Changes Implied by This Redesign”)
+- `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (“Schema Validation (EffectiveSchema)”)
+- `reference/design/backend-redesign/design-docs/ddl-generation.md` (create-only provisioning semantics)
 
 ## Acceptance Criteria
 

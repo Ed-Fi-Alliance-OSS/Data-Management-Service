@@ -1,8 +1,13 @@
+---
+jira: DMS-957
+jira_url: https://edfi.atlassian.net/browse/DMS-957
+---
+
 # Story: Fixture Layout + Runner (`expected/` vs `actual/`)
 
 ## Description
 
-Implement the fixture layout and runner described in `reference/design/backend-redesign/ddl-generator-testing.md`:
+Implement the fixture layout and runner described in `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`:
 
 - Fixtures live under a test project `Fixtures/` directory with `inputs/`, `fixture.json`, and `expected/`.
 - Runner produces outputs into `actual/` (next to `expected/` or in a temp dir with the same structure).
@@ -29,4 +34,3 @@ Implement the fixture layout and runner described in `reference/design/backend-r
    - writes outputs,
    - compares expected vs actual.
 4. Add `.gitignore` rules to prevent `actual/` outputs from being committed.
-

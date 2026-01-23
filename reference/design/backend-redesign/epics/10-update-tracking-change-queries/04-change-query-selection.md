@@ -1,3 +1,8 @@
+---
+jira: DMS-1006
+jira_url: https://edfi.atlassian.net/browse/DMS-1006
+---
+
 # Story: Change Query Candidate Selection (Journal-Driven)
 
 ## Description
@@ -7,7 +12,7 @@ Implement the backend selection algorithm for Change Queries using:
 - `dms.DocumentChangeEvent` (representation changes),
 - and “journal + verify” against `dms.Document.ContentVersion`,
 
-per the guidance in `reference/design/backend-redesign/update-tracking.md`.
+per the guidance in `reference/design/backend-redesign/design-docs/update-tracking.md`.
 
 This story focuses on the data selection mechanics and paging, not on HTTP surface area.
 

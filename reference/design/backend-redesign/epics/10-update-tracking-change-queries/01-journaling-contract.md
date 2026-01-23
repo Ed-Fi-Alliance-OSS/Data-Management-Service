@@ -1,8 +1,13 @@
+---
+jira: DMS-1003
+jira_url: https://edfi.atlassian.net/browse/DMS-1003
+---
+
 # Story: Journaling Contract (Triggers Own Journal Writes)
 
 ## Description
 
-Enforce the journaling rules in `reference/design/backend-redesign/update-tracking.md`:
+Enforce the journaling rules in `reference/design/backend-redesign/design-docs/update-tracking.md`:
 
 - `dms.DocumentChangeEvent` is a derived artifact.
 - Journal rows are emitted by database triggers on `dms.Document` when token columns change.
