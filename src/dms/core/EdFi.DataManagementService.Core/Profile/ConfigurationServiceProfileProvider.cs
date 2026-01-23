@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
+using System.Collections.Generic;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Security;
@@ -201,6 +203,61 @@ public class ConfigurationServiceProfileProvider(
                 profileId
             );
             return null;
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<CmsProfileResponse>> GetProfilesAsync(string? tenantId)
+    {
+        try
+        {
+            string? token = await configurationServiceTokenHandler.GetTokenAsync(
+                configurationServiceContext.clientId,
+                configurationServiceContext.clientSecret,
+                configurationServiceContext.scope
+            );
+
+            logger.LogDebug("Fetching profile catalog from CMS");
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, "/v2/profiles");
+            SetRequestHeaders(request, token, tenantId);
+
+            HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+
+            response.EnsureSuccessStatusCode();
+
+            string responseBody = await response.Content.ReadAsStringAsync();
+            CmsProfileResponseInternal[]? profileResponses =
+                JsonSerializer.Deserialize<CmsProfileResponseInternal[]>(responseBody, _jsonOptions);
+
+            if (profileResponses == null)
+            {
+                logger.LogWarning("Profile catalog response was empty or could not be parsed");
+                return Array.Empty<CmsProfileResponse>();
+            }
+
+            var results = profileResponses
+                .Select(p => new CmsProfileResponse(p.Id, p.Name, p.Definition))
+                .ToList();
+
+            logger.LogDebug("Fetched {Count} profiles from CMS", results.Count);
+
+            return results;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(ex, "HTTP request failed while fetching profile catalog");
+            return Array.Empty<CmsProfileResponse>();
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(ex, "Failed to parse profile catalog response");
+            return Array.Empty<CmsProfileResponse>();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Unexpected error while fetching profile catalog");
+            return Array.Empty<CmsProfileResponse>();
         }
     }
 
