@@ -140,6 +140,12 @@ internal class ProfileWriteValidationMiddleware(
     /// stripped by the profile filter. This ensures that excluded fields retain their
     /// existing values rather than being deleted.
     /// </summary>
+    /// <remarks>
+    /// NOTE: This approach requires an additional database read before the update operation,
+    /// which is sub-optimal from a performance perspective. A future optimization could move
+    /// this logic to the backend where the update statement could explicitly update only the
+    /// fields included in the profile, eliminating the need for a separate read operation.
+    /// </remarks>
     private async Task<JsonObject?> MergeWithExistingDocument(
         RequestInfo requestInfo,
         JsonObject filteredBody,
