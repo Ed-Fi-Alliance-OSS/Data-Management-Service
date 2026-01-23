@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Model;
 
 namespace EdFi.DataManagementService.Core.Profile;
@@ -40,7 +41,8 @@ public record ProfileResolutionError(
 );
 
 /// <summary>
-/// Service for resolving and validating API profiles for requests
+/// Service for resolving and validating API profiles for requests.
+/// Also provides cached access to profile catalog and profile-filtered OpenAPI specifications.
 /// </summary>
 internal interface IProfileService
 {
@@ -70,4 +72,35 @@ internal interface IProfileService
     /// A <see cref="CachedApplicationProfiles"/> containing the profile definitions and assigned profile names.
     /// </returns>
     Task<CachedApplicationProfiles> GetOrFetchApplicationProfilesAsync(long applicationId, string? tenantId);
+
+    /// Gets all available profile names for a tenant (cached).
+    /// </summary>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant scenarios.</param>
+    /// <returns>List of profile names in original case.</returns>
+    Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId);
+
+    /// <summary>
+    /// Gets a profile definition by name (cached, case-insensitive).
+    /// </summary>
+    /// <param name="profileName">The profile name to look up.</param>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant scenarios.</param>
+    /// <returns>The profile definition, or null if not found.</returns>
+    Task<ProfileDefinition?> GetProfileDefinitionAsync(string profileName, string? tenantId);
+
+    /// <summary>
+    /// Gets the OpenAPI specification for a specific profile (cached).
+    /// The spec is filtered based on profile rules and cached with composite key
+    /// including tenant and API schema version.
+    /// </summary>
+    /// <param name="profileName">The name of the profile</param>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
+    /// <param name="baseSpecificationProvider">A function that returns the base OpenAPI specification with servers already injected</param>
+    /// <param name="apiSchemaReloadId">The API schema version/reload ID for cache invalidation</param>
+    /// <returns>The filtered OpenAPI specification, or null if profile not found</returns>
+    Task<JsonNode?> GetProfileOpenApiSpecAsync(
+        string profileName,
+        string? tenantId,
+        Func<JsonNode> baseSpecificationProvider,
+        Guid apiSchemaReloadId
+    );
 }

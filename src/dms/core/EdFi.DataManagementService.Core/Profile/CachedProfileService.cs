@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
@@ -31,10 +33,46 @@ internal record CachedApplicationProfiles(
     /// Returns true if no profiles are assigned to this application.
     /// </summary>
     public bool IsEmpty => AssignedProfileNames.Count == 0;
-};
+}
 
 /// <summary>
-/// Profile service with caching and stampede protection
+/// Cached profile catalog containing all profiles for a tenant.
+/// Provides O(1) lookup by profile name.
+/// </summary>
+internal record CachedProfileCatalog(
+    IReadOnlyDictionary<string, ProfileDefinition> ProfilesByName,
+    IReadOnlyDictionary<long, ProfileDefinition> ProfilesById,
+    IReadOnlyList<string> ProfileNames
+)
+{
+    /// <summary>
+    /// Represents an empty catalog (no profiles defined).
+    /// </summary>
+    public static CachedProfileCatalog Empty { get; } =
+        new(new Dictionary<string, ProfileDefinition>(), new Dictionary<long, ProfileDefinition>(), []);
+
+    /// <summary>
+    /// Returns true if the catalog is empty.
+    /// </summary>
+    public bool IsEmpty => ProfileNames.Count == 0;
+
+    /// <summary>
+    /// Attempts to get a profile by name (case-insensitive).
+    /// </summary>
+    public bool TryGetProfile(string profileName, out ProfileDefinition? definition) =>
+        ProfilesByName.TryGetValue(profileName.ToLowerInvariant(), out definition);
+
+    /// <summary>
+    /// Attempts to get a profile by id.
+    /// </summary>
+    public bool TryGetProfile(long profileId, out ProfileDefinition? definition) =>
+        ProfilesById.TryGetValue(profileId, out definition);
+}
+
+/// <summary>
+/// Profile service with caching and stampede protection.
+/// Provides profile resolution for requests, catalog-level access to profiles,
+/// and cached profile-filtered OpenAPI specifications.
 /// </summary>
 internal class CachedProfileService(
     IProfileCmsProvider profileCmsProvider,
@@ -43,13 +81,28 @@ internal class CachedProfileService(
     ILogger<CachedProfileService> logger
 ) : IProfileService
 {
-    private const string CacheKeyPrefix = "ApplicationProfiles";
+    private const string ApplicationProfilesCacheKeyPrefix = "ApplicationProfiles";
+    private const string ProfileCatalogCacheKeyPrefix = "ProfileCatalog";
+    private const string ProfileOpenApiCacheKeyPrefix = "ProfileOpenApi";
 
-    private static string GetCacheKey(string? tenantId, long applicationId)
+    private static string GetApplicationCacheKey(string? tenantId, long applicationId)
     {
         return string.IsNullOrEmpty(tenantId)
-            ? $"{CacheKeyPrefix}:{applicationId}"
-            : $"{CacheKeyPrefix}:{tenantId}:{applicationId}";
+            ? $"{ApplicationProfilesCacheKeyPrefix}:{applicationId}"
+            : $"{ApplicationProfilesCacheKeyPrefix}:{tenantId}:{applicationId}";
+    }
+
+    private static string GetCatalogCacheKey(string? tenantId) =>
+        string.IsNullOrEmpty(tenantId)
+            ? ProfileCatalogCacheKeyPrefix
+            : $"{ProfileCatalogCacheKeyPrefix}:{tenantId}";
+
+    private static string GetOpenApiCacheKey(string? tenantId, string profileName, Guid apiSchemaReloadId)
+    {
+        string normalizedProfileName = profileName.ToLowerInvariant();
+        return string.IsNullOrEmpty(tenantId)
+            ? $"{ProfileOpenApiCacheKeyPrefix}:{normalizedProfileName}:{apiSchemaReloadId}"
+            : $"{ProfileOpenApiCacheKeyPrefix}:{tenantId}:{normalizedProfileName}:{apiSchemaReloadId}";
     }
 
     /// <inheritdoc />
@@ -97,7 +150,7 @@ internal class CachedProfileService(
         string? tenantId
     )
     {
-        string cacheKey = GetCacheKey(tenantId, applicationId);
+        string cacheKey = GetApplicationCacheKey(tenantId, applicationId);
 
         // HybridCache.GetOrCreateAsync returns the cached value or the result of the factory.
         // We always return a non-null value from the factory, but use null-coalescing for safety.
@@ -125,57 +178,29 @@ internal class CachedProfileService(
                         return CachedApplicationProfiles.Empty;
                     }
 
-                    // Fetch all profile definitions in parallel
-                    var fetchTasks = appInfo.ProfileIds.Select(async profileId =>
-                    {
-                        CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
-                            profileId,
-                            tenantId
-                        );
-                        return (ProfileId: profileId, Response: profileResponse);
-                    });
+                    // Use the catalog cache as the single source of profile definitions
+                    CachedProfileCatalog catalog = await GetOrFetchCatalogAsync(tenantId);
 
-                    var fetchResults = await Task.WhenAll(fetchTasks);
-
-                    // Process results
-                    // Note: We use lowercase keys for the dictionary to ensure case-insensitivity
-                    // survives HybridCache serialization/deserialization (which loses dictionary comparers).
                     var profilesByName = new Dictionary<string, ProfileDefinition>();
                     var assignedProfileNames = new List<string>();
 
-                    foreach (var (profileId, profileResponse) in fetchResults)
+                    foreach (long profileId in appInfo.ProfileIds)
                     {
-                        if (profileResponse == null)
+                        if (
+                            !catalog.TryGetProfile(profileId, out ProfileDefinition? definition)
+                            || definition is null
+                        )
                         {
                             logger.LogWarning(
-                                "Profile not found during cache population. ProfileId: {ProfileId}, ApplicationId: {ApplicationId}",
+                                "Assigned profile not found in catalog. ProfileId: {ProfileId}, ApplicationId: {ApplicationId}",
                                 profileId,
                                 applicationId
                             );
                             continue;
                         }
 
-                        ProfileDefinitionParseResult parseResult = ProfileDefinitionParser.Parse(
-                            profileResponse.Definition
-                        );
-
-                        if (!parseResult.IsSuccess || parseResult.Definition == null)
-                        {
-                            logger.LogWarning(
-                                "Failed to parse profile definition. ProfileId: {ProfileId}, Error: {Error}",
-                                profileId,
-                                LoggingSanitizer.SanitizeForLogging(
-                                    parseResult.ErrorMessage ?? "Unknown error"
-                                )
-                            );
-                            continue;
-                        }
-
-                        // Store with lowercase key for case-insensitive lookup after deserialization
-                        profilesByName[parseResult.Definition.ProfileName.ToLowerInvariant()] =
-                            parseResult.Definition;
-                        // Keep original case for error messages and content type building
-                        assignedProfileNames.Add(parseResult.Definition.ProfileName);
+                        profilesByName[definition.ProfileName.ToLowerInvariant()] = definition;
+                        assignedProfileNames.Add(definition.ProfileName);
                     }
 
                     logger.LogDebug(
@@ -517,4 +542,172 @@ internal class CachedProfileService(
             )
         );
     }
+
+    #region Catalog Access Methods
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId)
+    {
+        CachedProfileCatalog catalog = await GetOrFetchCatalogAsync(tenantId);
+        return catalog.ProfileNames;
+    }
+
+    /// <inheritdoc />
+    public async Task<ProfileDefinition?> GetProfileDefinitionAsync(string profileName, string? tenantId)
+    {
+        CachedProfileCatalog catalog = await GetOrFetchCatalogAsync(tenantId);
+        return catalog.TryGetProfile(profileName, out ProfileDefinition? definition) ? definition : null;
+    }
+
+    /// <summary>
+    /// Gets the full profile catalog for a tenant, using cache with stampede protection.
+    /// </summary>
+    private async Task<CachedProfileCatalog> GetOrFetchCatalogAsync(string? tenantId)
+    {
+        string cacheKey = GetCatalogCacheKey(tenantId);
+
+        // HybridCache.GetOrCreateAsync provides stampede protection:
+        // Only one concurrent caller executes the factory; others wait for the result
+        return await hybridCache.GetOrCreateAsync(
+                cacheKey,
+                async cancel =>
+                {
+                    logger.LogDebug(
+                        "Cache miss for profile catalog, fetching from CMS for tenant: {Tenant}",
+                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                    );
+
+                    IReadOnlyList<CmsProfileResponse> profiles = await profileCmsProvider.GetProfilesAsync(
+                        tenantId
+                    );
+
+                    if (profiles.Count == 0)
+                    {
+                        logger.LogDebug(
+                            "No profiles found for tenant: {Tenant}",
+                            LoggingSanitizer.SanitizeForLogging(tenantId)
+                        );
+                        return CachedProfileCatalog.Empty;
+                    }
+
+                    // Parse all profiles and build the catalog
+                    var profilesByName = new Dictionary<string, ProfileDefinition>();
+                    var profilesById = new Dictionary<long, ProfileDefinition>();
+                    var profileNames = new List<string>();
+
+                    foreach (CmsProfileResponse profileResponse in profiles)
+                    {
+                        ProfileDefinitionParseResult parseResult = ProfileDefinitionParser.Parse(
+                            profileResponse.Definition
+                        );
+
+                        if (!parseResult.IsSuccess || parseResult.Definition is null)
+                        {
+                            logger.LogWarning(
+                                "Failed to parse profile definition. ProfileId: {ProfileId}, Name: {Name}, Error: {Error}",
+                                profileResponse.Id,
+                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeForLogging(
+                                    parseResult.ErrorMessage ?? "Unknown error"
+                                )
+                            );
+                            continue;
+                        }
+
+                        // Store with lowercase key for case-insensitive lookup after deserialization
+                        profilesByName[parseResult.Definition.ProfileName.ToLowerInvariant()] =
+                            parseResult.Definition;
+                        profilesById[profileResponse.Id] = parseResult.Definition;
+                        // Keep original case for display
+                        profileNames.Add(parseResult.Definition.ProfileName);
+                    }
+
+                    logger.LogDebug(
+                        "Cached {Count} profiles for tenant: {Tenant}",
+                        profilesByName.Count,
+                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                    );
+
+                    return new CachedProfileCatalog(profilesByName, profilesById, profileNames);
+                },
+                new HybridCacheEntryOptions
+                {
+                    Expiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+                    LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+                }
+            ) ?? CachedProfileCatalog.Empty;
+    }
+
+    #endregion
+
+    #region Profile OpenAPI Methods
+
+    /// <inheritdoc />
+    public async Task<JsonNode?> GetProfileOpenApiSpecAsync(
+        string profileName,
+        string? tenantId,
+        Func<JsonNode> baseSpecificationProvider,
+        Guid apiSchemaReloadId
+    )
+    {
+        // First verify the profile exists in the catalog
+        CachedProfileCatalog catalog = await GetOrFetchCatalogAsync(tenantId);
+
+        if (!catalog.TryGetProfile(profileName, out ProfileDefinition? profileDefinition))
+        {
+            logger.LogWarning(
+                "Profile not found in catalog. ProfileName: {ProfileName}, TenantId: {TenantId}",
+                LoggingSanitizer.SanitizeForLogging(profileName),
+                LoggingSanitizer.SanitizeForLogging(tenantId)
+            );
+            return null;
+        }
+
+        // Get or create the cached OpenAPI spec
+        // The cache key includes apiSchemaReloadId so specs are regenerated when the schema changes
+        string cacheKey = GetOpenApiCacheKey(tenantId, profileName, apiSchemaReloadId);
+
+        // Since we cache JsonNode as string (HybridCache serialization), we need to parse it back
+        string? cachedSpec = await hybridCache.GetOrCreateAsync(
+            cacheKey,
+            async cancel =>
+            {
+                logger.LogDebug(
+                    "Cache miss for profile OpenAPI spec, generating. ProfileName: {ProfileName}, TenantId: {TenantId}, SchemaReloadId: {ReloadId}",
+                    LoggingSanitizer.SanitizeForLogging(profileName),
+                    LoggingSanitizer.SanitizeForLogging(tenantId),
+                    apiSchemaReloadId
+                );
+
+                // Get the base OpenAPI spec with servers from the provider
+                JsonNode baseSpecification = baseSpecificationProvider();
+
+                // Apply profile filtering to the OpenAPI spec
+                var profileFilter = new ProfileOpenApiSpecificationFilter(logger);
+                JsonNode filteredSpecification = profileFilter.CreateProfileSpecification(
+                    baseSpecification,
+                    profileDefinition!
+                );
+
+                logger.LogDebug(
+                    "Cached profile OpenAPI spec. ProfileName: {ProfileName}, TenantId: {TenantId}",
+                    LoggingSanitizer.SanitizeForLogging(profileName),
+                    LoggingSanitizer.SanitizeForLogging(tenantId)
+                );
+
+                // Return as string for serialization
+                return filteredSpecification.ToJsonString();
+            },
+            new HybridCacheEntryOptions
+            {
+                Expiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+                LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+            }
+        );
+
+        // Parse the cached string back to JsonNode
+        return cachedSpec is not null ? JsonNode.Parse(cachedSpec) : null;
+    }
+
+    #endregion
 }
