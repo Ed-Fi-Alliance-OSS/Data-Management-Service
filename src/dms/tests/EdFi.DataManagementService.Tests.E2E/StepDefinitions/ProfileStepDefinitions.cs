@@ -127,6 +127,7 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Extension Filtering")]
     [Scope(Feature = "Profile Write Filtering")]
     [Scope(Feature = "Profile Creatability Validation")]
+    [Scope(Feature = "Profile PUT Merge Functionality")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();
@@ -816,6 +817,59 @@ public class ProfileStepDefinitions(
             {
                 throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a collection item at a specific index has a property with the expected value.
+    /// </summary>
+    [Then(@"the ""([^""]*)"" collection item at index (\d+) should have ""([^""]*)"" value ""([^""]*)""")]
+    public async Task ThenTheCollectionItemAtIndexShouldHaveValue(
+        string collectionName,
+        int index,
+        string propertyName,
+        string expectedValue
+    )
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        JsonObject rootObject = responseJson is JsonArray jsonArray
+            ? jsonArray[0]!.AsObject()
+            : responseJson.AsObject();
+
+        if (rootObject.TryGetPropertyValue(collectionName, out JsonNode? collectionNode))
+        {
+            JsonArray collection = collectionNode!.AsArray();
+
+            collection
+                .Count.Should()
+                .BeGreaterThan(index, $"Collection '{collectionName}' does not have item at index {index}");
+
+            JsonObject item = collection[index]!.AsObject();
+
+            if (item.TryGetPropertyValue(propertyName, out JsonNode? propValue))
+            {
+                string? actualValue = propValue?.ToString();
+                actualValue
+                    .Should()
+                    .Be(
+                        expectedValue,
+                        $"Collection item property '{propertyName}' at index {index} should be '{expectedValue}' but was '{actualValue}'"
+                    );
+            }
+            else
+            {
+                throw new AssertionException(
+                    $"Collection item at index {index} does not have property '{propertyName}'. Item: {item}"
+                );
+            }
+        }
+        else
+        {
+            throw new AssertionException(
+                $"Collection '{collectionName}' not found in response: {responseBody}"
+            );
         }
     }
 

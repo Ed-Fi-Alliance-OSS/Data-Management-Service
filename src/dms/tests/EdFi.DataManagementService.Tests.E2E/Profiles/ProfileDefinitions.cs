@@ -367,6 +367,53 @@ public static class ProfileDefinitions
         </Profile>
         """;
 
+    // ================================================================================
+    // PUT MERGE PROFILES
+    // These profiles test that excluded fields are preserved from existing documents
+    // during PUT operations (recursive merging functionality).
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for School with WriteContentType that excludes a property within collection items.
+    /// The addresses collection excludes city - PUT requests should preserve city from existing doc.
+    /// </summary>
+    public const string SchoolWriteAddressExcludeCityName = "E2E-Test-School-Write-AddressExcludeCity";
+
+    public const string SchoolWriteAddressExcludeCityXml = """
+        <Profile name="E2E-Test-School-Write-AddressExcludeCity">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="addresses" memberSelection="ExcludeOnly">
+                        <Property name="city"/>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType using collection item filter.
+    /// Only allows modifying Ninth grade items - other grade levels should be preserved on PUT.
+    /// </summary>
+    public const string SchoolWriteGradeLevelFilterPreserveName =
+        "E2E-Test-School-Write-GradeLevelFilterPreserve";
+
+    public const string SchoolWriteGradeLevelFilterPreserveXml = """
+        <Profile name="E2E-Test-School-Write-GradeLevelFilterPreserve">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeAll">
+                        <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+                            <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+                        </Filter>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
     /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
@@ -392,5 +439,8 @@ public static class ProfileDefinitions
             (SchoolWriteIncludeOnlyMissingRequiredName, SchoolWriteIncludeOnlyMissingRequiredXml),
             (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
             (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
+            // PUT merge profiles
+            (SchoolWriteAddressExcludeCityName, SchoolWriteAddressExcludeCityXml),
+            (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
         ];
 }

@@ -43,6 +43,23 @@ internal class ProfileWriteValidationMiddleware(
 
         if (writeContentType == null)
         {
+            // Debug logging to understand why filtering is skipped
+            if (requestInfo.ProfileContext == null)
+            {
+                logger.LogDebug(
+                    "ProfileWriteValidationMiddleware: Skipping - ProfileContext is null. TraceId: {TraceId}",
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
+            else if (requestInfo.ProfileContext.ResourceProfile.WriteContentType == null)
+            {
+                logger.LogDebug(
+                    "ProfileWriteValidationMiddleware: Skipping - WriteContentType is null for profile {ProfileName}. TraceId: {TraceId}",
+                    SanitizeForLog(requestInfo.ProfileContext.ProfileName),
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
+
             await next();
             return;
         }
@@ -215,6 +232,7 @@ internal class ProfileWriteValidationMiddleware(
 
     /// <summary>
     /// Merges fields from the existing document that were stripped by the profile filter.
+    /// This includes top-level fields, nested objects, and collection items.
     /// </summary>
     private static void MergeStrippedFields(
         JsonObject filteredBody,
@@ -279,6 +297,515 @@ internal class ProfileWriteValidationMiddleware(
                 filteredBody[propName] = existingValue.DeepClone();
             }
         }
+
+        // Recursively merge nested objects
+        foreach (var kvp in writeContentType.ObjectRulesByName)
+        {
+            string objectName = kvp.Key;
+            ObjectRule objectRule = kvp.Value;
+
+            if (
+                filteredBody.TryGetPropertyValue(objectName, out JsonNode? filteredNestedNode)
+                && filteredNestedNode is JsonObject filteredNestedObject
+                && originalRequest.TryGetPropertyValue(objectName, out JsonNode? originalNestedNode)
+                && originalNestedNode is JsonObject originalNestedObject
+                && existingDoc.TryGetPropertyValue(objectName, out JsonNode? existingNestedNode)
+                && existingNestedNode is JsonObject existingNestedObject
+            )
+            {
+                MergeNestedObjectStrippedFields(
+                    filteredNestedObject,
+                    originalNestedObject,
+                    existingNestedObject,
+                    objectRule
+                );
+            }
+        }
+
+        // Recursively merge collections
+        foreach (var kvp in writeContentType.CollectionRulesByName)
+        {
+            string collectionName = kvp.Key;
+            CollectionRule collectionRule = kvp.Value;
+
+            if (
+                filteredBody.TryGetPropertyValue(collectionName, out JsonNode? filteredCollectionNode)
+                && filteredCollectionNode is JsonArray filteredCollection
+                && originalRequest.TryGetPropertyValue(collectionName, out JsonNode? originalCollectionNode)
+                && originalCollectionNode is JsonArray originalCollection
+                && existingDoc.TryGetPropertyValue(collectionName, out JsonNode? existingCollectionNode)
+                && existingCollectionNode is JsonArray existingCollection
+            )
+            {
+                MergeCollectionStrippedFields(
+                    filteredCollection,
+                    originalCollection,
+                    existingCollection,
+                    collectionRule
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Recursively merges stripped fields within a nested object.
+    /// </summary>
+    private static void MergeNestedObjectStrippedFields(
+        JsonObject filteredNestedObject,
+        JsonObject originalNestedObject,
+        JsonObject existingNestedObject,
+        ObjectRule objectRule
+    )
+    {
+        // Find properties that were stripped from this nested object
+        var strippedPropertyNames = originalNestedObject
+            .Select(p => p.Key)
+            .Where(propName => !filteredNestedObject.ContainsKey(propName));
+
+        foreach (string propName in strippedPropertyNames)
+        {
+            if (
+                existingNestedObject.TryGetPropertyValue(propName, out JsonNode? existingValue)
+                && existingValue != null
+            )
+            {
+                filteredNestedObject[propName] = existingValue.DeepClone();
+            }
+        }
+
+        // Merge fields from existing doc that weren't in request but are excluded by profile
+        var existingOnlyPropertyNames = existingNestedObject
+            .Select(p => p.Key)
+            .Where(propName => !filteredNestedObject.ContainsKey(propName));
+
+        foreach (string propName in existingOnlyPropertyNames)
+        {
+            bool wouldBeExcluded = objectRule.MemberSelection switch
+            {
+                MemberSelection.IncludeOnly => !objectRule.PropertyNameSet.Contains(propName)
+                    && !objectRule.CollectionRulesByName.ContainsKey(propName)
+                    && !objectRule.NestedObjectRulesByName.ContainsKey(propName),
+                MemberSelection.ExcludeOnly => objectRule.PropertyNameSet.Contains(propName),
+                _ => false,
+            };
+
+            if (
+                wouldBeExcluded
+                && existingNestedObject.TryGetPropertyValue(propName, out JsonNode? existingValue)
+                && existingValue != null
+            )
+            {
+                filteredNestedObject[propName] = existingValue.DeepClone();
+            }
+        }
+
+        // Recursively handle nested objects within this object
+        foreach (var kvp in objectRule.NestedObjectRulesByName)
+        {
+            string nestedObjectName = kvp.Key;
+            ObjectRule nestedObjectRule = kvp.Value;
+
+            if (
+                filteredNestedObject.TryGetPropertyValue(nestedObjectName, out JsonNode? filteredInnerNode)
+                && filteredInnerNode is JsonObject filteredInnerObject
+                && originalNestedObject.TryGetPropertyValue(nestedObjectName, out JsonNode? originalInnerNode)
+                && originalInnerNode is JsonObject originalInnerObject
+                && existingNestedObject.TryGetPropertyValue(nestedObjectName, out JsonNode? existingInnerNode)
+                && existingInnerNode is JsonObject existingInnerObject
+            )
+            {
+                MergeNestedObjectStrippedFields(
+                    filteredInnerObject,
+                    originalInnerObject,
+                    existingInnerObject,
+                    nestedObjectRule
+                );
+            }
+        }
+
+        // Recursively handle collections within this object
+        foreach (var kvp in objectRule.CollectionRulesByName)
+        {
+            string collectionName = kvp.Key;
+            CollectionRule collectionRule = kvp.Value;
+
+            if (
+                filteredNestedObject.TryGetPropertyValue(collectionName, out JsonNode? filteredCollectionNode)
+                && filteredCollectionNode is JsonArray filteredCollection
+                && originalNestedObject.TryGetPropertyValue(
+                    collectionName,
+                    out JsonNode? originalCollectionNode
+                )
+                && originalCollectionNode is JsonArray originalCollection
+                && existingNestedObject.TryGetPropertyValue(
+                    collectionName,
+                    out JsonNode? existingCollectionNode
+                )
+                && existingCollectionNode is JsonArray existingCollection
+            )
+            {
+                MergeCollectionStrippedFields(
+                    filteredCollection,
+                    originalCollection,
+                    existingCollection,
+                    collectionRule
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Merges stripped fields within collection items and preserves items filtered by ItemFilter.
+    /// </summary>
+    private static void MergeCollectionStrippedFields(
+        JsonArray filteredCollection,
+        JsonArray originalCollection,
+        JsonArray existingCollection,
+        CollectionRule collectionRule
+    )
+    {
+        // First, merge stripped fields within each filtered collection item
+        foreach (JsonNode? filteredItemNode in filteredCollection)
+        {
+            if (filteredItemNode is not JsonObject filteredItem)
+            {
+                continue;
+            }
+
+            // Find the corresponding original item
+            JsonObject? originalItem = FindMatchingItemInArray(filteredItem, originalCollection);
+            if (originalItem == null)
+            {
+                continue;
+            }
+
+            // Find the corresponding existing item
+            JsonObject? existingItem = FindMatchingExistingItem(
+                originalItem,
+                existingCollection,
+                collectionRule
+            );
+
+            if (existingItem != null)
+            {
+                MergeCollectionItemStrippedFields(filteredItem, originalItem, existingItem, collectionRule);
+            }
+        }
+
+        // Second, add back items that were filtered out by ItemFilter
+        // These items should be preserved from the existing document
+        if (collectionRule.ItemFilter != null)
+        {
+            var itemsToAdd = new List<JsonNode>();
+
+            foreach (JsonNode? existingItemNode in existingCollection)
+            {
+                if (existingItemNode is not JsonObject existingItem)
+                {
+                    continue;
+                }
+
+                // Check if this item was filtered out by ItemFilter
+                if (WasFilteredOutByItemFilter(existingItem, collectionRule.ItemFilter))
+                {
+                    // This item cannot be modified via this profile - preserve it
+                    itemsToAdd.Add(existingItem.DeepClone());
+                }
+            }
+
+            // Add filtered items back to the collection
+            foreach (var item in itemsToAdd)
+            {
+                filteredCollection.Add(item);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Merges stripped fields within a single collection item.
+    /// </summary>
+    private static void MergeCollectionItemStrippedFields(
+        JsonObject filteredItem,
+        JsonObject originalItem,
+        JsonObject existingItem,
+        CollectionRule collectionRule
+    )
+    {
+        // Find properties that were stripped from this collection item
+        var strippedPropertyNames = originalItem
+            .Select(p => p.Key)
+            .Where(propName => !filteredItem.ContainsKey(propName));
+
+        foreach (string propName in strippedPropertyNames)
+        {
+            if (
+                existingItem.TryGetPropertyValue(propName, out JsonNode? existingValue)
+                && existingValue != null
+            )
+            {
+                filteredItem[propName] = existingValue.DeepClone();
+            }
+        }
+
+        // Merge fields from existing doc that weren't in request but are excluded by profile
+        var existingOnlyPropertyNames = existingItem
+            .Select(p => p.Key)
+            .Where(propName => !filteredItem.ContainsKey(propName));
+
+        foreach (string propName in existingOnlyPropertyNames)
+        {
+            bool wouldBeExcluded = collectionRule.MemberSelection switch
+            {
+                MemberSelection.IncludeOnly => !collectionRule.PropertyNameSet.Contains(propName)
+                    && !collectionRule.NestedCollectionRulesByName.ContainsKey(propName)
+                    && !collectionRule.NestedObjectRulesByName.ContainsKey(propName),
+                MemberSelection.ExcludeOnly => collectionRule.PropertyNameSet.Contains(propName),
+                _ => false,
+            };
+
+            if (
+                wouldBeExcluded
+                && existingItem.TryGetPropertyValue(propName, out JsonNode? existingValue)
+                && existingValue != null
+            )
+            {
+                filteredItem[propName] = existingValue.DeepClone();
+            }
+        }
+
+        // Recursively handle nested objects within collection items
+        foreach (var kvp in collectionRule.NestedObjectRulesByName)
+        {
+            string nestedObjectName = kvp.Key;
+            ObjectRule nestedObjectRule = kvp.Value;
+
+            if (
+                filteredItem.TryGetPropertyValue(nestedObjectName, out JsonNode? filteredNestedNode)
+                && filteredNestedNode is JsonObject filteredNestedObject
+                && originalItem.TryGetPropertyValue(nestedObjectName, out JsonNode? originalNestedNode)
+                && originalNestedNode is JsonObject originalNestedObject
+                && existingItem.TryGetPropertyValue(nestedObjectName, out JsonNode? existingNestedNode)
+                && existingNestedNode is JsonObject existingNestedObject
+            )
+            {
+                MergeNestedObjectStrippedFields(
+                    filteredNestedObject,
+                    originalNestedObject,
+                    existingNestedObject,
+                    nestedObjectRule
+                );
+            }
+        }
+
+        // Recursively handle nested collections within collection items
+        foreach (var kvp in collectionRule.NestedCollectionRulesByName)
+        {
+            string nestedCollectionName = kvp.Key;
+            CollectionRule nestedCollectionRule = kvp.Value;
+
+            if (
+                filteredItem.TryGetPropertyValue(
+                    nestedCollectionName,
+                    out JsonNode? filteredNestedCollectionNode
+                )
+                && filteredNestedCollectionNode is JsonArray filteredNestedCollection
+                && originalItem.TryGetPropertyValue(
+                    nestedCollectionName,
+                    out JsonNode? originalNestedCollectionNode
+                )
+                && originalNestedCollectionNode is JsonArray originalNestedCollection
+                && existingItem.TryGetPropertyValue(
+                    nestedCollectionName,
+                    out JsonNode? existingNestedCollectionNode
+                )
+                && existingNestedCollectionNode is JsonArray existingNestedCollection
+            )
+            {
+                MergeCollectionStrippedFields(
+                    filteredNestedCollection,
+                    originalNestedCollection,
+                    existingNestedCollection,
+                    nestedCollectionRule
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Finds a matching item in the existing collection based on the collection rule's ItemFilter
+    /// property (if available) or by comparing all properties.
+    /// </summary>
+    private static JsonObject? FindMatchingExistingItem(
+        JsonObject requestItem,
+        JsonArray existingCollection,
+        CollectionRule collectionRule
+    )
+    {
+        // If there's an ItemFilter, use its property as the identity key
+        if (collectionRule.ItemFilter != null)
+        {
+            string filterPropertyName = collectionRule.ItemFilter.PropertyName;
+            if (
+                requestItem.TryGetPropertyValue(filterPropertyName, out JsonNode? requestValue)
+                && requestValue != null
+            )
+            {
+                string? requestValueStr = requestValue.GetValue<string>();
+                foreach (JsonNode? existingItemNode in existingCollection)
+                {
+                    if (
+                        existingItemNode is JsonObject existingItem
+                        && existingItem.TryGetPropertyValue(filterPropertyName, out JsonNode? existingValue)
+                        && existingValue != null
+                        && existingValue.GetValue<string>() == requestValueStr
+                    )
+                    {
+                        return existingItem;
+                    }
+                }
+            }
+        }
+
+        // Fallback: Try to find by matching all common properties
+        return FindMatchingItemByAllProperties(requestItem, existingCollection);
+    }
+
+    /// <summary>
+    /// Finds a matching item in an array by comparing common properties.
+    /// Used for matching filtered items back to original items.
+    /// </summary>
+    private static JsonObject? FindMatchingItemInArray(JsonObject item, JsonArray array)
+    {
+        foreach (JsonNode? arrayItemNode in array)
+        {
+            if (arrayItemNode is not JsonObject arrayItem)
+            {
+                continue;
+            }
+
+            // Check if all properties in the filtered item match
+            bool allMatch = true;
+            foreach (var kvp in item)
+            {
+                if (!arrayItem.TryGetPropertyValue(kvp.Key, out JsonNode? arrayValue))
+                {
+                    allMatch = false;
+                    break;
+                }
+
+                if (kvp.Value == null && arrayValue == null)
+                {
+                    continue;
+                }
+
+                if (
+                    kvp.Value == null
+                    || arrayValue == null
+                    || kvp.Value.ToJsonString() != arrayValue.ToJsonString()
+                )
+                {
+                    allMatch = false;
+                    break;
+                }
+            }
+
+            if (allMatch)
+            {
+                return arrayItem;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Finds a matching item in the existing collection by comparing all common properties.
+    /// </summary>
+    private static JsonObject? FindMatchingItemByAllProperties(
+        JsonObject requestItem,
+        JsonArray existingCollection
+    )
+    {
+        foreach (JsonNode? existingItemNode in existingCollection)
+        {
+            if (existingItemNode is not JsonObject existingItem)
+            {
+                continue;
+            }
+
+            // Count matching properties (at least one should match for identity)
+            int matchingProps = 0;
+            int totalProps = 0;
+            bool hasMismatch = false;
+
+            foreach (var kvp in requestItem)
+            {
+                totalProps++;
+                if (!existingItem.TryGetPropertyValue(kvp.Key, out JsonNode? existingValue))
+                {
+                    continue;
+                }
+
+                if (kvp.Value == null && existingValue == null)
+                {
+                    matchingProps++;
+                    continue;
+                }
+
+                if (
+                    kvp.Value != null
+                    && existingValue != null
+                    && kvp.Value.ToJsonString() == existingValue.ToJsonString()
+                )
+                {
+                    matchingProps++;
+                }
+                else
+                {
+                    hasMismatch = true;
+                }
+            }
+
+            // If all checked properties match and we have at least one match, consider it a match
+            if (!hasMismatch && matchingProps > 0)
+            {
+                return existingItem;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Checks if an item was filtered out by the CollectionItemFilter.
+    /// Returns true if the item does NOT pass the filter (i.e., was excluded).
+    /// </summary>
+    private static bool WasFilteredOutByItemFilter(JsonObject item, CollectionItemFilter? itemFilter)
+    {
+        if (itemFilter == null)
+        {
+            return false;
+        }
+
+        if (!item.TryGetPropertyValue(itemFilter.PropertyName, out JsonNode? propertyValue))
+        {
+            // If property doesn't exist, it doesn't match the filter values
+            // In IncludeOnly mode, items without the property are filtered out
+            // In ExcludeOnly mode, items without the property are kept
+            return itemFilter.FilterMode == FilterMode.IncludeOnly;
+        }
+
+        string? valueStr = propertyValue?.GetValue<string>();
+        bool matchesFilter = itemFilter.Values.Contains(valueStr ?? string.Empty);
+
+        return itemFilter.FilterMode switch
+        {
+            // IncludeOnly: item was filtered OUT if it does NOT match the values
+            FilterMode.IncludeOnly => !matchesFilter,
+            // ExcludeOnly: item was filtered OUT if it DOES match the values
+            FilterMode.ExcludeOnly => matchesFilter,
+            _ => false,
+        };
     }
 
     /// <summary>
