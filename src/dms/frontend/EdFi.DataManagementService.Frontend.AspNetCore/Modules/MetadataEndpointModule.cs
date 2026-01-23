@@ -3,7 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+<<<<<<< HEAD
 using System.Globalization;
+=======
+using System.Collections.Generic;
+using System.Linq;
+>>>>>>> 8bedc095 (Add /metadata/profiles and profile OpenAPI spec endpoints)
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -11,7 +16,6 @@ using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
@@ -218,6 +222,24 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     private static readonly string _errorResourcePath = "Invalid resource path";
 
+
+    /// <summary>
+    /// Extracts the tenant identifier from the route values.
+    /// Returns null if tenant is not present in the route.
+    /// </summary>
+    private static string? ExtractTenantFromRoute(HttpContext httpContext)
+    {
+        if (
+            httpContext.Request.RouteValues.TryGetValue("tenant", out object? value)
+            && value is string tenant
+            && !string.IsNullOrWhiteSpace(tenant)
+        )
+        {
+            return tenant;
+        }
+        return null;
+    }
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapGet("/metadata", GetMetadata);
@@ -241,6 +263,12 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/specifications/resources-spec.json", GetResourceOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
+
+        endpoints.MapGet("/metadata/profiles", GetProfiles);
+        endpoints.MapGet(
+            $"/metadata/profiles/{{profileName}}/resources-spec.json",
+            GetProfileResourceOpenApiSpec
+        );
     }
 
     internal static async Task GetMetadata(HttpContext httpContext)
@@ -322,6 +350,49 @@ public partial class MetadataEndpointModule : IEndpointModule
     {
         JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
         JsonNode content = apiService.GetDescriptorOpenApiSpecification(servers);
+        await httpContext.Response.WriteAsSerializedJsonAsync(content);
+    }
+
+    /// <summary>
+    /// Lists profile names available to the caller's application/tenant.
+    /// </summary>
+    internal static async Task GetProfiles(HttpContext httpContext, IApiService apiService)
+    {
+        string? tenant = ExtractTenantFromRoute(httpContext);
+
+        IReadOnlyList<string> profileNames = await apiService.GetProfileNamesAsync(tenant);
+
+        await httpContext.Response.WriteAsSerializedJsonAsync(
+            new JsonArray(profileNames.Select(name => JsonValue.Create(name)).ToArray())
+        );
+    }
+
+    /// <summary>
+    /// Returns resource OpenAPI spec for a specific profile (cached).
+    /// Currently returns the base spec; profile filtering will be added later.
+    /// </summary>
+    internal static async Task GetProfileResourceOpenApiSpec(
+        HttpContext httpContext,
+        string profileName,
+        IDmsInstanceProvider dmsInstanceProvider,
+        IApiService apiService
+    )
+    {
+        string? tenant = ExtractTenantFromRoute(httpContext);
+        JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
+
+        JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
+            profileName,
+            tenant,
+            servers
+        );
+
+        if (content is null)
+        {
+            httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
+            return;
+        }
+
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
