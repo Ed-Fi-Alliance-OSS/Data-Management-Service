@@ -51,7 +51,7 @@ configure route qualifiers:
 ROUTE_QUALIFIER_SEGMENTS=schoolYear
 
 # Multiple qualifiers (district and school year routing)
-# ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear
+ROUTE_QUALIFIER_SEGMENTS=districtId,schoolYear
 ```
 
 When route qualifiers are configured:
@@ -86,6 +86,19 @@ A working [`.env.multitenancy`](../eng/docker-compose/.env.multitenancy) configu
 is included in the repository.
 
 ## Step 2: Deploy DMS
+
+> [!NOTE]
+> This guide uses a manual, API-driven workflow (via the `.http` file) because
+> it matches how environments are commonly configured in the field.
+> For local demos and quick setup, `start-local-dms.ps1` supports
+> `-SchoolYearRange` to automatically create `dmsInstances` and their
+> `schoolYear` route contexts.
+> `-SchoolYearRange` and `-NoDmsInstance` are mutually exclusive.
+> If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
+> `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
+> required `Tenant` header.
+> Avoid mixing `-SchoolYearRange` with manual instance creation in the same
+> environment, because it can create duplicate instances/route contexts.
 
 Start the DMS stack with your multi-tenancy configuration:
 
@@ -173,10 +186,37 @@ Execute the requests in order:
 > to authenticate in Swagger UI (Step 7). If you lose them, use the
 > `reset-credential` request in the HTTP file to generate new ones.
 
-### Key Concepts
+### Manual `schoolYear` instance setup (with `-NoDmsInstance`)
 
-**Tenant Header**: All Configuration Service requests for tenant-specific data
-must include the `Tenant` HTTP header:
+If you started the stack with `-NoDmsInstance` and want explicit school year
+routing (for example, `/{tenant}/2024/data/...`), create the instances and
+route contexts manually.
+
+Prerequisites:
+
+- `ROUTE_QUALIFIER_SEGMENTS=schoolYear` in your environment file.
+- If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
+  tenant-scoped Configuration Service calls.
+- Create the target PostgreSQL databases first (Step 3).
+
+Steps (repeat per school year):
+
+1. Create a tenant (only once per tenant, if needed).
+2. Create a `dmsInstance` for the year.
+3. Create a `dmsInstanceRouteContext` with `contextKey=schoolYear` and
+   `contextValue={year}`.
+
+Example for tenant `DistrictA` and school year `2024`:
+
+```http
+POST http://localhost:8081/v2/tenants
+Authorization: bearer {token}
+Content-Type: application/json
+
+{
+  "name": "DistrictA"
+}
+```
 
 ```http
 POST http://localhost:8081/v2/dmsInstances
@@ -185,14 +225,11 @@ Tenant: DistrictA
 Content-Type: application/json
 
 {
-    "instanceType": "SchoolYear",
-    "instanceName": "District A - School Year 2024",
-    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;"
+  "instanceType": "SchoolYear",
+  "instanceName": "District A - School Year 2024",
+  "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;"
 }
 ```
-
-**Route Contexts**: For explicit routing, each instance needs route context
-entries matching the configured `ROUTE_QUALIFIER_SEGMENTS`:
 
 ```http
 POST http://localhost:8081/v2/dmsInstanceRouteContexts
@@ -201,11 +238,26 @@ Tenant: DistrictA
 Content-Type: application/json
 
 {
-    "instanceId": 1,
-    "contextKey": "schoolYear",
-    "contextValue": "2024"
+  "instanceId": {instanceIdFromPreviousResponse},
+  "contextKey": "schoolYear",
+  "contextValue": "2024"
 }
 ```
+
+Create another instance for `2025` by repeating the last two requests with a
+different database and `contextValue`.
+
+After creating instances and route contexts, restart the DMS container so it
+reloads instance configuration:
+
+```powershell
+docker restart dms-local-dms-1
+```
+
+Notes:
+
+- If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all tenant-scoped Configuration Service requests.
+- Each instance needs route context entries that match `ROUTE_QUALIFIER_SEGMENTS`.
 
 ## Step 5: Restart DMS Container
 

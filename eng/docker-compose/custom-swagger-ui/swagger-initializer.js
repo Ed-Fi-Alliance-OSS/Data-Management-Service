@@ -44,30 +44,11 @@ window.onload = function () {
 
             console.log('Request interceptor - Route prefix:', routePrefix || '(none)', 'Tenant:', currentTenant || '(none)', 'Original URL:', req.url);
 
-            if (req.url) {
-                // Replace dms-config-service with localhost for CORS
-                if (req.url.includes('dms-config-service')) {
-                    req.url = req.url.replace(
-                        /http:\/\/dms-config-service:(\d+)/g,
-                        'http://localhost:$1'
-                    );
-                    console.log('Hostname replaced in request URL:', req.url);
-                }
-
-                // Add route context segments to data requests
-                if (routePrefix && req.url.includes('/data/') && !req.url.includes('/metadata/')) {
-                    if (!req.url.includes(`${routePrefix}/data/`)) {
-                        req.url = req.url.replace(/\/data\//, `${routePrefix}/data/`);
-                        console.log('Route context added to data request:', req.url);
-                    }
-                }
-
-                // Add route context prefix to OAuth token requests
-                if (routePrefix && req.url.includes('/connect/token')) {
-                    if (!req.url.includes(`/connect/token${routePrefix}`)) {
-                        req.url = req.url.replace(/\/connect\/token(?=\/|\?|#|$)/, `/connect/token${routePrefix}`);
-                        console.log('Token request final URL:', req.url);
-                    }
+            if (req.url && routeState && typeof routeState.rewriteRequestUrl === 'function') {
+                const originalUrl = req.url;
+                req.url = routeState.rewriteRequestUrl(req.url);
+                if (req.url !== originalUrl) {
+                    console.log('Request URL rewritten:', req.url);
                 }
             }
             return req;

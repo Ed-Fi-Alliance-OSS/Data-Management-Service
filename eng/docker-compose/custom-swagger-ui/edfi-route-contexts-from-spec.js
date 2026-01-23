@@ -20,6 +20,7 @@ window.EdFiRouteContext = function () {
     const sharedState = {
         getSelections: () => ({ ...state.selections }),
         getRoutePrefix: () => buildRoutePrefix(),
+        rewriteRequestUrl: (url) => rewriteRequestUrl(url),
     };
     window.__edfiRouteContextState = sharedState;
 
@@ -77,10 +78,46 @@ window.EdFiRouteContext = function () {
 
         state.routeOrder = serverDetails.order;
         state.urlTemplate = serverDetails.urlTemplate;
-        state.selections = serverDetails.defaults;
+    state.selections = buildUpdatedSelections(serverDetails.fields, serverDetails.defaults);
 
         renderSelector(serverDetails.fields);
         updateComputedUrl();
+    };
+
+    const buildUpdatedSelections = (fields, defaults) => {
+        const nextSelections = { ...(defaults || {}) };
+
+        if (!Array.isArray(fields) || fields.length === 0) {
+            return nextSelections;
+        }
+
+        fields.forEach((field) => {
+            if (!field || !field.name) {
+                return;
+            }
+
+            if (!Object.prototype.hasOwnProperty.call(state.selections, field.name)) {
+                return;
+            }
+
+            const priorValue = stringifyValue(state.selections[field.name]);
+            if (priorValue === undefined) {
+                return;
+            }
+
+            const trimmedPrior = String(priorValue).trim();
+
+            if (Array.isArray(field.options) && field.options.length > 0) {
+                if (field.options.includes(trimmedPrior)) {
+                    nextSelections[field.name] = trimmedPrior;
+                }
+                return;
+            }
+
+            nextSelections[field.name] = trimmedPrior;
+        });
+
+        return nextSelections;
     };
 
     const parseServerDetails = (spec) => {
@@ -306,6 +343,32 @@ window.EdFiRouteContext = function () {
         state.computedValueEl.textContent = computedUrl;
     };
 
+    const rewriteRequestUrl = (url) => {
+        if (!url || typeof url !== 'string') {
+            return url;
+        }
+
+        let rewrittenUrl = url;
+
+        // Browser cannot resolve Docker DNS names; map to localhost while preserving scheme/port.
+        rewrittenUrl = rewrittenUrl.replace(/:\/\/dms-config-service(?=[:/]|$)/g, '://localhost');
+
+        const routePrefix = buildRoutePrefix();
+        if (routePrefix && rewrittenUrl.includes('/data/') && !rewrittenUrl.includes('/metadata/')) {
+            if (!rewrittenUrl.includes(`${routePrefix}/data/`)) {
+                rewrittenUrl = rewrittenUrl.replace(/\/data\//, `${routePrefix}/data/`);
+            }
+        }
+
+        if (routePrefix && rewrittenUrl.includes('/connect/token')) {
+            if (!rewrittenUrl.includes(`/connect/token${routePrefix}`)) {
+                rewrittenUrl = rewrittenUrl.replace(/\/connect\/token(?=\/|\?|#|$)/, `/connect/token${routePrefix}`);
+            }
+        }
+
+        return rewrittenUrl;
+    };
+
     const stringifyValue = (value) => {
         if (value === null || value === undefined) {
             return undefined;
@@ -409,7 +472,7 @@ window.EdFiRouteContext = function () {
                                         ...server,
                                         url:
                                             typeof server.url === 'string'
-                                                ? server.url.replace('dms-config-service', 'localhost')
+                                                ? server.url.replace(/:\/\/dms-config-service(?=[:/]|$)/g, '://localhost')
                                                 : server.url,
                                     }));
 
