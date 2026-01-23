@@ -121,7 +121,7 @@ The pieces fit together like this:
    - The composite FK targets `{schema}.{AbstractResource}Identity` with `ON UPDATE CASCADE`, so:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored abstract identity columns are kept correct automatically.
-5. **Read-time identity projection is local**
+5. **Read-time reference identity projection is local**
    - Reconstitution emits reference objects from the stored propagated identity columns (no join required).
    - A `{schema}.{AbstractResource}_View` union view can still be emitted for diagnostics/integrations, but it is not required for API correctness.
 
@@ -356,7 +356,7 @@ Correctness must not depend on this table:
 ### Freshness contract (recommended)
 
 When serving from `dms.DocumentCache`, treat a row as usable only if it is **fresh**:
-- compare the cached representation stamp to the current `dms.Document.ContentVersion`,
+- compare the cached representation stamp (e.g., `dms.DocumentCache.Etag`, derived from `dms.Document.ContentVersion`) to the current `dms.Document` stamp,
 - if mismatched (or missing), fall back to relational reconstitution and/or enqueue a rebuild.
 
 ### Rebuild/invalidation triggers (eventual consistency)
@@ -368,7 +368,7 @@ Because indirect representation changes are materialized as local updates (via c
 So the projector does not require reverse dependency expansion. A minimal approach:
 1. Consume `dms.DocumentChangeEvent` in `ChangeVersion` order.
 2. Rebuild `dms.DocumentCache` for `(DocumentId, ChangeVersion)` rows not yet applied.
-3. Keep `dms.DocumentCache` rows tagged with the applied `ContentVersion` to enforce freshness.
+3. Keep `dms.DocumentCache` rows tagged with the applied representation stamp (e.g., `ContentVersion` and/or the derived `_etag`) to enforce freshness.
 
 ---
 

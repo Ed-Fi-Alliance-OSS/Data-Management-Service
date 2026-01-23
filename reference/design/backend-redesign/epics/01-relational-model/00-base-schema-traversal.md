@@ -1,14 +1,21 @@
+---
+jira: DMS-929
+jira_url: https://edfi.atlassian.net/browse/DMS-929
+---
+
 # Story: Derive Base Tables/Columns from JSON Schema
 
 ## Description
 
-Implement the base JSON-schema traversal that derives relational tables and scalar columns from `resourceSchema.jsonSchemaForInsert`, per `reference/design/backend-redesign/flattening-reconstitution.md`:
+Implement the base JSON-schema traversal that derives relational tables and scalar columns from `resourceSchema.jsonSchemaForInsert`, per `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`:
 
 - Arrays create child tables keyed by parent key parts + `Ordinal`.
 - Objects inline (except `_ext`) by turning scalar descendants into prefixed columns.
 - Scalars become typed columns (with nullability/required-ness derived from JSON Schema).
 - `$ref` must be resolved deterministically.
 - `additionalProperties` is treated as “prune/ignore” (closed-world persistence).
+
+This story produces the base per-resource table/column shape used to populate `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).
 
 ## Acceptance Criteria
 
@@ -31,4 +38,3 @@ Implement the base JSON-schema traversal that derives relational tables and scal
    1. nested collections,
    2. scalar-inlined objects,
    3. `additionalProperties` behavior.
-

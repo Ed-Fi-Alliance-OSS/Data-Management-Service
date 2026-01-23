@@ -1,8 +1,13 @@
+---
+jira: DMS-962
+jira_url: https://edfi.atlassian.net/browse/DMS-962
+---
+
 # Story: Runtime Compatibility Gate Tests (Mapping Set ↔ DB Validation)
 
 ## Description
 
-Implement and test the runtime compatibility gate described in `reference/design/backend-redesign/ddl-generator-testing.md`:
+Implement and test the runtime compatibility gate described in `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`:
 
 - DB records `EffectiveSchemaHash` and `ResourceKeySeedHash/Count`.
 - Runtime (or tooling) validates that:
@@ -28,4 +33,3 @@ This story focuses on the validation algorithm and its tests (even if mapping pa
 2. Implement optional slow-path diff reading `dms.ResourceKey` ordered by `ResourceKeyId`.
 3. Add integration tests that run after DB-apply provisioning and exercise pass/fail paths.
 4. Document how this validator will be reused by the DMS runtime on first use of a connection string.
-

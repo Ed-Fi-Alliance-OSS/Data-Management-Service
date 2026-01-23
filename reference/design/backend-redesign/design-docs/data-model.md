@@ -67,7 +67,7 @@ CREATE TABLE dms.ResourceKey (
 
 Canonical metadata per persisted resource instance. One row per document, regardless of resource type.
 
-Update tracking note: `reference/design/backend-redesign/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using stored per-document stamps on `dms.Document`, updated in-transaction. Indirect representation changes are realized via FK-cascade updates to stored reference identity columns on referrers, which then trigger normal stamping.
+Update tracking note: `reference/design/backend-redesign/design-docs/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using stored per-document stamps on `dms.Document`, updated in-transaction. Indirect representation changes are realized via FK-cascade updates to stored reference identity columns on referrers, which then trigger normal stamping.
 
 **PostgreSQL**
 
@@ -77,9 +77,10 @@ CREATE TABLE dms.Document (
     DocumentUuid uuid NOT NULL,
     ResourceKeyId smallint NOT NULL REFERENCES dms.ResourceKey (ResourceKeyId),
 
-    -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
-    ContentVersion bigint NOT NULL DEFAULT 1,
-    IdentityVersion bigint NOT NULL DEFAULT 1,
+    -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
+    -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
+    ContentVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
+    IdentityVersion bigint NOT NULL DEFAULT nextval('dms.ChangeVersionSequence'),
     ContentLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
     IdentityLastModifiedAt timestamp with time zone NOT NULL DEFAULT now(),
 
@@ -103,9 +104,10 @@ CREATE TABLE dms.Document (
 
     ResourceKeyId smallint NOT NULL,
 
-    -- Update tracking tokens (see reference/design/backend-redesign/update-tracking.md)
-    ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (1),
-    IdentityVersion bigint NOT NULL CONSTRAINT DF_Document_IdentityVersion DEFAULT (1),
+    -- Update tracking tokens (see reference/design/backend-redesign/design-docs/update-tracking.md)
+    -- Note: emitted DDL must create dms.ChangeVersionSequence before dms.Document.
+    ContentVersion bigint NOT NULL CONSTRAINT DF_Document_ContentVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
+    IdentityVersion bigint NOT NULL CONSTRAINT DF_Document_IdentityVersion DEFAULT (NEXT VALUE FOR dms.ChangeVersionSequence),
     ContentLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_ContentLastModifiedAt DEFAULT (sysutcdatetime()),
     IdentityLastModifiedAt datetime2(7) NOT NULL CONSTRAINT DF_Document_IdentityLastModifiedAt DEFAULT (sysutcdatetime()),
 
@@ -123,7 +125,7 @@ CREATE INDEX IX_Document_ResourceKeyId_DocumentId
 Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
-- Update tracking columns (brief semantics; see `reference/design/backend-redesign/update-tracking.md` for the normative rules):
+- Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
   - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to stored reference identity columns).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
   - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are served from these stored stamps (no read-time dependency derivation).
@@ -132,7 +134,7 @@ Notes:
 
 ##### 1a) `dms.ChangeVersionSequence`
 
-Global monotonic `bigint` sequence used to allocate update tracking stamps (for `ContentVersion`, `IdentityVersion`, and journal `ChangeVersion`). See `reference/design/backend-redesign/update-tracking.md` for stamping rules.
+Global monotonic `bigint` sequence used to allocate update tracking stamps (for `ContentVersion`, `IdentityVersion`, and journal `ChangeVersion`). See `reference/design/backend-redesign/design-docs/update-tracking.md` for stamping rules.
 
 **PostgreSQL**
 
@@ -151,7 +153,7 @@ CREATE SEQUENCE dms.ChangeVersionSequence
 
 ##### 1b) `dms.DocumentChangeEvent` (append-only journal)
 
-Append-only journal of per-document representation changes (served `_etag/_lastModifiedDate/ChangeVersion` impacts). Used to support future Change Query APIs. See `reference/design/backend-redesign/update-tracking.md` for the selection algorithm and retention guidance.
+Append-only journal of per-document representation changes (served `_etag/_lastModifiedDate/ChangeVersion` impacts). Used to support future Change Query APIs. See `reference/design/backend-redesign/design-docs/update-tracking.md` for the selection algorithm and retention guidance.
 
 Why this table exists (vs. scanning resource tables / `dms.Document`):
 - Change Queries need an efficient way to find “documents of resource R whose representation `ChangeVersion` is in `[min,max]`”. Scanning all documents (or all rows of the resource table) to find those candidates does not scale with total dataset size.
@@ -199,7 +201,7 @@ CREATE INDEX IX_DocumentChangeEvent_ResourceKeyId_ChangeVersion
     ON dms.DocumentChangeEvent (ResourceKeyId, ChangeVersion, DocumentId);
 ```
 
-Recommended population: enforce journal insertion with database triggers on `dms.Document` when `ContentVersion` changes (to avoid “forgotten journal write” bugs and to naturally cover cascaded updates); see `reference/design/backend-redesign/update-tracking.md`.
+Recommended population: enforce journal insertion with database triggers on `dms.Document` when `ContentVersion` changes (to avoid “forgotten journal write” bugs and to naturally cover cascaded updates); see `reference/design/backend-redesign/design-docs/update-tracking.md`.
 
 ##### 2) `dms.ReferentialIdentity`
 
@@ -315,10 +317,11 @@ CREATE TABLE dms.EffectiveSchema (
     ApiSchemaFormatVersion varchar(64) NOT NULL,
     EffectiveSchemaHash varchar(64) NOT NULL,
     ResourceKeyCount smallint NOT NULL,
-    ResourceKeySeedHash varchar(64) NOT NULL,
+    ResourceKeySeedHash bytea NOT NULL,
     AppliedAt timestamp with time zone NOT NULL DEFAULT now(),
     CONSTRAINT CK_EffectiveSchema_Singleton CHECK (EffectiveSchemaSingletonId = 1),
-    CONSTRAINT UX_EffectiveSchema_EffectiveSchemaHash UNIQUE (EffectiveSchemaHash)
+    CONSTRAINT UX_EffectiveSchema_EffectiveSchemaHash UNIQUE (EffectiveSchemaHash),
+    CONSTRAINT CK_EffectiveSchema_ResourceKeySeedHash_Length CHECK (octet_length(ResourceKeySeedHash) = 32)
 );
 
 CREATE TABLE dms.SchemaComponent (
@@ -329,6 +332,35 @@ CREATE TABLE dms.SchemaComponent (
     ProjectVersion varchar(32) NOT NULL,
     IsExtensionProject boolean NOT NULL,
     CONSTRAINT PK_SchemaComponent PRIMARY KEY (EffectiveSchemaHash, ProjectEndpointName)
+);
+```
+
+**SQL Server**
+
+```sql
+CREATE TABLE dms.EffectiveSchema (
+    EffectiveSchemaSingletonId smallint NOT NULL
+        CONSTRAINT PK_EffectiveSchema PRIMARY KEY CLUSTERED,
+
+    ApiSchemaFormatVersion nvarchar(64) NOT NULL,
+    EffectiveSchemaHash nvarchar(64) NOT NULL,
+    ResourceKeyCount smallint NOT NULL,
+    ResourceKeySeedHash binary(32) NOT NULL,
+    AppliedAt datetime2(7) NOT NULL CONSTRAINT DF_EffectiveSchema_AppliedAt DEFAULT (sysutcdatetime()),
+
+    CONSTRAINT CK_EffectiveSchema_Singleton CHECK (EffectiveSchemaSingletonId = 1),
+    CONSTRAINT UX_EffectiveSchema_EffectiveSchemaHash UNIQUE (EffectiveSchemaHash)
+);
+
+CREATE TABLE dms.SchemaComponent (
+    EffectiveSchemaHash nvarchar(64) NOT NULL
+        CONSTRAINT FK_SchemaComponent_EffectiveSchemaHash
+        REFERENCES dms.EffectiveSchema (EffectiveSchemaHash) ON DELETE CASCADE,
+    ProjectEndpointName nvarchar(128) NOT NULL,
+    ProjectName nvarchar(256) NOT NULL,
+    ProjectVersion nvarchar(32) NOT NULL,
+    IsExtensionProject bit NOT NULL,
+    CONSTRAINT PK_SchemaComponent PRIMARY KEY CLUSTERED (EffectiveSchemaHash, ProjectEndpointName)
 );
 ```
 
@@ -438,7 +470,7 @@ This table is intentionally designed to support **CDC streaming** (e.g., Debeziu
 
 Prefer **eventual consistency** (background/write-driven projection) where rows may be rebuilt asynchronously. For rationale and projector/refresh semantics, see [transactions-and-concurrency.md](transactions-and-concurrency.md) (`dms.DocumentCache` section).
 
-Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store `_etag/_lastModifiedDate` as served from `dms.Document` at materialization time, and cache reads should validate freshness by comparing to the current `dms.Document.ContentVersion`/`ContentLastModifiedAt` (see `reference/design/backend-redesign/update-tracking.md`).
+Update tracking note: if `dms.DocumentCache` stores materialized API JSON, it should store `_etag/_lastModifiedDate` as served from `dms.Document` at materialization time, and cache reads should validate freshness by comparing to the current `dms.Document.ContentVersion`/`ContentLastModifiedAt` (see `reference/design/backend-redesign/design-docs/update-tracking.md`).
 
 Denormalized resource naming:
 - `ProjectName`/`ResourceName` are denormalized copies (from `dms.ResourceKey`) kept for CDC/streaming consumers and ad-hoc diagnostics.
@@ -829,6 +861,9 @@ Object names are deterministic and derived from the owning table and column name
 - Unique constraints: `UX_{TableName}_{Column1}_{Column2}_...` (columns in key order)
 - Foreign keys: `FK_{TableName}_{ColumnName}` (or `FK_{TableName}_{Column1}_{Column2}` for composite FKs)
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)
+- Triggers: `TR_{TableName}_{Purpose}`
+  - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`
+  - PostgreSQL trigger functions (when used): `TF_{TableName}_{Purpose}`
 
 If a name exceeds the dialect identifier limit, apply truncation + hash as below.
 

@@ -74,7 +74,7 @@ Everything else can be derived and compiled once per schema version into a resou
 - Avoid enumerating tables/columns explicitly.
 
 Normative physical identifier rules (schema/table/column naming, quoting, truncation, and constraint/index naming) are defined in:
-- `reference/design/backend-redesign/data-model.md` (`Naming Rules (Deterministic, Cross-DB Safe)`)
+- `reference/design/backend-redesign/design-docs/data-model.md` (`Naming Rules (Deterministic, Cross-DB Safe)`)
 
 ### 3.2 Proposed shape
 
@@ -150,11 +150,11 @@ Determinism requirement:
 
 Core tables store resource type as `ResourceKeyId` (see `dms.ResourceKey` in [data-model.md](data-model.md)), while compiled plans are keyed by `QualifiedResourceName(ProjectName, ResourceName)`.
 
-In AOT mode, the mapping pack **embeds** the deterministic `dms.ResourceKey` seed list for that `EffectiveSchemaHash` (ordered `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)`), and DDL provisioning records a matching `ResourceKeySeedHash` in `dms.EffectiveSchema` for fast runtime validation.
+In AOT mode, the mapping pack **embeds** the deterministic `dms.ResourceKey` seed list for that `EffectiveSchemaHash` (ordered `(ResourceKeyId, ProjectName, ResourceName, ResourceVersion)`), and DDL provisioning records a matching `ResourceKeySeedHash` in `dms.EffectiveSchema` for fast runtime validation (`ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes).
 
 On first use of a database (after reading its recorded `EffectiveSchemaHash` and selecting/loading the mapping pack), DMS must:
 1. Read `ResourceKeyCount` and `ResourceKeySeedHash` from the singleton `dms.EffectiveSchema` row.
-2. Compare to the expected fingerprint from the mapping set (derived from the embedded seed list).
+2. Compare to the expected fingerprint from the mapping set (derived from the embedded seed list), byte-for-byte.
 3. If the fingerprint matches, accept without reading `dms.ResourceKey` (fast path).
 4. If the fingerprint mismatches (or the columns are missing), fall back to reading `dms.ResourceKey` ordered by `ResourceKeyId` and diffing against the embedded list for diagnostics, then fail fast.
 5. Cache bidirectional maps for the lifetime of the mapping set:
@@ -162,6 +162,10 @@ On first use of a database (after reading its recorded `EffectiveSchemaHash` and
    - `ResourceKeyId -> (QualifiedResourceName, ResourceVersion)` (background tasks, diagnostics, denormalized metadata materialization)
 
 Fail fast if the table does not match the pack (schema mismatch / mis-provisioned database).
+
+Operational mitigation (recommended):
+- Treat `dms.ResourceKey` and the singleton `dms.EffectiveSchema` row as immutable seed artifacts.
+- Provision with a privileged role, and run DMS with a runtime database principal that has read-only access to these tables. This prevents post-provisioning drift that the `ResourceKeySeedHash` fast-path check cannot detect without a full `dms.ResourceKey` diff.
 
 ### 4.1 Derivation algorithm (high-level)
 
@@ -658,7 +662,7 @@ In this redesign, identity fields inside reference objects are stored as local c
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns,
   kept consistent via composite FKs with `ON UPDATE CASCADE`.
 
-Therefore reference expansion during JSON writing is a pure “read local columns and emit the reference object” operation. No batched identity projection queries (joins to referenced tables or `{AbstractResource}_View`) are required to populate reference identity fields.
+Therefore reference expansion during JSON writing is a pure “read local columns and emit the reference object” operation. No batched reference identity projection queries (joins to referenced tables or `{AbstractResource}_View`) are required to populate reference identity fields.
 
 For polymorphic/abstract targets, referrers store the abstract identity fields (e.g., `EducationOrganizationId`) and enforce membership via a composite FK to `{schema}.{AbstractResource}Identity`.
 
@@ -694,6 +698,12 @@ Think of these objects in **three layers**:
 1. **Shape layer** (`RelationalResourceModel`): what tables/columns/keys exist for a resource and how they correspond to JSON paths.
 2. **Plan layer** (`ResourceWritePlan`, `ResourceReadPlan`): compiled SQL plus precomputed details needed for efficient execution.
 3. **Execution layer** (`IResourceFlattener`, `IBulkInserter`, `IResourceReconstituter`): runtime services that consume the plans.
+
+These per-resource shapes are intended to be assembled into a single, shared mapping object graph:
+- `DerivedRelationalModelSet` (dialect-aware, SQL-free inventory used by DDL emission and plan compilation; includes DDL intent like indexes/triggers)
+- `MappingSet` (dialect-specific derived model set + compiled plans used at runtime and by mapping packs)
+
+See: `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`.
 
 All three layers are cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)` so the per-request cost is only: reference resolution + row materialization + SQL execution + JSON writing.
 
@@ -854,7 +864,7 @@ public readonly record struct JsonPathExpression(
 The shape model is the output of the “derive from ApiSchema” step. It is:
 - **resource-specific** (one per resource type)
 - **fully explicit** (tables/columns/keys enumerated)
-- **dialect-neutral** (no SQL strings inside)
+- **SQL-free** (no SQL strings inside; physical identifiers may be dialect-shortened)
 
 ```csharp
 /// <summary>
@@ -1686,7 +1696,7 @@ Notes:
 - The reconstituter is responsible for:
   1) materializing the `page` keyset from `PageDocumentIdSql`
   2) running all `TableReadPlan.SelectByKeysetSql` statements (multi-resultset)
-  3) performing descriptor expansion and identity projection in batched follow-ups (or as additional result sets)
+  3) performing descriptor expansion in batched follow-ups (or as additional result sets)
 
 Reconstitution inner loop sketch (single round-trip hydration with `NextResult()`):
 
@@ -1716,7 +1726,7 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
         ReadTableRows(reader, table); // grouped by (parent key parts..., ordinal)
     }
 
-    // descriptor + identity projection follow-ups can either be:
+    // descriptor projection follow-ups can either be:
     // - additional result sets in this same command, or
     // - a second command (still batched, page-sized)
     return AssembleJson(plan, documentMetadata /* + tables + lookups */);

@@ -130,7 +130,7 @@ The redesign moves read complexity from “fetch 1 JSON blob” to “hydrate ro
 - application allocation pressure (many row objects, JSON assembly work).
 
 This baseline reduces some previous read overhead by:
-- reconstituting reference identity fields from local propagated columns (no identity projection joins), and
+- reconstituting reference identity fields from local propagated columns (no referenced-table joins), and
 - serving `_etag/_lastModifiedDate/ChangeVersion` from stored stamps (no dependency-token expansion).
 
 Guidance:
@@ -159,4 +159,3 @@ Mitigations:
 Mitigations:
 - Partition/retain by `ChangeVersion` and/or `CreatedAt` as appropriate per engine.
 - Expose and enforce `oldestChangeVersion` (see [update-tracking.md](update-tracking.md)).
-

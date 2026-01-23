@@ -1,3 +1,8 @@
+---
+jira: DMS-991
+jira_url: https://edfi.atlassian.net/browse/DMS-991
+---
+
 # Story: Reconstitute Reference Identity Values from Local Propagated Columns
 
 ## Description
@@ -9,8 +14,8 @@ This baseline redesign persists referenced identity natural-key fields alongside
 - no union-view projection required for abstract references.
 
 Align with:
-- `reference/design/backend-redesign/flattening-reconstitution.md` (reference reconstitution),
-- `reference/design/backend-redesign/data-model.md` (propagated identity columns and abstract identity tables).
+- `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` (reference reconstitution),
+- `reference/design/backend-redesign/design-docs/data-model.md` (propagated identity columns and abstract identity tables).
 
 ## Acceptance Criteria
 

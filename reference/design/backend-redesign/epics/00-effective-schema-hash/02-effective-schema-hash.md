@@ -1,8 +1,13 @@
+---
+jira: DMS-925
+jira_url: https://edfi.atlassian.net/browse/DMS-925
+---
+
 # Story: Compute `EffectiveSchemaHash`
 
 ## Description
 
-Implement the deterministic `EffectiveSchemaHash` algorithm defined in `reference/design/backend-redesign/data-model.md`, including:
+Implement the deterministic `EffectiveSchemaHash` algorithm defined in `reference/design/backend-redesign/design-docs/data-model.md`, including:
 
 - OpenAPI payload exclusion
 - per-project canonical JSON hashing
@@ -26,11 +31,10 @@ The output is a lowercase hex SHA-256 hash (64 chars).
 
 ## Tasks
 
-1. Implement `EffectiveSchemaHashCalculator` following the “Algorithm (suggested)” section in `reference/design/backend-redesign/data-model.md`.
+1. Implement `EffectiveSchemaHashCalculator` following the “Algorithm (suggested)” section in `reference/design/backend-redesign/design-docs/data-model.md`.
 2. Centralize the `RelationalMappingVersion` constant and ensure it is included in the hashed manifest.
 3. Add unit tests validating:
    1. stability across ordering/formatting,
    2. OpenAPI exclusion behavior,
    3. `RelationalMappingVersion` participation.
 4. Add at least one checked-in small fixture with a known expected `EffectiveSchemaHash`.
-

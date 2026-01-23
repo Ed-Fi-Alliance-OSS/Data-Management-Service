@@ -1,3 +1,8 @@
+---
+jira: DMS-923
+jira_url: https://edfi.atlassian.net/browse/DMS-923
+---
+
 # Story: Load and Normalize `ApiSchema.json` Inputs
 
 ## Description
@@ -25,11 +30,10 @@ Key behaviors:
 ## Tasks
 
 1. Add an “effective schema set” loader component (library-first) that takes an explicit list of file paths/streams.
-2. Implement OpenAPI payload stripping (`removeOpenApiPayloads(...)`) exactly per `reference/design/backend-redesign/data-model.md`.
+2. Implement OpenAPI payload stripping (`removeOpenApiPayloads(...)`) exactly per `reference/design/backend-redesign/design-docs/data-model.md`.
 3. Validate and normalize `ProjectEndpointName` and `ProjectName` values needed by downstream stages.
 4. Add unit tests covering:
    1. file ordering independence,
    2. OpenAPI payload exclusion,
    3. mismatch/fail-fast paths.
 5. Wire the loader into the generator entry points used by CLI and test harness (no divergent implementations).
-

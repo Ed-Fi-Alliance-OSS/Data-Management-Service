@@ -1,8 +1,8 @@
-# `dms.ReferentialIdentity` Test Plan (Backend-Redesign Alternatives)
+# `dms.ReferentialIdentity` Test Plan (Backend Redesign)
 
-This test plan targets the correctness risk described in `reference/design/backend-redesign/strengths-risks.md` (“ReferentialIdentity Incorrect Mapping”): a valid `ReferentialId` resolving to the wrong `DocumentId`, or a `DocumentId` having an incorrect/stale `ReferentialId`.
+This test plan targets the correctness risk described in `reference/design/backend-redesign/design-docs/strengths-risks.md` (“ReferentialIdentity Incorrect Mapping”): a valid `ReferentialId` resolving to the wrong `DocumentId`, or a `DocumentId` having an incorrect/stale `ReferentialId`.
 
-The alternatives in `reference/design/backend-redesign/alternatives/` generally assume `dms.ReferentialIdentity` is maintained transactionally (e.g., row-local triggers + cascades). These tests aim to ensure that maintenance is correct, fails closed on “impossible” states, and remains correct under batching and concurrency.
+This plan applies to the baseline redesign (and any future variants) that retain `dms.ReferentialIdentity` and maintain it transactionally (e.g., row-local triggers + cascades). Variants that remove `ReferentialId`s entirely are out of scope for this test plan.
 
 ## Execution matrix (minimum)
 
@@ -54,4 +54,3 @@ These tests detect cases where the `DocumentId` is correct but the `ReferentialI
 - **Uniqueness conflict test**: attempt an identity change that would collide with another document’s identity; assert the transaction fails and `dms.ReferentialIdentity` is unchanged (no partial state).
 - **Rebuild/backfill idempotence test** (if repair tooling exists): run the recompute/repair routine twice; assert the second run produces zero changes and the final state matches Core-computed ids.
 - **Generator determinism test**: snapshot/contract-test the generated identity concatenation order (identity json paths ordering) and the UUIDv5 helper so regeneration cannot silently change referential-id computation.
-

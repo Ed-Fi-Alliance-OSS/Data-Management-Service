@@ -1,3 +1,8 @@
+---
+jira: DMS-1000
+jira_url: https://edfi.atlassian.net/browse/DMS-1000
+---
+
 # Story: Invalidate Identity Resolution Caches After Commit
 
 ## Description

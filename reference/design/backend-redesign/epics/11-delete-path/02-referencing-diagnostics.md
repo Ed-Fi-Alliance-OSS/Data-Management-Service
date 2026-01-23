@@ -1,3 +1,8 @@
+---
+jira: DMS-1012
+jira_url: https://edfi.atlassian.net/browse/DMS-1012
+---
+
 # Story: Provide “Who References Me?” Diagnostics Without a Reverse-Edge Table
 
 ## Description

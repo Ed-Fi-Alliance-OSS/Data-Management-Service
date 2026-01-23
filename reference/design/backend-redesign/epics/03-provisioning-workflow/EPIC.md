@@ -1,3 +1,8 @@
+---
+jira: DMS-948
+jira_url: https://edfi.atlassian.net/browse/DMS-948
+---
+
 # Epic: Provisioning Workflow (Create-Only)
 
 ## Description
@@ -13,9 +18,9 @@ Authorization objects remain out of scope.
 
 ## Stories
 
-- `00-ddl-emit-command.md` — CLI: `ddl emit` (files + manifests)
-- `01-ddl-provision-command.md` — CLI: `ddl provision` (create-only, optional create DB)
-- `02-preflight-and-idempotency.md` — Preflight mismatch + rerun safety + diagnostics
-- `03-ddl-manifest.md` — Emit `ddl.manifest.json` (normalized hashes + counts)
-- `04-remove-legacy-schemagenerator.md` — Remove legacy SchemaGenerator toolchain and migrate references
-- `05-seed-descriptors.md` — Optional: `ddl provision --seed-descriptors` (bootstrap descriptor reference data)
+- `DMS-950` — `00-ddl-emit-command.md` — CLI: `ddl emit` (files + manifests)
+- `DMS-951` — `01-ddl-provision-command.md` — CLI: `ddl provision` (create-only, optional create DB)
+- `DMS-952` — `02-preflight-and-idempotency.md` — Preflight mismatch + rerun safety + diagnostics
+- `DMS-953` — `03-ddl-manifest.md` — Emit `ddl.manifest.json` (normalized hashes + counts)
+- `DMS-954` — `04-remove-legacy-schemagenerator.md` — Remove legacy SchemaGenerator toolchain and migrate references
+- `DMS-955` — `05-seed-descriptors.md` — Optional: `ddl provision --seed-descriptors` (bootstrap descriptor reference data)

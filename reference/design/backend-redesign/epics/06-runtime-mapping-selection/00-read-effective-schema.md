@@ -1,3 +1,8 @@
+---
+jira: DMS-975
+jira_url: https://edfi.atlassian.net/browse/DMS-975
+---
+
 # Story: Read and Cache DB Fingerprint (`dms.EffectiveSchema`)
 
 ## Description
@@ -8,7 +13,7 @@ Implement the runtime “first use” schema validation step:
 - The read occurs before any schema-dependent work (plan compilation, relational reads/writes).
 - Errors are fail-fast per database (a mis-provisioned DB does not prevent serving other DBs).
 
-This follows `reference/design/backend-redesign/transactions-and-concurrency.md` (“Schema Validation (EffectiveSchema)”).
+This follows `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (“Schema Validation (EffectiveSchema)”).
 
 ## Acceptance Criteria
 

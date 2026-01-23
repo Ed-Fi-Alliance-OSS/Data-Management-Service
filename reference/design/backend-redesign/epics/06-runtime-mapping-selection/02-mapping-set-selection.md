@@ -1,3 +1,8 @@
+---
+jira: DMS-977
+jira_url: https://edfi.atlassian.net/browse/DMS-977
+---
+
 # Story: Select Mapping Set by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion)`
 
 ## Description
@@ -6,9 +11,13 @@ Implement mapping set selection based on the database’s `EffectiveSchemaHash`:
 
 - Determine the runtime dialect (PGSQL vs MSSQL).
 - Select a matching mapping set using:
-  - `.mpack` loading when enabled (see `reference/design/backend-redesign/aot-compilation.md` and `reference/design/backend-redesign/mpack-format-v1.md`), or
+  - `.mpack` loading when enabled (see `reference/design/backend-redesign/design-docs/aot-compilation.md` and `reference/design/backend-redesign/design-docs/mpack-format-v1.md`), or
   - runtime compilation fallback when allowed.
 - Cache mapping sets by selection key to avoid repeat compilation/decoding.
+
+The mapping set returned by this story is the unified `MappingSet` shape described in `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`.
+
+Runtime compilation fallback (when enabled) uses the shared plan compiler + cache owned by `reference/design/backend-redesign/epics/15-plan-compilation/EPIC.md`.
 
 ## Acceptance Criteria
 

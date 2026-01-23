@@ -1,3 +1,8 @@
+---
+jira: DMS-968
+jira_url: https://edfi.atlassian.net/browse/DMS-968
+---
+
 # Story: Pack Loader/Validator + Mapping Set Selection
 
 ## Description
@@ -5,8 +10,8 @@
 Implement the consumer-side logic that:
 
 - selects a mapping pack by `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)`,
-- validates and decodes the pack per `reference/design/backend-redesign/mpack-format-v1.md`,
-- builds the runtime mapping set from the payload,
+- validates and decodes the pack per `reference/design/backend-redesign/design-docs/mpack-format-v1.md`,
+- builds the runtime mapping set (`MappingSet`; see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`) from the payload,
 - and validates DB compatibility via the `dms.ResourceKey` seed gate (fast path via `dms.EffectiveSchema`, slow path diff).
 
 This is shared infrastructure used by:
@@ -43,4 +48,3 @@ This is shared infrastructure used by:
    1. provision DB,
    2. load pack and validate seed gate,
    3. tamper DB seed data and assert failure with diff diagnostics.
-

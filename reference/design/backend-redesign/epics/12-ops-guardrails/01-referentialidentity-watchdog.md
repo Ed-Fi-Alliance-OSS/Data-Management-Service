@@ -1,3 +1,8 @@
+---
+jira: DMS-1016
+jira_url: https://edfi.atlassian.net/browse/DMS-1016
+---
+
 # Story: Sampling-Based Integrity Watchdog (ReferentialIdentity + Journals)
 
 ## Description

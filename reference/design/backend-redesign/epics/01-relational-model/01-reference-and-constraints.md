@@ -1,11 +1,17 @@
+---
+jira: DMS-930
+jira_url: https://edfi.atlassian.net/browse/DMS-930
+---
+
 # Story: Bind References/Descriptors + Derive Constraints
 
 ## Description
 
 Augment the base derived model with `documentPathsMapping`, `identityJsonPaths`, and `arrayUniquenessConstraints` per:
 
-- `reference/design/backend-redesign/flattening-reconstitution.md`
-- `reference/design/backend-redesign/data-model.md`
+- `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
+- `reference/design/backend-redesign/design-docs/data-model.md`
+- `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` (unified `DerivedRelationalModelSet` output)
 
 Key rules:
 - Document reference objects are represented by one `..._DocumentId` FK column at the owning scope, plus propagated identity natural-key columns for the referenced resource.

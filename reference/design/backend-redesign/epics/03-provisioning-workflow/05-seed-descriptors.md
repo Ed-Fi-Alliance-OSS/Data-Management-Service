@@ -1,3 +1,8 @@
+---
+jira: DMS-955
+jira_url: https://edfi.atlassian.net/browse/DMS-955
+---
+
 # Story: Optional Descriptor Seeding During Provisioning (`ddl provision --seed-descriptors`)
 
 ## Description

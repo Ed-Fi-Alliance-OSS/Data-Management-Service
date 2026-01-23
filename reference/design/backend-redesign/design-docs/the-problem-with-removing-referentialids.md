@@ -8,14 +8,14 @@ Draft (analysis note).
 
 The baseline backend redesign keeps a deterministic UUIDv5 `ReferentialId` and persists it in a single identity index:
 
-- `dms.ReferentialIdentity(ReferentialId → DocumentId)` (see `reference/design/backend-redesign/data-model.md`), and
-- a metadata-driven write path that resolves *all* references in a request by bulk looking up `ReferentialId`s (see `reference/design/backend-redesign/transactions-and-concurrency.md`).
+- `dms.ReferentialIdentity(ReferentialId → DocumentId)` (see `reference/design/backend-redesign/design-docs/data-model.md`), and
+- a metadata-driven write path that resolves *all* references in a request by bulk looking up `ReferentialId`s (see `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`).
 
 The question explored here is: what happens if we make a radical change and remove `ReferentialId`s entirely?
 
 This note focuses only on the **write path** impacts: what additional work is required, how it would work, and the expected performance differences versus keeping `ReferentialId`.
 
-Related baseline rationale: `reference/design/backend-redesign/overview.md` (“Why keep ReferentialId”).
+Related baseline rationale: `reference/design/backend-redesign/design-docs/overview.md` (“Why keep ReferentialId”).
 
 ## What `ReferentialId` buys the baseline design
 
@@ -150,7 +150,7 @@ You still need a relational unique constraint on natural keys to enforce correct
 
 ### 6) Error reporting still needs “location” metadata, plus more mapping logic
 
-The baseline already expects Core to provide concrete JSON locations for references inside collections (`reference/design/backend-redesign/flattening-reconstitution.md`).
+The baseline already expects Core to provide concrete JSON locations for references inside collections (`reference/design/backend-redesign/design-docs/flattening-reconstitution.md`).
 
 Without `ReferentialId`, you still need those locations, but now you also need:
 - per-resource “which JSON identity fields map to which columns” for building staged key rows,
@@ -209,7 +209,7 @@ For reference-heavy payloads and for schemas with many resource types (especiall
 - increase risk of N+1-like regressions if batching is imperfect,
 - and increase cross-engine divergence risk.
 
-The baseline design keeps `ReferentialId` largely to avoid these exact costs (see `reference/design/backend-redesign/overview.md` “Why keep ReferentialId”).
+The baseline design keeps `ReferentialId` largely to avoid these exact costs (see `reference/design/backend-redesign/design-docs/overview.md` “Why keep ReferentialId”).
 
 ## If we still want to remove `ReferentialId`: practical mitigation options
 

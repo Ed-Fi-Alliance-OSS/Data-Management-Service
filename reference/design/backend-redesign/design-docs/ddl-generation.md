@@ -9,6 +9,7 @@ This document is the DDL Generation deep dive for `overview.md`:
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
+- Unified mapping models (derived model set + mapping set): [compiled-mapping-set.md](compiled-mapping-set.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL generator verification harness: [ddl-generator-testing.md](ddl-generator-testing.md)
@@ -59,7 +60,7 @@ Explicitly out of scope for this redesign phase:
 - A deterministic SQL script (recommended even when provisioning directly)
   - All schemas, tables, views, sequences, triggers
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
-  - Deterministic `ResourceKeySeedHash`/`ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation)
+  - Deterministic `ResourceKeySeedHash`/`ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
   - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`).
   - Indexes explicitly called out in the design docs plus supporting indexes for all foreign keys (no query indexes)
 - Optional deterministic **diagnostic/test artifacts** (non-SQL) used by the verification harness:
@@ -214,7 +215,7 @@ This policy applies to:
 
 1. Load the configured core + extension `ApiSchema.json` set.
 2. Compute `EffectiveSchemaHash` (as defined in [data-model.md](data-model.md)).
-3. Derive the relational resource models and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md) and [data-model.md](data-model.md)).
+3. Derive the relational model set (`DerivedRelationalModelSet`) and naming (as defined in [flattening-reconstitution.md](flattening-reconstitution.md), [compiled-mapping-set.md](compiled-mapping-set.md), and [data-model.md](data-model.md)).
 4. Generate “desired state” DDL for all required objects (schemas, tables, sequences, FKs, unique constraints, indexes, views, triggers).
    - Derive the `dms.ResourceKey` seed set from the effective schema and emit deterministic `INSERT` statements with explicit `ResourceKeyId` values.
 5. Generate the schema-fingerprint recording statements (`dms.EffectiveSchema` singleton row and `dms.SchemaComponent` keyed by `EffectiveSchemaHash`).
@@ -306,7 +307,7 @@ Recommended derivation:
 - Fail fast if `N` exceeds the maximum representable `ResourceKeyId` (`smallint`).
 
 Recommended additional fingerprinting:
-- Compute `ResourceKeySeedHash` as `SHA-256` over a canonical UTF-8 manifest derived from the same ordered seed list (include a version header like `resource-key-seed-hash:v1` and one line per row as `ResourceKeyId|ProjectName|ResourceName|ResourceVersion`).
+- Compute `ResourceKeySeedHash` as raw `SHA-256` bytes (32 bytes) over a canonical UTF-8 manifest derived from the same ordered seed list (include a version header like `resource-key-seed-hash:v1` and one line per row as `ResourceKeyId|ProjectName|ResourceName|ResourceVersion`).
 - Record `ResourceKeyCount=N` and `ResourceKeySeedHash` alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` so DMS can validate the `ResourceKeyId` mapping with a single-row read (full table diff only on mismatch).
 
 DMS runtime should validate and cache this mapping per database (fail fast on mismatch) as part of the schema fingerprint check.
@@ -320,12 +321,13 @@ Rules:
 - All ordering comparisons use `StringComparer.Ordinal` semantics (culture-invariant, case-sensitive).
 - When emitting a multi-phase DDL script, use a stable phase order to avoid dependency/topological sorting differences across dialects:
   1. Create schemas
-  2. Create tables (PK/UNIQUE/CHECK only; omit cross-table FKs)
-  3. Add foreign keys (all `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...`)
-  4. Create indexes
-  5. Create/alter views
-  6. Create triggers (required for update tracking, when enabled)
-  7. Seed deterministic data (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
+  2. Create sequences (e.g., `dms.ChangeVersionSequence`) required by table defaults/triggers
+  3. Create tables (PK/UNIQUE/CHECK only; omit cross-table FKs)
+  4. Add foreign keys (all `ALTER TABLE ... ADD CONSTRAINT ... FOREIGN KEY ...`)
+  5. Create indexes
+  6. Create/alter views
+  7. Create triggers (required for update tracking, when enabled)
+  8. Seed deterministic data (`dms.ResourceKey`, `dms.EffectiveSchema`, `dms.SchemaComponent`, etc.)
 
 Within each phase:
 

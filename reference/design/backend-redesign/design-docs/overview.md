@@ -95,6 +95,7 @@ This redesign is split into focused docs in this directory:
 
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
+- Unified mapping models (shared in-memory shape for DDL/runtime/packs): [compiled-mapping-set.md](compiled-mapping-set.md)
 - AOT compilation (optional mapping pack distribution keyed by `EffectiveSchemaHash`): [aot-compilation.md](aot-compilation.md)
 - Mapping pack file format (normative `.mpack` schema): [mpack-format-v1.md](mpack-format-v1.md)
 - Extensions (`_ext`, resource/common-type extensions, naming): [extensions.md](extensions.md)

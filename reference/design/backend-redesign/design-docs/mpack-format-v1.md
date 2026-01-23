@@ -4,10 +4,10 @@ Status: Draft (**normative** file/serialization contract for Mapping Pack *PackF
 
 This document defines the on-disk bytes for a **Mapping Pack** (“`.mpack`”) as referenced by:
 
-- AOT compilation overview: `reference/design/backend-redesign/aot-compilation.md`
-- Flattening & reconstitution models/plans: `reference/design/backend-redesign/flattening-reconstitution.md`
-- Effective schema fingerprinting: `reference/design/backend-redesign/data-model.md` (`EffectiveSchemaHash`)
-- DDL generator workflow and `dms.ResourceKey` seeding: `reference/design/backend-redesign/ddl-generation.md`
+- AOT compilation overview: `reference/design/backend-redesign/design-docs/aot-compilation.md`
+- Flattening & reconstitution models/plans: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
+- Effective schema fingerprinting: `reference/design/backend-redesign/design-docs/data-model.md` (`EffectiveSchemaHash`)
+- DDL generator workflow and `dms.ResourceKey` seeding: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 
 Authorization is intentionally out of scope.
 
@@ -19,7 +19,7 @@ The `.mpack` format is a redistributable artifact that contains **dialect-specif
 
 - deterministic `dms.ResourceKey` seed mapping for that schema
 - per-resource relational models (tables/columns/paths) needed by generic flatten/reconstitute
-- per-resource, dialect-specific SQL plans (write/read/identity projection)
+- per-resource, dialect-specific SQL plans (write/read)
 
 The consumer (DMS runtime) MUST be able to execute schema-dependent relational work for that effective schema **without compiling** models or SQL from `ApiSchema.json` at runtime (but Core may still load `ApiSchema.json` for validation and identity extraction).
 
@@ -29,7 +29,7 @@ The consumer (DMS runtime) MUST be able to execute schema-dependent relational w
 
 Mapping packs are selected strictly by this 4-tuple:
 
-1. `EffectiveSchemaHash` (lowercase hex, 64 chars) — see `reference/design/backend-redesign/data-model.md`
+1. `EffectiveSchemaHash` (lowercase hex, 64 chars) — see `reference/design/backend-redesign/design-docs/data-model.md`
 2. `SqlDialect` (`PGSQL` or `MSSQL`)
 3. `RelationalMappingVersion` (DMS-controlled string constant; bump when mapping rules change)
 4. `PackFormatVersion` (integer protocol/version gate; bump only for breaking serialization/envelope changes)
@@ -119,7 +119,7 @@ All SQL strings embedded in the pack MUST be byte-for-byte stable for a fixed ke
 
 Follow the canonicalization requirements in:
 
-- `reference/design/backend-redesign/flattening-reconstitution.md` (“SQL text canonicalization (required)”)
+- `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` (“SQL text canonicalization (required)”)
 
 At minimum:
 - `\n` line endings only
@@ -164,12 +164,12 @@ Entries are emitted in the same order as `resource_keys` (ascending `resource_ke
 Consumers MUST validate that the target database’s `dms.ResourceKey` contents match the pack’s embedded seed mapping for the same effective schema.
 
 Recommended fast-path (depends on DDL design):
-- read `ResourceKeyCount` + `ResourceKeySeedHash` from `dms.EffectiveSchema` for the database’s `EffectiveSchemaHash`, compare to payload
+- read `ResourceKeyCount` + `ResourceKeySeedHash` from `dms.EffectiveSchema` for the database’s `EffectiveSchemaHash`, compare to payload (byte-for-byte; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes)
 
 Required slow-path fallback:
 - read `dms.ResourceKey` ordered by `ResourceKeyId` and diff vs payload, then fail fast on mismatch
 
-Rationale and seeding algorithm guidance: `reference/design/backend-redesign/ddl-generation.md`.
+Rationale and seeding algorithm guidance: `reference/design/backend-redesign/design-docs/ddl-generation.md`.
 
 ---
 
@@ -534,6 +534,6 @@ Bump it only for breaking changes to:
 
 `RelationalMappingVersion` is bumped when mapping rules change, even if `ApiSchema.json` content is unchanged.
 
-It is expected to be included in `EffectiveSchemaHash` computation (see `reference/design/backend-redesign/data-model.md`), and is also present in the envelope key for defense-in-depth.
+It is expected to be included in `EffectiveSchemaHash` computation (see `reference/design/backend-redesign/design-docs/data-model.md`), and is also present in the envelope key for defense-in-depth.
 
 ---

@@ -1,3 +1,8 @@
+---
+jira: DMS-1008
+jira_url: https://edfi.atlassian.net/browse/DMS-1008
+---
+
 # Story: Ensure Descriptor Writes Stamp and Journal Correctly (`dms.Descriptor`)
 
 ## Description

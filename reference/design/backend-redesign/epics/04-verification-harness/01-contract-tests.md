@@ -1,3 +1,8 @@
+---
+jira: DMS-958
+jira_url: https://edfi.atlassian.net/browse/DMS-958
+---
+
 # Story: Unit/Contract Tests (Determinism + Fail-Fast Rules)
 
 ## Description
@@ -25,4 +30,3 @@ Add fast, DB-free unit/contract tests that lock down the determinism and fail-fa
 2. Add naming/override grammar tests (valid/invalid cases).
 3. Add type-mapping contract tests for required metadata and dialect mapping outputs.
 4. Ensure tests follow the repo’s NUnit conventions (Given_* fixtures; It_* tests).
-

@@ -1,3 +1,8 @@
+---
+jira: DMS-984
+jira_url: https://edfi.atlassian.net/browse/DMS-984
+---
+
 # Story: Persist Row Buffers with Replace Semantics (Batching, Limits, Transactions)
 
 ## Description

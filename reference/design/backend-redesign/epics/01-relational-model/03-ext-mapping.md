@@ -1,8 +1,13 @@
+---
+jira: DMS-932
+jira_url: https://edfi.atlassian.net/browse/DMS-932
+---
+
 # Story: Model `_ext` Extension Tables
 
 ## Description
 
-Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in `reference/design/backend-redesign/extensions.md`:
+Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in `reference/design/backend-redesign/design-docs/extensions.md`:
 
 - Detect `_ext.{project}` subtrees at any depth during schema traversal.
 - Resolve `_ext` project keys to configured projects (by `ProjectEndpointName`, fallback to `ProjectName`).
@@ -12,11 +17,13 @@ Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in 
   - extension child tables for arrays under `_ext` using parent+ordinal keys.
 - Apply the same reference/descriptor binding rules inside extensions.
 
+This story contributes extension schemas/tables into the unified `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).
+
 ## Acceptance Criteria
 
 - Extension project schemas are created deterministically from resolved `ProjectEndpointName`.
 - Extension table keys align exactly to the base scope keys they extend (including ordinals).
-- Extension table naming follows the patterns described in `reference/design/backend-redesign/extensions.md`.
+- Extension table naming follows the patterns described in `reference/design/backend-redesign/design-docs/extensions.md`.
 - Unknown `_ext` project keys fail fast at model compilation time.
 - A small fixture with `_ext` at root and inside a collection produces the expected extension table inventory.
 
@@ -30,4 +37,3 @@ Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in 
    1. root `_ext` + collection `_ext`,
    2. multiple extension projects,
    3. unknown `_ext` key failure.
-

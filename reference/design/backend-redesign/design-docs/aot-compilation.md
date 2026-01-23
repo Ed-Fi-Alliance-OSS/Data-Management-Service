@@ -4,10 +4,11 @@ Status: Draft.
 
 This document defines an **optional** alternative to runtime compilation of the JSON→relational mapping described in:
 
-- `reference/design/backend-redesign/flattening-reconstitution.md`
-- `reference/design/backend-redesign/data-model.md` (EffectiveSchemaHash)
-- `reference/design/backend-redesign/transactions-and-concurrency.md` (per-database schema fingerprint selection)
-- `reference/design/backend-redesign/mpack-format-v1.md` (**normative** `.mpack` wire format for PackFormatVersion=1)
+- `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
+- `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` (unified in-memory mapping set shape)
+- `reference/design/backend-redesign/design-docs/data-model.md` (EffectiveSchemaHash)
+- `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (per-database schema fingerprint selection)
+- `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (**normative** `.mpack` wire format for PackFormatVersion=1)
 
 The goal is to support **ahead-of-time compilation** into a redistributable artifact (“mapping pack”) that is keyed by `EffectiveSchemaHash`, so a single DMS server can efficiently serve many databases where not all databases share the same effective schema.
 
@@ -21,7 +22,7 @@ In the baseline redesign, DMS:
 
 1. Loads `ApiSchema.json` (core + extensions) and builds an in-memory schema model.
 2. Derives a **RelationalResourceModel** per resource type from that schema.
-3. Compiles **dialect-specific SQL plans** (read/write/identity projection) from the model.
+3. Compiles **dialect-specific SQL plans** (read/write) from the model.
 4. Caches derived models/plans so requests do not repeat compilation work.
 
 ### 1.2 Optional AOT mode (mapping packs)
@@ -118,14 +119,14 @@ Mapping pack determinism is defined at the mapping-set level, not as byte-for-by
 Recommended equivalence check:
 - validate keying fields from the envelope,
 - decompress and parse the payload,
-- (if present) validate `payload_sha256`,
+- validate `payload_sha256` (required; 32 bytes, computed over the uncompressed payload bytes),
 - compare the parsed payload content (or a deterministic fingerprint of it).
 
 ### Deterministic ordering (pack reproducibility)
 
 Pack builders must emit repeated fields and nested plan/model structures in a deterministic order so that a given `(EffectiveSchemaHash, Dialect, RelationalMappingVersion, PackFormatVersion)` produces reproducible payload semantics.
 
-Recommended ordering rules: see `reference/design/backend-redesign/ddl-generation.md` (“Deterministic output ordering (DDL + packs)”).
+Recommended ordering rules: see `reference/design/backend-redesign/design-docs/ddl-generation.md` (“Deterministic output ordering (DDL + packs)”).
 
 Minimum requirements:
 - `resource_keys`: ordered by `resource_key_id` ascending.
@@ -140,7 +141,7 @@ Mapping packs embed compiled SQL strings (read/write/projection plans). For repr
 - stable alias naming, and
 - stable parameter naming derived deterministically from the compiled model/bindings.
 
-These requirements are normative for both runtime compilation and AOT pack compilation (see `reference/design/backend-redesign/flattening-reconstitution.md` “SQL text canonicalization (required)”).
+These requirements are normative for both runtime compilation and AOT pack compilation (see `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` “SQL text canonicalization (required)”).
 
 ---
 
@@ -242,7 +243,7 @@ Implementation approach:
 
 Normative PackFormatVersion=1 `.mpack` bytes (envelope/payload schema + validation requirements) are defined in:
 
-- `reference/design/backend-redesign/mpack-format-v1.md`
+- `reference/design/backend-redesign/design-docs/mpack-format-v1.md`
 
 ### 9.1 Keying fields that must be embedded
 
@@ -257,7 +258,7 @@ The pack must embed at least:
 
 ### 9.2 Suggested protobuf schema (high level)
 
-The contracts package would define a schema like (high level only; see the normative `.proto` in `reference/design/backend-redesign/mpack-format-v1.md`):
+The contracts package would define a schema like (high level only; see the normative `.proto` in `reference/design/backend-redesign/design-docs/mpack-format-v1.md`):
 
 ```proto
 syntax = "proto3";
@@ -492,12 +493,12 @@ public static class MappingPackLoader
         byte[] compressed = env.PayloadZstd.ToByteArray();
         byte[] payloadBytes = DecompressZstd(compressed, (long)env.ZstdUncompressedPayloadLength);
 
-        if (env.PayloadSha256.Length > 0)
-        {
-            byte[] actual = SHA256.HashData(payloadBytes);
-            if (!CryptographicOperations.FixedTimeEquals(actual, env.PayloadSha256.ToByteArray()))
-                throw new InvalidOperationException("Pack payload checksum mismatch");
-        }
+        if (env.PayloadSha256.Length != 32)
+            throw new InvalidOperationException("Pack payload checksum missing/invalid");
+
+        byte[] actual = SHA256.HashData(payloadBytes);
+        if (!CryptographicOperations.FixedTimeEquals(actual, env.PayloadSha256.ToByteArray()))
+            throw new InvalidOperationException("Pack payload checksum mismatch");
 
         return MappingPackPayload.Parser.ParseFrom(payloadBytes);
     }
@@ -518,7 +519,7 @@ After loading a mapping set for a database, DMS should validate that the databas
 Recommended validation (once per database/connection string, cached):
 - Fast path: compare a stored seed fingerprint without reading the full table:
   1. Read: `SELECT ResourceKeyCount, ResourceKeySeedHash FROM dms.EffectiveSchema WHERE EffectiveSchemaSingletonId = 1`.
-  2. Compare to the expected `(ResourceKeyCount, ResourceKeySeedHash)` derived from the mapping set’s embedded `resource_keys` list (same canonicalization as the DDL generator).
+  2. Compare to the expected `(ResourceKeyCount, ResourceKeySeedHash)` derived from the mapping set’s embedded `resource_keys` list (same canonicalization as the DDL generator; `ResourceKeySeedHash` is raw SHA-256 bytes, 32 bytes).
 - Slow path (diagnostics on mismatch):
   1. Read: `SELECT ResourceKeyId, ProjectName, ResourceName, ResourceVersion FROM dms.ResourceKey ORDER BY ResourceKeyId;`
   2. Diff vs. `payload.resource_keys` and fail fast with a detailed mismatch error.

@@ -1,3 +1,8 @@
+---
+jira: DMS-993
+jira_url: https://edfi.atlassian.net/browse/DMS-993
+---
+
 # Story: Execute Root-Table Queries with Deterministic Paging
 
 ## Description
@@ -8,7 +13,7 @@ Implement query execution consistent with the redesign constraints:
 - Page selection is performed over the resource root table ordered by `DocumentId` ascending.
 - Reconstitution is page-based (hydrate/reconstitute in bulk for the selected page).
 
-Align with `reference/design/backend-redesign/summary.md` and `reference/design/backend-redesign/flattening-reconstitution.md` query sections.
+Align with `reference/design/backend-redesign/design-docs/summary.md` and `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` query sections.
 
 Note: applies to non-descriptor resources; descriptor endpoint query behavior is covered separately.
 

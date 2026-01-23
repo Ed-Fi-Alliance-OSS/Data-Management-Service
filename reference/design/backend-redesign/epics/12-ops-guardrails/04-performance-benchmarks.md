@@ -1,3 +1,8 @@
+---
+jira: DMS-1019
+jira_url: https://edfi.atlassian.net/browse/DMS-1019
+---
+
 # Story: Benchmark Harness for Read/Write Hot Paths
 
 ## Description

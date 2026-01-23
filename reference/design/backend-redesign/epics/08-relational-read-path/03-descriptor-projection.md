@@ -1,3 +1,8 @@
+---
+jira: DMS-992
+jira_url: https://edfi.atlassian.net/browse/DMS-992
+---
+
 # Story: Project Descriptor URIs from `dms.Descriptor`
 
 ## Description
@@ -7,7 +12,7 @@ Implement read-time projection of descriptor URI strings:
 - Descriptor values are stored as `..._DescriptorId` FKs.
 - Responses must include the descriptor URI string at the descriptor JSON path.
 
-Descriptor identities (URIs) are treated as immutable in this redesign (`reference/design/backend-redesign/data-model.md`).
+Descriptor identities (URIs) are treated as immutable in this redesign (`reference/design/backend-redesign/design-docs/data-model.md`).
 
 ## Acceptance Criteria
 

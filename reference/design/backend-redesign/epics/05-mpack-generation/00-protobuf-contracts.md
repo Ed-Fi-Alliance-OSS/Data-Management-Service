@@ -1,11 +1,16 @@
+---
+jira: DMS-964
+jira_url: https://edfi.atlassian.net/browse/DMS-964
+---
+
 # Story: Protobuf Contracts for PackFormatVersion=1
 
 ## Description
 
 Define the protobuf schema for `.mpack` files and provide a shared C# contracts project/package that both pack producers and consumers reference, per:
 
-- `reference/design/backend-redesign/mpack-format-v1.md` (normative)
-- `reference/design/backend-redesign/aot-compilation.md` (“contracts package” guidance)
+- `reference/design/backend-redesign/design-docs/mpack-format-v1.md` (normative)
+- `reference/design/backend-redesign/design-docs/aot-compilation.md` (“contracts package” guidance)
 
 Key requirements:
 - PackFormatVersion=1 supports `MappingPackEnvelope` + compressed `MappingPackPayload`.
@@ -35,4 +40,3 @@ Key requirements:
    2. round-trips decode,
    3. validates required fields are present.
 5. Document field-numbering and compatibility policy in the contracts project README.
-

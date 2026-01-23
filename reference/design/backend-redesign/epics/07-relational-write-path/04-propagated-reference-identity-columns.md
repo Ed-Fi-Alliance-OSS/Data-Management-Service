@@ -1,3 +1,8 @@
+---
+jira: DMS-985
+jira_url: https://edfi.atlassian.net/browse/DMS-985
+---
+
 # Story: Populate Propagated Reference Identity Columns (No Edge Table)
 
 ## Description
@@ -10,9 +15,9 @@ This is required by the baseline redesign to:
 - ensure indirect representation changes become real row updates that trigger normal update-tracking stamping.
 
 Align with:
-- `reference/design/backend-redesign/flattening-reconstitution.md` (reference bindings and flattening),
-- `reference/design/backend-redesign/data-model.md` (reference column conventions and composite FKs), and
-- `reference/design/backend-redesign/transactions-and-concurrency.md` (write-time propagation semantics).
+- `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` (reference bindings and flattening),
+- `reference/design/backend-redesign/design-docs/data-model.md` (reference column conventions and composite FKs), and
+- `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` (write-time propagation semantics).
 
 ## Acceptance Criteria
 

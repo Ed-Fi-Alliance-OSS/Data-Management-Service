@@ -1,3 +1,8 @@
+---
+jira: DMS-942
+jira_url: https://edfi.atlassian.net/browse/DMS-942
+---
+
 # Story: Map Descriptor Resources to `dms.Descriptor` (No Per-Descriptor Tables)
 
 ## Description
@@ -16,6 +21,7 @@ This aligns DMS descriptor storage with the Ed-Fi ODS pattern of a single descri
   - `dms.Document` (for `ResourceKeyId`, `DocumentUuid`, stamps), and
   - `dms.Descriptor` (for descriptor fields).
 - The model emits no per-project schema tables for descriptor resources.
+- In the unified in-memory model (`DerivedRelationalModelSet`; see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`), descriptor resources are represented as concrete resources with storage kind `SharedDescriptorTable`.
 - The model defines a deterministic discriminator strategy for descriptor type (must be stable across dialects), using either:
   - `dms.Document.ResourceKeyId` as the primary resource-type discriminator (preferred), and/or
   - `dms.Descriptor.Discriminator` as a secondary/diagnostic discriminator.

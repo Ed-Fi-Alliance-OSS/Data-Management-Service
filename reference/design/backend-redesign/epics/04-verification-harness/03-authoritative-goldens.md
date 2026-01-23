@@ -1,8 +1,13 @@
+---
+jira: DMS-960
+jira_url: https://edfi.atlassian.net/browse/DMS-960
+---
+
 # Story: Authoritative Golden Directory Comparisons (No DB)
 
 ## Description
 
-Add authoritative fixtures representing real schema sets (e.g., DS core, DS + TPDM) and compare `expected/` vs `actual/` via directory diff, per `reference/design/backend-redesign/ddl-generator-testing.md`.
+Add authoritative fixtures representing real schema sets (e.g., DS core, DS + TPDM) and compare `expected/` vs `actual/` via directory diff, per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Acceptance Criteria
 
@@ -18,4 +23,3 @@ Add authoritative fixtures representing real schema sets (e.g., DS core, DS + TP
 2. Implement directory-diff comparison logic and error output.
 3. Implement `UPDATE_GOLDENS=1` (or similar) mode to copy `actual/` to `expected/`.
 4. Wire tests into CI filters so default runs skip `Authoritative` by default.
-

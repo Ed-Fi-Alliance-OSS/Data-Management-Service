@@ -1,3 +1,8 @@
+---
+jira: DMS-987
+jira_url: https://edfi.atlassian.net/browse/DMS-987
+---
+
 # Story: Descriptor POST/PUT Writes Maintain `dms.Descriptor` (No Per-Descriptor Tables)
 
 ## Description

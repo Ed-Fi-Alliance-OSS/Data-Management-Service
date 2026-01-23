@@ -1,3 +1,8 @@
+---
+jira: DMS-939
+jira_url: https://edfi.atlassian.net/browse/DMS-939
+---
+
 # Story: Emit Seed + Fingerprint Recording SQL (Insert-if-Missing + Validate)
 
 ## Description
@@ -34,4 +39,3 @@ The generated SQL must validate expected seed sets and fail fast on mismatches (
    1. deterministic emitted SQL text,
    2. presence of validation logic,
    3. fail-fast mismatch paths (at least at the SQL generation level).
-

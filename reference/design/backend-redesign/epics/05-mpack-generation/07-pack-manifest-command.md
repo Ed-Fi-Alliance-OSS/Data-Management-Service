@@ -1,3 +1,8 @@
+---
+jira: DMS-970
+jira_url: https://edfi.atlassian.net/browse/DMS-970
+---
+
 # Story: CLI Command — `pack manifest` (Inspect/Validate Existing `.mpack`)
 
 ## Description
@@ -9,7 +14,7 @@ This supports:
 - CI diagnostics,
 - and harness workflows that want to compare decoded semantics rather than raw bytes.
 
-Aligns with the suggested `dms-schema pack manifest` deliverable in `reference/design/backend-redesign/ddl-generation.md` and the manifest guidance in `reference/design/backend-redesign/ddl-generator-testing.md`.
+Aligns with the suggested `dms-schema pack manifest` deliverable in `reference/design/backend-redesign/design-docs/ddl-generation.md` and the manifest guidance in `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Acceptance Criteria
 
@@ -17,7 +22,7 @@ Aligns with the suggested `dms-schema pack manifest` deliverable in `reference/d
   - `.mpack` file path,
   - optional output directory (or stdout),
   - optional flags controlling which manifests to emit.
-- CLI validates the pack per `reference/design/backend-redesign/mpack-format-v1.md`:
+- CLI validates the pack per `reference/design/backend-redesign/design-docs/mpack-format-v1.md`:
   - envelope key fields,
   - bounded decompression,
   - `payload_sha256` verification,

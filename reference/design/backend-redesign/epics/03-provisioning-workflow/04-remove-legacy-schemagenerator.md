@@ -1,12 +1,17 @@
+---
+jira: DMS-954
+jira_url: https://edfi.atlassian.net/browse/DMS-954
+---
+
 # Story: Remove Legacy `EdFi.DataManagementService.SchemaGenerator`
 
 ## Description
 
 The relational-primary-store redesign makes the legacy `EdFi.DataManagementService.SchemaGenerator` toolchain obsolete. After the new DDL generator/provisioning workflow is in place, remove the legacy generator and migrate any remaining references to the new tooling described in:
 
-- `reference/design/backend-redesign/overview.md` (“Remove legacy SchemaGenerator”)
-- `reference/design/backend-redesign/ddl-generation.md` (DDL generation utility + provisioning semantics)
-- `reference/design/backend-redesign/ddl-generator-testing.md` (verification harness)
+- `reference/design/backend-redesign/design-docs/overview.md` (“Remove legacy SchemaGenerator”)
+- `reference/design/backend-redesign/design-docs/ddl-generation.md` (DDL generation utility + provisioning semantics)
+- `reference/design/backend-redesign/design-docs/ddl-generator-testing.md` (verification harness)
 
 Authorization objects remain out of scope.
 

@@ -1,10 +1,15 @@
+---
+jira: DMS-976
+jira_url: https://edfi.atlassian.net/browse/DMS-976
+---
+
 # Story: Validate `dms.ResourceKey` Seed Mapping (Fast + Slow Path)
 
 ## Description
 
 Validate that the database’s `dms.ResourceKey` contents match the mapping set’s expected seed mapping for the DB’s `EffectiveSchemaHash`.
 
-Per `reference/design/backend-redesign/ddl-generation.md` and `reference/design/backend-redesign/mpack-format-v1.md`:
+Per `reference/design/backend-redesign/design-docs/ddl-generation.md` and `reference/design/backend-redesign/design-docs/mpack-format-v1.md`:
 
 - Fast path: compare `ResourceKeyCount` and `ResourceKeySeedHash` from `dms.EffectiveSchema`.
 - Slow path: on mismatch, read `dms.ResourceKey` ordered by `ResourceKeyId` and diff against the expected seed list for diagnostics.

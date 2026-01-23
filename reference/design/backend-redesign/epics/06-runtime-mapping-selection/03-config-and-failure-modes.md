@@ -1,3 +1,8 @@
+---
+jira: DMS-978
+jira_url: https://edfi.atlassian.net/browse/DMS-978
+---
+
 # Story: Configuration + Fail-Fast Behaviors for Schema/Pack Selection
 
 ## Description
@@ -9,7 +14,7 @@ Provide clear configuration and consistent runtime behaviors for:
 - mapping set cache sizing/eviction policy,
 - and error reporting when selection/validation fails.
 
-Align with `reference/design/backend-redesign/aot-compilation.md` and `reference/design/backend-redesign/transactions-and-concurrency.md`.
+Align with `reference/design/backend-redesign/design-docs/aot-compilation.md` and `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`.
 
 ## Acceptance Criteria
 

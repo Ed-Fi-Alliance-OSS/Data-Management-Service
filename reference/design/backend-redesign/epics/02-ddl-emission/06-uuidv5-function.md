@@ -1,3 +1,8 @@
+---
+jira: DMS-946
+jira_url: https://edfi.atlassian.net/browse/DMS-946
+---
+
 # Story: Engine UUIDv5 Helper Function (PostgreSQL + SQL Server)
 
 ## Description
@@ -10,7 +15,7 @@ Implement UUIDv5 (RFC 4122) generation inside each supported database engine so 
 The database implementation must match DMS Core’s UUIDv5 behavior byte-for-byte (same namespace GUID and same input byte sequence/encoding), per:
 
 - `src/dms/core/EdFi.DataManagementService.Core/Extraction/ReferentialIdCalculator.cs` (source of truth for Core behavior)
-- `reference/design/backend-redesign/referential-identity-test-plan.md` (parity + cross-engine equivalence)
+- `reference/design/backend-redesign/design-docs/referential-identity-test-plan.md` (parity + cross-engine equivalence)
 
 ## Acceptance Criteria
 
