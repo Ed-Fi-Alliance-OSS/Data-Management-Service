@@ -1,4 +1,4 @@
-﻿
+
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.4.33122.133
@@ -9,7 +9,7 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Mssql", "backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj", "{0146B374-35C4-4191-9D09-3CDDC4ABCA2F}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Backend.Postgresql", "backend\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj", "{3B8DB16B-0A35-4565-B8CA-73DE662424BC}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EdFi.DataManagementService.Old.Postgresql", "backend\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj", "{3B8DB16B-0A35-4565-B8CA-73DE662424BC}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "frontend", "frontend", "{5B7BB270-905C-4D2F-BD3C-3374707FE1E3}"
 EndProject

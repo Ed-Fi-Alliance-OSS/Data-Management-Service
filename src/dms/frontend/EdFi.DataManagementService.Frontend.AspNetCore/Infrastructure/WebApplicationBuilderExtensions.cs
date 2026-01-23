@@ -7,13 +7,13 @@ using System.Net;
 using System.Threading.RateLimiting;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Deploy;
-using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.OAuth;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
+using EdFi.DataManagementService.Old.Postgresql;
 using Microsoft.Extensions.Options;
 using Serilog;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
@@ -179,7 +179,7 @@ public static class WebApplicationBuilderExtensions
                 "Injecting PostgreSQL as the primary backend datastore with per-request connection strings"
             );
             webAppBuilder.Services.AddPostgresqlDatastore();
-            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Postgresql.Deploy.DatabaseDeploy>();
+            webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Old.Postgresql.Deploy.DatabaseDeploy>();
         }
         else
         {

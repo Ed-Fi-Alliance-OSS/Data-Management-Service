@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DataManagementService.Backend.Postgresql;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Old.Postgresql;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Hosting;
