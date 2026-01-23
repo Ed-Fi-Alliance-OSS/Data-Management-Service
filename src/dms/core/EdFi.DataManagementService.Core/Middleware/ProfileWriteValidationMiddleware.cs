@@ -186,8 +186,7 @@ internal class ProfileWriteValidationMiddleware(
             return filteredBody;
         }
 
-        var existingDoc = success.EdfiDoc as JsonObject;
-        if (existingDoc == null)
+        if (success.EdfiDoc is not JsonObject existingDoc)
         {
             logger.LogDebug(
                 "Existing document is null or not a JsonObject - {TraceId}",
