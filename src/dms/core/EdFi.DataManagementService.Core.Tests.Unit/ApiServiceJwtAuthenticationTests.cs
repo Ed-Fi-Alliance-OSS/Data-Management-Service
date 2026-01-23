@@ -130,7 +130,8 @@ public class ApiServiceJwtAuthenticationTests
             serviceProvider,
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            new CompiledSchemaCache()
+            new CompiledSchemaCache(),
+            A.Fake<IProfileService>()
         );
 
         // Act - Use reflection to call the private GetCommonInitialSteps method
@@ -179,7 +180,8 @@ public class ApiServiceJwtAuthenticationTests
             serviceProvider,
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            new CompiledSchemaCache()
+            new CompiledSchemaCache(),
+            A.Fake<IProfileService>()
         );
 
         // Act & Assert - Should throw InvalidOperationException

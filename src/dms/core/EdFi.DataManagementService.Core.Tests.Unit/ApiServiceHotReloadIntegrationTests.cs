@@ -191,7 +191,8 @@ public class ApiServiceHotReloadIntegrationTests
             serviceProvider,
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            new CompiledSchemaCache()
+            new CompiledSchemaCache(),
+            A.Fake<IProfileService>()
         );
     }
 
@@ -441,7 +442,8 @@ public class ApiServiceHotReloadIntegrationTests
                 new ServiceCollection().BuildServiceProvider(),
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                new CompiledSchemaCache()
+                new CompiledSchemaCache(),
+                A.Fake<IProfileService>()
             );
 
             await WriteTestSchemaFile("ApiSchema.json", CreateSchemaWithResource("Student", "5.0.0"));
