@@ -374,18 +374,22 @@ public static class ProfileDefinitions
     // ================================================================================
 
     /// <summary>
-    /// Profile for School with WriteContentType that excludes a property within collection items.
-    /// The addresses collection excludes city - PUT requests should preserve city from existing doc.
+    /// Profile for School with WriteContentType that excludes a non-key property within collection items.
+    /// The addresses collection excludes nameOfCounty - PUT requests should preserve nameOfCounty from existing doc.
+    /// Note: Only non-key properties can be preserved during PUT. Key properties (addressTypeDescriptor, city,
+    /// postalCode, stateAbbreviationDescriptor, streetNumberName) form the collection item identity and cannot
+    /// be excluded - attempting to do so would cause a DataPolicyException.
     /// </summary>
-    public const string SchoolWriteAddressExcludeCityName = "E2E-Test-School-Write-AddressExcludeCity";
+    public const string SchoolWriteAddressExcludeNameOfCountyName =
+        "E2E-Test-School-Write-AddressExcludeNameOfCounty";
 
-    public const string SchoolWriteAddressExcludeCityXml = """
-        <Profile name="E2E-Test-School-Write-AddressExcludeCity">
+    public const string SchoolWriteAddressExcludeNameOfCountyXml = """
+        <Profile name="E2E-Test-School-Write-AddressExcludeNameOfCounty">
             <Resource name="School">
                 <ReadContentType memberSelection="IncludeAll"/>
                 <WriteContentType memberSelection="IncludeAll">
                     <Collection name="addresses" memberSelection="ExcludeOnly">
-                        <Property name="city"/>
+                        <Property name="nameOfCounty"/>
                     </Collection>
                 </WriteContentType>
             </Resource>
@@ -440,7 +444,7 @@ public static class ProfileDefinitions
             (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
             (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
             // PUT merge profiles
-            (SchoolWriteAddressExcludeCityName, SchoolWriteAddressExcludeCityXml),
+            (SchoolWriteAddressExcludeNameOfCountyName, SchoolWriteAddressExcludeNameOfCountyXml),
             (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
         ];
 }

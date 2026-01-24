@@ -572,6 +572,65 @@ that don't match the filter criteria are silently stripped during writes.
 For example, if a profile only allows Physical addresses, any submitted
 Billing or Home addresses are removed before persistence.
 
+#### 6.2.4 PUT Merge Behavior for Excluded Fields
+
+During PUT operations, excluded fields behave differently depending on whether
+they are **key fields** (part of the natural key/identity) or **non-key fields**:
+
+##### Non-Key Field Exclusion (Preserved)
+
+When a profile excludes a **non-key** property within a collection item, the
+excluded property's value from the **existing document** is preserved during
+PUT. This mirrors ODS/API behavior where `SynchronizeTo` skips excluded
+non-key properties, leaving existing values in place.
+
+**Example:** A profile excludes `nameOfCounty` from addresses (a non-key field):
+- POST with full data: `nameOfCounty: "Travis"` is saved
+- PUT with different value: `nameOfCounty: "Harris"` is ignored
+- Result: `nameOfCounty: "Travis"` is preserved from existing document
+
+##### Key Field Exclusion (Not Supported)
+
+Excluding a **key field** (part of the collection item's natural key) is
+**not supported** for PUT merge. Key fields determine which existing item
+the incoming item should be matched against. In ODS/API, attempting to
+exclude a key field results in a `DataPolicyException` because the signature
+(identity) of the item cannot be determined without all key fields.
+
+**Key fields for collections** are defined by the `ArrayUniquenessConstraint`
+in the ApiSchema. For example, for addresses, the key fields are:
+- `addressTypeDescriptor`
+- `city`
+- `postalCode`
+- `stateAbbreviationDescriptor`
+- `streetNumberName`
+
+**Non-key fields** (which CAN be excluded and preserved) include:
+- `nameOfCounty`
+- `congressionalDistrict`
+- `latitude`
+- `longitude`
+- etc.
+
+##### Item Matching for Merge
+
+To preserve excluded non-key fields, DMS must match incoming collection items
+with existing items. Matching is performed using the collection's key fields
+(from `ArrayUniquenessConstraint`). When an `ItemFilter` is present on the
+collection, the filter's property is used as the matching key instead.
+
+**Merge Process:**
+1. Fetch existing document from database
+2. For each collection with excluded non-key properties:
+   a. For each incoming item, find matching existing item by key fields
+   b. Copy excluded property values from existing item to incoming item
+3. Continue with normal PUT processing
+
+**ODS/API Reference:** The `SynchronizeTo` method in entity mappings implements
+this behavior by conditionally skipping assignment of excluded properties,
+while the `MapTo` method always assigns primary key properties regardless of
+profile exclusions.
+
 ---
 
 ## 7. Property and Element Filtering

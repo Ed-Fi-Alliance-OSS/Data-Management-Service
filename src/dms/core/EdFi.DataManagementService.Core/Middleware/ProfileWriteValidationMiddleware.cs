@@ -480,16 +480,18 @@ internal class ProfileWriteValidationMiddleware(
                 continue;
             }
 
-            // Find the corresponding original item
+            // Find the corresponding original item (needed for merging stripped properties)
             JsonObject? originalItem = FindMatchingItemInArray(filteredItem, originalCollection);
             if (originalItem == null)
             {
                 continue;
             }
 
-            // Find the corresponding existing item
+            // Find the corresponding existing item using filteredItem (not originalItem)
+            // because originalItem may have excluded properties with different values that
+            // would cause a mismatch. filteredItem only has non-excluded properties.
             JsonObject? existingItem = FindMatchingExistingItem(
-                originalItem,
+                filteredItem,
                 existingCollection,
                 collectionRule
             );
