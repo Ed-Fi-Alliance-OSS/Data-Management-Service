@@ -18,9 +18,9 @@ public interface IGetRequest
     DocumentUuid DocumentUuid { get; }
 
     /// <summary>
-    /// The ResourceInfo for the resource being retrieved
+    /// The ResourceName for the resource being retrieved
     /// </summary>
-    ResourceInfo ResourceInfo { get; }
+    ResourceName ResourceName { get; }
 
     /// <summary>
     /// The backend should use this handler to determine whether

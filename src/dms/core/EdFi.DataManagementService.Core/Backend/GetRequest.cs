@@ -12,12 +12,12 @@ namespace EdFi.DataManagementService.Core.Backend;
 /// A get request to a document repository
 /// </summary>
 /// <param name="DocumentUuid">The document UUID to get</param>
-/// <param name="ResourceInfo">The ResourceInfo for the resource being retrieved</param>
+/// <param name="ResourceName">The ResourceName for the resource being retrieved</param>
 /// <param name="ResourceAuthorizationHandler">The handler to authorize the delete request for a resource in the database</param>
 /// <param name="TraceId">The request TraceId</param>
 internal record GetRequest(
     DocumentUuid DocumentUuid,
-    ResourceInfo ResourceInfo,
+    ResourceName ResourceName,
     IResourceAuthorizationHandler ResourceAuthorizationHandler,
     TraceId TraceId
 ) : IGetRequest;

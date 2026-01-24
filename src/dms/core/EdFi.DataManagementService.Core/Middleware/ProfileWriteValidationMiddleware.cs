@@ -181,7 +181,7 @@ internal class ProfileWriteValidationMiddleware(
         var getResult = await documentStoreRepository.GetDocumentById(
             new GetRequest(
                 DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                ResourceInfo: requestInfo.ResourceInfo,
+                ResourceName: requestInfo.ResourceSchema.ResourceName,
                 ResourceAuthorizationHandler: bypassAuthHandler,
                 TraceId: requestInfo.FrontendRequest.TraceId
             )

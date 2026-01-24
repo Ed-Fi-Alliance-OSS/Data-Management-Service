@@ -199,6 +199,7 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
+            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
             new ProvideEducationOrganizationHierarchyMiddleware(_logger),
@@ -207,7 +208,6 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             new ExtractDocumentInfoMiddleware(_logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
@@ -303,6 +303,7 @@ internal class ApiService : IApiService
         steps.AddRange([
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
+            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             new ExtractDocumentSecurityElementsMiddleware(_logger),
             new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
@@ -312,7 +313,6 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.AllowIdentityUpdateOverrides.Split(',').ToList()
             ),
-            _serviceProvider.GetRequiredService<ProfileWriteValidationMiddleware>(),
             new ExtractDocumentInfoMiddleware(_logger),
             new ReferenceArrayUniquenessValidationMiddleware(_logger),
             new ArrayUniquenessValidationMiddleware(_logger),
