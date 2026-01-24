@@ -6,7 +6,8 @@ Feature: Profile PUT Merge Functionality
     Rule: Collection item properties excluded by profile are preserved during PUT
 
         Background:
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-AddressExcludeCity" and namespacePrefixes "uri://ed-fi.org"
+            # Authorize with BOTH profiles: IncludeAll for POST (to save all fields), AddressExcludeCity for PUT (to test merge)
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-Write-IncludeAll, E2E-Test-School-Write-AddressExcludeCity" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                       |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
@@ -15,8 +16,8 @@ Feature: Profile PUT Merge Functionality
                   | uri://ed-fi.org/StateAbbreviationDescriptor#TX                        |
 
         Scenario: 01 PUT with collection property exclusion preserves excluded property from existing document
-            # First create the school with full address data (city included)
-            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-AddressExcludeCity" for resource "School" with body
+            # First create the school with full address data using IncludeAll profile (city IS saved)
+            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body
                   """
                   {
                       "schoolId": 99000701,
@@ -83,7 +84,8 @@ Feature: Profile PUT Merge Functionality
     Rule: Collection items filtered out by ItemFilter are preserved during PUT
 
         Background:
-            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Test-School-Write-GradeLevelFilterPreserve" and namespacePrefixes "uri://ed-fi.org"
+            # Authorize with BOTH profiles: IncludeAll for POST (to save all grade levels), GradeLevelFilterPreserve for PUT (to test merge)
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profiles "E2E-Test-School-Write-IncludeAll, E2E-Test-School-Write-GradeLevelFilterPreserve" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                       |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School        |
@@ -92,8 +94,8 @@ Feature: Profile PUT Merge Functionality
                   | uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade                   |
 
         Scenario: 02 PUT with collection item filter preserves filtered-out items from existing document
-            # First create the school with multiple grade levels
-            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-GradeLevelFilterPreserve" for resource "School" with body
+            # First create the school with all grade levels using IncludeAll profile (all ARE saved)
+            When a POST request is made to "/ed-fi/schools" with profile "E2E-Test-School-Write-IncludeAll" for resource "School" with body
                   """
                   {
                       "schoolId": 99000702,

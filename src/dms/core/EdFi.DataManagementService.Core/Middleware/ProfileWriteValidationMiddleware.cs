@@ -178,6 +178,13 @@ internal class ProfileWriteValidationMiddleware(
         // The actual authorization will be performed by the UpdateByIdHandler later
         var bypassAuthHandler = new BypassResourceAuthorizationHandler();
 
+        logger.LogDebug(
+            "ProfileWriteValidationMiddleware: Fetching existing document for merge. DocumentUuid: {DocumentUuid}, ResourceName: {ResourceName} - {TraceId}",
+            requestInfo.PathComponents.DocumentUuid.Value,
+            SanitizeForLog(requestInfo.ResourceSchema.ResourceName.Value),
+            requestInfo.FrontendRequest.TraceId.Value
+        );
+
         var getResult = await documentStoreRepository.GetDocumentById(
             new GetRequest(
                 DocumentUuid: requestInfo.PathComponents.DocumentUuid,
@@ -191,8 +198,9 @@ internal class ProfileWriteValidationMiddleware(
         {
             // Document doesn't exist - let the normal update handler return 404
             logger.LogDebug(
-                "GetDocumentById returned NotExists for document {DocumentUuid} - {TraceId}",
+                "ProfileWriteValidationMiddleware: GetDocumentById returned NotExists. DocumentUuid: {DocumentUuid}, ResourceName: {ResourceName} - {TraceId}",
                 requestInfo.PathComponents.DocumentUuid.Value,
+                SanitizeForLog(requestInfo.ResourceSchema.ResourceName.Value),
                 requestInfo.FrontendRequest.TraceId.Value
             );
             return filteredBody;
