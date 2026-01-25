@@ -1,0 +1,4 @@
+DMS-929 00-base-schema-traversal: completed task Model (relational model types).
+Decisions: matched flattening-reconstitution shape types; added ExtensionSite record for _ext site inventory; no SQL strings/dicts.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelTypes.cs, tasks.json, progress.txt, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Placeholder.cs (deleted).
+Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).

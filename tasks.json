@@ -6,7 +6,7 @@
       "Add/compile the project: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Ensure public surface is minimal and deterministic (no dictionaries as authoritative ordering; use ordered lists where ordering matters)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Naming",
