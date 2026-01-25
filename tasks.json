@@ -1,0 +1,136 @@
+[
+  {
+    "category": "Model",
+    "description": "Define the relational model types in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel` matching the redesign shapes (e.g., `QualifiedResourceName`, `DbSchemaName`, `DbTableName`, `DbColumnName`, `ColumnKind`, `ScalarKind`, `RelationalScalarType`, `JsonPathExpression`, `RelationalResourceModel`, `DbTableModel`, `DbColumnModel`, `TableKey`, `DbKeyColumn`, `TableConstraint`, `DescriptorEdgeSource`, `_ext` site inventory). Acceptance: model is SQL-free, expresses keys + FKs, carries absolute JSON paths, and is usable as the pipeline output for DMS-929.",
+    "steps-to-verify": [
+      "Add/compile the project: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Ensure public surface is minimal and deterministic (no dictionaries as authoritative ordering; use ordered lists where ordering matters)."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming",
+    "description": "Implement deterministic naming utilities used by DMS-929 (ignore `relational.nameOverrides`): schema normalization (`ProjectEndpointName` -> lowercase, strip non-alphanumerics), PascalCase conversion, deterministic singularization rules for collection segments, and key/ordinal column naming (`DocumentId`, `{Root}_DocumentId`, `{ParentCollection}Ordinal`, `Ordinal`, `{DescriptorBaseName}_DescriptorId`). Acceptance: names match `data-model.md` conventions and are stable across runs.",
+    "steps-to-verify": [
+      "Add unit tests for schema normalization + singularization edge cases (e.g., `ed-fi` -> `edfi`, `categories` -> `Category`, `addresses` -> `Address`).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "JsonPath",
+    "description": "Implement a restricted JSONPath compiler to produce `JsonPathExpression` for canonical absolute paths and scopes using only `$`, property segments, and `[*]` wildcards. Acceptance: inputs from `documentPathsMapping.path` and derived schema traversal scopes round-trip to a canonical string form and segment list; numeric indices are not supported in canonical form for model metadata.",
+    "steps-to-verify": [
+      "Unit test parsing of: `$`, `$.a`, `$.a.b`, `$.a[*]`, `$.a[*].b`, `$.a[*].b[*].c`.",
+      "Unit test that paths containing numeric indices (e.g., `$.a[0]`) fail fast (future story handles concrete paths).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline",
+    "description": "Create a mutating-builder pipeline runner for relational model derivation (context object + ordered steps). Acceptance: steps can be executed independently in unit tests, and the full pipeline returns a `RelationalResourceModel` plus `_ext` site inventory for one resource deterministically.",
+    "steps-to-verify": [
+      "Add a unit test that runs the pipeline with a no-op step list and asserts the runner invokes steps in order.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Step",
+    "description": "Step: ExtractInputs. Parse the effective ApiSchema JSON for a single project+resource into the pipeline context: project endpoint/name/version, resource name, `jsonSchemaForInsert`, `documentPathsMapping` (descriptor sites only for DMS-929), `identityJsonPaths`, and `decimalPropertyValidationInfos` indexed by path. Acceptance: descriptor paths are discovered from `documentPathsMapping` entries where `isReference=true` and `isDescriptor=true`, and can be queried by absolute JSON path during column derivation.",
+    "steps-to-verify": [
+      "Unit test: a minimal resource with one descriptor mapping produces exactly one descriptor path entry with the expected descriptor resource name.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Step",
+    "description": "Step: ValidateJsonSchema. Walk `jsonSchemaForInsert` and fail fast on unsupported constructs: `$ref`, `oneOf`, `anyOf`, `allOf`, `enum`, `patternProperties`, `type: [...]`, non-object root schemas, and arrays whose `items` are not `type: object`. Acceptance: validation errors are deterministic and actionable; `additionalProperties` is ignored regardless of its form.",
+    "steps-to-verify": [
+      "Unit tests: each unsupported keyword triggers a specific exception (or result) identifying the failing JSON path.",
+      "Unit test: `additionalProperties` (true/false/object) does not throw and does not create derived columns.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Step",
+    "description": "Step: DiscoverExtensionSites. Traverse the JSON schema to find `_ext` objects at any depth and record extension sites as `(owningScope, extPath, projectKeys[])`. Acceptance: traversal records sites deterministically (stable ordering), skips recursion into `_ext` subtrees for all downstream steps, and the final model contains no tables/columns derived from `_ext` content.",
+    "steps-to-verify": [
+      "Unit test: `_ext` at root and inside an array element are both detected with correct owning scope (e.g., `$` and `$.addresses[*]`).",
+      "Unit test: columns under `_ext` are not present in derived tables.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Step",
+    "description": "Step: DeriveTableScopesAndKeys. Walk the schema and create: root table for `$`, a child table per array path (including nested arrays), deterministic physical table names, and deterministic keys per `data-model.md` (root: `DocumentId`; child: `{Root}_DocumentId`, ancestor ordinals, `Ordinal`). Add parent->child FK constraints for key alignment and root FK to `dms.Document(DocumentId)`. Acceptance: for nested arrays, keys include all ancestor ordinals in root-to-leaf order, and FKs reference the correct parent key columns.",
+    "steps-to-verify": [
+      "Unit test: fixture with `$.addresses[*].periods[*]` creates tables `{Root}Address` and `{Root}AddressPeriod` with PK columns `[Root_DocumentId, Ordinal]` and `[Root_DocumentId, AddressOrdinal, Ordinal]` (respectively).",
+      "Unit test: parent-child FK exists from `{Root}AddressPeriod` to `{Root}Address` on `[Root_DocumentId, AddressOrdinal] -> [Root_DocumentId, Ordinal]`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Pipeline Step",
+    "description": "Step: DeriveColumnsAndDescriptorEdges. Inline object properties into the owning table (except `_ext`), create scalar columns and descriptor FK columns, and fully map scalar types to `RelationalScalarType`. Nullability rule: within a single table scope, columns are NOT NULL until the first optional property in the object path, then nullable for all descendants; `x-nullable:true` always makes the column nullable. Array-property optionality does not affect child-table column nullability. Descriptor paths become `DescriptorFk` BIGINT columns named `{DescriptorBaseName}_DescriptorId` with FK to `dms.Descriptor(DocumentId)` and a `DescriptorEdgeSource`. Acceptance: scalar columns have correct `ColumnKind`, `ScalarType`, `IsNullable`, and `SourceJsonPath`, and descriptor scalar columns are suppressed in favor of `..._DescriptorId`.",
+    "steps-to-verify": [
+      "Unit test: inlined object `$.a.b.c` produces column `ABc` (or chosen prefix convention) with `SourceJsonPath=$.a.b.c` and correct nullability when `a` or `b` is optional.",
+      "Unit test: descriptor path `$.schoolTypeDescriptor` produces column `SchoolTypeDescriptor_DescriptorId` with `ColumnKind=DescriptorFk` and a descriptor FK constraint to `dms.Descriptor`.",
+      "Unit test: `x-nullable:true` overrides requiredness to `IsNullable=true`.",
+      "Unit test: `type:number` requires a matching `decimalPropertyValidationInfos` entry and maps to `RelationalScalarType(Decimal, (p,s))`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Determinism",
+    "description": "Step: CanonicalizeOrdering. Apply `ddl-generation.md` deterministic ordering rules to the derived output: tables ordered by scope depth + scope string + name, columns ordered key-first then descriptor FKs then scalars (stable ordinal sort), and constraints ordered by name within kind. Acceptance: output is byte-for-byte stable for equivalent inputs regardless of JSON property order or dictionary iteration order.",
+    "steps-to-verify": [
+      "Unit test: same schema with properties in different order produces identical serialized manifest output.",
+      "Unit test: descriptor path mappings provided in different order produce identical `DescriptorEdgeSources` ordering.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Artifacts",
+    "description": "Implement a diff-friendly manifest emitter for the DMS-929 output (stable JSON with stable ordering and `\\n` line endings). The manifest must include: resource identity, physical schema, tables (name + scope + key columns), columns (name/kind/type/nullability/source path), constraints (FKs), descriptor edge sources, and `_ext` site inventory. Acceptance: manifest round-trips deterministically and is suitable for `git diff` review.",
+    "steps-to-verify": [
+      "Unit test: serialize the same derived model twice and assert byte-for-byte identical output.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "Add hand-authored fixture schemas and unit tests that exercise each pipeline step in isolation and end-to-end. Acceptance: tests cover nested arrays, object inlining, nullability + `x-nullable`, descriptor mapping to `..._DescriptorId`, `_ext` site discovery + skip, arrays-of-scalars rejection, and unsupported keyword rejection.",
+    "steps-to-verify": [
+      "Create NUnit `Given_...` fixtures for each step (Arrange+Act in `SetUp`, `It_...` assertions).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Golden Test",
+    "description": "Add a golden authoritative test using Data Standard 5.2: copy `/home/brad/work/dms-root/MetaEd-js/packages/metaed-plugin-edfi-api-schema/test/integration/artifact/v7_3/ds-5.2-api-schema-authoritative.json` into the test project, derive the DMS-929 manifest for the Ed-Fi project, and compare the generated manifest to a committed authoritative manifest using `git diff --no-index` (pattern from `ApiSchemaAuthoritativeCompare_v7_3.test.ts`). Acceptance: test fails with the full diff output when mismatched; passes with zero diff (allowing whitespace-at-eol/CRLF tolerances).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj` and confirm failures include a diff in the assertion message.",
+      "Manually validate diff command output matches test output: `git diff --no-index --ignore-space-at-eol --ignore-cr-at-eol -- <authoritative-manifest> <generated-manifest>`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Build",
+    "description": "Wire project references and validate the solution builds cleanly. Acceptance: `Backend.Tests.Unit` references `Backend.RelationalModel`, fixture files are included correctly, and the full DMS solution builds without restore.",
+    "steps-to-verify": [
+      "Build: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Test: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]
