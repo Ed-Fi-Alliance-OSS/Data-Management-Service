@@ -480,12 +480,16 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     {
         if (!context.TryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
         {
-            return new RelationalScalarType(ScalarKind.Decimal);
+            throw new InvalidOperationException(
+                $"Decimal property validation info is required for number properties at {sourcePath.Canonical}."
+            );
         }
 
         if (validationInfo.TotalDigits is null || validationInfo.DecimalPlaces is null)
         {
-            return new RelationalScalarType(ScalarKind.Decimal);
+            throw new InvalidOperationException(
+                $"Decimal property validation info must include totalDigits and decimalPlaces at {sourcePath.Canonical}."
+            );
         }
 
         if (validationInfo.TotalDigits <= 0 || validationInfo.DecimalPlaces < 0)

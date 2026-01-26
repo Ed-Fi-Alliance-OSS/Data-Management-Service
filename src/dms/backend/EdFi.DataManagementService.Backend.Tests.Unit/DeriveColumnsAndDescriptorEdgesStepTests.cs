@@ -323,7 +323,7 @@ public class Given_A_Number_Property_With_Decimal_Validation
 [TestFixture]
 public class Given_A_Number_Property_Without_Decimal_Validation
 {
-    private DbColumnModel _column = default!;
+    private Exception? _exception;
 
     [SetUp]
     public void Setup()
@@ -335,16 +335,69 @@ public class Given_A_Number_Property_Without_Decimal_Validation
             ["required"] = new JsonArray("amount"),
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
-
-        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Amount");
+        try
+        {
+            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
     }
 
     [Test]
-    public void It_should_allow_decimals_without_validation_info()
+    public void It_should_fail_with_a_schema_compilation_error()
     {
-        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal));
-        _column.IsNullable.Should().BeFalse();
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception?.Message.Should().Contain("$.amount");
+    }
+}
+
+[TestFixture]
+public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["amount"] = new JsonObject { ["type"] = "number" } },
+            ["required"] = new JsonArray("amount"),
+        };
+
+        var decimalPath = JsonPathExpressionCompiler.Compile("$.amount");
+        var decimalInfo = new DecimalPropertyValidationInfo(decimalPath, null, 2);
+
+        try
+        {
+            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+                schema,
+                builderContext =>
+                {
+                    builderContext.DecimalPropertyValidationInfosByPath = new Dictionary<
+                        string,
+                        DecimalPropertyValidationInfo
+                    >(StringComparer.Ordinal)
+                    {
+                        [decimalPath.Canonical] = decimalInfo,
+                    };
+                }
+            );
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_a_schema_compilation_error()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception?.Message.Should().Contain("$.amount");
     }
 }
 

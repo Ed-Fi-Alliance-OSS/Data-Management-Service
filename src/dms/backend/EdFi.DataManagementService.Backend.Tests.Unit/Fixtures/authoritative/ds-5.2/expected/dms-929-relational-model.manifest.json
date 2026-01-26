@@ -20066,7 +20066,9 @@
                 "name": "IncidentCost",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.incidentCost"
@@ -20939,7 +20941,9 @@
                 "name": "Cost",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.cost"
@@ -36359,7 +36363,9 @@
                 "name": "Amount",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -36498,7 +36504,9 @@
                 "name": "Amount",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -36637,7 +36645,9 @@
                 "name": "Amount",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -37407,7 +37417,9 @@
                 "name": "InnovativeDollarsSpent",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].innovativeDollarsSpent"
@@ -37416,7 +37428,9 @@
                 "name": "InnovativeDollarsSpentStrategicPriorities",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].innovativeDollarsSpentStrategicPriorities"
@@ -37425,7 +37439,9 @@
                 "name": "InnovativeProgramsFundsReceived",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].innovativeProgramsFundsReceived"
@@ -37434,7 +37450,9 @@
                 "name": "SchoolImprovementAllocation",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].schoolImprovementAllocation"
@@ -37443,7 +37461,9 @@
                 "name": "SchoolImprovementReservedFundsPercentage",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].schoolImprovementReservedFundsPercentage"
@@ -37452,7 +37472,9 @@
                 "name": "StateAssessmentAdministrationFunding",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].stateAssessmentAdministrationFunding"
@@ -37461,7 +37483,9 @@
                 "name": "SupplementalEducationalServicesFundsSpent",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].supplementalEducationalServicesFundsSpent"
@@ -37470,7 +37494,9 @@
                 "name": "SupplementalEducationalServicesPerPupilExpenditure",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].supplementalEducationalServicesPerPupilExpenditure"
@@ -38540,7 +38566,9 @@
                 "name": "Amount",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -38679,7 +38707,9 @@
                 "name": "Amount",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -40417,7 +40447,9 @@
                 "name": "PercentOfAssessment",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 15,
+                  "scale": 5
                 },
                 "is_nullable": true,
                 "source_path": "$.percentOfAssessment"
@@ -58443,7 +58475,9 @@
                 "name": "AnnualWage",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 5,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.annualWage"
@@ -58519,7 +58553,9 @@
                 "name": "HourlyWage",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 5,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.hourlyWage"
@@ -59539,7 +59575,9 @@
                 "name": "PercentageContribution",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.percentageContribution"
@@ -63011,7 +63049,9 @@
                 "name": "FederalProgramsFundingAllocation",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "Decimal"
+                  "kind": "Decimal",
+                  "precision": 9,
+                  "scale": 2
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].federalProgramsFundingAllocation"
