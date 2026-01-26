@@ -1,0 +1,4 @@
+- Task: Deduplicate JSON-schema kind inference (reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md) done.
+- Decisions: centralized schema kind detection in JsonSchemaTraversalConventions with shared SchemaKind; validate type nodes and preserve root-object enforcement paths.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonSchemaTraversalConventions.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DiscoverExtensionSitesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs
+- Notes: dotnet build warning about missing DocumentValidation.feature.cs (pre-existing).

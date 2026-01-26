@@ -37,7 +37,7 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         List<ExtensionSite> extensionSites
     )
     {
-        var schemaKind = DetermineSchemaKind(schema);
+        var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(schema);
 
         switch (schemaKind)
         {
@@ -173,38 +173,6 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         return projectKeys.ToArray();
     }
 
-    private static SchemaKind DetermineSchemaKind(JsonObject schema)
-    {
-        if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
-        {
-            if (schema.ContainsKey("items"))
-            {
-                return SchemaKind.Array;
-            }
-
-            if (schema.ContainsKey("properties"))
-            {
-                return SchemaKind.Object;
-            }
-
-            return SchemaKind.Scalar;
-        }
-
-        if (typeNode is not JsonValue jsonValue)
-        {
-            throw new InvalidOperationException("Expected schema type to be a string.");
-        }
-
-        var schemaType = jsonValue.GetValue<string>();
-
-        return schemaType switch
-        {
-            "object" => SchemaKind.Object,
-            "array" => SchemaKind.Array,
-            _ => SchemaKind.Scalar,
-        };
-    }
-
     private static string BuildPropertyPath(List<JsonPathSegment> scopeSegments, string propertyName)
     {
         List<JsonPathSegment> propertySegments =
@@ -214,12 +182,5 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         ];
 
         return JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
-    }
-
-    private enum SchemaKind
-    {
-        Object,
-        Array,
-        Scalar,
     }
 }

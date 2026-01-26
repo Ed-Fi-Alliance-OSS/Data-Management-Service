@@ -1,76 +1,69 @@
 [
   {
-    "category": "Type Mapping",
-    "description": "Make `type: \"number\"` scalar mapping require `decimalPropertyValidationInfos` with both `totalDigits` and `decimalPlaces`. Acceptance: deriving columns throws a deterministic schema-compilation error when a number property has no matching entry, or has an entry with `totalDigits`/`decimalPlaces` missing; the exception message includes the canonical JSON path (e.g., `$.amount`).",
+    "category": "Design Docs",
+    "description": "Update the flattening/reconstitution design contract so `jsonSchemaForInsert` string shapes match MetaEd output: `type: \"string\"` may omit `maxLength` only for (1) `format: \"date\" | \"date-time\" | \"time\"`, (2) MetaEd `duration` and `enumeration` properties (emitted as plain strings), and (3) descriptor URI strings (including descriptor collections and descriptor identity parts inside scalar references). Acceptance: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` no longer states an unconditional \"String requires maxLength\"; it explicitly lists the allowed omission cases and states that any other missing `maxLength` is a schema-compilation error, with examples using canonical JSON paths.",
     "steps-to-verify": [
-      "Update column derivation so a `type:number` property without a matching `decimalPropertyValidationInfos` entry fails fast (no default `Decimal` type).",
-      "Update tests so the former \"allow decimals without validation\" scenario now asserts an exception containing the property JSON path.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+      "Update: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` (Scalar type mapping rules) to enumerate the allowed missing-`maxLength` cases and the error rule for all other string scalars.",
+      "Include at least one canonical JSON path example for each allowed omission case (format-based date/time, duration/enumeration, descriptor URIs including descriptor collections and scalar references).",
+      "Confirm the doc explicitly distinguishes \"string in JSON schema\" from `ScalarKind.String` (descriptor URI strings are not stored as strings)."
     ],
-    "completed": true
-  },
-  {
-    "category": "Model Semantics",
-    "description": "Align `DbTableModel.Columns` semantics with the flattening/reconstitution design contract: `Columns` is the single ordered column list used for plan compilation (it must include key columns + ordinals + FKs + scalars), while `TableKey` remains the PK subset. Acceptance: each table’s `Columns` list begins with its key columns in stable key order (root: `DocumentId`; child: `{Root}_DocumentId`, ancestor ordinals, `Ordinal`) before non-key columns; root key column kind matches the design; canonical ordering keeps key columns first; manifest output reflects this.",
-    "steps-to-verify": [
-      "Update derivation so key columns are also emitted as `DbColumnModel` entries and included at the start of `DbTableModel.Columns` in stable key order (keep `TableKey` as the PK subset).",
-      "Update canonical ordering/manifest output and unit tests (and any golden manifest) to assert the full column inventory includes the key columns and that they remain first.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
-    ],
-    "completed": true
+    "completed": false
   },
   {
     "category": "Schema Validation",
-    "description": "Enforce the design contract for arrays: arrays must have `items.type: \"object\"`, except descriptor reference collections may be arrays of scalar descriptor values (with the wildcard element path present in `documentPathsMapping` as a descriptor path, e.g., `$.gradeLevelDescriptors[*]`). Acceptance: descriptor scalar arrays compile and derive a child table with parent key parts + `Ordinal` + a single `..._DescriptorId` column (and a `DescriptorEdgeSource`); any non-descriptor scalar array fails schema compilation with an error message that includes the canonical array path.",
+    "description": "Enforce the updated `maxLength` contract for string scalars while keeping MetaEd-valid omissions working. Acceptance: when deriving columns, a non-descriptor, non-formatted `type: \"string\"` schema without `maxLength` fails fast with a deterministic schema-compilation exception that includes the canonical JSON path (e.g., `$.name`). Allowed omissions compile successfully: (1) `format: date/date-time/time` maps to `ScalarKind.Date/DateTime/Time`, (2) MetaEd `duration` and `enumeration` strings map to `ScalarKind.String` with `MaxLength=null`, and (3) descriptor URI strings (including descriptor collections and descriptor identity parts inside scalar references) never require `maxLength` and are not treated as scalar string columns.",
     "steps-to-verify": [
-      "Update validation and column derivation to allow `type:array` with scalar `items.type` only when the wildcard element path (e.g., `$.gradeLevelDescriptors[*]`) is present in `DescriptorPathsByJsonPath`.",
-      "Add unit test: a descriptor scalar array derives a child table and adds exactly one descriptor FK column (`ColumnKind=DescriptorFk`) plus a matching `DescriptorEdgeSource`.",
-      "Add unit test: a non-descriptor scalar array fails fast with an exception message containing the canonical array path (e.g., `$.tags`).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs` so `BuildStringType` throws when `maxLength` is missing for a plain scalar string (no `format`) unless it matches an allowed omission rule.",
+      "Ensure descriptor detection covers descriptor values inside scalar references (i.e., descriptor identity parts found under `documentPathsMapping.*.referenceJsonPaths`).",
+      "Update exception messages to include the canonical JSON path and a brief remediation hint (e.g., \"set maxLength in MetaEd for string/sharedString\"), while not flagging MetaEd-valid omission cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Schema Traversal",
-    "description": "Add explicit coverage proving `additionalProperties` is ignored for persistence (closed-world mapping). Acceptance: no columns or tables are derived from schemas found under `additionalProperties` (boolean or schema form), and manifests for fixtures with/without `additionalProperties` are identical when `properties` are identical.",
+    "category": "Regression Coverage",
+    "description": "Add an authoritative-schema audit test to prevent new unexpected missing `maxLength` strings from slipping in. Acceptance: a unit test loads `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json` and asserts that every `jsonSchemaForInsert` string node either has `maxLength` or matches an allowed omission rule (date/time formats, duration/enumeration, descriptor URIs including scalar-reference identity parts). On failure, the test reports the resource endpoint name plus the canonical JSON path(s).",
     "steps-to-verify": [
-      "Add a unit test schema where `additionalProperties` is an object schema that would otherwise produce columns if traversed, and assert those columns are not derived.",
-      "Add a unit test that compares manifests for two schemas that differ only by `additionalProperties` and asserts byte-for-byte equality.",
+      "Add a new NUnit test that traverses each resource schema\u2019s `jsonSchemaForInsert` and validates the missing-`maxLength` allow-list rules against the resource\u2019s descriptor metadata (including descriptor identity parts under `referenceJsonPaths`).",
+      "Ensure the failure message lists offending `{resourceEndpointName, jsonPath}` pairs deterministically (stable sort) so CI output is consistent.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Determinism",
-    "description": "Eliminate duplicated ordering logic between canonicalization and manifest emission to prevent drift. Acceptance: ordering rules live in one place; after `CanonicalizeOrderingStep`, the emitter serializes in stored order (no re-sorting); a regression test fails if emitter ordering diverges from canonical ordering.",
+    "category": "Unit Tests",
+    "description": "Update `DeriveColumnsAndDescriptorEdgesStep` unit tests to match the nuanced `maxLength` rules. Acceptance: the former \"strings without maxLength are allowed\" test is replaced with: (a) a plain `type:string` with no `maxLength` throws and the message contains the canonical JSON path, (b) `format: date/date-time/time` strings without `maxLength` derive `ScalarKind.Date/DateTime/Time`, (c) a MetaEd `duration`/`enumeration`-style string without `maxLength` is accepted and derives `ScalarKind.String` with `MaxLength=null`, and (d) descriptor URI strings without `maxLength` (including descriptor collections and scalar-reference descriptor identity parts) are accepted and do not derive `ScalarKind.String` columns.",
     "steps-to-verify": [
-      "Refactor ordering so the manifest emitter does not independently sort tables/columns/constraints (or centralize shared ordering helpers used by both).",
-      "Add a unit test that constructs a model with intentionally unsorted input lists, runs canonicalization, emits a manifest, and asserts the manifest ordering matches the canonicalized in-memory ordering exactly.",
+      "Update: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs` to remove/replace `Given_A_String_Property_Without_MaxLength` and add focused fixtures for each allowed omission case and the disallowed case.",
+      "Add/adjust assertions so failures include the canonical JSON path (not just the property name).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Diagnostics",
-    "description": "Improve column name collision diagnostics for inlined-object prefixing and PascalCase normalization. Acceptance: when a collision occurs, the exception message includes the table name, the physical column name, and the canonical JSON paths for both colliding sources, and suggests using `relational.nameOverrides` to resolve it.",
+    "category": "Relational Model Refactor",
+    "description": "Deduplicate JSON-schema kind inference used by the base-schema traversal pipeline to prevent drift across epic siblings (references, naming overrides, _ext mapping). Acceptance: a single shared `DetermineSchemaKind` helper (and a single kind enum/type) is used by `ValidateJsonSchemaStep`, `DiscoverExtensionSitesStep`, `DeriveTableScopesAndKeysStep`, and `DeriveColumnsAndDescriptorEdgesStep`, with existing behavior preserved (root-object enforcement and error paths). Story: `reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md`.",
     "steps-to-verify": [
-      "Add a unit test with two properties that collapse to the same PascalCase column name (e.g., `ab` and `a-b`) and assert the thrown exception contains both source paths and the column name.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Extend `TableConstraint.ForeignKey` to represent referential actions (`ON DELETE` / `ON UPDATE`) so DDL emission and manifests do not re-derive cascade semantics. Acceptance: the derived model specifies actions for key scenarios (root `DocumentId` FK to `dms.Document` is `ON DELETE CASCADE`; parent->child table FKs for collections are `ON DELETE CASCADE`; reference-identity composite FKs use `ON UPDATE CASCADE`; descriptor FKs default to `NO ACTION`/`RESTRICT`), and `RelationalModelManifestEmitter` serializes these actions deterministically.",
-    "steps-to-verify": [
-      "Update `TableConstraint.ForeignKey` model to include `OnDelete` and `OnUpdate` (enum values covering at least `NoAction` and `Cascade`).",
-      "Update derivation steps to set the appropriate referential actions for root/collection/reference/descriptor foreign keys per the design docs.",
-      "Update `RelationalModelManifestEmitter` to include `on_delete` and `on_update` fields for foreign keys, and update any golden manifests accordingly.",
-      "Add unit tests asserting the referential actions on derived foreign keys (root document FK, parent-child FK, and a reference-identity FK case).",
+      "Add a shared helper (e.g., `JsonSchemaConventions`/`JsonSchemaTraversalConventions`) under `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/` that centralizes schema kind detection (object/array/scalar) and validates `type` when present.",
+      "Replace per-step `DetermineSchemaKind` implementations and per-file kind enums in `ValidateJsonSchemaStep.cs`, `DiscoverExtensionSitesStep.cs`, `DeriveTableScopesAndKeysStep.cs`, and `DeriveColumnsAndDescriptorEdgesStep.cs` with calls to the shared helper; remove the duplicated code.",
+      "Ensure the shared helper preserves current inference rules (`type` string, otherwise infer from `items`/`properties`) and preserves `ValidateJsonSchemaStep` root-object enforcement and path-inclusive error messages.",
+      "Verify: `rg -n \"DetermineSchemaKind\\(\" src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel` shows a single implementation and call sites only.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Relational Model Refactor",
+    "description": "Deduplicate foreign key name generation to a single naming convention helper to avoid drift. Acceptance: FK names are generated by exactly one shared method and both `DeriveTableScopesAndKeysStep` and `DeriveColumnsAndDescriptorEdgesStep` use it, with FK names unchanged (`FK_{tableName}_{col1_col2_...}`). Story: `reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md`.",
+    "steps-to-verify": [
+      "Move FK name generation into `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs` (e.g., `ForeignKeyName(tableName, columns)`), including the non-empty column validation.",
+      "Replace duplicated `BuildForeignKeyName` implementations in `DeriveTableScopesAndKeysStep.cs` and `DeriveColumnsAndDescriptorEdgesStep.cs` with calls to the shared naming convention method; remove the duplicated code.",
+      "Add/adjust a unit test that asserts FK naming remains `FK_{tableName}_{columnNamesJoinedByUnderscore}` and throws for empty columns.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]

@@ -95,7 +95,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     )
     {
         var currentPath = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
-        var schemaKind = DetermineSchemaKind(schema);
+        var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(schema);
 
         switch (schemaKind)
         {
@@ -183,7 +183,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             var isNullable = hasOptionalAncestor || isOptional || isXNullable;
             var nextHasOptionalAncestor = hasOptionalAncestor || isOptional || isXNullable;
 
-            var schemaKind = DetermineSchemaKind(propertySchema);
+            var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(propertySchema);
             switch (schemaKind)
             {
                 case SchemaKind.Object:
@@ -261,7 +261,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             throw new InvalidOperationException($"Child table scope '{arrayScope}' was not found.");
         }
 
-        var itemsKind = DetermineSchemaKind(itemsSchema);
+        var itemsKind = JsonSchemaTraversalConventions.DetermineSchemaKind(itemsSchema);
 
         switch (itemsKind)
         {
@@ -712,33 +712,6 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return $"FK_{tableName}_{columnSuffix}";
     }
 
-    private static SchemaKind DetermineSchemaKind(JsonObject schema)
-    {
-        if (schema.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonValue jsonValue)
-        {
-            var schemaType = jsonValue.GetValue<string>();
-
-            return schemaType switch
-            {
-                "object" => SchemaKind.Object,
-                "array" => SchemaKind.Array,
-                _ => SchemaKind.Scalar,
-            };
-        }
-
-        if (schema.ContainsKey("items"))
-        {
-            return SchemaKind.Array;
-        }
-
-        if (schema.ContainsKey("properties"))
-        {
-            return SchemaKind.Object;
-        }
-
-        return SchemaKind.Scalar;
-    }
-
     private sealed class TableBuilder
     {
         private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
@@ -799,12 +772,5 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         {
             return (sourcePath ?? Definition.JsonScope).Canonical;
         }
-    }
-
-    private enum SchemaKind
-    {
-        Object,
-        Array,
-        Scalar,
     }
 }

@@ -102,7 +102,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         string rootBaseName
     )
     {
-        var schemaKind = DetermineSchemaKind(schema);
+        var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(schema);
 
         switch (schemaKind)
         {
@@ -401,39 +401,5 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return value;
     }
 
-    private static SchemaKind DetermineSchemaKind(JsonObject schema)
-    {
-        if (schema.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonValue jsonValue)
-        {
-            var schemaType = jsonValue.GetValue<string>();
-
-            return schemaType switch
-            {
-                "object" => SchemaKind.Object,
-                "array" => SchemaKind.Array,
-                _ => SchemaKind.Scalar,
-            };
-        }
-
-        if (schema.ContainsKey("items"))
-        {
-            return SchemaKind.Array;
-        }
-
-        if (schema.ContainsKey("properties"))
-        {
-            return SchemaKind.Object;
-        }
-
-        return SchemaKind.Scalar;
-    }
-
     private sealed record TableScope(DbTableModel Table, IReadOnlyList<string> CollectionBaseNames);
-
-    private enum SchemaKind
-    {
-        Object,
-        Array,
-        Scalar,
-    }
 }

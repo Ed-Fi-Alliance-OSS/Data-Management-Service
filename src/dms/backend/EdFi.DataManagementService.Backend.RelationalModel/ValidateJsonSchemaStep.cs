@@ -45,7 +45,12 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
     {
         ValidateUnsupportedKeywords(schema, path);
 
-        var schemaKind = DetermineSchemaKind(schema, path, isRoot);
+        var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(
+            schema,
+            path,
+            isRoot,
+            includeTypePathInErrors: true
+        );
 
         switch (schemaKind)
         {
@@ -175,43 +180,6 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         }
     }
 
-    private static SchemaKind DetermineSchemaKind(JsonObject schema, string path, bool isRoot)
-    {
-        var schemaType = GetSchemaType(schema, path);
-
-        if (schemaType is not null)
-        {
-            if (isRoot && !string.Equals(schemaType, "object", StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException($"Root schema must be an object at {path}.");
-            }
-
-            return schemaType switch
-            {
-                "object" => SchemaKind.Object,
-                "array" => SchemaKind.Array,
-                _ => SchemaKind.Scalar,
-            };
-        }
-
-        if (schema.ContainsKey("items"))
-        {
-            if (isRoot)
-            {
-                throw new InvalidOperationException($"Root schema must be an object at {path}.");
-            }
-
-            return SchemaKind.Array;
-        }
-
-        if (schema.ContainsKey("properties") || isRoot)
-        {
-            return SchemaKind.Object;
-        }
-
-        return SchemaKind.Scalar;
-    }
-
     private static string? GetSchemaType(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
@@ -227,12 +195,5 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
             ),
             _ => throw new InvalidOperationException($"Expected type to be a string at {path}.type."),
         };
-    }
-
-    private enum SchemaKind
-    {
-        Object,
-        Array,
-        Scalar,
     }
 }
