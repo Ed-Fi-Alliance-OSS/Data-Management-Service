@@ -15,7 +15,7 @@
       "Add unit tests for schema normalization + singularization edge cases (e.g., `ed-fi` -> `edfi`, `categories` -> `Category`, `addresses` -> `Address`).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "JsonPath",
