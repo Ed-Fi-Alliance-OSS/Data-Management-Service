@@ -49,7 +49,7 @@
       "Add a unit test that constructs a model with intentionally unsorted input lists, runs canonicalization, emits a manifest, and asserts the manifest ordering matches the canonicalized in-memory ordering exactly.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Diagnostics",

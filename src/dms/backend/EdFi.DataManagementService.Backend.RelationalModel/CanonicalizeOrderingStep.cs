@@ -21,6 +21,7 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
             .TablesInReadDependencyOrder.Select(CanonicalizeTable)
             .OrderBy(table => CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
             .ToArray();
 
@@ -56,6 +57,8 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
             .ThenBy(edge => edge.IsIdentityComponent)
             .ToArray();
 
+        var orderedExtensionSites = CanonicalizeExtensionSites(context.ExtensionSites);
+
         context.ResourceModel = resourceModel with
         {
             Root = rootTable,
@@ -64,6 +67,9 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
             DocumentReferenceBindings = orderedDocumentReferences,
             DescriptorEdgeSources = orderedDescriptorEdges,
         };
+
+        context.ExtensionSites.Clear();
+        context.ExtensionSites.AddRange(orderedExtensionSites);
     }
 
     private static DbTableModel CanonicalizeTable(DbTableModel table)
@@ -156,5 +162,22 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         }
 
         return depth;
+    }
+
+    private static IReadOnlyList<ExtensionSite> CanonicalizeExtensionSites(
+        IReadOnlyList<ExtensionSite> extensionSites
+    )
+    {
+        return extensionSites
+            .Select(site =>
+                site with
+                {
+                    ProjectKeys = site.ProjectKeys.OrderBy(key => key, StringComparer.Ordinal).ToArray(),
+                }
+            )
+            .OrderBy(site => site.OwningScope.Canonical, StringComparer.Ordinal)
+            .ThenBy(site => site.ExtensionPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(site => string.Join("|", site.ProjectKeys), StringComparer.Ordinal)
+            .ToArray();
     }
 }

@@ -56,7 +56,7 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("tables");
         writer.WriteStartArray();
-        foreach (var table in OrderTables(resourceModel))
+        foreach (var table in resourceModel.TablesInReadDependencyOrder)
         {
             WriteTable(writer, table);
         }
@@ -64,7 +64,7 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("descriptor_edge_sources");
         writer.WriteStartArray();
-        foreach (var edge in OrderDescriptorEdges(resourceModel.DescriptorEdgeSources))
+        foreach (var edge in resourceModel.DescriptorEdgeSources)
         {
             WriteDescriptorEdge(writer, edge);
         }
@@ -72,7 +72,7 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("extension_sites");
         writer.WriteStartArray();
-        foreach (var site in OrderExtensionSites(extensionSites))
+        foreach (var site in extensionSites)
         {
             WriteExtensionSite(writer, site);
         }
@@ -107,7 +107,7 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("columns");
         writer.WriteStartArray();
-        foreach (var column in OrderColumns(table))
+        foreach (var column in table.Columns)
         {
             WriteColumn(writer, column);
         }
@@ -115,7 +115,7 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("constraints");
         writer.WriteStartArray();
-        foreach (var constraint in OrderConstraints(table))
+        foreach (var constraint in table.Constraints)
         {
             WriteConstraint(writer, constraint);
         }
@@ -242,7 +242,7 @@ public static class RelationalModelManifestEmitter
         writer.WriteString("extension_path", site.ExtensionPath.Canonical);
         writer.WritePropertyName("project_keys");
         writer.WriteStartArray();
-        foreach (var projectKey in site.ProjectKeys.OrderBy(key => key, StringComparer.Ordinal))
+        foreach (var projectKey in site.ProjectKeys)
         {
             writer.WriteStringValue(projectKey);
         }
@@ -264,130 +264,5 @@ public static class RelationalModelManifestEmitter
         writer.WriteString("project_name", resource.ProjectName);
         writer.WriteString("resource_name", resource.ResourceName);
         writer.WriteEndObject();
-    }
-
-    private static IReadOnlyList<DbTableModel> OrderTables(RelationalResourceModel resourceModel)
-    {
-        return resourceModel
-            .TablesInReadDependencyOrder.OrderBy(table => CountArrayDepth(table.JsonScope))
-            .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
-            .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
-            .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static IReadOnlyList<DbColumnModel> OrderColumns(DbTableModel table)
-    {
-        var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
-
-        return table
-            .Columns.OrderBy(column => GetColumnGroup(column, keyColumnOrder))
-            .ThenBy(column => GetColumnKeyIndex(column, keyColumnOrder))
-            .ThenBy(column => column.ColumnName.Value, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static IReadOnlyList<TableConstraint> OrderConstraints(DbTableModel table)
-    {
-        return table
-            .Constraints.OrderBy(GetConstraintGroup)
-            .ThenBy(GetConstraintName, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static IReadOnlyList<DescriptorEdgeSource> OrderDescriptorEdges(
-        IReadOnlyList<DescriptorEdgeSource> edges
-    )
-    {
-        return edges
-            .OrderBy(edge => edge.Table.Schema.Value, StringComparer.Ordinal)
-            .ThenBy(edge => edge.Table.Name, StringComparer.Ordinal)
-            .ThenBy(edge => edge.DescriptorValuePath.Canonical, StringComparer.Ordinal)
-            .ThenBy(edge => edge.FkColumn.Value, StringComparer.Ordinal)
-            .ThenBy(edge => edge.DescriptorResource.ProjectName, StringComparer.Ordinal)
-            .ThenBy(edge => edge.DescriptorResource.ResourceName, StringComparer.Ordinal)
-            .ThenBy(edge => edge.IsIdentityComponent)
-            .ToArray();
-    }
-
-    private static IReadOnlyList<ExtensionSite> OrderExtensionSites(
-        IReadOnlyList<ExtensionSite> extensionSites
-    )
-    {
-        return extensionSites
-            .OrderBy(site => site.OwningScope.Canonical, StringComparer.Ordinal)
-            .ThenBy(site => site.ExtensionPath.Canonical, StringComparer.Ordinal)
-            .ThenBy(site => string.Join("|", site.ProjectKeys), StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static Dictionary<string, int> BuildKeyColumnOrder(IReadOnlyList<DbKeyColumn> keyColumns)
-    {
-        Dictionary<string, int> keyOrder = new(StringComparer.Ordinal);
-
-        for (var index = 0; index < keyColumns.Count; index++)
-        {
-            keyOrder[keyColumns[index].ColumnName.Value] = index;
-        }
-
-        return keyOrder;
-    }
-
-    private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
-    {
-        if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
-        {
-            return 0;
-        }
-
-        return column.Kind switch
-        {
-            ColumnKind.DescriptorFk => 1,
-            ColumnKind.Scalar => 2,
-            _ => 3,
-        };
-    }
-
-    private static int GetColumnKeyIndex(
-        DbColumnModel column,
-        IReadOnlyDictionary<string, int> keyColumnOrder
-    )
-    {
-        return keyColumnOrder.TryGetValue(column.ColumnName.Value, out var index) ? index : int.MaxValue;
-    }
-
-    private static int GetConstraintGroup(TableConstraint constraint)
-    {
-        return constraint switch
-        {
-            TableConstraint.Unique => 1,
-            TableConstraint.ForeignKey => 2,
-            _ => 99,
-        };
-    }
-
-    private static string GetConstraintName(TableConstraint constraint)
-    {
-        return constraint switch
-        {
-            TableConstraint.Unique unique => unique.Name,
-            TableConstraint.ForeignKey foreignKey => foreignKey.Name,
-            _ => string.Empty,
-        };
-    }
-
-    private static int CountArrayDepth(JsonPathExpression scope)
-    {
-        var depth = 0;
-
-        foreach (var segment in scope.Segments)
-        {
-            if (segment is JsonPathSegment.AnyArrayElement)
-            {
-                depth++;
-            }
-        }
-
-        return depth;
     }
 }
