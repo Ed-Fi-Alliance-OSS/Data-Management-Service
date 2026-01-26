@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.RelationalModel;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+[TestFixture]
+public class Given_A_JsonSchema_With_Nested_Collections
+{
+    private DbTableModel _addressTable = default!;
+    private DbTableModel _periodTable = default!;
+    private DbTableModel _rootTable = default!;
+    private DbSchemaName _schemaName = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = CreateSchema();
+        var context = new RelationalModelBuilderContext
+        {
+            ProjectName = "Ed-Fi",
+            ProjectEndpointName = "ed-fi",
+            ResourceName = "School",
+            JsonSchemaForInsert = schema,
+        };
+
+        var step = new DeriveTableScopesAndKeysStep();
+
+        step.Execute(context);
+
+        context.ResourceModel.Should().NotBeNull();
+
+        _schemaName = context.ResourceModel!.PhysicalSchema;
+        _rootTable = context.ResourceModel.Root;
+        _addressTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolAddress"
+        );
+        _periodTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolAddressPeriod"
+        );
+    }
+
+    [Test]
+    public void It_should_create_collection_keys()
+    {
+        _addressTable
+            .Key.Columns.Select(column => (column.ColumnName.Value, column.Kind))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    ColumnKind.ParentKeyPart
+                ),
+                (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
+            );
+
+        _periodTable
+            .Key.Columns.Select(column => (column.ColumnName.Value, column.Kind))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    ColumnKind.ParentKeyPart
+                ),
+                (
+                    RelationalNameConventions.ParentCollectionOrdinalColumnName("Address").Value,
+                    ColumnKind.ParentKeyPart
+                ),
+                (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
+            );
+    }
+
+    [Test]
+    public void It_should_create_parent_child_foreign_keys()
+    {
+        var periodFk = _periodTable.Constraints.OfType<TableConstraint.ForeignKey>().Single();
+
+        periodFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal(
+                RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                RelationalNameConventions.ParentCollectionOrdinalColumnName("Address").Value
+            );
+
+        periodFk.TargetTable.Should().Be(new DbTableName(_schemaName, "SchoolAddress"));
+        periodFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal(
+                RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                RelationalNameConventions.OrdinalColumnName.Value
+            );
+
+        var addressFk = _addressTable.Constraints.OfType<TableConstraint.ForeignKey>().Single();
+
+        addressFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.RootDocumentIdColumnName("School").Value);
+
+        addressFk.TargetTable.Should().Be(new DbTableName(_schemaName, "School"));
+        addressFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+    }
+
+    [Test]
+    public void It_should_create_the_root_document_foreign_key()
+    {
+        var rootFk = _rootTable.Constraints.OfType<TableConstraint.ForeignKey>().Single();
+
+        rootFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+
+        rootFk.TargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Document"));
+        rootFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+    }
+
+    private static JsonObject CreateSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject(),
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+}

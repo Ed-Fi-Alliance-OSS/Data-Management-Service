@@ -26,3 +26,7 @@ DMS-929 00-base-schema-traversal: completed task DiscoverExtensionSites (pipelin
 Decisions: ordered schema traversal; treat `_ext` as boundary; capture owning scope + extension path + ordered project keys; skip recursion into `_ext`.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DiscoverExtensionSitesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DiscoverExtensionSitesStepTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task DeriveTableScopesAndKeys (pipeline step).
+Decisions: root table has DocumentId FK to dms.Document; child keys use Root_DocumentId + ancestor ordinals + Ordinal; child FKs map parent key columns deterministically.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
