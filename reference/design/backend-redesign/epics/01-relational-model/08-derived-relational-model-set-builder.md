@@ -26,6 +26,8 @@ Key responsibilities:
   - descriptor/document-reference target validation against the effective schema set,
   - abstract resource metadata lookup for polymorphic identity artifacts.
 
+Implementation note (important for epic-sibling integration): the per-resource pipeline should not scan other resources/projects to build cross-resource metadata (e.g., inferring descriptor paths for descriptor identity parts inside reference objects). That logic belongs in this set-level builder/registry so it can consider the full effective schema set (core + extensions) once, avoid O(N×M) per-resource JSON scans, and provide deterministic, validated lookups to the per-resource derivation steps.
+
 ## Acceptance Criteria
 
 - Given a fixture with multiple `ApiSchema.json` inputs (core + at least one extension), the derived `DerivedRelationalModelSet` is stable across:

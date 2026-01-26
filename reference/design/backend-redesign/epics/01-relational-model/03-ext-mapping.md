@@ -17,6 +17,12 @@ Derive extension table models for Ed-Fi-style extensions (`_ext`) as defined in 
   - extension child tables for arrays under `_ext` using parent+ordinal keys.
 - Apply the same reference/descriptor binding rules inside extensions.
 
+Note: The current base-schema traversal (DMS-929) skips `_ext` during column derivation and enforces that all descriptor
+paths from `documentPathsMapping` are encountered in the JSON schema walk. Once descriptor paths exist under extension
+sites (e.g., `$._ext.sample.someDescriptor`), this “must be used” check must be made `_ext`-aware (exclude extension
+subtrees from enforcement and/or mark extension-path descriptors as handled during extension derivation) to avoid
+false fail-fast errors.
+
 This story contributes extension schemas/tables into the unified `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).
 
 ## Acceptance Criteria
