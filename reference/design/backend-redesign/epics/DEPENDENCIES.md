@@ -122,7 +122,7 @@ Epic: `01-relational-model/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E01-S00 | [`00-base-schema-traversal.md`](01-relational-model/00-base-schema-traversal.md) | E00-S00 | — | Logical table/column scopes from JSON schema (`$ref` resolution, arrays→tables) |
+| E01-S00 | [`00-base-schema-traversal.md`](01-relational-model/00-base-schema-traversal.md) | E00-S00 | — | Logical table/column scopes from JSON schema (arrays→tables, object inlining, scalar columns) |
 | E01-S01 | [`01-reference-and-constraints.md`](01-relational-model/01-reference-and-constraints.md) | E01-S00 | — | FK bindings (`..._DocumentId`/`..._DescriptorId`) + identity/uniqueness constraints |
 | E01-S02 | [`02-naming-and-overrides.md`](01-relational-model/02-naming-and-overrides.md) | E01-S00 | E01-S01 | Deterministic naming + `relational.nameOverrides` parsing + collision/length rules |
 | E01-S03 | [`03-ext-mapping.md`](01-relational-model/03-ext-mapping.md) | E01-S00, E01-S02 | E01-S01 | `_ext` model derivation (extension schemas/tables aligned to base keys) |

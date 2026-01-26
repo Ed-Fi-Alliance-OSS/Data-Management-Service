@@ -188,7 +188,7 @@ Important note on `additionalProperties`:
 
 Note: C# types referenced below are defined in [7.3 Relational resource model](#73-relational-resource-model)
 
-1. **Resolve `$ref`** in the JSON schema into an in-memory schema graph (or a resolver that can answer “what is the schema at path X?”).
+1. Validate `jsonSchemaForInsert` is fully expanded (no `$ref`). If `$ref` appears, treat it as invalid schema input.
 2. Walk the schema tree starting at `$`:
    - Each **array** node creates a **child table** with:
      - parent key columns
