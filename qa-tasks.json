@@ -1,0 +1,44 @@
+[
+  {
+    "category": "Design Docs",
+    "description": "Update the flattening/reconstitution design contract so `jsonSchemaForInsert` string shapes match MetaEd output: `type: \"string\"` may omit `maxLength` only for (1) `format: \"date\" | \"date-time\" | \"time\"`, (2) MetaEd `duration` and `enumeration` properties (emitted as plain strings), and (3) descriptor URI strings (including descriptor collections and descriptor identity parts inside scalar references). Acceptance: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` no longer states an unconditional \"String requires maxLength\"; it explicitly lists the allowed omission cases and states that any other missing `maxLength` is a schema-compilation error, with examples using canonical JSON paths.",
+    "steps-to-verify": [
+      "Update: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` (Scalar type mapping rules) to enumerate the allowed missing-`maxLength` cases and the error rule for all other string scalars.",
+      "Include at least one canonical JSON path example for each allowed omission case (format-based date/time, duration/enumeration, descriptor URIs including descriptor collections and scalar references).",
+      "Confirm the doc explicitly distinguishes \"string in JSON schema\" from `ScalarKind.String` (descriptor URI strings are not stored as strings)."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Schema Validation",
+    "description": "Enforce the updated `maxLength` contract for string scalars while keeping MetaEd-valid omissions working. Acceptance: when deriving columns, a non-descriptor, non-formatted `type: \"string\"` schema without `maxLength` fails fast with a deterministic schema-compilation exception that includes the canonical JSON path (e.g., `$.name`). Allowed omissions compile successfully: (1) `format: date/date-time/time` maps to `ScalarKind.Date/DateTime/Time`, (2) MetaEd `duration` and `enumeration` strings map to `ScalarKind.String` with `MaxLength=null`, and (3) descriptor URI strings (including descriptor collections and descriptor identity parts inside scalar references) never require `maxLength` and are not treated as scalar string columns.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs` so `BuildStringType` throws when `maxLength` is missing for a plain scalar string (no `format`) unless it matches an allowed omission rule.",
+      "Ensure descriptor detection covers descriptor values inside scalar references (i.e., descriptor identity parts found under `documentPathsMapping.*.referenceJsonPaths`).",
+      "Update exception messages to include the canonical JSON path and a brief remediation hint (e.g., \"set maxLength in MetaEd for string/sharedString\"), while not flagging MetaEd-valid omission cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Regression Coverage",
+    "description": "Add an authoritative-schema audit test to prevent new unexpected missing `maxLength` strings from slipping in. Acceptance: a unit test loads `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json` and asserts that every `jsonSchemaForInsert` string node either has `maxLength` or matches an allowed omission rule (date/time formats, duration/enumeration, descriptor URIs including scalar-reference identity parts). On failure, the test reports the resource endpoint name plus the canonical JSON path(s).",
+    "steps-to-verify": [
+      "Add a new NUnit test that traverses each resource schema’s `jsonSchemaForInsert` and validates the missing-`maxLength` allow-list rules against the resource’s descriptor metadata (including descriptor identity parts under `referenceJsonPaths`).",
+      "Ensure the failure message lists offending `{resourceEndpointName, jsonPath}` pairs deterministically (stable sort) so CI output is consistent.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Unit Tests",
+    "description": "Update `DeriveColumnsAndDescriptorEdgesStep` unit tests to match the nuanced `maxLength` rules. Acceptance: the former \"strings without maxLength are allowed\" test is replaced with: (a) a plain `type:string` with no `maxLength` throws and the message contains the canonical JSON path, (b) `format: date/date-time/time` strings without `maxLength` derive `ScalarKind.Date/DateTime/Time`, (c) a MetaEd `duration`/`enumeration`-style string without `maxLength` is accepted and derives `ScalarKind.String` with `MaxLength=null`, and (d) descriptor URI strings without `maxLength` (including descriptor collections and scalar-reference descriptor identity parts) are accepted and do not derive `ScalarKind.String` columns.",
+    "steps-to-verify": [
+      "Update: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs` to remove/replace `Given_A_String_Property_Without_MaxLength` and add focused fixtures for each allowed omission case and the disallowed case.",
+      "Add/adjust assertions so failures include the canonical JSON path (not just the property name).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]

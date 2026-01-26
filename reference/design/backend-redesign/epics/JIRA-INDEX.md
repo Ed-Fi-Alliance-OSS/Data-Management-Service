@@ -25,6 +25,7 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-934` — Emit `relational-model.manifest.json` — `reference/design/backend-redesign/epics/01-relational-model/05-relational-model-manifest.md`
   - `DMS-942` — Map Descriptor Resources to `dms.Descriptor` (No Per-Descriptor Tables) — `reference/design/backend-redesign/epics/01-relational-model/06-descriptor-resource-mapping.md`
   - `DMS-945` — Derive Index + Trigger Inventory (DDL Intent) — `reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md`
+  - `DMS-1033` — Build `DerivedRelationalModelSet` from the Effective Schema Set — `reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md`
 
 - `DMS-935` — DDL Emission (PostgreSQL + SQL Server) — `reference/design/backend-redesign/epics/02-ddl-emission/EPIC.md`
   - `DMS-936` — SQL Dialect Abstraction + Writer — `reference/design/backend-redesign/epics/02-ddl-emission/00-dialect-abstraction.md`

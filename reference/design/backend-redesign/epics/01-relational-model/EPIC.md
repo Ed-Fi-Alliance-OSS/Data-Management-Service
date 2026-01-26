@@ -32,3 +32,4 @@ Authorization objects remain out of scope.
 - `DMS-934` — `05-relational-model-manifest.md` — Emit `relational-model.manifest.json` (stable)
 - `DMS-942` — `06-descriptor-resource-mapping.md` — Map descriptor resources to `dms.Descriptor` (no per-descriptor tables)
 - `DMS-945` — `07-index-and-trigger-inventory.md` — Derive deterministic indexes + triggers inventory (DDL intent)
+- `DMS-1033` — `08-derived-relational-model-set-builder.md` — Build `DerivedRelationalModelSet` from the effective schema set
