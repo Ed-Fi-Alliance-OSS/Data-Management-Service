@@ -30,3 +30,7 @@ DMS-929 00-base-schema-traversal: completed task DeriveTableScopesAndKeys (pipel
 Decisions: root table has DocumentId FK to dms.Document; child keys use Root_DocumentId + ancestor ordinals + Ordinal; child FKs map parent key columns deterministically.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task DeriveColumnsAndDescriptorEdges (pipeline step).
+Decisions: column nullability from first optional/x-nullable ancestor within table scope; descriptor paths map to DescriptorFk columns + FK to dms.Descriptor with edge sources; scalar type mapping honors string/date/time formats, integer formats, decimal validation info.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.

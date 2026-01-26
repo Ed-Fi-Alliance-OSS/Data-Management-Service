@@ -43,7 +43,7 @@
       "Unit test: a minimal resource with one descriptor mapping produces exactly one descriptor path entry with the expected descriptor resource name. several other non-descriptor scenarios",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Pipeline Step",
