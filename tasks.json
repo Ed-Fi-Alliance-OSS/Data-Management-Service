@@ -25,7 +25,7 @@
       "Unit test that paths containing numeric indices (e.g., `$.a[0]`) fail fast (future story handles concrete paths).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Pipeline",

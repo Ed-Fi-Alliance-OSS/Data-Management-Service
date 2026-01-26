@@ -2,3 +2,7 @@ DMS-929 00-base-schema-traversal: completed task Model (relational model types).
 Decisions: matched flattening-reconstitution shape types; added ExtensionSite record for _ext site inventory; no SQL strings/dicts.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelTypes.cs, tasks.json, progress.txt, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Placeholder.cs (deleted).
 Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).
+DMS-929 00-base-schema-traversal: completed task JsonPath (restricted JsonPathExpression compiler).
+Decisions: parse only $ + dot properties + [*]; reject other bracket forms; added FromSegments for canonicalization; property chars limited to letters/digits/_/-.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonPathExpressionCompiler.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/JsonPathExpressionCompilerTests.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
