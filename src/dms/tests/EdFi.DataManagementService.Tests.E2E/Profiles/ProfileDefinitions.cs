@@ -199,6 +199,225 @@ public static class ProfileDefinitions
         </Profile>
         """;
 
+    // ================================================================================
+    // WRITE FILTERING PROFILES
+    // These profiles have restricted WriteContentType for testing write-side filtering.
+    // Fields not allowed by the write profile are silently stripped from the request.
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for School with IncludeOnly WriteContentType - only allows writing
+    /// nameOfInstitution, shortNameOfInstitution, and required collections.
+    /// Other fields like webSite will be silently stripped from POST/PUT requests.
+    /// </summary>
+    public const string SchoolWriteIncludeOnlyName = "E2E-Test-School-Write-IncludeOnly";
+
+    public const string SchoolWriteIncludeOnlyXml = """
+        <Profile name="E2E-Test-School-Write-IncludeOnly">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeOnly">
+                    <Property name="nameOfInstitution"/>
+                    <Property name="shortNameOfInstitution"/>
+                    <Collection name="educationOrganizationCategories" memberSelection="IncludeAll"/>
+                    <Collection name="gradeLevels" memberSelection="IncludeAll"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with ExcludeOnly WriteContentType - excludes webSite and
+    /// shortNameOfInstitution from being written. These fields will be silently stripped.
+    /// </summary>
+    public const string SchoolWriteExcludeOnlyName = "E2E-Test-School-Write-ExcludeOnly";
+
+    public const string SchoolWriteExcludeOnlyXml = """
+        <Profile name="E2E-Test-School-Write-ExcludeOnly">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="ExcludeOnly">
+                    <Property name="webSite"/>
+                    <Property name="shortNameOfInstitution"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with collection item filter on WriteContentType.
+    /// Only allows writing grade levels matching "Ninth grade" descriptor.
+    /// Other grade levels will be silently stripped from the request.
+    /// </summary>
+    public const string SchoolWriteGradeLevelFilterName = "E2E-Test-School-Write-GradeLevelFilter";
+
+    public const string SchoolWriteGradeLevelFilterXml = """
+        <Profile name="E2E-Test-School-Write-GradeLevelFilter">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeAll">
+                        <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+                            <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+                        </Filter>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    // ================================================================================
+    // CREATABILITY VALIDATION PROFILES
+    // These profiles have WriteContentType that excludes required fields.
+    // POST requests with these profiles should fail with data-policy-enforced error.
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for School with WriteContentType that excludes the required nameOfInstitution field.
+    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// PUT requests should succeed because existing resources already have the value.
+    /// </summary>
+    public const string SchoolWriteExcludeRequiredName = "E2E-Test-School-Write-ExcludeRequired";
+
+    public const string SchoolWriteExcludeRequiredXml = """
+        <Profile name="E2E-Test-School-Write-ExcludeRequired">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="ExcludeOnly">
+                    <Property name="nameOfInstitution"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType that excludes the required educationOrganizationCategories collection.
+    /// Uses Property element (not Collection element) to fully exclude the collection.
+    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// </summary>
+    public const string SchoolWriteExcludeRequiredCollectionName =
+        "E2E-Test-School-Write-ExcludeRequiredCollection";
+
+    public const string SchoolWriteExcludeRequiredCollectionXml = """
+        <Profile name="E2E-Test-School-Write-ExcludeRequiredCollection">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="ExcludeOnly">
+                    <Property name="educationOrganizationCategories"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType using IncludeOnly that omits the required nameOfInstitution field.
+    /// POST requests with this profile should fail with a data-policy-enforced error.
+    /// </summary>
+    public const string SchoolWriteIncludeOnlyMissingRequiredName =
+        "E2E-Test-School-Write-IncludeOnlyMissingRequired";
+
+    public const string SchoolWriteIncludeOnlyMissingRequiredXml = """
+        <Profile name="E2E-Test-School-Write-IncludeOnlyMissingRequired">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeOnly">
+                    <Property name="shortNameOfInstitution"/>
+                    <Property name="webSite"/>
+                    <Collection name="educationOrganizationCategories" memberSelection="IncludeAll"/>
+                    <Collection name="gradeLevels" memberSelection="IncludeAll"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType using IncludeAll.
+    /// POST requests should succeed because no required fields are excluded.
+    /// </summary>
+    public const string SchoolWriteIncludeAllName = "E2E-Test-School-Write-IncludeAll";
+
+    public const string SchoolWriteIncludeAllXml = """
+        <Profile name="E2E-Test-School-Write-IncludeAll">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType that has a CollectionRule on the required gradeLevels collection.
+    /// The collection is filtered (not excluded), so POST requests should succeed.
+    /// </summary>
+    public const string SchoolWriteRequiredCollectionWithRuleName =
+        "E2E-Test-School-Write-RequiredCollectionWithRule";
+
+    public const string SchoolWriteRequiredCollectionWithRuleXml = """
+        <Profile name="E2E-Test-School-Write-RequiredCollectionWithRule">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeAll">
+                        <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+                            <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+                        </Filter>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    // ================================================================================
+    // PUT MERGE PROFILES
+    // These profiles test that excluded fields are preserved from existing documents
+    // during PUT operations (recursive merging functionality).
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for School with WriteContentType that excludes a non-key property within collection items.
+    /// The addresses collection excludes nameOfCounty - PUT requests should preserve nameOfCounty from existing doc.
+    /// Note: Only non-key properties can be preserved during PUT. Key properties (addressTypeDescriptor, city,
+    /// postalCode, stateAbbreviationDescriptor, streetNumberName) form the collection item identity and cannot
+    /// be excluded - attempting to do so would cause a DataPolicyException.
+    /// </summary>
+    public const string SchoolWriteAddressExcludeNameOfCountyName =
+        "E2E-Test-School-Write-AddressExcludeNameOfCounty";
+
+    public const string SchoolWriteAddressExcludeNameOfCountyXml = """
+        <Profile name="E2E-Test-School-Write-AddressExcludeNameOfCounty">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="addresses" memberSelection="ExcludeOnly">
+                        <Property name="nameOfCounty"/>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School with WriteContentType using collection item filter.
+    /// Only allows modifying Ninth grade items - other grade levels should be preserved on PUT.
+    /// </summary>
+    public const string SchoolWriteGradeLevelFilterPreserveName =
+        "E2E-Test-School-Write-GradeLevelFilterPreserve";
+
+    public const string SchoolWriteGradeLevelFilterPreserveXml = """
+        <Profile name="E2E-Test-School-Write-GradeLevelFilterPreserve">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeAll">
+                        <Filter propertyName="gradeLevelDescriptor" filterMode="IncludeOnly">
+                            <Value>uri://ed-fi.org/GradeLevelDescriptor#Ninth grade</Value>
+                        </Filter>
+                    </Collection>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
     /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
@@ -214,5 +433,18 @@ public static class ProfileDefinitions
             (SchoolExtensionExcludeOnlyName, SchoolExtensionExcludeOnlyXml),
             (SchoolIncludeOnlyNoExtensionRuleName, SchoolIncludeOnlyNoExtensionRuleXml),
             (SchoolExcludeOnlyNoExtensionRuleName, SchoolExcludeOnlyNoExtensionRuleXml),
+            // Write filtering profiles
+            (SchoolWriteIncludeOnlyName, SchoolWriteIncludeOnlyXml),
+            (SchoolWriteExcludeOnlyName, SchoolWriteExcludeOnlyXml),
+            (SchoolWriteGradeLevelFilterName, SchoolWriteGradeLevelFilterXml),
+            // Creatability validation profiles
+            (SchoolWriteExcludeRequiredName, SchoolWriteExcludeRequiredXml),
+            (SchoolWriteExcludeRequiredCollectionName, SchoolWriteExcludeRequiredCollectionXml),
+            (SchoolWriteIncludeOnlyMissingRequiredName, SchoolWriteIncludeOnlyMissingRequiredXml),
+            (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
+            (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
+            // PUT merge profiles
+            (SchoolWriteAddressExcludeNameOfCountyName, SchoolWriteAddressExcludeNameOfCountyXml),
+            (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
         ];
 }

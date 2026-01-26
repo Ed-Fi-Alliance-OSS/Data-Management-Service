@@ -38,7 +38,7 @@ internal class GetByIdHandler(
             await documentStoreRepository.GetDocumentById(
                 new GetRequest(
                     DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                    ResourceInfo: requestInfo.ResourceInfo,
+                    ResourceName: requestInfo.ResourceInfo.ResourceName,
                     ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
                         requestInfo.AuthorizationStrategyEvaluators,
                         requestInfo.AuthorizationSecurableInfo,

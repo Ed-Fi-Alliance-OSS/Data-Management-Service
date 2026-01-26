@@ -26,6 +26,7 @@ public static class FailureResponse
     private static readonly string _methodNotAllowed = $"{_typePrefix}:method-not-allowed";
     private static readonly string _forbiddenType = $"{_typePrefix}:security:authorization";
     private static readonly string _tagMismatchRequestTypePrefix = $"{_typePrefix}:optimistic-lock-failed";
+    private static readonly string _dataPolicyEnforcedType = $"{_typePrefix}:data-policy-enforced";
 
     private static JsonObject CreateBaseJsonObject(
         string detail,
@@ -208,5 +209,19 @@ public static class FailureResponse
             correlationId: traceId.Value,
             validationErrors: [],
             errors: []
+        );
+
+    public static JsonNode ForDataPolicyEnforced(string profileName, TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "The data cannot be saved because a data policy has been applied to the request that prevents it.",
+            type: _dataPolicyEnforcedType,
+            title: "Data Policy Enforced",
+            status: 400,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors:
+            [
+                $"The Profile definition for '{profileName}' excludes (or does not include) one or more required data elements needed to create the resource.",
+            ]
         );
 }

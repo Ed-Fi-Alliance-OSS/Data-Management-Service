@@ -5,14 +5,15 @@
 
 using System.Text.Json.Nodes;
 using System.Threading;
-using EdFi.DataManagementService.Old.Postgresql;
-using EdFi.DataManagementService.Old.Postgresql.Operation;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Old.Postgresql;
+using EdFi.DataManagementService.Old.Postgresql.Operation;
 using ImpromptuInterface;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,7 +21,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
 using NUnit.Framework;
-using EdFi.DataManagementService.Backend;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Tests.Integration;
 
@@ -678,7 +678,7 @@ public abstract class DatabaseTest : DatabaseTestBase
         return (
             new
             {
-                ResourceInfo = CreateResourceInfo(resourceName),
+                ResourceName = new ResourceName(resourceName),
                 TraceId = traceId,
                 DocumentUuid = new DocumentUuid(documentUuidGuid),
                 ResourceAuthorizationHandler = new ResourceAuthorizationHandler(

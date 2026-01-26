@@ -96,6 +96,23 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// </summary>
     public JsonNode JsonSchemaForInsert => _jsonSchemaForInsert.Value;
 
+    private readonly Lazy<IReadOnlyList<string>> _requiredFieldsForInsert = new(() =>
+    {
+        var requiredNode = _resourceSchemaNode["jsonSchemaForInsert"]?["required"];
+        if (requiredNode == null)
+        {
+            return Array.Empty<string>();
+        }
+
+        return requiredNode.AsArray().Select(x => x!.GetValue<string>()).ToList().AsReadOnly();
+    });
+
+    /// <summary>
+    /// The list of required field names from the JSON schema for insert.
+    /// These are the top-level required properties defined in the jsonSchemaForInsert.
+    /// </summary>
+    public IReadOnlyList<string> RequiredFieldsForInsert => _requiredFieldsForInsert.Value;
+
     private Lazy<JsonNode> _jsonSchemaForUpdate =>
         new(() =>
         {

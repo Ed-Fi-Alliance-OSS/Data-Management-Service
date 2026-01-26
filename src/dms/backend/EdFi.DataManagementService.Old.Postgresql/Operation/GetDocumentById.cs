@@ -5,8 +5,8 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Old.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Old.Postgresql.Model;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 using static EdFi.DataManagementService.Backend.PartitionUtility;
@@ -41,7 +41,7 @@ public class GetDocumentById(ISqlAction _sqlAction, ILogger<GetDocumentById> _lo
         {
             DocumentSummary? documentSummary = await _sqlAction.FindDocumentEdfiDocByDocumentUuid(
                 getRequest.DocumentUuid,
-                getRequest.ResourceInfo.ResourceName.Value,
+                getRequest.ResourceName.Value,
                 PartitionKeyFor(getRequest.DocumentUuid),
                 connection,
                 transaction,

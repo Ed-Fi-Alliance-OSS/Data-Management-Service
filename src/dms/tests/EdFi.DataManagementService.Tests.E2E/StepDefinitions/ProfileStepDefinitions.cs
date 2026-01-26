@@ -125,6 +125,9 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Header Validation")]
     [Scope(Feature = "Profile Collection Item Filtering")]
     [Scope(Feature = "Profile Extension Filtering")]
+    [Scope(Feature = "Profile Write Filtering")]
+    [Scope(Feature = "Profile Creatability Validation")]
+    [Scope(Feature = "Profile PUT Merge Functionality")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();
@@ -334,6 +337,91 @@ public class ProfileStepDefinitions(
         _apiResponse = await _playwrightContext.ApiRequestContext?.GetAsync(
             url,
             new() { Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+    }
+
+    /// <summary>
+    /// Makes a POST request with an explicit profile Content-Type header for write filtering tests.
+    /// Format: application/vnd.ed-fi.{resource}.{profile}.writable+json
+    /// </summary>
+    [When(
+        @"a POST request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)"" with body"
+    )]
+    public async Task WhenAPOSTRequestIsMadeToWithProfileForResourceWithBody(
+        string url,
+        string profileName,
+        string resourceName,
+        string body
+    )
+    {
+        url = AddDataPrefixIfNecessary(url);
+
+        // Build Content-Type header with profile's writable format
+        string contentType =
+            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
+
+        _logger.log.Information($"POST url: {url}");
+        _logger.log.Information($"Content-Type header: {contentType}");
+        _logger.log.Information($"POST body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+
+        ExtractIdFromResponse();
+    }
+
+    /// <summary>
+    /// Makes a PUT request with an explicit profile Content-Type header for write filtering tests.
+    /// Format: application/vnd.ed-fi.{resource}.{profile}.writable+json
+    /// </summary>
+    [When(
+        @"a PUT request is made to ""([^""]*)"" with profile ""([^""]*)"" for resource ""([^""]*)"" with body"
+    )]
+    public async Task WhenAPUTRequestIsMadeToWithProfileForResourceWithBody(
+        string url,
+        string profileName,
+        string resourceName,
+        string body
+    )
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        // Replace {id} placeholder in body with actual id
+        body = body.Replace("{id}", _id);
+
+        // Build Content-Type header with profile's writable format
+        string contentType =
+            $"application/vnd.ed-fi.{resourceName.ToLowerInvariant()}.{profileName.ToLowerInvariant()}.writable+json";
+
+        _logger.log.Information($"PUT url: {url}");
+        _logger.log.Information($"Content-Type header: {contentType}");
+        _logger.log.Information($"PUT body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", contentType),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Data = body, Headers = headers }
         )!;
 
         _logger.log.Information($"Response status: {_apiResponse.Status}");
@@ -729,6 +817,59 @@ public class ProfileStepDefinitions(
             {
                 throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Verifies that a collection item at a specific index has a property with the expected value.
+    /// </summary>
+    [Then(@"the ""([^""]*)"" collection item at index (\d+) should have ""([^""]*)"" value ""([^""]*)""")]
+    public async Task ThenTheCollectionItemAtIndexShouldHaveValue(
+        string collectionName,
+        int index,
+        string propertyName,
+        string expectedValue
+    )
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        JsonObject rootObject = responseJson is JsonArray jsonArray
+            ? jsonArray[0]!.AsObject()
+            : responseJson.AsObject();
+
+        if (rootObject.TryGetPropertyValue(collectionName, out JsonNode? collectionNode))
+        {
+            JsonArray collection = collectionNode!.AsArray();
+
+            collection
+                .Count.Should()
+                .BeGreaterThan(index, $"Collection '{collectionName}' does not have item at index {index}");
+
+            JsonObject item = collection[index]!.AsObject();
+
+            if (item.TryGetPropertyValue(propertyName, out JsonNode? propValue))
+            {
+                string? actualValue = propValue?.ToString();
+                actualValue
+                    .Should()
+                    .Be(
+                        expectedValue,
+                        $"Collection item property '{propertyName}' at index {index} should be '{expectedValue}' but was '{actualValue}'"
+                    );
+            }
+            else
+            {
+                throw new AssertionException(
+                    $"Collection item at index {index} does not have property '{propertyName}'. Item: {item}"
+                );
+            }
+        }
+        else
+        {
+            throw new AssertionException(
+                $"Collection '{collectionName}' not found in response: {responseBody}"
+            );
         }
     }
 
