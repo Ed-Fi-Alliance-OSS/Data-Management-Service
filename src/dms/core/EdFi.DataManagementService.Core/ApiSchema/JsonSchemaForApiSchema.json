@@ -103,6 +103,9 @@
                                 },
                                 "openApiFragment": {
                                     "type": "object"
+                                },
+                                "flatteningMetadata": {
+                                    "type": "object"
                                 }
                             },
                             "additionalProperties": false
@@ -360,6 +363,15 @@
                         },
                         "superclassResourceName": {
                             "type": "string"
+                        },
+                        "flatteningMetadata": {
+                            "type": "object"
+                        },
+                        "sensitiveDataJsonPaths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
                         }
                     },
                     "required": [
