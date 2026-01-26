@@ -50,3 +50,7 @@ DMS-929 00-base-schema-traversal: completed task Build (solution build validatio
 Decisions: confirmed Backend.Tests.Unit references + fixture content are wired; no code changes required.
 Files: tasks.json, progress.txt.
 Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task DeriveColumnsAndDescriptorEdges (marked done in tasks.json).
+Decisions: no code changes; task already implemented/covered by tests, just status sync.
+Files: tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
