@@ -46,3 +46,7 @@ DMS-929 00-base-schema-traversal: completed task Testing (fixtures + end-to-end 
 Decisions: added minimal ApiSchema fixture file to drive pipeline end-to-end; assertions focus on tables/columns/descriptor edges/_ext site.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Fixtures/relational-model-fixture.json, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelPipelineEndToEndTests.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task Build (solution build validation).
+Decisions: confirmed Backend.Tests.Unit references + fixture content are wired; no code changes required.
+Files: tasks.json, progress.txt.
+Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
