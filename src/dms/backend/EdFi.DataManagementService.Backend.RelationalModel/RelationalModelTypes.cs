@@ -37,6 +37,12 @@ public enum ScalarKind
     Time,
 }
 
+public enum ReferentialAction
+{
+    NoAction,
+    Cascade,
+}
+
 public sealed record RelationalScalarType(
     ScalarKind Kind,
     int? MaxLength = null,
@@ -91,7 +97,9 @@ public abstract record TableConstraint
         string Name,
         IReadOnlyList<DbColumnName> Columns,
         DbTableName TargetTable,
-        IReadOnlyList<DbColumnName> TargetColumns
+        IReadOnlyList<DbColumnName> TargetColumns,
+        ReferentialAction OnDelete = ReferentialAction.NoAction,
+        ReferentialAction OnUpdate = ReferentialAction.NoAction
     ) : TableConstraint;
 }
 

@@ -141,6 +141,8 @@ public class Given_A_JsonSchema_With_Nested_Collections
                 RelationalNameConventions.RootDocumentIdColumnName("School").Value,
                 RelationalNameConventions.OrdinalColumnName.Value
             );
+        periodFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+        periodFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
 
         var addressFk = _addressTable.Constraints.OfType<TableConstraint.ForeignKey>().Single();
 
@@ -154,6 +156,8 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .TargetColumns.Select(column => column.Value)
             .Should()
             .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+        addressFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+        addressFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
     [Test]
@@ -171,6 +175,8 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .TargetColumns.Select(column => column.Value)
             .Should()
             .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
+        rootFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+        rootFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
     private static JsonObject CreateSchema()

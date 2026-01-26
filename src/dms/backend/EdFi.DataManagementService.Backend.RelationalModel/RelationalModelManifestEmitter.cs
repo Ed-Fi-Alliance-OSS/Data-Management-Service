@@ -198,6 +198,8 @@ public static class RelationalModelManifestEmitter
                 WriteTableReference(writer, foreignKey.TargetTable);
                 writer.WritePropertyName("target_columns");
                 WriteColumnNameList(writer, foreignKey.TargetColumns);
+                writer.WriteString("on_delete", foreignKey.OnDelete.ToString());
+                writer.WriteString("on_update", foreignKey.OnUpdate.ToString());
                 break;
             default:
                 throw new ArgumentOutOfRangeException(

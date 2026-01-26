@@ -306,7 +306,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
                     BuildForeignKeyName(tableBuilder.Definition.Table.Name, new[] { columnName }),
                     new[] { columnName },
                     DescriptorTableName,
-                    new[] { RelationalNameConventions.DocumentIdColumnName }
+                    new[] { RelationalNameConventions.DocumentIdColumnName },
+                    OnDelete: ReferentialAction.NoAction,
+                    OnUpdate: ReferentialAction.NoAction
                 )
             );
 

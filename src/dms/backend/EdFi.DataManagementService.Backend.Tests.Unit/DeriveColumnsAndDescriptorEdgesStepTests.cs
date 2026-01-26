@@ -131,6 +131,8 @@ public class Given_A_Descriptor_Path
         _foreignKey.Columns.Should().Equal(new DbColumnName("SchoolTypeDescriptor_DescriptorId"));
         _foreignKey.TargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
         _foreignKey.TargetColumns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
+        _foreignKey.OnDelete.Should().Be(ReferentialAction.NoAction);
+        _foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
     [Test]

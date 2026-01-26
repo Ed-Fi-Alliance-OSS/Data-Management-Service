@@ -82,7 +82,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 fkName,
                 new[] { RelationalNameConventions.DocumentIdColumnName },
                 DocumentTableName,
-                new[] { RelationalNameConventions.DocumentIdColumnName }
+                new[] { RelationalNameConventions.DocumentIdColumnName },
+                OnDelete: ReferentialAction.Cascade
             ),
         ];
 
@@ -261,7 +262,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 fkName,
                 parentKeyColumns,
                 parentTable.Table.Table,
-                parentTable.Table.Key.Columns.Select(column => column.ColumnName).ToArray()
+                parentTable.Table.Key.Columns.Select(column => column.ColumnName).ToArray(),
+                OnDelete: ReferentialAction.Cascade
             ),
         ];
 
