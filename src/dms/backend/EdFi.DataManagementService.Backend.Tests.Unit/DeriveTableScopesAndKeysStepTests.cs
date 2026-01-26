@@ -47,6 +47,15 @@ public class Given_A_JsonSchema_With_Nested_Collections
     }
 
     [Test]
+    public void It_should_define_root_key_as_parent_key_part()
+    {
+        _rootTable
+            .Key.Columns.Select(column => (column.ColumnName.Value, column.Kind))
+            .Should()
+            .Equal((RelationalNameConventions.DocumentIdColumnName.Value, ColumnKind.ParentKeyPart));
+    }
+
+    [Test]
     public void It_should_create_collection_keys()
     {
         _addressTable
@@ -62,6 +71,41 @@ public class Given_A_JsonSchema_With_Nested_Collections
 
         _periodTable
             .Key.Columns.Select(column => (column.ColumnName.Value, column.Kind))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    ColumnKind.ParentKeyPart
+                ),
+                (
+                    RelationalNameConventions.ParentCollectionOrdinalColumnName("Address").Value,
+                    ColumnKind.ParentKeyPart
+                ),
+                (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
+            );
+    }
+
+    [Test]
+    public void It_should_seed_key_columns_in_column_inventory()
+    {
+        _rootTable
+            .Columns.Select(column => (column.ColumnName.Value, column.Kind))
+            .Should()
+            .Equal((RelationalNameConventions.DocumentIdColumnName.Value, ColumnKind.ParentKeyPart));
+
+        _addressTable
+            .Columns.Select(column => (column.ColumnName.Value, column.Kind))
+            .Should()
+            .Equal(
+                (
+                    RelationalNameConventions.RootDocumentIdColumnName("School").Value,
+                    ColumnKind.ParentKeyPart
+                ),
+                (RelationalNameConventions.OrdinalColumnName.Value, ColumnKind.Ordinal)
+            );
+
+        _periodTable
+            .Columns.Select(column => (column.ColumnName.Value, column.Kind))
             .Should()
             .Equal(
                 (

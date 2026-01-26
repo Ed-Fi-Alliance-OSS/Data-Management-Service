@@ -75,7 +75,7 @@ public class Given_Schemas_With_Different_Property_Order
             )
             .Columns.Select(column => column.ColumnName.Value);
 
-        rootColumns.Should().Equal("ZetaDescriptor_DescriptorId", "Alpha");
+        rootColumns.Should().Equal("DocumentId", "ZetaDescriptor_DescriptorId", "Alpha");
     }
 
     private static JsonObject CreateSchema(bool descriptorFirst)

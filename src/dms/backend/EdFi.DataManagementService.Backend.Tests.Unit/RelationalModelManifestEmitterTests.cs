@@ -89,6 +89,24 @@ public class Given_A_Relational_Model_Manifest_Emitter
         extensionSites.Count.Should().Be(2);
     }
 
+    [Test]
+    public void It_should_emit_key_columns_before_non_key_columns()
+    {
+        var root =
+            JsonNode.Parse(_manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        var rootColumns = GetColumnNames(tables, "School");
+        rootColumns.Should().StartWith("DocumentId");
+
+        var addressColumns = GetColumnNames(tables, "SchoolAddress");
+        addressColumns.Should().StartWith("School_DocumentId", "Ordinal");
+    }
+
     private static JsonObject CreateSchema()
     {
         var extensionSchema = CreateExtensionSchema();
@@ -125,6 +143,27 @@ public class Given_A_Relational_Model_Manifest_Emitter
             ["type"] = "object",
             ["properties"] = new JsonObject { ["tpdm"] = new JsonObject() },
         };
+    }
+
+    private static IReadOnlyList<string> GetColumnNames(JsonArray tables, string tableName)
+    {
+        var table =
+            tables
+                .Select(tableNode => tableNode as JsonObject)
+                .Single(tableNode =>
+                    string.Equals(tableNode?["name"]?.GetValue<string>(), tableName, StringComparison.Ordinal)
+                )
+            ?? throw new InvalidOperationException($"Expected table '{tableName}'.");
+
+        var columns =
+            table["columns"] as JsonArray
+            ?? throw new InvalidOperationException($"Expected columns array on {tableName}.");
+
+        return columns
+            .Select(columnNode => columnNode?["name"]?.GetValue<string>())
+            .Where(name => name is not null)
+            .Select(name => name!)
+            .ToArray();
     }
 }
 

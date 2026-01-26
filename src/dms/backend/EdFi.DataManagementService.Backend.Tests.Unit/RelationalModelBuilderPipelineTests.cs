@@ -49,11 +49,26 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
     private static RelationalResourceModel CreateMinimalModel()
     {
         var schema = new DbSchemaName("edfi");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        };
         var table = new DbTableModel(
             new DbTableName(schema, "School"),
             JsonPathExpressionCompiler.Compile("$"),
-            new TableKey([new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.DocumentFk)]),
-            Array.Empty<DbColumnModel>(),
+            new TableKey([keyColumn]),
+            columns,
             Array.Empty<TableConstraint>()
         );
 

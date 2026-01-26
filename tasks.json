@@ -18,7 +18,7 @@
       "Update canonical ordering/manifest output and unit tests (and any golden manifest) to assert the full column inventory includes the key columns and that they remain first.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Validation",

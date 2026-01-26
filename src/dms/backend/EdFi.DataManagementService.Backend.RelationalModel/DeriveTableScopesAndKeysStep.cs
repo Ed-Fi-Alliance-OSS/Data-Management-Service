@@ -63,8 +63,13 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
 
         var key = new TableKey(
-            new[] { new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.DocumentFk) }
+            new[]
+            {
+                new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
+            }
         );
+
+        var columns = BuildKeyColumns(key.Columns);
 
         var fkName = BuildForeignKeyName(
             tableName.Name,
@@ -81,7 +86,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             ),
         ];
 
-        var table = new DbTableModel(tableName, jsonScope, key, Array.Empty<DbColumnModel>(), constraints);
+        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
 
         return new TableScope(table, Array.Empty<string>());
     }
@@ -260,7 +265,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             ),
         ];
 
-        var table = new DbTableModel(tableName, jsonScope, key, Array.Empty<DbColumnModel>(), constraints);
+        var columns = BuildKeyColumns(key.Columns);
+        var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
 
         return new TableScope(table, collectionBaseNames);
     }
@@ -328,6 +334,59 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var columnSuffix = string.Join("_", columns.Select(column => column.Value));
 
         return $"FK_{tableName}_{columnSuffix}";
+    }
+
+    private static DbColumnModel[] BuildKeyColumns(IReadOnlyList<DbKeyColumn> keyColumns)
+    {
+        DbColumnModel[] columns = new DbColumnModel[keyColumns.Count];
+
+        for (var index = 0; index < keyColumns.Count; index++)
+        {
+            var keyColumn = keyColumns[index];
+            var scalarType = ResolveKeyColumnScalarType(keyColumn);
+
+            columns[index] = new DbColumnModel(
+                keyColumn.ColumnName,
+                keyColumn.Kind,
+                scalarType,
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            );
+        }
+
+        return columns;
+    }
+
+    private static RelationalScalarType ResolveKeyColumnScalarType(DbKeyColumn keyColumn)
+    {
+        return keyColumn.Kind switch
+        {
+            ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
+            ColumnKind.ParentKeyPart => IsDocumentIdColumn(keyColumn.ColumnName)
+                ? new RelationalScalarType(ScalarKind.Int64)
+                : new RelationalScalarType(ScalarKind.Int32),
+            ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
+            _ => throw new InvalidOperationException(
+                $"Unsupported key column kind '{keyColumn.Kind}' for {keyColumn.ColumnName.Value}."
+            ),
+        };
+    }
+
+    private static bool IsDocumentIdColumn(DbColumnName columnName)
+    {
+        if (
+            string.Equals(
+                columnName.Value,
+                RelationalNameConventions.DocumentIdColumnName.Value,
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return true;
+        }
+
+        return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
     private static string RequireContextValue(string? value, string name)
