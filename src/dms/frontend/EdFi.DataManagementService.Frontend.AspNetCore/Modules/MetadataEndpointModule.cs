@@ -3,12 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-<<<<<<< HEAD
-using System.Globalization;
-=======
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
->>>>>>> 8bedc095 (Add /metadata/profiles and profile OpenAPI spec endpoints)
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -222,7 +219,6 @@ public partial class MetadataEndpointModule : IEndpointModule
 
     private static readonly string _errorResourcePath = "Invalid resource path";
 
-
     /// <summary>
     /// Extracts the tenant identifier from the route values.
     /// Returns null if tenant is not present in the route.
@@ -375,11 +371,12 @@ public partial class MetadataEndpointModule : IEndpointModule
         HttpContext httpContext,
         string profileName,
         IDmsInstanceProvider dmsInstanceProvider,
-        IApiService apiService
+        IApiService apiService,
+        IOptions<Configuration.AppSettings> appSettings
     )
     {
         string? tenant = ExtractTenantFromRoute(httpContext);
-        JsonArray servers = GetServers(httpContext, dmsInstanceProvider);
+        JsonArray servers = GetServers(httpContext, dmsInstanceProvider, appSettings);
 
         JsonNode? content = await apiService.GetProfileOpenApiSpecificationAsync(
             profileName,
