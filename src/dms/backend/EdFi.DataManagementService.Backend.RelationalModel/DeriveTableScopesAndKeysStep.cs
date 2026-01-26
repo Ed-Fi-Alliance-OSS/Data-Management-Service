@@ -71,7 +71,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var columns = BuildKeyColumns(key.Columns);
 
-        var fkName = BuildForeignKeyName(
+        var fkName = RelationalNameConventions.ForeignKeyName(
             tableName.Name,
             new[] { RelationalNameConventions.DocumentIdColumnName }
         );
@@ -254,7 +254,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var key = BuildChildTableKey(rootBaseName, collectionBaseNames);
         var parentKeyColumns = BuildParentKeyColumnNames(rootBaseName, parentTable.CollectionBaseNames);
 
-        var fkName = BuildForeignKeyName(tableName.Name, parentKeyColumns);
+        var fkName = RelationalNameConventions.ForeignKeyName(tableName.Name, parentKeyColumns);
 
         TableConstraint[] constraints =
         [
@@ -324,18 +324,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         }
 
         return rootBaseName + string.Concat(collectionBaseNames);
-    }
-
-    private static string BuildForeignKeyName(string tableName, IReadOnlyList<DbColumnName> columns)
-    {
-        if (columns.Count == 0)
-        {
-            throw new InvalidOperationException("Foreign key must have at least one column.");
-        }
-
-        var columnSuffix = string.Join("_", columns.Select(column => column.Value));
-
-        return $"FK_{tableName}_{columnSuffix}";
     }
 
     private static DbColumnModel[] BuildKeyColumns(IReadOnlyList<DbKeyColumn> keyColumns)

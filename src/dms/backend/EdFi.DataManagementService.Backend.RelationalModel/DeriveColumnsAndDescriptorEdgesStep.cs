@@ -362,7 +362,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             tableBuilder.AddColumn(column);
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
-                    BuildForeignKeyName(tableBuilder.Definition.Table.Name, new[] { columnName }),
+                    RelationalNameConventions.ForeignKeyName(
+                        tableBuilder.Definition.Table.Name,
+                        new[] { columnName }
+                    ),
                     new[] { columnName },
                     DescriptorTableName,
                     new[] { RelationalNameConventions.DocumentIdColumnName },
@@ -409,7 +412,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
 
         return schemaType switch
         {
-            "string" => ResolveStringType(schema, sourcePath),
+            "string" => ResolveStringType(schema, sourcePath, context),
             "integer" => ResolveIntegerType(schema, sourcePath),
             "number" => ResolveDecimalType(sourcePath, context),
             "boolean" => new RelationalScalarType(ScalarKind.Boolean),
@@ -419,7 +422,11 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         };
     }
 
-    private static RelationalScalarType ResolveStringType(JsonObject schema, JsonPathExpression sourcePath)
+    private static RelationalScalarType ResolveStringType(
+        JsonObject schema,
+        JsonPathExpression sourcePath,
+        RelationalModelBuilderContext context
+    )
     {
         var format = GetOptionalString(schema, "format", sourcePath.Canonical);
 
@@ -430,18 +437,30 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
                 "date" => new RelationalScalarType(ScalarKind.Date),
                 "date-time" => new RelationalScalarType(ScalarKind.DateTime),
                 "time" => new RelationalScalarType(ScalarKind.Time),
-                _ => BuildStringType(schema, sourcePath),
+                _ => BuildStringType(schema, sourcePath, context),
             };
         }
 
-        return BuildStringType(schema, sourcePath);
+        return BuildStringType(schema, sourcePath, context);
     }
 
-    private static RelationalScalarType BuildStringType(JsonObject schema, JsonPathExpression sourcePath)
+    private static RelationalScalarType BuildStringType(
+        JsonObject schema,
+        JsonPathExpression sourcePath,
+        RelationalModelBuilderContext context
+    )
     {
         if (!schema.TryGetPropertyValue("maxLength", out var maxLengthNode) || maxLengthNode is null)
         {
-            return new RelationalScalarType(ScalarKind.String);
+            if (IsMaxLengthOmissionAllowed(schema, sourcePath, context))
+            {
+                return new RelationalScalarType(ScalarKind.String);
+            }
+
+            throw new InvalidOperationException(
+                $"String schema maxLength is required at {sourcePath.Canonical}. "
+                    + "Set maxLength in MetaEd for string/sharedString."
+            );
         }
 
         if (maxLengthNode is not JsonValue maxLengthValue)
@@ -460,6 +479,25 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         }
 
         return new RelationalScalarType(ScalarKind.String, maxLength);
+    }
+
+    private static bool IsMaxLengthOmissionAllowed(
+        JsonObject schema,
+        JsonPathExpression sourcePath,
+        RelationalModelBuilderContext context
+    )
+    {
+        if (context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical))
+        {
+            return true;
+        }
+
+        if (!schema.TryGetPropertyValue("enum", out var enumNode) || enumNode is null)
+        {
+            return false;
+        }
+
+        return enumNode is JsonArray;
     }
 
     private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)
@@ -698,18 +736,6 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         throw new InvalidOperationException(
             $"Descriptor paths were not found in JSON schema: {string.Join(", ", missingPaths)}."
         );
-    }
-
-    private static string BuildForeignKeyName(string tableName, IReadOnlyList<DbColumnName> columns)
-    {
-        if (columns.Count == 0)
-        {
-            throw new InvalidOperationException("Foreign key must have at least one column.");
-        }
-
-        var columnSuffix = string.Join("_", columns.Select(column => column.Value));
-
-        return $"FK_{tableName}_{columnSuffix}";
     }
 
     private sealed class TableBuilder
