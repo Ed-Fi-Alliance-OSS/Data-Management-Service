@@ -380,9 +380,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     {
         if (!schema.TryGetPropertyValue("maxLength", out var maxLengthNode) || maxLengthNode is null)
         {
-            throw new InvalidOperationException(
-                $"String schema must define maxLength at {sourcePath.Canonical}."
-            );
+            return new RelationalScalarType(ScalarKind.String);
         }
 
         if (maxLengthNode is not JsonValue maxLengthValue)
@@ -421,17 +419,12 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     {
         if (!context.TryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
         {
-            throw new InvalidOperationException(
-                $"Decimal property validation info not found for {sourcePath.Canonical}."
-            );
+            return new RelationalScalarType(ScalarKind.Decimal);
         }
 
         if (validationInfo.TotalDigits is null || validationInfo.DecimalPlaces is null)
         {
-            throw new InvalidOperationException(
-                "Decimal property validation info must include totalDigits and decimalPlaces for "
-                    + $"{sourcePath.Canonical}."
-            );
+            return new RelationalScalarType(ScalarKind.Decimal);
         }
 
         if (validationInfo.TotalDigits <= 0 || validationInfo.DecimalPlaces < 0)

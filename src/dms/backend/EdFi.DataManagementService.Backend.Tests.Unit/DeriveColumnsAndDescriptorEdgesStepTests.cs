@@ -175,6 +175,34 @@ public class Given_A_Property_With_XNullable
 }
 
 [TestFixture]
+public class Given_A_String_Property_Without_MaxLength
+{
+    private DbColumnModel _column = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["value"] = new JsonObject { ["type"] = "string" } },
+            ["required"] = new JsonArray("value"),
+        };
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+
+        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Value");
+    }
+
+    [Test]
+    public void It_should_allow_strings_without_max_length()
+    {
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String));
+        _column.IsNullable.Should().BeFalse();
+    }
+}
+
+[TestFixture]
 public class Given_A_Number_Property_With_Decimal_Validation
 {
     private DbColumnModel _column = default!;
@@ -213,6 +241,34 @@ public class Given_A_Number_Property_With_Decimal_Validation
     public void It_should_map_decimals_using_validation_info()
     {
         _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal, Decimal: (9, 2)));
+        _column.IsNullable.Should().BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_A_Number_Property_Without_Decimal_Validation
+{
+    private DbColumnModel _column = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["amount"] = new JsonObject { ["type"] = "number" } },
+            ["required"] = new JsonArray("amount"),
+        };
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+
+        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Amount");
+    }
+
+    [Test]
+    public void It_should_allow_decimals_without_validation_info()
+    {
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal));
         _column.IsNullable.Should().BeFalse();
     }
 }
