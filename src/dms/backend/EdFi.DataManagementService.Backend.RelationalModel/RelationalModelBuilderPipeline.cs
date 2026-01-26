@@ -40,6 +40,9 @@ public sealed class RelationalModelBuilderContext
     > DecimalPropertyValidationInfosByPath { get; set; } =
         new Dictionary<string, DecimalPropertyValidationInfo>(StringComparer.Ordinal);
 
+    public IReadOnlySet<string> StringMaxLengthOmissionPaths { get; set; } =
+        new HashSet<string>(StringComparer.Ordinal);
+
     public RelationalResourceModel? ResourceModel { get; set; }
 
     public List<ExtensionSite> ExtensionSites { get; } = [];

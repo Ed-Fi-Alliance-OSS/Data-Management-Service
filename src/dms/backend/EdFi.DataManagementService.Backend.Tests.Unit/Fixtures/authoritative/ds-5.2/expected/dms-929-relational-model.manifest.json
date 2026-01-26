@@ -4342,6 +4342,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programs[*].programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -4359,15 +4368,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.programs[*].programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.programs[*].programReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -4385,6 +4385,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_AssessmentProgram_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               }
             ]
@@ -4756,6 +4772,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "PlatformTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programs[*].programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "AssessmentProgram"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           },
           {
@@ -8210,6 +8239,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programs[*].programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -8227,15 +8265,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programs[*].programReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -8253,6 +8282,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_CohortProgram_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               }
             ]
@@ -8296,6 +8341,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "CohortTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programs[*].programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "CohortProgram"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -11596,6 +11654,15 @@
                 "source_path": "$.highestCompletedLevelOfEducationDescriptor"
               },
               {
+                "name": "PersonReferenceSourceSystemDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.personReference.sourceSystemDescriptor"
+              },
+              {
                 "name": "SexDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -11695,15 +11762,6 @@
                 "source_path": "$.personReference.personId"
               },
               {
-                "name": "PersonReferenceSourceSystemDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.personReference.sourceSystemDescriptor"
-              },
-              {
                 "name": "PersonalTitlePrefix",
                 "kind": "Scalar",
                 "type": {
@@ -11756,6 +11814,22 @@
                 "name": "FK_Contact_HighestCompletedLevelOfEducationDescriptor_DescriptorId",
                 "columns": [
                   "HighestCompletedLevelOfEducationDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_Contact_PersonReferenceSourceSystemDescriptor_DescriptorId",
+                "columns": [
+                  "PersonReferenceSourceSystemDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -12989,6 +13063,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "LevelOfEducationDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.personReference.sourceSystemDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "Contact"
+            },
+            "fk_column": "PersonReferenceSourceSystemDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "SourceSystemDescriptor"
             }
           },
           {
@@ -14785,6 +14872,15 @@
                 "source_path": "$.methodCreditEarnedDescriptor"
               },
               {
+                "name": "StudentAcademicRecordReferenceTermDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentAcademicRecordReference.termDescriptor"
+              },
+              {
                 "name": "WhenTakenGradeLevelDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -14973,15 +15069,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.studentAcademicRecordReference.studentUniqueId"
-              },
-              {
-                "name": "StudentAcademicRecordReferenceTermDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentAcademicRecordReference.termDescriptor"
               }
             ],
             "constraints": [
@@ -15070,6 +15157,22 @@
                 "name": "FK_CourseTranscript_MethodCreditEarnedDescriptor_DescriptorId",
                 "columns": [
                   "MethodCreditEarnedDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_CourseTranscript_StudentAcademicRecordReferenceTermDescriptor_DescriptorId",
+                "columns": [
+                  "StudentAcademicRecordReferenceTermDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -15319,6 +15422,15 @@
                 "source_path": null
               },
               {
+                "name": "CourseProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.coursePrograms[*].courseProgramReference.programTypeDescriptor"
+              },
+              {
                 "name": "CourseProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -15336,18 +15448,25 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.coursePrograms[*].courseProgramReference.programName"
-              },
-              {
-                "name": "CourseProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.coursePrograms[*].courseProgramReference.programTypeDescriptor"
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_CourseTranscriptCourseProgram_CourseProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "CourseProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_CourseTranscriptCourseProgram_CourseTranscript_DocumentId",
@@ -15820,6 +15939,19 @@
             }
           },
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.studentAcademicRecordReference.termDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "CourseTranscript"
+            },
+            "fk_column": "StudentAcademicRecordReferenceTermDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "TermDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.whenTakenGradeLevelDescriptor",
             "table": {
@@ -15856,6 +15988,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "CourseIdentificationSystemDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.coursePrograms[*].courseProgramReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "CourseTranscriptCourseProgram"
+            },
+            "fk_column": "CourseProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           },
           {
@@ -19692,10 +19837,10 @@
                 "source_path": null
               },
               {
-                "name": "StudentDisciplineIncidentBehaviorAssociationReferenceBehaviorDescriptor",
-                "kind": "Scalar",
+                "name": "StudentDisciplineIncidentBehaviorAssociationReferenceBehaviorDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
                 "type": {
-                  "kind": "String"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.behaviorDescriptor"
@@ -19746,6 +19891,22 @@
                 ],
                 "on_delete": "Cascade",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_DisciplineActionStudentDisciplineIncidentBehaviorAssociation_StudentDisciplineIncidentBehaviorAssociationReferenceBehaviorDescriptor_DescriptorId",
+                "columns": [
+                  "StudentDisciplineIncidentBehaviorAssociationReferenceBehaviorDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
@@ -19775,6 +19936,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "DisciplineDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentDisciplineIncidentBehaviorAssociations[*].studentDisciplineIncidentBehaviorAssociationReference.behaviorDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "DisciplineActionStudentDisciplineIncidentBehaviorAssociation"
+            },
+            "fk_column": "StudentDisciplineIncidentBehaviorAssociationReferenceBehaviorDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "BehaviorDescriptor"
             }
           }
         ],
@@ -26031,6 +26205,33 @@
                 "source_path": "$.evaluationRubricRatingLevelDescriptor"
               },
               {
+                "name": "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationElementReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationElementReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationElementReference.programTypeDescriptor"
+              },
+              {
                 "name": "EvaluationCriterionDescription",
                 "kind": "Scalar",
                 "type": {
@@ -26069,15 +26270,6 @@
                 "source_path": "$.programEvaluationElementReference.programEvaluationElementTitle"
               },
               {
-                "name": "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationElementReference.programEvaluationPeriodDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationElementReferenceProgramEvaluationTitle",
                 "kind": "Scalar",
                 "type": {
@@ -26088,15 +26280,6 @@
                 "source_path": "$.programEvaluationElementReference.programEvaluationTitle"
               },
               {
-                "name": "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationElementReference.programEvaluationTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationElementReferenceProgramName",
                 "kind": "Scalar",
                 "type": {
@@ -26105,15 +26288,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationElementReference.programName"
-              },
-              {
-                "name": "ProgramEvaluationElementReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationElementReference.programTypeDescriptor"
               },
               {
                 "name": "RubricDimensionSortOrder",
@@ -26157,6 +26331,54 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_EvaluationRubricDimension_ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_EvaluationRubricDimension_ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_EvaluationRubricDimension_ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
@@ -26173,6 +26395,45 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "RatingLevelDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationElementReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "EvaluationRubricDimension"
+            },
+            "fk_column": "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationElementReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "EvaluationRubricDimension"
+            },
+            "fk_column": "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationElementReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "EvaluationRubricDimension"
+            },
+            "fk_column": "ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -27340,6 +27601,15 @@
                 "source_path": "$.gradebookEntryTypeDescriptor"
               },
               {
+                "name": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+              },
+              {
                 "name": "DateAssigned",
                 "kind": "Scalar",
                 "type": {
@@ -27385,15 +27655,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.gradebookEntryIdentifier"
-              },
-              {
-                "name": "GradingPeriodReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
               },
               {
                 "name": "GradingPeriodReferenceGradingPeriodName",
@@ -27545,6 +27806,22 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_GradebookEntry_GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           },
@@ -27624,6 +27901,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "GradebookEntryTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "GradebookEntry"
+            },
+            "fk_column": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
             }
           }
         ],
@@ -27781,6 +28071,15 @@
                 "source_path": "$.gradeTypeDescriptor"
               },
               {
+                "name": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+              },
+              {
                 "name": "PerformanceBaseConversionDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -27826,15 +28125,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.gradeEarnedDescription"
-              },
-              {
-                "name": "GradingPeriodReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
               },
               {
                 "name": "GradingPeriodReferenceGradingPeriodName",
@@ -27975,6 +28265,22 @@
                 "name": "FK_Grade_GradeTypeDescriptor_DescriptorId",
                 "columns": [
                   "GradeTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_Grade_GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -28136,6 +28442,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "GradeTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "Grade"
+            },
+            "fk_column": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
             }
           },
           {
@@ -46805,6 +47124,60 @@
                 "source_path": null
               },
               {
+                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programTypeDescriptor"
+              },
+              {
                 "name": "ElementMaxNumericRating",
                 "kind": "Scalar",
                 "type": {
@@ -46875,15 +47248,6 @@
                 "source_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle"
               },
               {
-                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationTitle",
                 "kind": "Scalar",
                 "type": {
@@ -46892,15 +47256,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.programEvaluationObjectiveReference.programEvaluationTitle"
-              },
-              {
-                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor"
               },
               {
                 "name": "ProgramEvaluationObjectiveReferenceProgramName",
@@ -46913,15 +47268,6 @@
                 "source_path": "$.programEvaluationObjectiveReference.programName"
               },
               {
-                "name": "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationReferenceProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -46929,15 +47275,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programEducationOrganizationId"
-              },
-              {
-                "name": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
               },
               {
                 "name": "ProgramEvaluationReferenceProgramEvaluationTitle",
@@ -46950,15 +47287,6 @@
                 "source_path": "$.programEvaluationReference.programEvaluationTitle"
               },
               {
-                "name": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationReferenceProgramName",
                 "kind": "Scalar",
                 "type": {
@@ -46967,15 +47295,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programName"
-              },
-              {
-                "name": "ProgramEvaluationReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -46993,6 +47312,102 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               }
             ]
@@ -47101,6 +47516,84 @@
         "descriptor_edge_sources": [
           {
             "is_identity_component": false,
+            "descriptor_value_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
             "descriptor_value_path": "$.programEvaluationLevels[*].ratingLevelDescriptor",
             "table": {
               "schema": "edfi",
@@ -47144,6 +47637,33 @@
                 },
                 "is_nullable": false,
                 "source_path": null
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programTypeDescriptor"
               },
               {
                 "name": "ObjectiveMaxNumericRating",
@@ -47206,15 +47726,6 @@
                 "source_path": "$.programEvaluationReference.programEducationOrganizationId"
               },
               {
-                "name": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationReferenceProgramEvaluationTitle",
                 "kind": "Scalar",
                 "type": {
@@ -47225,15 +47736,6 @@
                 "source_path": "$.programEvaluationReference.programEvaluationTitle"
               },
               {
-                "name": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationReferenceProgramName",
                 "kind": "Scalar",
                 "type": {
@@ -47242,15 +47744,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programName"
-              },
-              {
-                "name": "ProgramEvaluationReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -47268,6 +47761,54 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationObjective_ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationObjective_ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationObjective_ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               }
             ]
@@ -47374,6 +47915,45 @@
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationObjective"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationObjective"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluationObjective"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
           {
             "is_identity_component": false,
             "descriptor_value_path": "$.programEvaluationLevels[*].ratingLevelDescriptor",
@@ -47663,6 +48243,15 @@
                 "source_path": "$.programEvaluationTypeDescriptor"
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "EvaluationMaxNumericRating",
                 "kind": "Scalar",
                 "type": {
@@ -47722,15 +48311,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -47771,6 +48351,22 @@
                 "name": "FK_ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
                 "columns": [
                   "ProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -47910,6 +48506,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ProgramEvaluation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           },
           {
@@ -50293,6 +50902,15 @@
                 "source_path": null
               },
               {
+                "name": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+              },
+              {
                 "name": "EducationOrganizationReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -50300,15 +50918,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId"
-              },
-              {
-                "name": "GradingPeriodReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
               },
               {
                 "name": "GradingPeriodReferenceGradingPeriodName",
@@ -50395,6 +51004,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ReportCard_GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               }
             ]
@@ -50542,6 +51167,24 @@
                 "source_path": null
               },
               {
+                "name": "GradeReferenceGradeTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.grades[*].gradeReference.gradeTypeDescriptor"
+              },
+              {
+                "name": "GradeReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.grades[*].gradeReference.gradingPeriodDescriptor"
+              },
+              {
                 "name": "GradeReferenceBeginDate",
                 "kind": "Scalar",
                 "type": {
@@ -50549,24 +51192,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.grades[*].gradeReference.beginDate"
-              },
-              {
-                "name": "GradeReferenceGradeTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.grades[*].gradeReference.gradeTypeDescriptor"
-              },
-              {
-                "name": "GradeReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.grades[*].gradeReference.gradingPeriodDescriptor"
               },
               {
                 "name": "GradeReferenceGradingPeriodName",
@@ -50649,6 +51274,38 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
+                "name": "FK_ReportCardGrade_GradeReferenceGradeTypeDescriptor_DescriptorId",
+                "columns": [
+                  "GradeReferenceGradeTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ReportCardGrade_GradeReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "GradeReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
                 "name": "FK_ReportCardGrade_ReportCard_DocumentId",
                 "columns": [
                   "ReportCard_DocumentId"
@@ -50699,13 +51356,22 @@
                 "source_path": null
               },
               {
-                "name": "StudentCompetencyObjectiveReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
+                "name": "StudentCompetencyObjectiveReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
                 "type": {
-                  "kind": "String"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodDescriptor"
+              },
+              {
+                "name": "StudentCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveGradeLevelDescriptor"
               },
               {
                 "name": "StudentCompetencyObjectiveReferenceGradingPeriodName",
@@ -50755,15 +51421,6 @@
                 "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveEducationOrganizationId"
               },
               {
-                "name": "StudentCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveGradeLevelDescriptor"
-              },
-              {
                 "name": "StudentCompetencyObjectiveReferenceStudentUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -50790,11 +51447,82 @@
                 ],
                 "on_delete": "Cascade",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjectiveReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "StudentCompetencyObjectiveReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ReportCardStudentCompetencyObjective_StudentCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId",
+                "columns": [
+                  "StudentCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ReportCard"
+            },
+            "fk_column": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.grades[*].gradeReference.gradeTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ReportCardGrade"
+            },
+            "fk_column": "GradeReferenceGradeTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradeTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.grades[*].gradeReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ReportCardGrade"
+            },
+            "fk_column": "GradeReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
+            }
+          },
           {
             "is_identity_component": false,
             "descriptor_value_path": "$.gradePointAverages[*].gradePointAverageTypeDescriptor",
@@ -50806,6 +51534,32 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "GradePointAverageTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ReportCardStudentCompetencyObjective"
+            },
+            "fk_column": "StudentCompetencyObjectiveReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentCompetencyObjectives[*].studentCompetencyObjectiveReference.objectiveGradeLevelDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "ReportCardStudentCompetencyObjective"
+            },
+            "fk_column": "StudentCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradeLevelDescriptor"
             }
           }
         ],
@@ -51649,6 +52403,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programs[*].programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -51666,18 +52429,25 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programs[*].programReference.programTypeDescriptor"
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_RestraintEventProgram_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_RestraintEventProgram_RestraintEvent_DocumentId",
@@ -51787,6 +52557,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "EducationalEnvironmentDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programs[*].programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "RestraintEventProgram"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           },
           {
@@ -55564,6 +56347,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programs[*].programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -55581,18 +56373,25 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programs[*].programReference.programTypeDescriptor"
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_SectionProgram_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_SectionProgram_Section_DocumentId",
@@ -55728,6 +56527,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "GradeLevelDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programs[*].programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "SectionProgram"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -56305,10 +57117,10 @@
                 "source_path": null
               },
               {
-                "name": "GradingPeriodReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
+                "name": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
                 "type": {
-                  "kind": "String"
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
                 "source_path": "$.gradingPeriods[*].gradingPeriodReference.gradingPeriodDescriptor"
@@ -56345,6 +57157,22 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
+                "name": "FK_SessionGradingPeriod_GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
                 "name": "FK_SessionGradingPeriod_Session_DocumentId",
                 "columns": [
                   "Session_DocumentId"
@@ -56374,6 +57202,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "TermDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.gradingPeriods[*].gradingPeriodReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "SessionGradingPeriod"
+            },
+            "fk_column": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
             }
           }
         ],
@@ -57675,6 +58516,24 @@
                 "source_path": null
               },
               {
+                "name": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor"
+              },
+              {
+                "name": "EmploymentStaffEducationOrganizationEmploymentAssociationReferenceEmploymentStatusDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.employmentStatusDescriptor"
+              },
+              {
                 "name": "StaffClassificationDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -57703,15 +58562,6 @@
                 "source_path": "$.credentialReference.credentialIdentifier"
               },
               {
-                "name": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor"
-              },
-              {
                 "name": "EducationOrganizationReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -57728,15 +58578,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.educationOrganizationId"
-              },
-              {
-                "name": "EmploymentStaffEducationOrganizationEmploymentAssociationReferenceEmploymentStatusDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.employmentStatusDescriptor"
               },
               {
                 "name": "EmploymentStaffEducationOrganizationEmploymentAssociationReferenceHireDate",
@@ -57810,6 +58651,22 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
+                "name": "FK_StaffEducationOrganizationAssignmentAssociation_CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+                "columns": [
+                  "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
                 "name": "FK_StaffEducationOrganizationAssignmentAssociation_DocumentId",
                 "columns": [
                   "DocumentId"
@@ -57822,6 +58679,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StaffEducationOrganizationAssignmentAssociation_EmploymentStaffEducationOrganizationEmploymentAssociationReferenceEmploymentStatusDescriptor_DescriptorId",
+                "columns": [
+                  "EmploymentStaffEducationOrganizationEmploymentAssociationReferenceEmploymentStatusDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -57844,6 +58717,32 @@
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StaffEducationOrganizationAssignmentAssociation"
+            },
+            "fk_column": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "StateAbbreviationDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.employmentStatusDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StaffEducationOrganizationAssignmentAssociation"
+            },
+            "fk_column": "EmploymentStaffEducationOrganizationEmploymentAssociationReferenceEmploymentStatusDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "EmploymentStatusDescriptor"
+            }
+          },
           {
             "is_identity_component": true,
             "descriptor_value_path": "$.staffClassificationDescriptor",
@@ -58445,6 +59344,15 @@
                 "source_path": null
               },
               {
+                "name": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor"
+              },
+              {
                 "name": "EmploymentStatusDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -58491,15 +59399,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.credentialReference.credentialIdentifier"
-              },
-              {
-                "name": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor"
               },
               {
                 "name": "Department",
@@ -58583,6 +59482,22 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
+                "name": "FK_StaffEducationOrganizationEmploymentAssociation_CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+                "columns": [
+                  "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
                 "name": "FK_StaffEducationOrganizationEmploymentAssociation_DocumentId",
                 "columns": [
                   "DocumentId"
@@ -58649,6 +59564,19 @@
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.credentialReference.stateOfIssueStateAbbreviationDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StaffEducationOrganizationEmploymentAssociation"
+            },
+            "fk_column": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "StateAbbreviationDescriptor"
+            }
+          },
           {
             "is_identity_component": true,
             "descriptor_value_path": "$.employmentStatusDescriptor",
@@ -59086,6 +60014,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "BeginDate",
                 "kind": "Scalar",
                 "type": {
@@ -59123,15 +60060,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "StaffReferenceStaffUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -59167,11 +60095,41 @@
                 ],
                 "on_delete": "Cascade",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StaffProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
         ],
-        "descriptor_edge_sources": [],
+        "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StaffProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          }
+        ],
         "extension_sites": []
       }
     },
@@ -59752,6 +60710,15 @@
                 "source_path": "$.highestCompletedLevelOfEducationDescriptor"
               },
               {
+                "name": "PersonReferenceSourceSystemDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.personReference.sourceSystemDescriptor"
+              },
+              {
                 "name": "SexDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -59868,15 +60835,6 @@
                 "source_path": "$.personReference.personId"
               },
               {
-                "name": "PersonReferenceSourceSystemDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.personReference.sourceSystemDescriptor"
-              },
-              {
                 "name": "PersonalTitlePrefix",
                 "kind": "Scalar",
                 "type": {
@@ -59977,6 +60935,22 @@
                 "name": "FK_Staff_HighestCompletedLevelOfEducationDescriptor_DescriptorId",
                 "columns": [
                   "HighestCompletedLevelOfEducationDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_Staff_PersonReferenceSourceSystemDescriptor_DescriptorId",
+                "columns": [
+                  "PersonReferenceSourceSystemDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -60355,6 +61329,15 @@
                 "source_path": null
               },
               {
+                "name": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.credentials[*].credentialReference.stateOfIssueStateAbbreviationDescriptor"
+              },
+              {
                 "name": "CredentialReferenceCredentialIdentifier",
                 "kind": "Scalar",
                 "type": {
@@ -60363,18 +61346,25 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.credentials[*].credentialReference.credentialIdentifier"
-              },
-              {
-                "name": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.credentials[*].credentialReference.stateOfIssueStateAbbreviationDescriptor"
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StaffCredential_CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+                "columns": [
+                  "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_StaffCredential_Staff_DocumentId",
@@ -62087,6 +63077,19 @@
           },
           {
             "is_identity_component": false,
+            "descriptor_value_path": "$.personReference.sourceSystemDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "Staff"
+            },
+            "fk_column": "PersonReferenceSourceSystemDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "SourceSystemDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
             "descriptor_value_path": "$.sexDescriptor",
             "table": {
               "schema": "edfi",
@@ -62148,6 +63151,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "AncestryEthnicOriginDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.credentials[*].credentialReference.stateOfIssueStateAbbreviationDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StaffCredential"
+            },
+            "fk_column": "CredentialReferenceStateOfIssueStateAbbreviationDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "StateAbbreviationDescriptor"
             }
           },
           {
@@ -65069,6 +66085,15 @@
                 "source_path": null
               },
               {
+                "name": "ReportCardReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.reportCards[*].reportCardReference.gradingPeriodDescriptor"
+              },
+              {
                 "name": "ReportCardReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -65076,15 +66101,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.reportCards[*].reportCardReference.educationOrganizationId"
-              },
-              {
-                "name": "ReportCardReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.reportCards[*].reportCardReference.gradingPeriodDescriptor"
               },
               {
                 "name": "ReportCardReferenceGradingPeriodName",
@@ -65126,6 +66142,22 @@
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentAcademicRecordReportCard_ReportCardReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ReportCardReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_StudentAcademicRecordReportCard_StudentAcademicRecord_DocumentId",
@@ -65313,6 +66345,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "RecognitionTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.reportCards[*].reportCardReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentAcademicRecordReportCard"
+            },
+            "fk_column": "ReportCardReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
             }
           }
         ],
@@ -67639,6 +68684,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -67721,15 +68775,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ServedOutsideOfRegularSession",
                 "kind": "Scalar",
                 "type": {
@@ -67764,6 +68809,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentCTEProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -68023,6 +69084,19 @@
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentCTEProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
           {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
@@ -68432,6 +69506,24 @@
                 "source_path": "$.competencyLevelDescriptor"
               },
               {
+                "name": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+              },
+              {
+                "name": "ObjectiveCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor"
+              },
+              {
                 "name": "DiagnosticStatement",
                 "kind": "Scalar",
                 "type": {
@@ -68440,15 +69532,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.diagnosticStatement"
-              },
-              {
-                "name": "GradingPeriodReferenceGradingPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
               },
               {
                 "name": "GradingPeriodReferenceGradingPeriodName",
@@ -68498,15 +69581,6 @@
                 "source_path": "$.objectiveCompetencyObjectiveReference.objective"
               },
               {
-                "name": "ObjectiveCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor"
-              },
-              {
                 "name": "StudentReferenceStudentUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -68549,6 +69623,38 @@
                 ],
                 "on_delete": "Cascade",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentCompetencyObjective_GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentCompetencyObjective_ObjectiveCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId",
+                "columns": [
+                  "ObjectiveCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           },
@@ -68584,6 +69690,15 @@
                 },
                 "is_nullable": false,
                 "source_path": null
+              },
+              {
+                "name": "GeneralStudentProgramAssociationReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programTypeDescriptor"
               },
               {
                 "name": "GeneralStudentProgramAssociationReferenceBeginDate",
@@ -68623,15 +69738,6 @@
                 "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programName"
               },
               {
-                "name": "GeneralStudentProgramAssociationReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programTypeDescriptor"
-              },
-              {
                 "name": "GeneralStudentProgramAssociationReferenceStudentUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -68643,6 +69749,22 @@
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_GeneralStudentProgramAssociationReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "GeneralStudentProgramAssociationReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_StudentCompetencyObjectiveGeneralStudentProgramAssociation_StudentCompetencyObjective_DocumentId",
@@ -68794,6 +69916,45 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "CompetencyLevelDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.gradingPeriodReference.gradingPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentCompetencyObjective"
+            },
+            "fk_column": "GradingPeriodReferenceGradingPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradingPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentCompetencyObjective"
+            },
+            "fk_column": "ObjectiveCompetencyObjectiveReferenceObjectiveGradeLevelDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GradeLevelDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.generalStudentProgramAssociations[*].generalStudentProgramAssociationReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentCompetencyObjectiveGeneralStudentProgramAssociation"
+            },
+            "fk_column": "GeneralStudentProgramAssociationReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -73254,6 +74415,15 @@
                 "source_path": "$.homelessPrimaryNighttimeResidenceDescriptor"
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -73327,15 +74497,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ServedOutsideOfRegularSession",
                 "kind": "Scalar",
                 "type": {
@@ -73377,6 +74538,22 @@
                 "name": "FK_StudentHomelessProgramAssociation_HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId",
                 "columns": [
                   "HomelessPrimaryNighttimeResidenceDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentHomelessProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -73630,6 +74807,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "HomelessPrimaryNighttimeResidenceDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentHomelessProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           },
           {
@@ -74352,6 +75542,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -74425,15 +75624,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ServedOutsideOfRegularSession",
                 "kind": "Scalar",
                 "type": {
@@ -74468,6 +75658,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentLanguageInstructionProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -74864,6 +76070,19 @@
         ],
         "descriptor_edge_sources": [
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentLanguageInstructionProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
             "table": {
@@ -74997,6 +76216,15 @@
                 "source_path": "$.continuationOfServicesReasonDescriptor"
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -75077,15 +76305,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
               },
               {
                 "name": "QualifyingArrivalDate",
@@ -75183,6 +76402,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentMigrantEducationProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -75430,6 +76665,19 @@
             }
           },
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentMigrantEducationProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
             "table": {
@@ -75529,6 +76777,15 @@
                 "source_path": "$.neglectedOrDelinquentProgramDescriptor"
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -75582,15 +76839,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
               },
               {
                 "name": "ServedOutsideOfRegularSession",
@@ -75666,6 +76914,22 @@
                 "name": "FK_StudentNeglectedOrDelinquentProgramAssociation_NeglectedOrDelinquentProgramDescriptor_DescriptorId",
                 "columns": [
                   "NeglectedOrDelinquentProgramDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentNeglectedOrDelinquentProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -75948,6 +77212,19 @@
             }
           },
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentNeglectedOrDelinquentProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
             "table": {
@@ -76020,6 +77297,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -76075,15 +77361,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ServedOutsideOfRegularSession",
                 "kind": "Scalar",
                 "type": {
@@ -76118,6 +77395,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -76352,6 +77645,19 @@
         ],
         "descriptor_edge_sources": [
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
             "table": {
@@ -76442,6 +77748,15 @@
                 "source_path": "$.educationalEnvironmentDescriptor"
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "AttendanceEventReason",
                 "kind": "Scalar",
                 "type": {
@@ -76509,15 +77824,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "StudentReferenceStudentUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -76576,6 +77882,22 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramAttendanceEvent_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
@@ -76605,6 +77927,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "EducationalEnvironmentDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramAttendanceEvent"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -76639,6 +77974,33 @@
                 },
                 "is_nullable": false,
                 "source_path": null
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programTypeDescriptor"
               },
               {
                 "name": "SummaryEvaluationRatingLevelDescriptor_DescriptorId",
@@ -76686,15 +78048,6 @@
                 "source_path": "$.programEvaluationReference.programEducationOrganizationId"
               },
               {
-                "name": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationReferenceProgramEvaluationTitle",
                 "kind": "Scalar",
                 "type": {
@@ -76705,15 +78058,6 @@
                 "source_path": "$.programEvaluationReference.programEvaluationTitle"
               },
               {
-                "name": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationReferenceProgramName",
                 "kind": "Scalar",
                 "type": {
@@ -76722,15 +78066,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programEvaluationReference.programName"
-              },
-              {
-                "name": "ProgramEvaluationReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programTypeDescriptor"
               },
               {
                 "name": "StaffEvaluatorStaffReferenceStaffUniqueId",
@@ -76789,6 +78124,54 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluation_ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluation_ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluation_ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -76915,6 +78298,33 @@
                 "source_path": "$.studentEvaluationElements[*].evaluationElementRatingLevelDescriptor"
               },
               {
+                "name": "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programTypeDescriptor"
+              },
+              {
                 "name": "EvaluationElementNumericRating",
                 "kind": "Scalar",
                 "type": {
@@ -76945,15 +78355,6 @@
                 "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationElementTitle"
               },
               {
-                "name": "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationPeriodDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationElementReferenceProgramEvaluationTitle",
                 "kind": "Scalar",
                 "type": {
@@ -76964,15 +78365,6 @@
                 "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationTitle"
               },
               {
-                "name": "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationElementReferenceProgramName",
                 "kind": "Scalar",
                 "type": {
@@ -76981,15 +78373,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programName"
-              },
-              {
-                "name": "ProgramEvaluationElementReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -76998,6 +78381,54 @@
                 "name": "FK_StudentProgramEvaluationStudentEvaluationElement_EvaluationElementRatingLevelDescriptor_DescriptorId",
                 "columns": [
                   "EvaluationElementRatingLevelDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationElement_ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationElement_ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationElement_ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -77070,6 +78501,33 @@
                 "source_path": "$.studentEvaluationObjectives[*].evaluationObjectiveRatingLevelDescriptor"
               },
               {
+                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationPeriodDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationTypeDescriptor"
+              },
+              {
+                "name": "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programTypeDescriptor"
+              },
+              {
                 "name": "EvaluationObjectiveNumericRating",
                 "kind": "Scalar",
                 "type": {
@@ -77100,15 +78558,6 @@
                 "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationObjectiveTitle"
               },
               {
-                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationPeriodDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationTitle",
                 "kind": "Scalar",
                 "type": {
@@ -77119,15 +78568,6 @@
                 "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationTitle"
               },
               {
-                "name": "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationTypeDescriptor"
-              },
-              {
                 "name": "ProgramEvaluationObjectiveReferenceProgramName",
                 "kind": "Scalar",
                 "type": {
@@ -77136,15 +78576,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programName"
-              },
-              {
-                "name": "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programTypeDescriptor"
               }
             ],
             "constraints": [
@@ -77153,6 +78584,54 @@
                 "name": "FK_StudentProgramEvaluationStudentEvaluationObjective_EvaluationObjectiveRatingLevelDescriptor_DescriptorId",
                 "columns": [
                   "EvaluationObjectiveRatingLevelDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationObjective_ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationObjective_ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentProgramEvaluationStudentEvaluationObjective_ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -77185,6 +78664,45 @@
         ],
         "descriptor_edge_sources": [
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluation"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluation"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programEvaluationReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluation"
+            },
+            "fk_column": "ProgramEvaluationReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.summaryEvaluationRatingLevelDescriptor",
             "table": {
@@ -77212,6 +78730,45 @@
           },
           {
             "is_identity_component": false,
+            "descriptor_value_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluationStudentEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationElementReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluationStudentEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationElementReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentEvaluationElements[*].programEvaluationElementReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluationStudentEvaluationElement"
+            },
+            "fk_column": "ProgramEvaluationElementReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
             "descriptor_value_path": "$.studentEvaluationObjectives[*].evaluationObjectiveRatingLevelDescriptor",
             "table": {
               "schema": "edfi",
@@ -77221,6 +78778,45 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "RatingLevelDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluationStudentEvaluationObjective"
+            },
+            "fk_column": "ProgramEvaluationObjectiveReferenceProgramEvaluationPeriodDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationPeriodDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluationStudentEvaluationObjective"
+            },
+            "fk_column": "ProgramEvaluationObjectiveReferenceProgramEvaluationTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramEvaluationTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.studentEvaluationObjectives[*].programEvaluationObjectiveReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentProgramEvaluationStudentEvaluationObjective"
+            },
+            "fk_column": "ProgramEvaluationObjectiveReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -77300,6 +78896,15 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.exitWithdrawTypeDescriptor"
+              },
+              {
+                "name": "GraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
               },
               {
                 "name": "NextYearGradeLevelDescriptor_DescriptorId",
@@ -77411,15 +79016,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.graduationPlanReference.educationOrganizationId"
-              },
-              {
-                "name": "GraduationPlanReferenceGraduationPlanTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
               },
               {
                 "name": "GraduationPlanReferenceGraduationSchoolYear",
@@ -77612,6 +79208,22 @@
               },
               {
                 "kind": "ForeignKey",
+                "name": "FK_StudentSchoolAssociation_GraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId",
+                "columns": [
+                  "GraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
                 "name": "FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor_DescriptorId",
                 "columns": [
                   "NextYearGradeLevelDescriptor_DescriptorId"
@@ -77694,6 +79306,15 @@
                 "source_path": null
               },
               {
+                "name": "AlternativeGraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
+              },
+              {
                 "name": "AlternativeGraduationPlanReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -77701,15 +79322,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
-              },
-              {
-                "name": "AlternativeGraduationPlanReferenceGraduationPlanTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
               },
               {
                 "name": "AlternativeGraduationPlanReferenceGraduationSchoolYear",
@@ -77722,6 +79334,22 @@
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_AlternativeGraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId",
+                "columns": [
+                  "AlternativeGraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_StudentSchoolAssociation_DocumentId",
@@ -77887,6 +79515,19 @@
           },
           {
             "is_identity_component": false,
+            "descriptor_value_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSchoolAssociation"
+            },
+            "fk_column": "GraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GraduationPlanTypeDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
             "descriptor_value_path": "$.nextYearGradeLevelDescriptor",
             "table": {
               "schema": "edfi",
@@ -77922,6 +79563,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "SchoolChoiceBasisDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+            },
+            "fk_column": "AlternativeGraduationPlanReferenceGraduationPlanTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "GraduationPlanTypeDescriptor"
             }
           },
           {
@@ -78206,6 +79860,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -78270,15 +79933,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ServedOutsideOfRegularSession",
                 "kind": "Scalar",
                 "type": {
@@ -78313,6 +79967,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSchoolFoodServiceProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -78547,6 +80217,19 @@
         ],
         "descriptor_edge_sources": [
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSchoolFoodServiceProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
             "table": {
@@ -78617,6 +80300,15 @@
                 },
                 "is_nullable": false,
                 "source_path": null
+              },
+              {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
               },
               {
                 "name": "ReasonExitedDescriptor_DescriptorId",
@@ -78692,15 +80384,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "Section504Eligibility",
                 "kind": "Scalar",
                 "type": {
@@ -78762,6 +80445,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSection504ProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -78906,6 +80605,19 @@
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSection504ProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
           {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
@@ -79253,6 +80965,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programs[*].programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -79270,18 +80991,25 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programs[*].programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programs[*].programReference.programTypeDescriptor"
               }
             ],
             "constraints": [
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSectionAssociationProgram_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
               {
                 "kind": "ForeignKey",
                 "name": "FK_StudentSectionAssociationProgram_StudentSectionAssociation_DocumentId",
@@ -79352,6 +81080,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "RepeatIdentifierDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.programs[*].programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSectionAssociationProgram"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
             }
           }
         ],
@@ -79706,6 +81447,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ReasonExitedDescriptor_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -79842,15 +81592,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ReductionInHoursPerWeekComparedToPeers",
                 "kind": "Scalar",
                 "type": {
@@ -79946,6 +81687,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSpecialEducationProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -80586,6 +82343,19 @@
         ],
         "descriptor_edge_sources": [
           {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSpecialEducationProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
+          {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
             "table": {
@@ -80759,6 +82529,15 @@
                 "source_path": "$.ideaPartDescriptor"
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ConsentToEvaluationDate",
                 "kind": "Scalar",
                 "type": {
@@ -80878,15 +82657,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "StudentReferenceStudentUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -80995,6 +82765,22 @@
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentSpecialEducationProgramEligibilityAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
@@ -81051,6 +82837,19 @@
               "project_name": "Ed-Fi",
               "resource_name": "IDEAPartDescriptor"
             }
+          },
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentSpecialEducationProgramEligibilityAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
           }
         ],
         "extension_sites": []
@@ -81084,6 +82883,15 @@
                 },
                 "is_nullable": false,
                 "source_path": null
+              },
+              {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
               },
               {
                 "name": "ReasonExitedDescriptor_DescriptorId",
@@ -81150,15 +82958,6 @@
                 "source_path": "$.programReference.programName"
               },
               {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
-              },
-              {
                 "name": "ServedOutsideOfRegularSession",
                 "kind": "Scalar",
                 "type": {
@@ -81193,6 +82992,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_StudentTitleIPartAProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               },
               {
@@ -81442,6 +83257,19 @@
           }
         ],
         "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "StudentTitleIPartAProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          },
           {
             "is_identity_component": false,
             "descriptor_value_path": "$.reasonExitedDescriptor",
@@ -81965,6 +83793,15 @@
                 "source_path": "$.citizenshipStatusDescriptor"
               },
               {
+                "name": "PersonReferenceSourceSystemDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.personReference.sourceSystemDescriptor"
+              },
+              {
                 "name": "BirthCity",
                 "kind": "Scalar",
                 "type": {
@@ -82070,15 +83907,6 @@
                 },
                 "is_nullable": true,
                 "source_path": "$.personReference.personId"
-              },
-              {
-                "name": "PersonReferenceSourceSystemDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": true,
-                "source_path": "$.personReference.sourceSystemDescriptor"
               },
               {
                 "name": "PersonalTitlePrefix",
@@ -82200,6 +84028,22 @@
                   "DocumentId"
                 ],
                 "on_delete": "Cascade",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_Student_PersonReferenceSourceSystemDescriptor_DescriptorId",
+                "columns": [
+                  "PersonReferenceSourceSystemDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
                 "on_update": "NoAction"
               }
             ]
@@ -82796,6 +84640,19 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "CitizenshipStatusDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
+            "descriptor_value_path": "$.personReference.sourceSystemDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "Student"
+            },
+            "fk_column": "PersonReferenceSourceSystemDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "SourceSystemDescriptor"
             }
           },
           {
@@ -83477,6 +85334,15 @@
                 "source_path": null
               },
               {
+                "name": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programReference.programTypeDescriptor"
+              },
+              {
                 "name": "ProgramReferenceEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -83494,15 +85360,6 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.programReference.programName"
-              },
-              {
-                "name": "ProgramReferenceProgramTypeDescriptor",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String"
-                },
-                "is_nullable": false,
-                "source_path": "$.programReference.programTypeDescriptor"
               },
               {
                 "name": "SurveyReferenceNamespace",
@@ -83541,11 +85398,41 @@
                 ],
                 "on_delete": "Cascade",
                 "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_SurveyProgramAssociation_ProgramReferenceProgramTypeDescriptor_DescriptorId",
+                "columns": [
+                  "ProgramReferenceProgramTypeDescriptor_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
               }
             ]
           }
         ],
-        "descriptor_edge_sources": [],
+        "descriptor_edge_sources": [
+          {
+            "is_identity_component": true,
+            "descriptor_value_path": "$.programReference.programTypeDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "SurveyProgramAssociation"
+            },
+            "fk_column": "ProgramReferenceProgramTypeDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "ProgramTypeDescriptor"
+            }
+          }
+        ],
         "extension_sites": []
       }
     },
