@@ -1,0 +1,258 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.RelationalModel;
+using FluentAssertions;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.Tests.Unit;
+
+[TestFixture]
+public class Given_Schemas_With_Different_Property_Order
+{
+    private RelationalResourceModel _modelA = default!;
+    private RelationalResourceModel _modelB = default!;
+    private IReadOnlyList<string> _snapshotA = default!;
+    private IReadOnlyList<string> _snapshotB = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var descriptorPath = JsonPathExpressionCompiler.Compile("$.zetaDescriptor");
+        var descriptorInfo = new DescriptorPathInfo(
+            descriptorPath,
+            new QualifiedResourceName("Ed-Fi", "ZetaDescriptor")
+        );
+
+        var schemaA = CreateSchema(descriptorFirst: true);
+        var schemaB = CreateSchema(descriptorFirst: false);
+
+        _modelA = CanonicalizeOrderingStepTestContext.BuildModel(
+            schemaA,
+            context =>
+            {
+                context.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [descriptorPath.Canonical] = descriptorInfo,
+                };
+            }
+        );
+
+        _modelB = CanonicalizeOrderingStepTestContext.BuildModel(
+            schemaB,
+            context =>
+            {
+                context.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [descriptorPath.Canonical] = descriptorInfo,
+                };
+            }
+        );
+
+        _snapshotA = CanonicalizeOrderingStepTestContext.CaptureSnapshot(_modelA);
+        _snapshotB = CanonicalizeOrderingStepTestContext.CaptureSnapshot(_modelB);
+    }
+
+    [Test]
+    public void It_should_produce_identical_ordered_output()
+    {
+        _snapshotA.Should().Equal(_snapshotB);
+    }
+
+    [Test]
+    public void It_should_place_descriptor_columns_before_scalars()
+    {
+        var rootColumns = _modelA
+            .TablesInReadDependencyOrder.Single(table =>
+                string.Equals(table.JsonScope.Canonical, "$", StringComparison.Ordinal)
+            )
+            .Columns.Select(column => column.ColumnName.Value);
+
+        rootColumns.Should().Equal("ZetaDescriptor_DescriptorId", "Alpha");
+    }
+
+    private static JsonObject CreateSchema(bool descriptorFirst)
+    {
+        var descriptorSchema = new JsonObject { ["type"] = "string", ["maxLength"] = 306 };
+        var scalarSchema = new JsonObject { ["type"] = "string", ["maxLength"] = 10 };
+        var addressesSchema = new JsonObject
+        {
+            ["type"] = "array",
+            ["items"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["streetNumberName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                },
+            },
+        };
+
+        JsonObject properties = new();
+
+        if (descriptorFirst)
+        {
+            properties["zetaDescriptor"] = descriptorSchema;
+            properties["alpha"] = scalarSchema;
+            properties["addresses"] = addressesSchema;
+        }
+        else
+        {
+            properties["addresses"] = addressesSchema;
+            properties["alpha"] = scalarSchema;
+            properties["zetaDescriptor"] = descriptorSchema;
+        }
+
+        return new JsonObject { ["type"] = "object", ["properties"] = properties };
+    }
+}
+
+[TestFixture]
+public class Given_Descriptor_Path_Mappings_With_Different_Order
+{
+    private IReadOnlyList<string> _edgesFirst = default!;
+    private IReadOnlyList<string> _edgesSecond = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = CreateDescriptorSchema();
+        var gradeLevelPath = JsonPathExpressionCompiler.Compile("$.gradeLevelDescriptor");
+        var schoolTypePath = JsonPathExpressionCompiler.Compile("$.schoolTypeDescriptor");
+
+        var gradeLevelInfo = new DescriptorPathInfo(
+            gradeLevelPath,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+        var schoolTypeInfo = new DescriptorPathInfo(
+            schoolTypePath,
+            new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+        );
+
+        var modelA = CanonicalizeOrderingStepTestContext.BuildModel(
+            schema,
+            context =>
+            {
+                context.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [gradeLevelPath.Canonical] = gradeLevelInfo,
+                    [schoolTypePath.Canonical] = schoolTypeInfo,
+                };
+            }
+        );
+
+        var modelB = CanonicalizeOrderingStepTestContext.BuildModel(
+            schema,
+            context =>
+            {
+                context.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [schoolTypePath.Canonical] = schoolTypeInfo,
+                    [gradeLevelPath.Canonical] = gradeLevelInfo,
+                };
+            }
+        );
+
+        _edgesFirst = CanonicalizeOrderingStepTestContext.CaptureDescriptorEdges(modelA);
+        _edgesSecond = CanonicalizeOrderingStepTestContext.CaptureDescriptorEdges(modelB);
+    }
+
+    [Test]
+    public void It_should_produce_identical_descriptor_edge_ordering()
+    {
+        _edgesFirst.Should().Equal(_edgesSecond);
+    }
+
+    private static JsonObject CreateDescriptorSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
+                ["gradeLevelDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 306 },
+            },
+        };
+    }
+}
+
+internal static class CanonicalizeOrderingStepTestContext
+{
+    public static RelationalResourceModel BuildModel(
+        JsonObject schema,
+        Action<RelationalModelBuilderContext>? configure = null
+    )
+    {
+        var context = new RelationalModelBuilderContext
+        {
+            ProjectName = "Ed-Fi",
+            ProjectEndpointName = "ed-fi",
+            ResourceName = "School",
+            JsonSchemaForInsert = schema,
+        };
+
+        configure?.Invoke(context);
+
+        var deriveTables = new DeriveTableScopesAndKeysStep();
+        deriveTables.Execute(context);
+
+        var deriveColumns = new DeriveColumnsAndDescriptorEdgesStep();
+        deriveColumns.Execute(context);
+
+        var canonicalize = new CanonicalizeOrderingStep();
+        canonicalize.Execute(context);
+
+        return context.ResourceModel
+            ?? throw new InvalidOperationException(
+                "Expected ResourceModel to be set after canonicalization."
+            );
+    }
+
+    public static IReadOnlyList<string> CaptureSnapshot(RelationalResourceModel model)
+    {
+        List<string> snapshot = [];
+
+        foreach (var table in model.TablesInReadDependencyOrder)
+        {
+            var columnNames = string.Join(",", table.Columns.Select(column => column.ColumnName.Value));
+            var constraintNames = string.Join(",", table.Constraints.Select(GetConstraintName));
+
+            snapshot.Add($"{table.JsonScope.Canonical}|{table.Table}|{columnNames}|{constraintNames}");
+        }
+
+        snapshot.Add($"DescriptorEdges:{string.Join(",", CaptureDescriptorEdges(model))}");
+
+        return snapshot.ToArray();
+    }
+
+    public static IReadOnlyList<string> CaptureDescriptorEdges(RelationalResourceModel model)
+    {
+        return model
+            .DescriptorEdgeSources.Select(edge =>
+                $"{edge.Table}|{edge.FkColumn.Value}|{edge.DescriptorValuePath.Canonical}"
+            )
+            .ToArray();
+    }
+
+    private static string GetConstraintName(TableConstraint constraint)
+    {
+        return constraint switch
+        {
+            TableConstraint.Unique unique => unique.Name,
+            TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            _ => string.Empty,
+        };
+    }
+}

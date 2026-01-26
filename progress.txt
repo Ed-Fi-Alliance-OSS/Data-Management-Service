@@ -34,3 +34,7 @@ DMS-929 00-base-schema-traversal: completed task DeriveColumnsAndDescriptorEdges
 Decisions: column nullability from first optional/x-nullable ancestor within table scope; descriptor paths map to DescriptorFk columns + FK to dms.Descriptor with edge sources; scalar type mapping honors string/date/time formats, integer formats, decimal validation info.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task CanonicalizeOrdering (pipeline step).
+Decisions: order tables by array depth + scope + name; order columns by key/descriptor/scalar groups with ordinal names; order constraints by kind then name; sort document reference + descriptor edge lists deterministically.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/CanonicalizeOrderingStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/CanonicalizeOrderingStepTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.

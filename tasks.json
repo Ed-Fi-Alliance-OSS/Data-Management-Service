@@ -95,7 +95,7 @@
       "Unit test: descriptor path mappings provided in different order produce identical `DescriptorEdgeSources` ordering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Artifacts",
