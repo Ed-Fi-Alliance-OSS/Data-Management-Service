@@ -2,6 +2,24 @@
 
 This guide explains how to set up multiple DMS instances with school year routing.
 
+## Choose a Workflow
+
+There are two ways to end up with multiple school year instances:
+
+1. **Scripted convenience (this guide)**: use `-SchoolYearRange` on `start-local-dms.ps1` to automatically create multiple `dmsInstances` and their `schoolYear` route contexts in the Configuration Service.
+2. **Manual/field-like (Configuration API)**: create instances and route contexts yourself (for example, using the REST client `.http` workflow described in the multi-tenancy guide).
+
+These approaches use the same underlying Configuration Service APIs and should result in the same DMS routing behavior and Swagger UI dropdowns.
+
+> [!IMPORTANT]
+> `-SchoolYearRange` is currently a convenience helper and is not idempotent.
+> If you also create instances manually (or re-run the script), you can end up with duplicate instances/route contexts (similar names, different IDs).
+> Prefer **one** workflow per environment: either scripted *or* manual.
+> `-SchoolYearRange` and `-NoDmsInstance` are mutually exclusive.
+> If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` requires
+> `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
+> required `Tenant` header.
+
 ## Overview
 
 The `start-local-dms.ps1` script now supports automatic creation of multiple DMS instances, each configured with a specific school year route context. This is useful for multi-tenant scenarios where you need to separate data by school year.
@@ -120,6 +138,8 @@ This creates:
 
 If you need more complex routing or want to add route contexts manually, you can still use the Configuration Service API. See `test-schoolyear-route.http` in `src/dms/tests/RestClient/` for examples.
 
+If you are using the manual approach, consider skipping `-SchoolYearRange` (and `-NoDmsInstance` may be appropriate) to avoid creating duplicate configuration data.
+
 ## Troubleshooting
 
 ### Changes not reflected immediately
@@ -130,7 +150,7 @@ After creating instances with route contexts, the DMS may take a moment to refre
 2. Restart the DMS container if needed:
 
    ```powershell
-   docker restart dms-local-edfi-dm-1
+   docker restart dms-local-dms-1
    ```
 
 ### Invalid year range format
@@ -144,4 +164,6 @@ Ensure your range uses the correct format: `"YYYY-YYYY"` with a hyphen separator
 
 - `Dms-Management.psm1` - PowerShell module with functions for managing DMS instances
 - `test-schoolyear-route.http` - REST Client examples for manual route creation
-- `edfi-school-year-from-spec.js` - Swagger UI plugin for school year selection
+- `edfi-route-contexts-from-spec.js` - Swagger UI plugin for tenant and route
+   qualifier selection (choosing which school year or tenant route context is used
+   when calling the DMS APIs)
