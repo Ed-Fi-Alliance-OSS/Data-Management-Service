@@ -741,7 +741,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
 
     private sealed class TableBuilder
     {
-        private readonly HashSet<string> _columnNames = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
 
         public TableBuilder(DbTableModel table)
         {
@@ -749,14 +749,14 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             Columns = new List<DbColumnModel>(table.Columns);
             Constraints = new List<TableConstraint>(table.Constraints);
 
-            foreach (var keyColumn in table.Key.Columns)
-            {
-                _columnNames.Add(keyColumn.ColumnName.Value);
-            }
-
             foreach (var column in table.Columns)
             {
-                _columnNames.Add(column.ColumnName.Value);
+                _columnSources[column.ColumnName.Value] = column.SourceJsonPath;
+            }
+
+            foreach (var keyColumn in table.Key.Columns)
+            {
+                _columnSources.TryAdd(keyColumn.ColumnName.Value, null);
             }
         }
 
@@ -768,15 +768,20 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
 
         public void AddColumn(DbColumnModel column)
         {
-            if (!_columnNames.Add(column.ColumnName.Value))
+            if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
             {
                 var tableName = Definition.Table.Name;
+                var existingPath = ResolveSourcePath(existingSource);
+                var incomingPath = ResolveSourcePath(column.SourceJsonPath);
 
                 throw new InvalidOperationException(
-                    $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'."
+                    $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'. "
+                        + $"Colliding source paths '{existingPath}' and '{incomingPath}'. "
+                        + "Use relational.nameOverrides to resolve the collision."
                 );
             }
 
+            _columnSources.Add(column.ColumnName.Value, column.SourceJsonPath);
             Columns.Add(column);
         }
 
@@ -788,6 +793,11 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         public DbTableModel Build()
         {
             return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
+        }
+
+        private string ResolveSourcePath(JsonPathExpression? sourcePath)
+        {
+            return (sourcePath ?? Definition.JsonScope).Canonical;
         }
     }
 

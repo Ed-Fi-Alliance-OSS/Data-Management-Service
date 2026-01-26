@@ -21,3 +21,7 @@ Task: DMS-929 Schema Traversal - additionalProperties ignored for persistence; a
 Decisions: cover schema-form additionalProperties with nested array to prove no tables/columns; compare manifests with boolean additionalProperties for closed-world equivalence.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelManifestEmitterTests.cs; tasks.json.
 Notes: dotnet test + build ok; build warning missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).
+Task: DMS-929 Diagnostics (00-base-schema-traversal.md) - collision error now reports table/column + colliding JSON paths + nameOverrides hint; added PascalCase collision test.
+Decisions: track column source JSON paths in TableBuilder for collision reporting; fall back to table scope when column source is null.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs; tasks.json.
+Notes: dotnet test + build ok; build warning missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).

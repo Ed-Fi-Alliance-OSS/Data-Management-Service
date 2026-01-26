@@ -64,6 +64,46 @@ public class Given_An_Inlined_Object_Property
 }
 
 [TestFixture]
+public class Given_Colliding_Column_Names
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["a-b"] = new JsonObject { ["type"] = "string" },
+                ["a_b"] = new JsonObject { ["type"] = "string" },
+            },
+        };
+
+        try
+        {
+            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    [Test]
+    public void It_should_include_collision_details_in_the_error_message()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception?.Message.Should().Contain("School");
+        _exception?.Message.Should().Contain("AB");
+        _exception?.Message.Should().Contain("$.a-b");
+        _exception?.Message.Should().Contain("$.a_b");
+        _exception?.Message.Should().Contain("relational.nameOverrides");
+    }
+}
+
+[TestFixture]
 public class Given_A_Descriptor_Path
 {
     private DbColumnModel _column = default!;
