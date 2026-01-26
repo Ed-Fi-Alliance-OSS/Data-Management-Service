@@ -34,7 +34,7 @@
       "Add a unit test that runs the pipeline with a no-op step list and asserts the runner invokes steps in order.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Pipeline Step",

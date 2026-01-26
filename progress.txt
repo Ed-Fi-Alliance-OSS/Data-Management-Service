@@ -6,3 +6,7 @@ DMS-929 00-base-schema-traversal: completed task JsonPath (restricted JsonPathEx
 Decisions: parse only $ + dot properties + [*]; reject other bracket forms; added FromSegments for canonicalization; property chars limited to letters/digits/_/-.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonPathExpressionCompiler.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/JsonPathExpressionCompilerTests.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task Pipeline (relational model builder runner).
+Decisions: pipeline validates and snapshots steps array; context exposes ResourceModel + ExtensionSites and BuildResult enforces ResourceModel set.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelBuilderPipeline.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelBuilderPipelineTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
