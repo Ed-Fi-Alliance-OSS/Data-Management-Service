@@ -720,7 +720,7 @@ public class ProfileResponseFilterTests
 
     [TestFixture]
     [Parallelizable]
-    public class Given_Nested_Identity_Paths_Are_Ignored : ProfileResponseFilterTests
+    public class Given_Nested_Identity_Paths : ProfileResponseFilterTests
     {
         private JsonNode? _result;
         private JsonObject _source = null!;
@@ -731,38 +731,53 @@ public class ProfileResponseFilterTests
             _source = new JsonObject
             {
                 ["id"] = "12345",
-                ["sectionIdentifier"] = "SEC001",
-                ["courseOfferingReference"] = new JsonObject
-                {
-                    ["localCourseCode"] = "MATH101",
-                    ["schoolId"] = 100,
-                },
-                ["otherField"] = "value",
+                ["calendarCode"] = "CAL001",
+                ["schoolReference"] = new JsonObject { ["schoolId"] = 100 },
+                ["schoolYearTypeReference"] = new JsonObject { ["schoolYear"] = 2030 },
+                ["nonIdentityField"] = "should be stripped",
             };
 
-            var contentType = CreateContentType(MemberSelection.IncludeOnly);
+            // IncludeOnly with only calendarCode - but identity refs must be preserved
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                properties: [new PropertyRule("calendarCode")]
+            );
 
-            // Nested paths should not cause top-level property protection
+            // Identity includes nested paths
             var identityPropertyNames = Filter.ExtractIdentityPropertyNames([
-                new JsonPath("$.sectionIdentifier"),
-                new JsonPath("$.courseOfferingReference.localCourseCode"),
-                new JsonPath("$.courseOfferingReference.schoolId"),
+                new JsonPath("$.calendarCode"),
+                new JsonPath("$.schoolReference.schoolId"),
+                new JsonPath("$.schoolYearTypeReference.schoolYear"),
             ]);
             _result = Filter.FilterDocument(_source, contentType, identityPropertyNames);
         }
 
         [Test]
-        public void It_protects_top_level_identity_fields()
+        public void It_preserves_top_level_identity_field()
         {
-            _result!["sectionIdentifier"]?.GetValue<string>().Should().Be("SEC001");
+            _result!["calendarCode"]?.GetValue<string>().Should().Be("CAL001");
         }
 
         [Test]
-        public void It_does_not_include_nested_references_as_top_level_identity()
+        public void It_preserves_schoolReference_containing_nested_identity()
         {
-            // courseOfferingReference is not in the IncludeOnly properties list
-            // and nested paths don't make the parent protected
-            _result!["courseOfferingReference"].Should().BeNull();
+            var reference = _result!["schoolReference"] as JsonObject;
+            reference.Should().NotBeNull();
+            reference!["schoolId"]?.GetValue<int>().Should().Be(100);
+        }
+
+        [Test]
+        public void It_preserves_schoolYearTypeReference_containing_nested_identity()
+        {
+            var reference = _result!["schoolYearTypeReference"] as JsonObject;
+            reference.Should().NotBeNull();
+            reference!["schoolYear"]?.GetValue<int>().Should().Be(2030);
+        }
+
+        [Test]
+        public void It_strips_non_identity_fields()
+        {
+            _result!["nonIdentityField"].Should().BeNull();
         }
     }
 }

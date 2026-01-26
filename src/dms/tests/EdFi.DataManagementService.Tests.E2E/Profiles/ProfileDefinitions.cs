@@ -368,6 +368,36 @@ public static class ProfileDefinitions
         """;
 
     // ================================================================================
+    // NESTED IDENTITY PRESERVATION PROFILES
+    // These profiles test that nested identity reference objects are preserved
+    // during write filtering even when NOT explicitly included in the profile.
+    // The bug (DMS-1032) was that ExtractRootPropertyNames filtered out nested paths
+    // like $.schoolYearTypeReference.schoolYear, causing identity data to be stripped.
+    // With the fix, the reference objects are automatically preserved as identity fields.
+    // ================================================================================
+
+    /// <summary>
+    /// Profile for Calendar with IncludeOnly WriteContentType - tests nested identity preservation.
+    /// Calendar has identity paths like $.schoolYearTypeReference.schoolYear that must be preserved
+    /// even though schoolYearTypeReference is NOT in the IncludeOnly list.
+    /// The fix extracts root property names (schoolReference, schoolYearTypeReference) from nested paths.
+    /// </summary>
+    public const string CalendarWriteIncludeOnlyName = "E2E-Test-Calendar-Write-IncludeOnly";
+
+    public const string CalendarWriteIncludeOnlyXml = """
+        <Profile name="E2E-Test-Calendar-Write-IncludeOnly">
+            <Resource name="Calendar">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeOnly">
+                    <Property name="calendarCode"/>
+                    <Property name="calendarTypeDescriptor"/>
+                    <Collection name="gradeLevels" memberSelection="IncludeAll"/>
+                </WriteContentType>
+            </Resource>
+        </Profile>
+        """;
+
+    // ================================================================================
     // PUT MERGE PROFILES
     // These profiles test that excluded fields are preserved from existing documents
     // during PUT operations (recursive merging functionality).
@@ -446,5 +476,7 @@ public static class ProfileDefinitions
             // PUT merge profiles
             (SchoolWriteAddressExcludeNameOfCountyName, SchoolWriteAddressExcludeNameOfCountyXml),
             (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
+            // Nested identity preservation profiles
+            (CalendarWriteIncludeOnlyName, CalendarWriteIncludeOnlyXml),
         ];
 }
