@@ -14,3 +14,7 @@
 - Decisions: added focused fixtures for date/time formats, duration omission via StringMaxLengthOmissionPaths, enumeration via enum, and descriptor URI strings (array + reference) to ensure descriptor FKs not scalar strings; kept missing-maxLength error check with canonical path.
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs, tasks.json
 - Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).
+- Task: Authoritative schema audit for missing maxLength strings (reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md) done.
+- Decisions: added audit test that reuses ExtractInputsStep to derive descriptor paths + omission paths, walks jsonSchemaForInsert with canonical paths, skips _ext, allows date/time formats + enum + omission list, reports stable resource/path list.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelAuthoritativeStringMaxLengthAuditTests.cs, tasks.json
+- Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).

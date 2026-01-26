@@ -29,7 +29,7 @@
       "Ensure the failure message lists offending `{resourceEndpointName, jsonPath}` pairs deterministically (stable sort) so CI output is consistent.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Unit Tests",
