@@ -14,3 +14,7 @@ DMS-929 00-base-schema-traversal: completed task Naming (deterministic naming ut
 Decisions: schema normalization keeps ascii alnum + lowercase with "p" prefix when needed; singularization follows data-model rules and PascalCase preserves inner casing.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalNameConventionsTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task ExtractInputs (ApiSchema inputs parse).
+Decisions: context stores ApiSchema root + resource endpoint; descriptor paths keyed by canonical JsonPath; decimal infos optional.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelBuilderPipeline.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelInputTypes.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ExtractInputsStepTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
