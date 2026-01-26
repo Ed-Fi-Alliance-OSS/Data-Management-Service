@@ -18,3 +18,7 @@
 - Decisions: added audit test that reuses ExtractInputsStep to derive descriptor paths + omission paths, walks jsonSchemaForInsert with canonical paths, skips _ext, allows date/time formats + enum + omission list, reports stable resource/path list.
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelAuthoritativeStringMaxLengthAuditTests.cs, tasks.json
 - Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).
+- Task: Update flattening/reconstitution string maxLength contract doc (reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md) done.
+- Decisions: documented allowed maxLength omissions (date/time formats, MetaEd duration/enumeration, descriptor URI strings incl. collections and scalar-reference identity); clarified JSON-schema string vs ScalarKind.String and added canonical path examples; noted maxLength requirement for scalar string columns in mapping table.
+- Files: reference/design/backend-redesign/design-docs/flattening-reconstitution.md, tasks.json
+- Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).

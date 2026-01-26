@@ -807,14 +807,19 @@ These mappings are a determinism contract for both:
 - the runtime plan compiler (parameter types, casts, and view definitions).
 
 Rules:
-- `ScalarKind.String` requires `maxLength` in `jsonSchemaForInsert`; missing `maxLength` is a schema compilation error.
-  - Descriptor URI strings are not stored as strings; they are stored as `..._DescriptorId` FKs, so this rule applies to scalar columns only.
+- A JSON-schema `type: "string"` may omit `maxLength` **only** for the MetaEd-valid omission cases below; any other missing `maxLength` is a schema compilation error.
+- Distinguish JSON-schema `"string"` from `ScalarKind.String`: only non-descriptor, non-formatted string scalars with `maxLength` map to `ScalarKind.String`.
+  - Descriptor URI strings are still JSON-schema strings but are never stored as strings; they are stored as `..._DescriptorId` FKs.
+  - Allowed omission cases (canonical JSON path examples):
+    - Format-based date/time strings: `type: "string", format: "date" | "date-time" | "time"` map to `ScalarKind.Date/DateTime/Time` (e.g., `$.birthDate`, `$.lastModifiedDateTime`, `$.sessionBeginTime`).
+    - MetaEd `duration`/`enumeration` properties: emitted as plain `type: "string"` with no `format`/`maxLength`, allowed to map to `ScalarKind.String` with `MaxLength = null` (e.g., `$.eventDuration`, `$.deliveryMethodType`).
+    - Descriptor URI strings, including descriptor collections and descriptor identity parts inside scalar references, are not stored as strings (e.g., `$.gradeLevelDescriptor`, `$.programDescriptors[*]`, `$.courseOfferingReference.termDescriptor`).
 - `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
 - `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
 
 | `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server type |
 | --- | --- | --- | --- |
-| `String` | `type: "string"` (no `format`) | `varchar(n)` | `nvarchar(n)` |
+| `String` | `type: "string"` (no `format`, `maxLength` required for scalar columns) | `varchar(n)` | `nvarchar(n)` |
 | `Int32` | `type: "integer"` | `integer` | `int` |
 | `Int64` | (not typical in Ed-Fi, reserved) | `bigint` | `bigint` |
 | `Decimal` | `type: "number"` + `decimalPropertyValidationInfos` | `numeric(p,s)` | `decimal(p,s)` |

@@ -7,7 +7,7 @@
       "Include at least one canonical JSON path example for each allowed omission case (format-based date/time, duration/enumeration, descriptor URIs including descriptor collections and scalar references).",
       "Confirm the doc explicitly distinguishes \"string in JSON schema\" from `ScalarKind.String` (descriptor URI strings are not stored as strings)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Validation",
