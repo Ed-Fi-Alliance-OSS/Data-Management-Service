@@ -755,18 +755,17 @@ public class CachedProfileServiceTests
         }
 
         [TestFixture]
-        public class Given_CachedProfileCatalog_TryGetProfile : Given_Profile_Catalog
+        public class Given_CachedProfileStore_TryGetProfile : Given_Profile_Catalog
         {
             [Test]
             public void It_returns_false_when_profile_not_found()
             {
-                var catalog = new CachedProfileCatalog(
-                    new Dictionary<string, ProfileDefinition>(),
-                    new Dictionary<long, ProfileDefinition>(),
-                    []
+                var store = new CachedProfileStore(
+                    new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase),
+                    new Dictionary<long, string>()
                 );
 
-                var result = catalog.TryGetProfile("NonExistent", out var definition);
+                var result = store.TryGetByName("NonExistent", out var definition);
 
                 result.Should().BeFalse();
                 definition.Should().BeNull();
@@ -776,13 +775,15 @@ public class CachedProfileServiceTests
             public void It_returns_true_and_definition_when_profile_found()
             {
                 var profileDef = ProfileDefinitionParser.Parse(StudentProfileXml).Definition!;
-                var catalog = new CachedProfileCatalog(
-                    new Dictionary<string, ProfileDefinition> { ["studentprofile"] = profileDef },
-                    new Dictionary<long, ProfileDefinition> { [1] = profileDef },
-                    ["StudentProfile"]
+                var store = new CachedProfileStore(
+                    new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["StudentProfile"] = profileDef,
+                    },
+                    new Dictionary<long, string> { [1] = "StudentProfile" }
                 );
 
-                var result = catalog.TryGetProfile("StudentProfile", out var definition);
+                var result = store.TryGetByName("StudentProfile", out var definition);
 
                 result.Should().BeTrue();
                 definition.Should().NotBeNull();
@@ -793,13 +794,15 @@ public class CachedProfileServiceTests
             public void It_returns_true_for_id_lookup()
             {
                 var profileDef = ProfileDefinitionParser.Parse(StudentProfileXml).Definition!;
-                var catalog = new CachedProfileCatalog(
-                    new Dictionary<string, ProfileDefinition> { ["studentprofile"] = profileDef },
-                    new Dictionary<long, ProfileDefinition> { [100] = profileDef },
-                    ["StudentProfile"]
+                var store = new CachedProfileStore(
+                    new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["StudentProfile"] = profileDef,
+                    },
+                    new Dictionary<long, string> { [100] = "StudentProfile" }
                 );
 
-                var result = catalog.TryGetProfile(100, out var definition);
+                var result = store.TryGetById(100, out var definition);
 
                 result.Should().BeTrue();
                 definition.Should().NotBeNull();
