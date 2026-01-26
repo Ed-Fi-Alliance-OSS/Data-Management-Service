@@ -29,7 +29,7 @@
       "Add unit test: a non-descriptor scalar array fails fast with an exception message containing the canonical array path (e.g., `$.tags`).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Traversal",

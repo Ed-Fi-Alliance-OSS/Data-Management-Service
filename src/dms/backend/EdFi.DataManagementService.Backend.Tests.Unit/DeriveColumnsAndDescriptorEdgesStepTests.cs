@@ -147,6 +147,79 @@ public class Given_A_Descriptor_Path
 }
 
 [TestFixture]
+public class Given_A_Descriptor_Scalar_Array
+{
+    private DescriptorEdgeSource _edge = default!;
+    private DbTableModel _table = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["gradeLevelDescriptors"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                },
+            },
+        };
+
+        var descriptorPath = JsonPathExpressionCompiler.Compile("$.gradeLevelDescriptors[*]");
+        var descriptorInfo = new DescriptorPathInfo(
+            descriptorPath,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [descriptorPath.Canonical] = descriptorInfo,
+                };
+            }
+        );
+
+        _table = context.ResourceModel!.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolGradeLevelDescriptor"
+        );
+        _edge = context.ResourceModel.DescriptorEdgeSources.Single();
+    }
+
+    [Test]
+    public void It_should_create_a_descriptor_fk_column_in_the_child_table()
+    {
+        _table
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal("School_DocumentId", "Ordinal", "GradeLevelDescriptor_DescriptorId");
+
+        var descriptorColumn = _table.Columns.Single(column => column.Kind == ColumnKind.DescriptorFk);
+
+        descriptorColumn.ColumnName.Value.Should().Be("GradeLevelDescriptor_DescriptorId");
+        descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+    }
+
+    [Test]
+    public void It_should_record_a_descriptor_edge_source_for_the_array_element_path()
+    {
+        var expectedTable = new DbTableName(new DbSchemaName("edfi"), "SchoolGradeLevelDescriptor");
+
+        _edge.DescriptorValuePath.Canonical.Should().Be("$.gradeLevelDescriptors[*]");
+        _edge.Table.Should().Be(expectedTable);
+        _edge.FkColumn.Should().Be(new DbColumnName("GradeLevelDescriptor_DescriptorId"));
+        _edge.DescriptorResource.Should().Be(new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"));
+    }
+}
+
+[TestFixture]
 public class Given_A_Property_With_XNullable
 {
     private DbColumnModel _column = default!;

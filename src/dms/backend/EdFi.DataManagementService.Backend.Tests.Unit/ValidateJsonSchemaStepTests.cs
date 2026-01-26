@@ -280,7 +280,51 @@ public class Given_A_JsonSchema_With_Array_Items_Not_Object
             .Should()
             .BeOfType<InvalidOperationException>()
             .Which.Message.Should()
-            .Contain("$.properties.collection.items.type");
+            .Contain("$.collection");
+    }
+}
+
+[TestFixture]
+public class Given_A_JsonSchema_With_A_Descriptor_Scalar_Array
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = ValidateJsonSchemaStepTestHelper.CreateRootSchemaWithProperty(
+            "gradeLevelDescriptors",
+            new JsonObject
+            {
+                ["type"] = "array",
+                ["items"] = new JsonObject { ["type"] = "string" },
+            }
+        );
+
+        var descriptorPath = JsonPathExpressionCompiler.Compile("$.gradeLevelDescriptors[*]");
+        var descriptorInfo = new DescriptorPathInfo(
+            descriptorPath,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+
+        _exception = ValidateJsonSchemaStepTestHelper.Execute(
+            schema,
+            context =>
+            {
+                context.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [descriptorPath.Canonical] = descriptorInfo,
+                };
+            }
+        );
+    }
+
+    [Test]
+    public void It_should_not_throw()
+    {
+        _exception.Should().BeNull();
     }
 }
 
@@ -366,9 +410,14 @@ internal static class ValidateJsonSchemaStepTestHelper
         return new JsonObject { ["type"] = "object", ["additionalProperties"] = additionalProperties };
     }
 
-    public static Exception? Execute(JsonObject schema)
+    public static Exception? Execute(
+        JsonObject schema,
+        Action<RelationalModelBuilderContext>? configure = null
+    )
     {
         var context = new RelationalModelBuilderContext { JsonSchemaForInsert = schema };
+
+        configure?.Invoke(context);
 
         var step = new ValidateJsonSchemaStep();
 

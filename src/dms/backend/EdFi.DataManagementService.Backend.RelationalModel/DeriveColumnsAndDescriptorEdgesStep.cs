@@ -261,14 +261,73 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             throw new InvalidOperationException($"Child table scope '{arrayScope}' was not found.");
         }
 
-        WalkSchema(
+        var itemsKind = DetermineSchemaKind(itemsSchema);
+
+        switch (itemsKind)
+        {
+            case SchemaKind.Object:
+                WalkSchema(
+                    itemsSchema,
+                    childTable,
+                    arraySegments,
+                    [],
+                    hasOptionalAncestor: false,
+                    context,
+                    tableBuilders,
+                    identityPaths,
+                    usedDescriptorPaths,
+                    descriptorEdgeSources
+                );
+                break;
+            case SchemaKind.Scalar:
+                AddDescriptorArrayColumn(
+                    childTable,
+                    itemsSchema,
+                    propertySegments,
+                    arraySegments,
+                    context,
+                    identityPaths,
+                    usedDescriptorPaths,
+                    descriptorEdgeSources
+                );
+                break;
+            case SchemaKind.Array:
+                throw new InvalidOperationException($"Array schema items must be an object at {arrayPath}.");
+            default:
+                throw new InvalidOperationException($"Unknown schema kind at {arrayPath}.");
+        }
+    }
+
+    private static void AddDescriptorArrayColumn(
+        TableBuilder tableBuilder,
+        JsonObject itemsSchema,
+        List<JsonPathSegment> propertySegments,
+        List<JsonPathSegment> arraySegments,
+        RelationalModelBuilderContext context,
+        HashSet<string> identityPaths,
+        HashSet<string> usedDescriptorPaths,
+        List<DescriptorEdgeSource> descriptorEdgeSources
+    )
+    {
+        var elementPath = JsonPathExpressionCompiler.FromSegments(arraySegments);
+
+        if (!context.TryGetDescriptorPath(elementPath, out _))
+        {
+            var arrayPath = JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
+
+            throw new InvalidOperationException($"Array schema items must be an object at {arrayPath}.");
+        }
+
+        var columnSegments = BuildDescriptorArrayColumnSegments(propertySegments);
+        var isNullable = IsXNullable(itemsSchema, elementPath.Canonical);
+
+        AddScalarOrDescriptorColumn(
+            tableBuilder,
             itemsSchema,
-            childTable,
-            arraySegments,
-            [],
-            hasOptionalAncestor: false,
+            columnSegments,
+            elementPath,
+            isNullable,
             context,
-            tableBuilders,
             identityPaths,
             usedDescriptorPaths,
             descriptorEdgeSources
@@ -509,6 +568,21 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         }
 
         return builder.ToString();
+    }
+
+    private static List<string> BuildDescriptorArrayColumnSegments(
+        IReadOnlyList<JsonPathSegment> propertySegments
+    )
+    {
+        if (propertySegments.Count == 0 || propertySegments[^1] is not JsonPathSegment.Property property)
+        {
+            throw new InvalidOperationException("Array schema must be rooted at a property segment.");
+        }
+
+        var singular = RelationalNameConventions.SingularizeCollectionSegment(property.Name);
+        List<string> columnSegments = [singular];
+
+        return columnSegments;
     }
 
     private static List<JsonPathSegment> BuildPropertySegments(

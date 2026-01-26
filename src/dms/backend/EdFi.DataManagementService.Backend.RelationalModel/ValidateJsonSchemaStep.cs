@@ -32,10 +32,16 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
             throw new InvalidOperationException("Json schema root must be an object.");
         }
 
-        ValidateSchema(rootSchema, "$", isRoot: true);
+        ValidateSchema(rootSchema, "$", isRoot: true, [], context);
     }
 
-    private static void ValidateSchema(JsonObject schema, string path, bool isRoot)
+    private static void ValidateSchema(
+        JsonObject schema,
+        string path,
+        bool isRoot,
+        IReadOnlyList<JsonPathSegment> jsonPathSegments,
+        RelationalModelBuilderContext context
+    )
     {
         ValidateUnsupportedKeywords(schema, path);
 
@@ -44,10 +50,10 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         switch (schemaKind)
         {
             case SchemaKind.Object:
-                ValidateObjectSchema(schema, path);
+                ValidateObjectSchema(schema, path, jsonPathSegments, context);
                 break;
             case SchemaKind.Array:
-                ValidateArraySchema(schema, path);
+                ValidateArraySchema(schema, path, jsonPathSegments, context);
                 break;
             case SchemaKind.Scalar:
                 break;
@@ -56,7 +62,12 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         }
     }
 
-    private static void ValidateObjectSchema(JsonObject schema, string path)
+    private static void ValidateObjectSchema(
+        JsonObject schema,
+        string path,
+        IReadOnlyList<JsonPathSegment> jsonPathSegments,
+        RelationalModelBuilderContext context
+    )
     {
         if (!schema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is null)
         {
@@ -77,11 +88,28 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
                 );
             }
 
-            ValidateSchema(propertySchema, $"{path}.properties.{property.Key}", isRoot: false);
+            List<JsonPathSegment> propertySegments =
+            [
+                .. jsonPathSegments,
+                new JsonPathSegment.Property(property.Key),
+            ];
+
+            ValidateSchema(
+                propertySchema,
+                $"{path}.properties.{property.Key}",
+                isRoot: false,
+                propertySegments,
+                context
+            );
         }
     }
 
-    private static void ValidateArraySchema(JsonObject schema, string path)
+    private static void ValidateArraySchema(
+        JsonObject schema,
+        string path,
+        IReadOnlyList<JsonPathSegment> jsonPathSegments,
+        RelationalModelBuilderContext context
+    )
     {
         if (!schema.TryGetPropertyValue("items", out var itemsNode) || itemsNode is null)
         {
@@ -97,12 +125,36 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
 
         if (!string.Equals(itemsType, "object", StringComparison.Ordinal))
         {
-            throw new InvalidOperationException(
-                $"Array schema items must be type object at {path}.items.type."
-            );
+            var arrayPath = JsonPathExpressionCompiler.FromSegments(jsonPathSegments).Canonical;
+
+            if (string.Equals(itemsType, "array", StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Array schema items must be type object at {arrayPath}."
+                );
+            }
+
+            List<JsonPathSegment> arrayElementSegments =
+            [
+                .. jsonPathSegments,
+                new JsonPathSegment.AnyArrayElement(),
+            ];
+            var arrayElementPath = JsonPathExpressionCompiler.FromSegments(arrayElementSegments);
+
+            if (!context.TryGetDescriptorPath(arrayElementPath, out _))
+            {
+                throw new InvalidOperationException(
+                    $"Array schema items must be type object at {arrayPath}."
+                );
+            }
+
+            ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arrayElementSegments, context);
+            return;
         }
 
-        ValidateSchema(itemsSchema, $"{path}.items", isRoot: false);
+        List<JsonPathSegment> arraySegments = [.. jsonPathSegments, new JsonPathSegment.AnyArrayElement()];
+
+        ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arraySegments, context);
     }
 
     private static void ValidateUnsupportedKeywords(JsonObject schema, string path)
