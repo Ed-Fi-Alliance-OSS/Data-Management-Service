@@ -18,3 +18,7 @@ DMS-929 00-base-schema-traversal: completed task ExtractInputs (ApiSchema inputs
 Decisions: context stores ApiSchema root + resource endpoint; descriptor paths keyed by canonical JsonPath; decimal infos optional.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelBuilderPipeline.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelInputTypes.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ExtractInputsStepTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task ValidateJsonSchema (pipeline step).
+Decisions: validate unsupported keywords deterministically with sorted property walk; treat root as object unless explicit non-object type; skip additionalProperties subtree entirely.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ValidateJsonSchemaStepTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.

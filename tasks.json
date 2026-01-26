@@ -40,10 +40,10 @@
     "category": "Pipeline Step",
     "description": "Step: ExtractInputs. Parse the effective ApiSchema JSON for a single project+resource into the pipeline context: project endpoint/name/version, resource name, `jsonSchemaForInsert`, `documentPathsMapping` (descriptor sites only for DMS-929), `identityJsonPaths`, and `decimalPropertyValidationInfos` indexed by path. Acceptance: descriptor paths are discovered from `documentPathsMapping` entries where `isReference=true` and `isDescriptor=true`, and can be queried by absolute JSON path during column derivation.",
     "steps-to-verify": [
-      "Unit test: a minimal resource with one descriptor mapping produces exactly one descriptor path entry with the expected descriptor resource name.",
+      "Unit test: a minimal resource with one descriptor mapping produces exactly one descriptor path entry with the expected descriptor resource name. several other non-descriptor scenarios",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
     "category": "Pipeline Step",
@@ -53,7 +53,7 @@
       "Unit test: `additionalProperties` (true/false/object) does not throw and does not create derived columns.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Pipeline Step",
