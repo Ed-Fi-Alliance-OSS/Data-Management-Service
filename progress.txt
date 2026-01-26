@@ -10,3 +10,7 @@
 - Decisions: centralized FK naming + validation in RelationalNameConventions.ForeignKeyName to avoid drift; preserved existing FK format and empty-column error message.
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalNameConventionsTests.cs, tasks.json
 - Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).
+- Task: Update DeriveColumnsAndDescriptorEdgesStep maxLength unit tests (reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md) done.
+- Decisions: added focused fixtures for date/time formats, duration omission via StringMaxLengthOmissionPaths, enumeration via enum, and descriptor URI strings (array + reference) to ensure descriptor FKs not scalar strings; kept missing-maxLength error check with canonical path.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs, tasks.json
+- Notes: dotnet build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs (pre-existing).

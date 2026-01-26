@@ -76,8 +76,8 @@ public class Given_Colliding_Column_Names
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
-                ["a-b"] = new JsonObject { ["type"] = "string" },
-                ["a_b"] = new JsonObject { ["type"] = "string" },
+                ["a-b"] = new JsonObject { ["type"] = "string", ["maxLength"] = 10 },
+                ["a_b"] = new JsonObject { ["type"] = "string", ["maxLength"] = 10 },
             },
         };
 
@@ -260,6 +260,112 @@ public class Given_A_Descriptor_Scalar_Array
 }
 
 [TestFixture]
+public class Given_Descriptor_Uri_Strings_Without_MaxLength
+{
+    private DbTableModel _rootTable = default!;
+    private DbTableModel _descriptorTable = default!;
+    private DbColumnModel _referenceDescriptorColumn = default!;
+    private DbColumnModel _arrayDescriptorColumn = default!;
+    private JsonPathExpression _referenceDescriptorPath = default!;
+    private JsonPathExpression _arrayDescriptorPath = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["educationOrganizationReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolTypeDescriptor"] = new JsonObject { ["type"] = "string" },
+                        ["educationOrganizationId"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 10,
+                        },
+                    },
+                    ["required"] = new JsonArray("schoolTypeDescriptor", "educationOrganizationId"),
+                },
+                ["gradeLevelDescriptors"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject { ["type"] = "string" },
+                },
+            },
+        };
+
+        _referenceDescriptorPath = JsonPathExpressionCompiler.Compile(
+            "$.educationOrganizationReference.schoolTypeDescriptor"
+        );
+        _arrayDescriptorPath = JsonPathExpressionCompiler.Compile("$.gradeLevelDescriptors[*]");
+
+        var referenceDescriptorInfo = new DescriptorPathInfo(
+            _referenceDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+        );
+        var arrayDescriptorInfo = new DescriptorPathInfo(
+            _arrayDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [_referenceDescriptorPath.Canonical] = referenceDescriptorInfo,
+                    [_arrayDescriptorPath.Canonical] = arrayDescriptorInfo,
+                };
+            }
+        );
+
+        _rootTable = context.ResourceModel!.Root;
+        _descriptorTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "SchoolGradeLevelDescriptor"
+        );
+
+        _referenceDescriptorColumn = _rootTable.Columns.Single(column =>
+            column.SourceJsonPath?.Canonical == _referenceDescriptorPath.Canonical
+        );
+        _arrayDescriptorColumn = _descriptorTable.Columns.Single(column =>
+            column.SourceJsonPath?.Canonical == _arrayDescriptorPath.Canonical
+        );
+    }
+
+    [Test]
+    public void It_should_create_descriptor_fk_columns_instead_of_string_scalars()
+    {
+        _referenceDescriptorColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
+        _referenceDescriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+
+        _arrayDescriptorColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
+        _arrayDescriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+
+        var hasReferenceScalar = _rootTable.Columns.Any(column =>
+            column.Kind == ColumnKind.Scalar
+            && column.SourceJsonPath is JsonPathExpression sourcePath
+            && sourcePath.Canonical == _referenceDescriptorPath.Canonical
+        );
+        hasReferenceScalar.Should().BeFalse();
+
+        var hasArrayScalar = _descriptorTable.Columns.Any(column =>
+            column.Kind == ColumnKind.Scalar
+            && column.SourceJsonPath is JsonPathExpression sourcePath
+            && sourcePath.Canonical == _arrayDescriptorPath.Canonical
+        );
+        hasArrayScalar.Should().BeFalse();
+    }
+}
+
+[TestFixture]
 public class Given_A_Property_With_XNullable
 {
     private DbColumnModel _column = default!;
@@ -292,7 +398,7 @@ public class Given_A_Property_With_XNullable
 [TestFixture]
 public class Given_A_String_Property_Without_MaxLength
 {
-    private DbColumnModel _column = default!;
+    private Exception? _exception;
 
     [SetUp]
     public void Setup()
@@ -304,13 +410,134 @@ public class Given_A_String_Property_Without_MaxLength
             ["required"] = new JsonArray("value"),
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
-
-        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Value");
+        try
+        {
+            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
     }
 
     [Test]
-    public void It_should_allow_strings_without_max_length()
+    public void It_should_throw_when_max_length_is_missing()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception?.Message.Should().Contain("$.value");
+        _exception?.Message.Should().Contain("Set maxLength");
+    }
+}
+
+[TestFixture]
+public class Given_String_Properties_With_Format_And_No_MaxLength
+{
+    private DbColumnModel _dateColumn = default!;
+    private DbColumnModel _dateTimeColumn = default!;
+    private DbColumnModel _timeColumn = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["birthDate"] = new JsonObject { ["type"] = "string", ["format"] = "date" },
+                ["lastModifiedDateTime"] = new JsonObject { ["type"] = "string", ["format"] = "date-time" },
+                ["startTime"] = new JsonObject { ["type"] = "string", ["format"] = "time" },
+            },
+            ["required"] = new JsonArray("birthDate", "lastModifiedDateTime", "startTime"),
+        };
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+
+        var rootTable = context.ResourceModel!.Root;
+        _dateColumn = rootTable.Columns.Single(column => column.ColumnName.Value == "BirthDate");
+        _dateTimeColumn = rootTable.Columns.Single(column =>
+            column.ColumnName.Value == "LastModifiedDateTime"
+        );
+        _timeColumn = rootTable.Columns.Single(column => column.ColumnName.Value == "StartTime");
+    }
+
+    [Test]
+    public void It_should_map_formatted_strings_to_temporal_types()
+    {
+        _dateColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Date));
+        _dateTimeColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.DateTime));
+        _timeColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Time));
+    }
+}
+
+[TestFixture]
+public class Given_A_Duration_String_Without_MaxLength
+{
+    private DbColumnModel _column = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject { ["duration"] = new JsonObject { ["type"] = "string" } },
+            ["required"] = new JsonArray("duration"),
+        };
+
+        var durationPath = JsonPathExpressionCompiler.Compile("$.duration");
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.StringMaxLengthOmissionPaths = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    durationPath.Canonical,
+                };
+            }
+        );
+
+        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Duration");
+    }
+
+    [Test]
+    public void It_should_allow_missing_max_length_for_duration_strings()
+    {
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String));
+        _column.IsNullable.Should().BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_An_Enumeration_String_Without_MaxLength
+{
+    private DbColumnModel _column = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["status"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["enum"] = new JsonArray("Active", "Inactive"),
+                },
+            },
+            ["required"] = new JsonArray("status"),
+        };
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+
+        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Status");
+    }
+
+    [Test]
+    public void It_should_allow_missing_max_length_for_enumerations()
     {
         _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String));
         _column.IsNullable.Should().BeFalse();
