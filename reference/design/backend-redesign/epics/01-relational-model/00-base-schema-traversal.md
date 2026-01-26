@@ -15,7 +15,8 @@ Implement the base JSON-schema traversal that derives relational tables and scal
 - `additionalProperties` is treated as “prune/ignore” (closed-world persistence).
 - Traversal is deterministic and does not depend on dictionary iteration order.
 
-Note: `$ref` cannot occur in `jsonSchemaForInsert` (it is fully expanded). If `$ref` appears, treat it as invalid schema input.
+Note: `jsonSchemaForInsert` is fully dereferenced and expanded. `$ref`, schema unions (`oneOf`/`anyOf`/`allOf`),
+and `enum` cannot occur. If any appear, treat them as invalid schema input.
 
 This story produces the base per-resource table/column shape used to populate `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).
 

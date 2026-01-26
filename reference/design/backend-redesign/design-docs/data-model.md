@@ -553,7 +553,7 @@ Typical structure:
 
 #### Child tables for collections
 
-For each JSON array of objects/scalars under the resource:
+For each JSON array of objects under the resource:
 
 `{schema}.{R}_{CollectionPath}` (name derived deterministically; see Naming Rules)
 - Parent key columns (for root-level arrays this is typically `<RootResource>_DocumentId BIGINT` FK → `{schema}.{R}(DocumentId)` ON DELETE CASCADE)

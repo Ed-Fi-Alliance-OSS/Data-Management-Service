@@ -51,7 +51,9 @@ The “full flattening metadata” design (see `reference/design/flattening-meta
 
 For Ed-Fi resource documents, DMS can derive a complete relational mapping *deterministically* because:
 
-1. **Shape and types** are in `jsonSchemaForInsert` (properties, arrays, item schemas, required-ness, string lengths, formats, numeric precision rules).
+1. **Shape and types** are in `jsonSchemaForInsert` (properties, arrays, item schemas, required-ness, string lengths,
+   formats, numeric precision rules). `jsonSchemaForInsert` is fully dereferenced/expanded (no `$ref`,
+   `oneOf`/`anyOf`/`allOf`, or `enum`).
 2. **References vs scalars** are in `documentPathsMapping`:
    - document reference identities and their JSON paths (`referenceJsonPaths`)
    - descriptor paths (`path`)
@@ -188,7 +190,8 @@ Important note on `additionalProperties`:
 
 Note: C# types referenced below are defined in [7.3 Relational resource model](#73-relational-resource-model)
 
-1. Validate `jsonSchemaForInsert` is fully expanded (no `$ref`). If `$ref` appears, treat it as invalid schema input.
+1. Validate `jsonSchemaForInsert` is fully dereferenced and expanded (no `$ref`, `oneOf`/`anyOf`/`allOf`, or `enum`).
+   If any appear, treat them as invalid schema input.
 2. Walk the schema tree starting at `$`:
    - Each **array** node creates a **child table** with:
      - parent key columns
