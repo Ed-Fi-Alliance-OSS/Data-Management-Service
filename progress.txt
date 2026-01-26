@@ -22,3 +22,7 @@ DMS-929 00-base-schema-traversal: completed task ValidateJsonSchema (pipeline st
 Decisions: validate unsupported keywords deterministically with sorted property walk; treat root as object unless explicit non-object type; skip additionalProperties subtree entirely.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ValidateJsonSchemaStepTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task DiscoverExtensionSites (pipeline step).
+Decisions: ordered schema traversal; treat `_ext` as boundary; capture owning scope + extension path + ordered project keys; skip recursion into `_ext`.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DiscoverExtensionSitesStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DiscoverExtensionSitesStepTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
