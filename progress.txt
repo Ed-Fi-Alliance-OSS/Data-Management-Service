@@ -38,3 +38,7 @@ DMS-929 00-base-schema-traversal: completed task CanonicalizeOrdering (pipeline 
 Decisions: order tables by array depth + scope + name; order columns by key/descriptor/scalar groups with ordinal names; order constraints by kind then name; sort document reference + descriptor edge lists deterministically.
 Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/CanonicalizeOrderingStep.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/CanonicalizeOrderingStepTests.cs, tasks.json, progress.txt.
 Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.
+DMS-929 00-base-schema-traversal: completed task Artifacts (manifest emitter).
+Decisions: emit stable JSON via Utf8JsonWriter with deterministic ordering; include resource/schema/tables/columns/constraints/edges/_ext sites; add determinism + inventory tests.
+Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelManifestEmitter.cs, src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelManifestEmitterTests.cs, tasks.json, progress.txt.
+Notes: build warning about missing Features/SyntheticTests/DocumentValidation.feature.cs persists.

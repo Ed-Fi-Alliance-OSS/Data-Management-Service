@@ -104,7 +104,7 @@
       "Unit test: serialize the same derived model twice and assert byte-for-byte identical output.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",
