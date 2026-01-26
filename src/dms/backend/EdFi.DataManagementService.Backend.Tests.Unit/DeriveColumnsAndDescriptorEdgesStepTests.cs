@@ -401,6 +401,77 @@ public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
     }
 }
 
+[TestFixture]
+public class Given_A_JsonSchema_With_AdditionalProperties_Schema
+{
+    private DbTableModel _rootTable = default!;
+    private string[] _tableNames = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                ["periods"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["code"] = new JsonObject { ["type"] = "string", ["maxLength"] = 5 },
+                        },
+                    },
+                },
+            },
+            ["additionalProperties"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["extra"] = new JsonObject { ["type"] = "string", ["maxLength"] = 10 },
+                    ["extras"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["value"] = new JsonObject { ["type"] = "string", ["maxLength"] = 5 },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+
+        _rootTable = context.ResourceModel!.Root;
+        _tableNames = context
+            .ResourceModel.TablesInReadDependencyOrder.Select(table => table.Table.Name)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_should_ignore_additional_properties_when_deriving_columns()
+    {
+        _rootTable.Columns.Select(column => column.ColumnName.Value).Should().Equal("DocumentId", "Name");
+    }
+
+    [Test]
+    public void It_should_ignore_additional_properties_when_deriving_tables()
+    {
+        _tableNames.Should().Equal("School", "SchoolPeriod");
+    }
+}
+
 internal static class DeriveColumnsAndDescriptorEdgesStepTestContext
 {
     public static RelationalModelBuilderContext BuildContext(

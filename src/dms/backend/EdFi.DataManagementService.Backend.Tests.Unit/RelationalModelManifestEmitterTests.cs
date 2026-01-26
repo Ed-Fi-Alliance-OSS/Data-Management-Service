@@ -167,6 +167,64 @@ public class Given_A_Relational_Model_Manifest_Emitter
     }
 }
 
+[TestFixture]
+public class Given_Schemas_With_And_Without_AdditionalProperties
+{
+    private string _manifestWithAdditionalProperties = default!;
+    private string _manifestWithoutAdditionalProperties = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schemaWithoutAdditionalProperties = CreateSchema(includeAdditionalProperties: false);
+        var schemaWithAdditionalProperties = CreateSchema(includeAdditionalProperties: true);
+
+        _manifestWithoutAdditionalProperties = RelationalModelManifestEmitter.Emit(
+            RelationalModelManifestEmitterTestContext.BuildResult(schemaWithoutAdditionalProperties)
+        );
+        _manifestWithAdditionalProperties = RelationalModelManifestEmitter.Emit(
+            RelationalModelManifestEmitterTestContext.BuildResult(schemaWithAdditionalProperties)
+        );
+    }
+
+    [Test]
+    public void It_should_emit_identical_manifests()
+    {
+        _manifestWithAdditionalProperties.Should().Be(_manifestWithoutAdditionalProperties);
+    }
+
+    private static JsonObject CreateSchema(bool includeAdditionalProperties)
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["name"] = new JsonObject { ["type"] = "string", ["maxLength"] = 100 },
+                ["periods"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["code"] = new JsonObject { ["type"] = "string", ["maxLength"] = 5 },
+                        },
+                    },
+                },
+            },
+        };
+
+        if (includeAdditionalProperties)
+        {
+            schema["additionalProperties"] = JsonValue.Create(true);
+        }
+
+        return schema;
+    }
+}
+
 internal static class RelationalModelManifestEmitterTestContext
 {
     public static RelationalModelBuildResult BuildResult(
