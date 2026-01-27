@@ -14,8 +14,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AbsenceEventCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -95,7 +95,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AbsenceEventCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -127,8 +127,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AcademicHonorCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -208,7 +208,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AcademicHonorCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -240,8 +240,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AcademicSubjectDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -321,7 +321,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AcademicSubjectDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -454,8 +454,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AccommodationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -535,7 +535,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AccommodationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -567,8 +567,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AccountTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -648,7 +648,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AccountTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -802,8 +802,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AchievementCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -883,7 +883,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AchievementCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -915,8 +915,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AdditionalCreditTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -996,7 +996,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AdditionalCreditTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -1028,8 +1028,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AddressTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -1109,7 +1109,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AddressTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -1141,8 +1141,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AdministrationEnvironmentDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -1222,7 +1222,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AdministrationEnvironmentDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -1254,8 +1254,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AdministrativeFundingControlDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -1335,7 +1335,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AdministrativeFundingControlDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -1367,8 +1367,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AncestryEthnicOriginDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -1448,7 +1448,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AncestryEthnicOriginDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -2101,8 +2101,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssessmentCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -2182,7 +2182,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -2214,8 +2214,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssessmentIdentificationSystemDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -2295,7 +2295,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentIdentificationSystemDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -2327,8 +2327,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssessmentItemCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -2408,7 +2408,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentItemCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -2440,8 +2440,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssessmentItemResultDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -2521,7 +2521,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentItemResultDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -2872,8 +2872,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssessmentPeriodDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -2953,7 +2953,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentPeriodDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -2985,8 +2985,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssessmentReportingMethodDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -3066,7 +3066,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssessmentReportingMethodDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -4853,8 +4853,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AssignmentLateStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -4934,7 +4934,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AssignmentLateStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -4966,8 +4966,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AttemptStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -5047,7 +5047,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AttemptStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -5079,8 +5079,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "AttendanceEventCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -5160,7 +5160,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_AttendanceEventCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -5368,8 +5368,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "BarrierToInternetAccessInResidenceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -5449,7 +5449,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_BarrierToInternetAccessInResidenceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -5481,8 +5481,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "BehaviorDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -5562,7 +5562,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_BehaviorDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -5931,8 +5931,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "BusRouteDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -6012,7 +6012,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_BusRouteDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -6228,8 +6228,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CalendarEventDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -6309,7 +6309,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CalendarEventDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -6341,8 +6341,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CalendarTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -6422,7 +6422,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CalendarTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -6667,8 +6667,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CareerPathwayDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -6748,7 +6748,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CareerPathwayDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7165,8 +7165,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CharterApprovalAgencyTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -7246,7 +7246,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CharterApprovalAgencyTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7278,8 +7278,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CharterStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -7359,7 +7359,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CharterStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7391,8 +7391,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CitizenshipStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -7472,7 +7472,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CitizenshipStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7658,8 +7658,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ClassroomPositionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -7739,7 +7739,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ClassroomPositionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7771,8 +7771,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CohortScopeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -7852,7 +7852,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CohortScopeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7884,8 +7884,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CohortTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -7965,7 +7965,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CohortTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -7997,8 +7997,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CohortYearTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -8078,7 +8078,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CohortYearTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -11311,8 +11311,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CompetencyLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -11392,7 +11392,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CompetencyLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -11567,8 +11567,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ContactTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -11648,7 +11648,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ContactTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -13330,8 +13330,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ContentClassDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -13411,7 +13411,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ContentClassDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -13443,8 +13443,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ContinuationOfServicesReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -13524,7 +13524,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ContinuationOfServicesReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -13556,8 +13556,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CostRateDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -13637,7 +13637,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CostRateDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -13669,8 +13669,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CountryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -13750,7 +13750,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CountryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -13782,8 +13782,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CourseAttemptResultDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -13863,7 +13863,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseAttemptResultDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -13895,8 +13895,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CourseDefinedByDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -13976,7 +13976,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseDefinedByDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -14008,8 +14008,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CourseGPAApplicabilityDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -14089,7 +14089,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseGPAApplicabilityDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -14121,8 +14121,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CourseIdentificationSystemDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -14202,7 +14202,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseIdentificationSystemDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -14234,8 +14234,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CourseLevelCharacteristicDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -14315,7 +14315,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseLevelCharacteristicDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -14761,8 +14761,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CourseRepeatCodeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -14842,7 +14842,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseRepeatCodeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -17046,8 +17046,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CredentialFieldDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -17127,7 +17127,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CredentialFieldDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -17159,8 +17159,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CredentialTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -17240,7 +17240,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CredentialTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -17810,8 +17810,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CreditCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -17891,7 +17891,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CreditCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -17923,8 +17923,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CreditTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -18004,7 +18004,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CreditTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -18168,8 +18168,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CrisisTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -18249,7 +18249,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CrisisTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -18281,8 +18281,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CTEProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -18362,7 +18362,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CTEProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -18394,8 +18394,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "CurriculumUsedDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -18475,7 +18475,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CurriculumUsedDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -18507,8 +18507,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DeliveryMethodDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -18588,7 +18588,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DeliveryMethodDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -18807,8 +18807,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DiagnosisDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -18888,7 +18888,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DiagnosisDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -18920,8 +18920,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DiplomaLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -19001,7 +19001,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DiplomaLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -19033,8 +19033,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DiplomaTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -19114,7 +19114,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DiplomaTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -19146,8 +19146,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisabilityDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -19227,7 +19227,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisabilityDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -19259,8 +19259,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisabilityDesignationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -19340,7 +19340,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisabilityDesignationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -19372,8 +19372,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisabilityDeterminationSourceTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -19453,7 +19453,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisabilityDeterminationSourceTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -19485,8 +19485,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisciplineActionLengthDifferenceReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -19566,7 +19566,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisciplineActionLengthDifferenceReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -20053,8 +20053,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisciplineDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -20134,7 +20134,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisciplineDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -20166,8 +20166,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisciplineIncidentParticipationCodeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -20247,7 +20247,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisciplineIncidentParticipationCodeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -20801,8 +20801,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DisplacedStudentStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -20882,7 +20882,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DisplacedStudentStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -20914,8 +20914,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DualCreditInstitutionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -20995,7 +20995,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DualCreditInstitutionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -21027,8 +21027,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "DualCreditTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -21108,7 +21108,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_DualCreditTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -21972,8 +21972,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EducationOrganizationAssociationTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -22053,7 +22053,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationAssociationTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -22085,8 +22085,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EducationOrganizationCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -22166,7 +22166,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -22198,8 +22198,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EducationOrganizationIdentificationSystemDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -22279,7 +22279,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationOrganizationIdentificationSystemDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -23882,8 +23882,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EducationPlanDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -23963,7 +23963,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationPlanDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25272,8 +25272,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EducationalEnvironmentDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -25353,7 +25353,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EducationalEnvironmentDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25385,8 +25385,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ElectronicMailTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -25466,7 +25466,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ElectronicMailTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25498,8 +25498,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EligibilityDelayReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -25579,7 +25579,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EligibilityDelayReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25611,8 +25611,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EligibilityEvaluationTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -25692,7 +25692,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EligibilityEvaluationTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25724,8 +25724,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EmploymentStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -25805,7 +25805,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EmploymentStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25837,8 +25837,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EnrollmentTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -25918,7 +25918,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EnrollmentTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -25950,8 +25950,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EntryGradeLevelReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -26031,7 +26031,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EntryGradeLevelReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -26063,8 +26063,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EntryTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -26144,7 +26144,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EntryTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -26176,8 +26176,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EvaluationDelayReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -26257,7 +26257,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EvaluationDelayReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -26564,8 +26564,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "EventCircumstanceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -26645,7 +26645,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_EventCircumstanceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -26677,8 +26677,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ExitWithdrawTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -26758,7 +26758,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ExitWithdrawTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -26891,8 +26891,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "FinancialCollectionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -26972,7 +26972,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_FinancialCollectionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -27356,8 +27356,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GradeLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -27437,7 +27437,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GradeLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -27469,8 +27469,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GradePointAverageTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -27550,7 +27550,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GradePointAverageTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -27582,8 +27582,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GradeTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -27663,7 +27663,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GradeTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -28054,8 +28054,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GradebookEntryTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -28135,7 +28135,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GradebookEntryTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -28623,8 +28623,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GradingPeriodDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -28704,7 +28704,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GradingPeriodDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -28894,8 +28894,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GraduationPlanTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -28975,7 +28975,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GraduationPlanTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30119,8 +30119,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "GunFreeSchoolsActReportingStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30200,7 +30200,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_GunFreeSchoolsActReportingStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30232,8 +30232,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "HomelessPrimaryNighttimeResidenceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30313,7 +30313,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_HomelessPrimaryNighttimeResidenceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30345,8 +30345,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "HomelessProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30426,7 +30426,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_HomelessProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30458,8 +30458,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "IDEAPartDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30539,7 +30539,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_IDEAPartDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30571,8 +30571,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "IdentificationDocumentUseDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30652,7 +30652,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_IdentificationDocumentUseDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30684,8 +30684,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ImmunizationTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30765,7 +30765,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ImmunizationTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30797,8 +30797,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "IncidentLocationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30878,7 +30878,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_IncidentLocationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -30910,8 +30910,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "IndicatorDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -30991,7 +30991,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_IndicatorDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31023,8 +31023,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "IndicatorGroupDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31104,7 +31104,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_IndicatorGroupDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31136,8 +31136,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "IndicatorLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31217,7 +31217,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_IndicatorLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31249,8 +31249,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InstitutionTelephoneNumberTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31330,7 +31330,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InstitutionTelephoneNumberTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31362,8 +31362,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InteractivityStyleDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31443,7 +31443,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InteractivityStyleDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31475,8 +31475,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InternetAccessDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31556,7 +31556,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InternetAccessDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31588,8 +31588,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InternetAccessTypeInResidenceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31669,7 +31669,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InternetAccessTypeInResidenceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31701,8 +31701,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InternetPerformanceInResidenceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31782,7 +31782,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InternetPerformanceInResidenceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31814,8 +31814,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InterventionClassDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -31895,7 +31895,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InterventionClassDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -31927,8 +31927,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "InterventionEffectivenessRatingDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -32008,7 +32008,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_InterventionEffectivenessRatingDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -34674,8 +34674,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LanguageDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -34755,7 +34755,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LanguageDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -34787,8 +34787,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LanguageInstructionProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -34868,7 +34868,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LanguageInstructionProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -34900,8 +34900,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LanguageUseDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -34981,7 +34981,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LanguageUseDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -35013,8 +35013,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LearningStandardCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -35094,7 +35094,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LearningStandardCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -35269,8 +35269,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LearningStandardEquivalenceStrengthDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -35350,7 +35350,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LearningStandardEquivalenceStrengthDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -35382,8 +35382,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LearningStandardScopeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -35463,7 +35463,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LearningStandardScopeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -36138,8 +36138,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LevelOfEducationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -36219,7 +36219,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LevelOfEducationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -36251,8 +36251,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LicenseStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -36332,7 +36332,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LicenseStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -36364,8 +36364,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LicenseTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -36445,7 +36445,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LicenseTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -36477,8 +36477,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LimitedEnglishProficiencyDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -36558,7 +36558,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LimitedEnglishProficiencyDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -38908,8 +38908,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LocalEducationAgencyCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -38989,7 +38989,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LocalEducationAgencyCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -39315,8 +39315,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "LocaleDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -39396,7 +39396,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LocaleDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -39520,8 +39520,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "MagnetSpecialProgramEmphasisSchoolDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -39601,7 +39601,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_MagnetSpecialProgramEmphasisSchoolDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -39633,8 +39633,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "MediumOfInstructionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -39714,7 +39714,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_MediumOfInstructionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -39746,8 +39746,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "MethodCreditEarnedDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -39827,7 +39827,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_MethodCreditEarnedDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -39859,8 +39859,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "MigrantEducationProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -39940,7 +39940,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_MigrantEducationProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -39972,8 +39972,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ModelEntityDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -40053,7 +40053,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ModelEntityDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -40085,8 +40085,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "MonitoredDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -40166,7 +40166,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_MonitoredDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -40198,8 +40198,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "NeglectedOrDelinquentProgramDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -40279,7 +40279,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_NeglectedOrDelinquentProgramDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -40311,8 +40311,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "NeglectedOrDelinquentProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -40392,7 +40392,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_NeglectedOrDelinquentProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -40424,8 +40424,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "NetworkPurposeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -40505,7 +40505,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_NetworkPurposeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -40537,8 +40537,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "NonMedicalImmunizationExemptionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -40618,7 +40618,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_NonMedicalImmunizationExemptionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -41951,8 +41951,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "OperationalStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -42032,7 +42032,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_OperationalStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -43555,8 +43555,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "OtherNameTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -43636,7 +43636,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_OtherNameTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -43668,8 +43668,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ParticipationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -43749,7 +43749,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ParticipationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -43781,8 +43781,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ParticipationStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -43862,7 +43862,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ParticipationStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -43998,8 +43998,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PerformanceBaseConversionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44079,7 +44079,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PerformanceBaseConversionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -44111,8 +44111,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PerformanceLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44192,7 +44192,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PerformanceLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -44224,8 +44224,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PersonalInformationVerificationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44305,7 +44305,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PersonalInformationVerificationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -44337,8 +44337,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PlatformTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44418,7 +44418,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PlatformTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -44450,8 +44450,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PopulationServedDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44531,7 +44531,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PopulationServedDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -44563,8 +44563,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PostSecondaryEventCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44644,7 +44644,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PostSecondaryEventCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -44798,8 +44798,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PostSecondaryInstitutionLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -44879,7 +44879,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PostSecondaryInstitutionLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -46346,8 +46346,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PostingResultDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -46427,7 +46427,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PostingResultDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -46459,8 +46459,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PrimaryLearningDeviceAccessDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -46540,7 +46540,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PrimaryLearningDeviceAccessDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -46572,8 +46572,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PrimaryLearningDeviceAwayFromSchoolDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -46653,7 +46653,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PrimaryLearningDeviceAwayFromSchoolDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -46685,8 +46685,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PrimaryLearningDeviceProviderDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -46766,7 +46766,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PrimaryLearningDeviceProviderDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -46798,8 +46798,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProficiencyDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -46879,7 +46879,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProficiencyDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -46911,8 +46911,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgramAssignmentDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -46992,7 +46992,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramAssignmentDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -47024,8 +47024,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgramCharacteristicDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -47105,7 +47105,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramCharacteristicDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -48192,8 +48192,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgramEvaluationPeriodDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -48273,7 +48273,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationPeriodDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -48305,8 +48305,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgramEvaluationTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -48386,7 +48386,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -48762,8 +48762,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgramSponsorDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -48843,7 +48843,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramSponsorDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -48875,8 +48875,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgramTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -48956,7 +48956,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -49356,8 +49356,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgressDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -49437,7 +49437,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgressDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -49469,8 +49469,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProgressLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -49550,7 +49550,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgressLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -49758,8 +49758,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProviderCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -49839,7 +49839,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProviderCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -49871,8 +49871,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProviderProfitabilityDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -49952,7 +49952,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProviderProfitabilityDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -49984,8 +49984,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ProviderStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50065,7 +50065,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProviderStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50097,8 +50097,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "PublicationStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50178,7 +50178,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_PublicationStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50210,8 +50210,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "QuestionFormDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50291,7 +50291,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_QuestionFormDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50323,8 +50323,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RaceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50404,7 +50404,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RaceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50436,8 +50436,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RatingLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50517,7 +50517,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RatingLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50549,8 +50549,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ReasonExitedDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50630,7 +50630,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ReasonExitedDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50662,8 +50662,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ReasonNotTestedDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50743,7 +50743,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ReasonNotTestedDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50775,8 +50775,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RecognitionTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50856,7 +50856,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RecognitionTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -50888,8 +50888,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RelationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -50969,7 +50969,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RelationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -51001,8 +51001,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RepeatIdentifierDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -51082,7 +51082,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RepeatIdentifierDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -51809,8 +51809,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ReporterDescriptionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -51890,7 +51890,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ReporterDescriptionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -51922,8 +51922,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ReportingTagDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -52003,7 +52003,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ReportingTagDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -52035,8 +52035,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ResidencyStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -52116,7 +52116,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ResidencyStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -52148,8 +52148,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ResponseIndicatorDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -52229,7 +52229,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ResponseIndicatorDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -52261,8 +52261,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ResponsibilityDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -52342,7 +52342,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ResponsibilityDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -52374,8 +52374,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RestraintEventReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -52455,7 +52455,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RestraintEventReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -52839,8 +52839,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ResultDatatypeTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -52920,7 +52920,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ResultDatatypeTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -52952,8 +52952,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "RetestIndicatorDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -53033,7 +53033,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_RetestIndicatorDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -53065,8 +53065,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SchoolCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -53146,7 +53146,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -53178,8 +53178,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SchoolChoiceBasisDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -53259,7 +53259,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolChoiceBasisDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -53291,8 +53291,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SchoolChoiceImplementStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -53372,7 +53372,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolChoiceImplementStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -53404,8 +53404,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SchoolFoodServiceProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -53485,7 +53485,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolFoodServiceProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -53517,8 +53517,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SchoolTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -53598,7 +53598,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -55447,8 +55447,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "Section504DisabilityDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -55528,7 +55528,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_Section504DisabilityDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -55719,8 +55719,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SectionCharacteristicDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -55800,7 +55800,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SectionCharacteristicDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -55832,8 +55832,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SectionTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -55913,7 +55913,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SectionTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -56810,8 +56810,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SeparationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -56891,7 +56891,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SeparationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -56923,8 +56923,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SeparationReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -57004,7 +57004,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SeparationReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -57036,8 +57036,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "ServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -57117,7 +57117,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_ServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -57489,8 +57489,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SexDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -57570,7 +57570,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SexDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -57778,8 +57778,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SourceSystemDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -57859,7 +57859,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SourceSystemDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -57891,8 +57891,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SpecialEducationExitReasonDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -57972,7 +57972,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SpecialEducationExitReasonDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -58004,8 +58004,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SpecialEducationProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -58085,7 +58085,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SpecialEducationProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -58117,8 +58117,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SpecialEducationSettingDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -58198,7 +58198,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SpecialEducationSettingDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -58364,8 +58364,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "StaffClassificationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -58445,7 +58445,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffClassificationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -59901,8 +59901,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "StaffIdentificationSystemDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -59982,7 +59982,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffIdentificationSystemDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -60014,8 +60014,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "StaffLeaveEventCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -60095,7 +60095,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StaffLeaveEventCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -63705,8 +63705,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "StateAbbreviationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -63786,7 +63786,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StateAbbreviationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -69449,8 +69449,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "StudentCharacteristicDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -69530,7 +69530,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentCharacteristicDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -75173,8 +75173,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "StudentIdentificationSystemDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -75254,7 +75254,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StudentIdentificationSystemDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -85091,8 +85091,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SubmissionStatusDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -85172,7 +85172,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SubmissionStatusDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -85204,8 +85204,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SupporterMilitaryConnectionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -85285,7 +85285,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SupporterMilitaryConnectionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -85317,8 +85317,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SurveyCategoryDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -85398,7 +85398,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveyCategoryDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -85524,8 +85524,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "SurveyLevelDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -85605,7 +85605,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SurveyLevelDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -87586,8 +87586,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TeachingCredentialBasisDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -87667,7 +87667,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TeachingCredentialBasisDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -87699,8 +87699,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TeachingCredentialDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -87780,7 +87780,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TeachingCredentialDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -87812,8 +87812,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TechnicalSkillsAssessmentDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -87893,7 +87893,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TechnicalSkillsAssessmentDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -87925,8 +87925,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TelephoneNumberTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88006,7 +88006,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TelephoneNumberTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88038,8 +88038,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TermDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88119,7 +88119,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TermDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88151,8 +88151,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TitleIPartAParticipantDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88232,7 +88232,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TitleIPartAParticipantDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88264,8 +88264,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TitleIPartAProgramServiceDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88345,7 +88345,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TitleIPartAProgramServiceDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88377,8 +88377,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TitleIPartASchoolDesignationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88458,7 +88458,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TitleIPartASchoolDesignationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88490,8 +88490,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TransportationPublicExpenseEligibilityTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88571,7 +88571,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TransportationPublicExpenseEligibilityTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88603,8 +88603,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TransportationTypeDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88684,7 +88684,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TransportationTypeDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88716,8 +88716,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TravelDayofWeekDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88797,7 +88797,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TravelDayofWeekDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88829,8 +88829,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TravelDirectionDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -88910,7 +88910,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TravelDirectionDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -88942,8 +88942,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "TribalAffiliationDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -89023,7 +89023,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_TribalAffiliationDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -89055,8 +89055,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "VisaDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -89136,7 +89136,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_VisaDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],
@@ -89168,8 +89168,8 @@
         "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
-            "schema": "edfi",
-            "name": "WeaponDescriptor",
+            "schema": "dms",
+            "name": "Descriptor",
             "scope": "$",
             "key_columns": [
               {
@@ -89249,7 +89249,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_WeaponDescriptor_DocumentId",
+                "name": "FK_Descriptor_DocumentId",
                 "columns": [
                   "DocumentId"
                 ],

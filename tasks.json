@@ -39,6 +39,6 @@
       "Run the same `dotnet test` command again without `UPDATE_GOLDENS` and confirm it passes with an empty git diff for the fixture outputs.",
       "Acceptance: the generated manifest no longer contains `create`/table entries like `edfi.<SomeDescriptorName>` for descriptor resources, and descriptor resources include `storage_kind: SharedDescriptorTable`."
     ],
-    "completed": false
+    "completed": true
   }
 ]

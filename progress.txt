@@ -10,3 +10,7 @@
 - Decision: when IsDescriptorResource, derive a single root table pointing at dms.Descriptor (schema dms) and skip collection table discovery; keep physical schema as project schema.
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelManifestEmitterTests.cs; tasks.json.
 - Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (warning about missing DocumentValidation.feature); dotnet test relational model unit project excluding authoritative golden test passed; next task should update authoritative goldens.
+- Task: Update authoritative relational-model golden fixture for shared descriptor table storage (story reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md).
+- Decision: refresh ds-5.2 manifest goldens so descriptor resources point to dms.Descriptor and keep storage_kind=SharedDescriptorTable.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/expected/dms-929-relational-model.manifest.json; tasks.json.
+- Notes: UPDATE_GOLDENS=1 dotnet test relational model unit project; reran dotnet test without UPDATE_GOLDENS; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (warning: DocumentValidation.feature missing).
