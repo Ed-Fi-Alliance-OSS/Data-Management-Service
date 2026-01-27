@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1035
+jira_url: https://edfi.atlassian.net/browse/DMS-1035
 ---
 
 # Story: Common-type extensions (`_ext` attachment to commons)
