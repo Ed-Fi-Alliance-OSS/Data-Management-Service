@@ -44,16 +44,20 @@ public class MetadataModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.GetAsync("/metadata/profiles");
+            var response = await client.GetAsync("/metadata/specifications");
             var content = await response.Content.ReadAsStringAsync();
             var jsonArray = JsonNode.Parse(content) as JsonArray;
+
+            var profilesArray = jsonArray!
+                .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
+                .ToArray();
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             jsonArray.Should().NotBeNull();
-            jsonArray!.Count.Should().Be(2);
-            jsonArray[0]!.GetValue<string>().Should().Be("StudentProfile");
-            jsonArray[1]!.GetValue<string>().Should().Be("SchoolProfile");
+            profilesArray.Should().HaveCount(2);
+            profilesArray[0]!["name"]!.GetValue<string>().Should().Be("StudentProfile");
+            profilesArray[1]!["name"]!.GetValue<string>().Should().Be("SchoolProfile");
         }
 
         [Test]
@@ -76,14 +80,18 @@ public class MetadataModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.GetAsync("/metadata/profiles");
+            var response = await client.GetAsync("/metadata/specifications");
             var content = await response.Content.ReadAsStringAsync();
             var jsonArray = JsonNode.Parse(content) as JsonArray;
+
+            var profilesArray = jsonArray!
+                .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
+                .ToArray();
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             jsonArray.Should().NotBeNull();
-            jsonArray!.Count.Should().Be(0);
+            profilesArray!.Should().HaveCount(0);
         }
     }
 
@@ -128,7 +136,9 @@ public class MetadataModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.GetAsync("/metadata/profiles/StudentProfile/resources-spec.json");
+            var response = await client.GetAsync(
+                "/metadata/specifications/profiles/StudentProfile/resources-spec.json"
+            );
             var content = await response.Content.ReadAsStringAsync();
             var jsonContent = JsonNode.Parse(content);
 
@@ -193,7 +203,9 @@ public class MetadataModuleTests
             using var client = factory.CreateClient();
 
             // Act
-            var response = await client.GetAsync("/metadata/profiles/studentprofile/resources-spec.json");
+            var response = await client.GetAsync(
+                "/metadata/specifications/profiles/studentprofile/resources-spec.json"
+            );
 
             // Assert
             response.StatusCode.Should().Be(HttpStatusCode.OK);
