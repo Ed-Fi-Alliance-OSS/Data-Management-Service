@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
 [TestFixture]
 public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
@@ -198,7 +198,7 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         {
             var candidate = Path.Combine(
                 directory.FullName,
-                "EdFi.DataManagementService.Backend.Tests.Unit.csproj"
+                "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
             );
             if (File.Exists(candidate))
             {
@@ -209,7 +209,7 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         }
 
         throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Tests.Unit.csproj in parent directories."
+            "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
         );
     }
 
