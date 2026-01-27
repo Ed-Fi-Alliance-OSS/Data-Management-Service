@@ -58,7 +58,7 @@
       "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_Schemas_With_Different_Property_Order|Given_Descriptor_Path_Mappings_With_Different_Order\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "RelationalModel.Tests.Unit - Move Test File",
