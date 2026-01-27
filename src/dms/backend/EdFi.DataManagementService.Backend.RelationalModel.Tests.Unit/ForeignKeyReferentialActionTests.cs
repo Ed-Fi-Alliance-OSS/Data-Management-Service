@@ -73,6 +73,7 @@ public class Given_A_Reference_Identity_Foreign_Key
         var resourceModel = new RelationalResourceModel(
             new QualifiedResourceName("Ed-Fi", "Student"),
             schema,
+            ResourceStorageKind.RelationalTables,
             table,
             [table],
             [table],

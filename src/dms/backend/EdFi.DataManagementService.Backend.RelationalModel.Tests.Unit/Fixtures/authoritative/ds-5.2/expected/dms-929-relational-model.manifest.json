@@ -11,6 +11,7 @@
           "resource_name": "AbsenceEventCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -123,6 +124,7 @@
           "resource_name": "AcademicHonorCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -235,6 +237,7 @@
           "resource_name": "AcademicSubjectDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -347,6 +350,7 @@
           "resource_name": "AcademicWeek"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -447,6 +451,7 @@
           "resource_name": "AccommodationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -559,6 +564,7 @@
           "resource_name": "AccountTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -671,6 +677,7 @@
           "resource_name": "AccountabilityRating"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -792,6 +799,7 @@
           "resource_name": "AchievementCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -904,6 +912,7 @@
           "resource_name": "AdditionalCreditTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -1016,6 +1025,7 @@
           "resource_name": "AddressTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -1128,6 +1138,7 @@
           "resource_name": "AdministrationEnvironmentDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -1240,6 +1251,7 @@
           "resource_name": "AdministrativeFundingControlDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -1352,6 +1364,7 @@
           "resource_name": "AncestryEthnicOriginDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -1464,6 +1477,7 @@
           "resource_name": "AssessmentAdministrationParticipation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -1668,6 +1682,7 @@
           "resource_name": "AssessmentAdministration"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -1915,6 +1930,7 @@
           "resource_name": "AssessmentBatteryPart"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -2082,6 +2098,7 @@
           "resource_name": "AssessmentCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -2194,6 +2211,7 @@
           "resource_name": "AssessmentIdentificationSystemDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -2306,6 +2324,7 @@
           "resource_name": "AssessmentItemCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -2418,6 +2437,7 @@
           "resource_name": "AssessmentItemResultDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -2530,6 +2550,7 @@
           "resource_name": "AssessmentItem"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -2848,6 +2869,7 @@
           "resource_name": "AssessmentPeriodDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -2960,6 +2982,7 @@
           "resource_name": "AssessmentReportingMethodDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -3072,6 +3095,7 @@
           "resource_name": "AssessmentScoreRangeLearningStandard"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -3308,6 +3332,7 @@
           "resource_name": "Assessment"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -4825,6 +4850,7 @@
           "resource_name": "AssignmentLateStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -4937,6 +4963,7 @@
           "resource_name": "AttemptStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -5049,6 +5076,7 @@
           "resource_name": "AttendanceEventCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -5161,6 +5189,7 @@
           "resource_name": "BalanceSheetDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -5336,6 +5365,7 @@
           "resource_name": "BarrierToInternetAccessInResidenceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -5448,6 +5478,7 @@
           "resource_name": "BehaviorDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -5560,6 +5591,7 @@
           "resource_name": "BellSchedule"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -5896,6 +5928,7 @@
           "resource_name": "BusRouteDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -6008,6 +6041,7 @@
           "resource_name": "CalendarDate"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -6191,6 +6225,7 @@
           "resource_name": "CalendarEventDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -6303,6 +6338,7 @@
           "resource_name": "CalendarTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -6415,6 +6451,7 @@
           "resource_name": "Calendar"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -6627,6 +6664,7 @@
           "resource_name": "CareerPathwayDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -6739,6 +6777,7 @@
           "resource_name": "ChartOfAccount"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -7123,6 +7162,7 @@
           "resource_name": "CharterApprovalAgencyTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -7235,6 +7275,7 @@
           "resource_name": "CharterStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -7347,6 +7388,7 @@
           "resource_name": "CitizenshipStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -7459,6 +7501,7 @@
           "resource_name": "ClassPeriod"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -7612,6 +7655,7 @@
           "resource_name": "ClassroomPositionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -7724,6 +7768,7 @@
           "resource_name": "CohortScopeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -7836,6 +7881,7 @@
           "resource_name": "CohortTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -7948,6 +7994,7 @@
           "resource_name": "CohortYearTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -8060,6 +8107,7 @@
           "resource_name": "Cohort"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -8368,6 +8416,7 @@
           "resource_name": "CommunityOrganization"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -9635,6 +9684,7 @@
           "resource_name": "CommunityProviderLicense"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -9849,6 +9899,7 @@
           "resource_name": "CommunityProvider"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -11257,6 +11308,7 @@
           "resource_name": "CompetencyLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -11369,6 +11421,7 @@
           "resource_name": "CompetencyObjective"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -11511,6 +11564,7 @@
           "resource_name": "ContactTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -11623,6 +11677,7 @@
           "resource_name": "Contact"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -13272,6 +13327,7 @@
           "resource_name": "ContentClassDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -13384,6 +13440,7 @@
           "resource_name": "ContinuationOfServicesReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -13496,6 +13553,7 @@
           "resource_name": "CostRateDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -13608,6 +13666,7 @@
           "resource_name": "CountryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -13720,6 +13779,7 @@
           "resource_name": "CourseAttemptResultDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -13832,6 +13892,7 @@
           "resource_name": "CourseDefinedByDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -13944,6 +14005,7 @@
           "resource_name": "CourseGPAApplicabilityDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -14056,6 +14118,7 @@
           "resource_name": "CourseIdentificationSystemDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -14168,6 +14231,7 @@
           "resource_name": "CourseLevelCharacteristicDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -14280,6 +14344,7 @@
           "resource_name": "CourseOffering"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -14693,6 +14758,7 @@
           "resource_name": "CourseRepeatCodeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -14805,6 +14871,7 @@
           "resource_name": "CourseTranscript"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -16054,6 +16121,7 @@
           "resource_name": "Course"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -16975,6 +17043,7 @@
           "resource_name": "CredentialFieldDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -17087,6 +17156,7 @@
           "resource_name": "CredentialTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -17199,6 +17269,7 @@
           "resource_name": "Credential"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -17736,6 +17807,7 @@
           "resource_name": "CreditCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -17848,6 +17920,7 @@
           "resource_name": "CreditTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -17960,6 +18033,7 @@
           "resource_name": "CrisisEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -18091,6 +18165,7 @@
           "resource_name": "CrisisTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -18203,6 +18278,7 @@
           "resource_name": "CTEProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -18315,6 +18391,7 @@
           "resource_name": "CurriculumUsedDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -18427,6 +18504,7 @@
           "resource_name": "DeliveryMethodDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -18539,6 +18617,7 @@
           "resource_name": "DescriptorMapping"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -18725,6 +18804,7 @@
           "resource_name": "DiagnosisDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -18837,6 +18917,7 @@
           "resource_name": "DiplomaLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -18949,6 +19030,7 @@
           "resource_name": "DiplomaTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -19061,6 +19143,7 @@
           "resource_name": "DisabilityDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -19173,6 +19256,7 @@
           "resource_name": "DisabilityDesignationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -19285,6 +19369,7 @@
           "resource_name": "DisabilityDeterminationSourceTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -19397,6 +19482,7 @@
           "resource_name": "DisciplineActionLengthDifferenceReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -19509,6 +19595,7 @@
           "resource_name": "DisciplineAction"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -19963,6 +20050,7 @@
           "resource_name": "DisciplineDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -20075,6 +20163,7 @@
           "resource_name": "DisciplineIncidentParticipationCodeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -20187,6 +20276,7 @@
           "resource_name": "DisciplineIncident"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -20708,6 +20798,7 @@
           "resource_name": "DisplacedStudentStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -20820,6 +20911,7 @@
           "resource_name": "DualCreditInstitutionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -20932,6 +21024,7 @@
           "resource_name": "DualCreditTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -21044,6 +21137,7 @@
           "resource_name": "EducationContent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -21875,6 +21969,7 @@
           "resource_name": "EducationOrganizationAssociationTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -21987,6 +22082,7 @@
           "resource_name": "EducationOrganizationCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -22099,6 +22195,7 @@
           "resource_name": "EducationOrganizationIdentificationSystemDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -22211,6 +22308,7 @@
           "resource_name": "EducationOrganizationInterventionPrescriptionAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -22311,6 +22409,7 @@
           "resource_name": "EducationOrganizationNetworkAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -22401,6 +22500,7 @@
           "resource_name": "EducationOrganizationNetwork"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -23706,6 +23806,7 @@
           "resource_name": "EducationOrganizationPeerAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -23778,6 +23879,7 @@
           "resource_name": "EducationPlanDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -23890,6 +23992,7 @@
           "resource_name": "EducationServiceCenter"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -25166,6 +25269,7 @@
           "resource_name": "EducationalEnvironmentDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25278,6 +25382,7 @@
           "resource_name": "ElectronicMailTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25390,6 +25495,7 @@
           "resource_name": "EligibilityDelayReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25502,6 +25608,7 @@
           "resource_name": "EligibilityEvaluationTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25614,6 +25721,7 @@
           "resource_name": "EmploymentStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25726,6 +25834,7 @@
           "resource_name": "EnrollmentTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25838,6 +25947,7 @@
           "resource_name": "EntryGradeLevelReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -25950,6 +26060,7 @@
           "resource_name": "EntryTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -26062,6 +26173,7 @@
           "resource_name": "EvaluationDelayReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -26174,6 +26286,7 @@
           "resource_name": "EvaluationRubricDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -26448,6 +26561,7 @@
           "resource_name": "EventCircumstanceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -26560,6 +26674,7 @@
           "resource_name": "ExitWithdrawTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -26672,6 +26787,7 @@
           "resource_name": "FeederSchoolAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -26772,6 +26888,7 @@
           "resource_name": "FinancialCollectionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -26884,6 +27001,7 @@
           "resource_name": "FunctionDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -27059,6 +27177,7 @@
           "resource_name": "FundDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -27234,6 +27353,7 @@
           "resource_name": "GradeLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -27346,6 +27466,7 @@
           "resource_name": "GradePointAverageTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -27458,6 +27579,7 @@
           "resource_name": "GradeTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -27570,6 +27692,7 @@
           "resource_name": "GradebookEntry"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -27928,6 +28051,7 @@
           "resource_name": "GradebookEntryTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -28040,6 +28164,7 @@
           "resource_name": "Grade"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -28495,6 +28620,7 @@
           "resource_name": "GradingPeriodDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -28607,6 +28733,7 @@
           "resource_name": "GradingPeriod"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -28764,6 +28891,7 @@
           "resource_name": "GraduationPlanTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -28876,6 +29004,7 @@
           "resource_name": "GraduationPlan"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -29987,6 +30116,7 @@
           "resource_name": "GunFreeSchoolsActReportingStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30099,6 +30229,7 @@
           "resource_name": "HomelessPrimaryNighttimeResidenceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30211,6 +30342,7 @@
           "resource_name": "HomelessProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30323,6 +30455,7 @@
           "resource_name": "IDEAPartDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30435,6 +30568,7 @@
           "resource_name": "IdentificationDocumentUseDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30547,6 +30681,7 @@
           "resource_name": "ImmunizationTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30659,6 +30794,7 @@
           "resource_name": "IncidentLocationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30771,6 +30907,7 @@
           "resource_name": "IndicatorDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30883,6 +31020,7 @@
           "resource_name": "IndicatorGroupDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -30995,6 +31133,7 @@
           "resource_name": "IndicatorLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31107,6 +31246,7 @@
           "resource_name": "InstitutionTelephoneNumberTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31219,6 +31359,7 @@
           "resource_name": "InteractivityStyleDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31331,6 +31472,7 @@
           "resource_name": "InternetAccessDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31443,6 +31585,7 @@
           "resource_name": "InternetAccessTypeInResidenceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31555,6 +31698,7 @@
           "resource_name": "InternetPerformanceInResidenceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31667,6 +31811,7 @@
           "resource_name": "InterventionClassDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31779,6 +31924,7 @@
           "resource_name": "InterventionEffectivenessRatingDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -31891,6 +32037,7 @@
           "resource_name": "InterventionPrescription"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -32622,6 +32769,7 @@
           "resource_name": "InterventionStudy"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -33567,6 +33715,7 @@
           "resource_name": "Intervention"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -34522,6 +34671,7 @@
           "resource_name": "LanguageDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -34634,6 +34784,7 @@
           "resource_name": "LanguageInstructionProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -34746,6 +34897,7 @@
           "resource_name": "LanguageUseDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -34858,6 +35010,7 @@
           "resource_name": "LearningStandardCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -34970,6 +35123,7 @@
           "resource_name": "LearningStandardEquivalenceAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -35112,6 +35266,7 @@
           "resource_name": "LearningStandardEquivalenceStrengthDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -35224,6 +35379,7 @@
           "resource_name": "LearningStandardScopeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -35336,6 +35492,7 @@
           "resource_name": "LearningStandard"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -35978,6 +36135,7 @@
           "resource_name": "LevelOfEducationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -36090,6 +36248,7 @@
           "resource_name": "LicenseStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -36202,6 +36361,7 @@
           "resource_name": "LicenseTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -36314,6 +36474,7 @@
           "resource_name": "LimitedEnglishProficiencyDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -36426,6 +36587,7 @@
           "resource_name": "LocalAccount"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -36648,6 +36810,7 @@
           "resource_name": "LocalActual"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -36789,6 +36952,7 @@
           "resource_name": "LocalBudget"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -36930,6 +37094,7 @@
           "resource_name": "LocalContractedStaff"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -37081,6 +37246,7 @@
           "resource_name": "LocalEducationAgency"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -38739,6 +38905,7 @@
           "resource_name": "LocalEducationAgencyCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -38851,6 +39018,7 @@
           "resource_name": "LocalEncumbrance"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -38992,6 +39160,7 @@
           "resource_name": "LocalPayroll"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -39143,6 +39312,7 @@
           "resource_name": "LocaleDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -39255,6 +39425,7 @@
           "resource_name": "Location"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -39346,6 +39517,7 @@
           "resource_name": "MagnetSpecialProgramEmphasisSchoolDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -39458,6 +39630,7 @@
           "resource_name": "MediumOfInstructionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -39570,6 +39743,7 @@
           "resource_name": "MethodCreditEarnedDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -39682,6 +39856,7 @@
           "resource_name": "MigrantEducationProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -39794,6 +39969,7 @@
           "resource_name": "ModelEntityDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -39906,6 +40082,7 @@
           "resource_name": "MonitoredDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -40018,6 +40195,7 @@
           "resource_name": "NeglectedOrDelinquentProgramDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -40130,6 +40308,7 @@
           "resource_name": "NeglectedOrDelinquentProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -40242,6 +40421,7 @@
           "resource_name": "NetworkPurposeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -40354,6 +40534,7 @@
           "resource_name": "NonMedicalImmunizationExemptionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -40466,6 +40647,7 @@
           "resource_name": "ObjectDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -40641,6 +40823,7 @@
           "resource_name": "ObjectiveAssessment"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -41328,6 +41511,7 @@
           "resource_name": "OpenStaffPosition"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -41764,6 +41948,7 @@
           "resource_name": "OperationalStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -41876,6 +42061,7 @@
           "resource_name": "OperationalUnitDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -42051,6 +42237,7 @@
           "resource_name": "OrganizationDepartment"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -43365,6 +43552,7 @@
           "resource_name": "OtherNameTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -43477,6 +43665,7 @@
           "resource_name": "ParticipationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -43589,6 +43778,7 @@
           "resource_name": "ParticipationStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -43701,6 +43891,7 @@
           "resource_name": "Person"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -43804,6 +43995,7 @@
           "resource_name": "PerformanceBaseConversionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -43916,6 +44108,7 @@
           "resource_name": "PerformanceLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -44028,6 +44221,7 @@
           "resource_name": "PersonalInformationVerificationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -44140,6 +44334,7 @@
           "resource_name": "PlatformTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -44252,6 +44447,7 @@
           "resource_name": "PopulationServedDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -44364,6 +44560,7 @@
           "resource_name": "PostSecondaryEventCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -44476,6 +44673,7 @@
           "resource_name": "PostSecondaryEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -44597,6 +44795,7 @@
           "resource_name": "PostSecondaryInstitutionLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -44709,6 +44908,7 @@
           "resource_name": "PostSecondaryInstitution"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -46143,6 +46343,7 @@
           "resource_name": "PostingResultDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46255,6 +46456,7 @@
           "resource_name": "PrimaryLearningDeviceAccessDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46367,6 +46569,7 @@
           "resource_name": "PrimaryLearningDeviceAwayFromSchoolDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46479,6 +46682,7 @@
           "resource_name": "PrimaryLearningDeviceProviderDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46591,6 +46795,7 @@
           "resource_name": "ProficiencyDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46703,6 +46908,7 @@
           "resource_name": "ProgramAssignmentDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46815,6 +47021,7 @@
           "resource_name": "ProgramCharacteristicDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -46927,6 +47134,7 @@
           "resource_name": "ProgramDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -47102,6 +47310,7 @@
           "resource_name": "ProgramEvaluationElement"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -47617,6 +47826,7 @@
           "resource_name": "ProgramEvaluationObjective"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -47979,6 +48189,7 @@
           "resource_name": "ProgramEvaluationPeriodDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -48091,6 +48302,7 @@
           "resource_name": "ProgramEvaluationTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -48203,6 +48415,7 @@
           "resource_name": "ProgramEvaluation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -48546,6 +48759,7 @@
           "resource_name": "ProgramSponsorDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -48658,6 +48872,7 @@
           "resource_name": "ProgramTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -48770,6 +48985,7 @@
           "resource_name": "Program"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -49137,6 +49353,7 @@
           "resource_name": "ProgressDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -49249,6 +49466,7 @@
           "resource_name": "ProgressLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -49361,6 +49579,7 @@
           "resource_name": "ProjectDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -49536,6 +49755,7 @@
           "resource_name": "ProviderCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -49648,6 +49868,7 @@
           "resource_name": "ProviderProfitabilityDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -49760,6 +49981,7 @@
           "resource_name": "ProviderStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -49872,6 +50094,7 @@
           "resource_name": "PublicationStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -49984,6 +50207,7 @@
           "resource_name": "QuestionFormDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50096,6 +50320,7 @@
           "resource_name": "RaceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50208,6 +50433,7 @@
           "resource_name": "RatingLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50320,6 +50546,7 @@
           "resource_name": "ReasonExitedDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50432,6 +50659,7 @@
           "resource_name": "ReasonNotTestedDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50544,6 +50772,7 @@
           "resource_name": "RecognitionTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50656,6 +50885,7 @@
           "resource_name": "RelationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50768,6 +50998,7 @@
           "resource_name": "RepeatIdentifierDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -50880,6 +51111,7 @@
           "resource_name": "ReportCard"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -51574,6 +51806,7 @@
           "resource_name": "ReporterDescriptionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -51686,6 +51919,7 @@
           "resource_name": "ReportingTagDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -51798,6 +52032,7 @@
           "resource_name": "ResidencyStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -51910,6 +52145,7 @@
           "resource_name": "ResponseIndicatorDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -52022,6 +52258,7 @@
           "resource_name": "ResponsibilityDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -52134,6 +52371,7 @@
           "resource_name": "RestraintEventReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -52246,6 +52484,7 @@
           "resource_name": "RestraintEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -52597,6 +52836,7 @@
           "resource_name": "ResultDatatypeTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -52709,6 +52949,7 @@
           "resource_name": "RetestIndicatorDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -52821,6 +53062,7 @@
           "resource_name": "SchoolCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -52933,6 +53175,7 @@
           "resource_name": "SchoolChoiceBasisDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -53045,6 +53288,7 @@
           "resource_name": "SchoolChoiceImplementStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -53157,6 +53401,7 @@
           "resource_name": "SchoolFoodServiceProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -53269,6 +53514,7 @@
           "resource_name": "SchoolTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -53381,6 +53627,7 @@
           "resource_name": "SchoolYearType"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -53463,6 +53710,7 @@
           "resource_name": "School"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -55196,6 +55444,7 @@
           "resource_name": "Section504DisabilityDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -55308,6 +55557,7 @@
           "resource_name": "SectionAttendanceTakenEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -55466,6 +55716,7 @@
           "resource_name": "SectionCharacteristicDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -55578,6 +55829,7 @@
           "resource_name": "SectionTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -55690,6 +55942,7 @@
           "resource_name": "Section"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -56554,6 +56807,7 @@
           "resource_name": "SeparationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -56666,6 +56920,7 @@
           "resource_name": "SeparationReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -56778,6 +57033,7 @@
           "resource_name": "ServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -56890,6 +57146,7 @@
           "resource_name": "Session"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -57229,6 +57486,7 @@
           "resource_name": "SexDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -57341,6 +57599,7 @@
           "resource_name": "SourceDimension"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -57516,6 +57775,7 @@
           "resource_name": "SourceSystemDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -57628,6 +57888,7 @@
           "resource_name": "SpecialEducationExitReasonDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -57740,6 +58001,7 @@
           "resource_name": "SpecialEducationProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -57852,6 +58114,7 @@
           "resource_name": "SpecialEducationSettingDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -57964,6 +58227,7 @@
           "resource_name": "StaffAbsenceEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -58097,6 +58361,7 @@
           "resource_name": "StaffClassificationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -58209,6 +58474,7 @@
           "resource_name": "StaffCohortAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -58319,6 +58585,7 @@
           "resource_name": "StaffDisciplineIncidentAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -58494,6 +58761,7 @@
           "resource_name": "StaffEducationOrganizationAssignmentAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -58768,6 +59036,7 @@
           "resource_name": "StaffEducationOrganizationContactAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -59322,6 +59591,7 @@
           "resource_name": "StaffEducationOrganizationEmploymentAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -59628,6 +59898,7 @@
           "resource_name": "StaffIdentificationSystemDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -59740,6 +60011,7 @@
           "resource_name": "StaffLeaveEventCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -59852,6 +60124,7 @@
           "resource_name": "StaffLeave"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -59992,6 +60265,7 @@
           "resource_name": "StaffProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -60141,6 +60415,7 @@
           "resource_name": "StaffSchoolAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -60472,6 +60747,7 @@
           "resource_name": "StaffSectionAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -60670,6 +60946,7 @@
           "resource_name": "Staff"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -63425,6 +63702,7 @@
           "resource_name": "StateAbbreviationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -63537,6 +63815,7 @@
           "resource_name": "StateEducationAgency"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -64948,6 +65227,7 @@
           "resource_name": "StudentAcademicRecord"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -66372,6 +66652,7 @@
           "resource_name": "StudentAssessmentEducationOrganizationAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -66523,6 +66804,7 @@
           "resource_name": "StudentAssessmentRegistrationBatteryPartAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -66757,6 +67039,7 @@
           "resource_name": "StudentAssessmentRegistration"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -67175,6 +67458,7 @@
           "resource_name": "StudentAssessment"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -68662,6 +68946,7 @@
           "resource_name": "StudentCTEProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -69161,6 +69446,7 @@
           "resource_name": "StudentCharacteristicDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -69273,6 +69559,7 @@
           "resource_name": "StudentCohortAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -69475,6 +69762,7 @@
           "resource_name": "StudentCompetencyObjective"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -69969,6 +70257,7 @@
           "resource_name": "StudentContactAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -70137,6 +70426,7 @@
           "resource_name": "StudentDisciplineIncidentBehaviorAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -70451,6 +70741,7 @@
           "resource_name": "StudentDisciplineIncidentNonOffenderAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -70626,6 +70917,7 @@
           "resource_name": "StudentEducationOrganizationAssessmentAccommodation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -70791,6 +71083,7 @@
           "resource_name": "StudentEducationOrganizationAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -73538,6 +73831,7 @@
           "resource_name": "StudentEducationOrganizationResponsibilityAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -73668,6 +73962,7 @@
           "resource_name": "StudentGradebookEntry"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -73927,6 +74222,7 @@
           "resource_name": "StudentHealth"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -74384,6 +74680,7 @@
           "resource_name": "StudentHomelessProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -74873,6 +75170,7 @@
           "resource_name": "StudentIdentificationSystemDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -74985,6 +75283,7 @@
           "resource_name": "StudentInterventionAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -75321,6 +75620,7 @@
           "resource_name": "StudentInterventionAttendanceEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -75520,6 +75820,7 @@
           "resource_name": "StudentLanguageInstructionProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -76185,6 +76486,7 @@
           "resource_name": "StudentMigrantEducationProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -76728,6 +77030,7 @@
           "resource_name": "StudentNeglectedOrDelinquentProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -77275,6 +77578,7 @@
           "resource_name": "StudentProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -77708,6 +78012,7 @@
           "resource_name": "StudentProgramAttendanceEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -77954,6 +78259,7 @@
           "resource_name": "StudentProgramEvaluation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -78831,6 +79137,7 @@
           "resource_name": "StudentSchoolAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -79603,6 +79910,7 @@
           "resource_name": "StudentSchoolAttendanceEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -79838,6 +80146,7 @@
           "resource_name": "StudentSchoolFoodServiceProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -80280,6 +80589,7 @@
           "resource_name": "StudentSection504ProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -80669,6 +80979,7 @@
           "resource_name": "StudentSectionAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -81107,6 +81418,7 @@
           "resource_name": "StudentSectionAttendanceEvent"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -81425,6 +81737,7 @@
           "resource_name": "StudentSpecialEducationProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -82471,6 +82784,7 @@
           "resource_name": "StudentSpecialEducationProgramEligibilityAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -82863,6 +83177,7 @@
           "resource_name": "StudentTitleIPartAProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -83334,6 +83649,7 @@
           "resource_name": "StudentTransportation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -83735,6 +84051,7 @@
           "resource_name": "Student"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -84771,6 +85088,7 @@
           "resource_name": "SubmissionStatusDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -84883,6 +85201,7 @@
           "resource_name": "SupporterMilitaryConnectionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -84995,6 +85314,7 @@
           "resource_name": "SurveyCategoryDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -85107,6 +85427,7 @@
           "resource_name": "SurveyCourseAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -85200,6 +85521,7 @@
           "resource_name": "SurveyLevelDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -85312,6 +85634,7 @@
           "resource_name": "SurveyProgramAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -85444,6 +85767,7 @@
           "resource_name": "SurveyQuestionResponse"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -85767,6 +86091,7 @@
           "resource_name": "SurveyQuestion"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86092,6 +86417,7 @@
           "resource_name": "SurveyResponseEducationOrganizationTargetAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86185,6 +86511,7 @@
           "resource_name": "SurveyResponseStaffTargetAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86279,6 +86606,7 @@
           "resource_name": "SurveyResponse"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86533,6 +86861,7 @@
           "resource_name": "SurveySectionAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86655,6 +86984,7 @@
           "resource_name": "SurveySectionResponseEducationOrganizationTargetAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86758,6 +87088,7 @@
           "resource_name": "SurveySectionResponseStaffTargetAssociation"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86862,6 +87193,7 @@
           "resource_name": "SurveySectionResponse"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -86987,6 +87319,7 @@
           "resource_name": "SurveySection"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -87071,6 +87404,7 @@
           "resource_name": "Survey"
         },
         "physical_schema": "edfi",
+        "storage_kind": "RelationalTables",
         "tables": [
           {
             "schema": "edfi",
@@ -87249,6 +87583,7 @@
           "resource_name": "TeachingCredentialBasisDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -87361,6 +87696,7 @@
           "resource_name": "TeachingCredentialDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -87473,6 +87809,7 @@
           "resource_name": "TechnicalSkillsAssessmentDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -87585,6 +87922,7 @@
           "resource_name": "TelephoneNumberTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -87697,6 +88035,7 @@
           "resource_name": "TermDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -87809,6 +88148,7 @@
           "resource_name": "TitleIPartAParticipantDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -87921,6 +88261,7 @@
           "resource_name": "TitleIPartAProgramServiceDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88033,6 +88374,7 @@
           "resource_name": "TitleIPartASchoolDesignationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88145,6 +88487,7 @@
           "resource_name": "TransportationPublicExpenseEligibilityTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88257,6 +88600,7 @@
           "resource_name": "TransportationTypeDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88369,6 +88713,7 @@
           "resource_name": "TravelDayofWeekDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88481,6 +88826,7 @@
           "resource_name": "TravelDirectionDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88593,6 +88939,7 @@
           "resource_name": "TribalAffiliationDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88705,6 +89052,7 @@
           "resource_name": "VisaDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",
@@ -88817,6 +89165,7 @@
           "resource_name": "WeaponDescriptor"
         },
         "physical_schema": "edfi",
+        "storage_kind": "SharedDescriptorTable",
         "tables": [
           {
             "schema": "edfi",

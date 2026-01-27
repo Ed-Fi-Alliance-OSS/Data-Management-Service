@@ -53,6 +53,7 @@ public static class RelationalModelManifestEmitter
 
         WriteResource(writer, resourceModel.Resource);
         writer.WriteString("physical_schema", resourceModel.PhysicalSchema.Value);
+        writer.WriteString("storage_kind", resourceModel.StorageKind.ToString());
 
         writer.WritePropertyName("tables");
         writer.WriteStartArray();

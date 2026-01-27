@@ -66,6 +66,7 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         var resourceModel = new RelationalResourceModel(
             new QualifiedResourceName("Ed-Fi", "School"),
             schema,
+            ResourceStorageKind.RelationalTables,
             rootTable,
             new[] { addressTable, rootTable },
             new[] { addressTable, rootTable },

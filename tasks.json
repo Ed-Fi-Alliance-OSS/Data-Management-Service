@@ -18,7 +18,7 @@
       "Update/extend unit tests to assert: non-descriptor resources emit `RelationalTables`; descriptor resources emit `SharedDescriptorTable`.",
       "Run the unit test project and confirm the authoritative manifest test passes after updating goldens."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "RelationalModel",

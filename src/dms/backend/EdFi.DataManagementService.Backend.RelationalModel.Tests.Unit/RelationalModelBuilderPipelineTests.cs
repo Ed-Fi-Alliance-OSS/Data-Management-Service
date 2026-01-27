@@ -75,6 +75,7 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
         return new RelationalResourceModel(
             new QualifiedResourceName("edfi", "School"),
             schema,
+            ResourceStorageKind.RelationalTables,
             table,
             [table],
             [table],

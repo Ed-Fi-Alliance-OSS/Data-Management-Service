@@ -38,6 +38,22 @@ public readonly record struct DbTableName(DbSchemaName Schema, string Name)
 public readonly record struct DbColumnName(string Value);
 
 /// <summary>
+/// Classifies the storage strategy for a resource.
+/// </summary>
+public enum ResourceStorageKind
+{
+    /// <summary>
+    /// Default: per-project schema tables (root + child + _ext).
+    /// </summary>
+    RelationalTables,
+
+    /// <summary>
+    /// Descriptor resources stored in shared <c>dms.Descriptor</c>.
+    /// </summary>
+    SharedDescriptorTable,
+}
+
+/// <summary>
 /// Classifies the semantic role of a derived column within a table.
 /// </summary>
 public enum ColumnKind
@@ -170,6 +186,7 @@ public readonly record struct JsonPathExpression(string Canonical, IReadOnlyList
 /// </summary>
 /// <param name="Resource">The logical resource identifier.</param>
 /// <param name="PhysicalSchema">The physical database schema for the owning project/endpoint.</param>
+/// <param name="StorageKind">The storage strategy for the resource.</param>
 /// <param name="Root">The root table (<c>$</c>) for the resource.</param>
 /// <param name="TablesInReadDependencyOrder">
 /// Tables ordered for read reconstitution (root first, then child collection tables).
@@ -182,6 +199,7 @@ public readonly record struct JsonPathExpression(string Canonical, IReadOnlyList
 public sealed record RelationalResourceModel(
     QualifiedResourceName Resource,
     DbSchemaName PhysicalSchema,
+    ResourceStorageKind StorageKind,
     DbTableModel Root,
     IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
     IReadOnlyList<DbTableModel> TablesInWriteDependencyOrder,

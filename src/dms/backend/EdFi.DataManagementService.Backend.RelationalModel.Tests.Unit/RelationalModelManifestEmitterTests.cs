@@ -66,6 +66,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
         resource["project_name"]!.GetValue<string>().Should().Be("Ed-Fi");
         resource["resource_name"]!.GetValue<string>().Should().Be("School");
         root["physical_schema"]!.GetValue<string>().Should().Be("edfi");
+        root["storage_kind"]!.GetValue<string>().Should().Be("RelationalTables");
 
         var tables =
             root["tables"] as JsonArray
@@ -87,6 +88,28 @@ public class Given_A_Relational_Model_Manifest_Emitter
             root["extension_sites"] as JsonArray
             ?? throw new InvalidOperationException("Expected extension sites to be a JSON array.");
         extensionSites.Count.Should().Be(2);
+    }
+
+    [Test]
+    public void It_should_emit_descriptor_storage_kind()
+    {
+        var descriptorSchema = CreateSchema();
+        var buildResult = RelationalModelManifestEmitterTestContext.BuildResult(
+            descriptorSchema,
+            context =>
+            {
+                context.ResourceName = "AcademicSubjectDescriptor";
+                context.IsDescriptorResource = true;
+            }
+        );
+
+        var manifest = RelationalModelManifestEmitter.Emit(buildResult);
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        root["storage_kind"]!.GetValue<string>().Should().Be("SharedDescriptorTable");
     }
 
     [Test]

@@ -62,6 +62,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var physicalSchema = RelationalNameConventions.NormalizeSchemaName(projectEndpointName);
         var rootBaseName = RelationalNameConventions.ToPascalCase(resourceName);
+        var storageKind = context.IsDescriptorResource
+            ? ResourceStorageKind.SharedDescriptorTable
+            : ResourceStorageKind.RelationalTables;
 
         var rootTableScope = CreateRootTable(physicalSchema, rootBaseName);
 
@@ -74,6 +77,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         context.ResourceModel = new RelationalResourceModel(
             new QualifiedResourceName(projectName, resourceName),
             physicalSchema,
+            storageKind,
             rootTableScope.Table,
             tables,
             tables,

@@ -13,6 +13,7 @@ Design references:
 
 The pipeline produces a `RelationalModelBuildResult`:
 - `RelationalResourceModel` with:
+  - storage kind classification (`RelationalTables` vs `SharedDescriptorTable`)
   - root table for scope `$`
   - one child table per array path (including nested arrays)
   - derived columns (scalar columns and descriptor FK columns)
@@ -104,4 +105,3 @@ Unit tests live in `../EdFi.DataManagementService.Backend.RelationalModel.Tests.
 
 - Run: `dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`
 - To regenerate the authoritative golden manifest fixture, set `UPDATE_GOLDENS=1` and run the tests.
-
