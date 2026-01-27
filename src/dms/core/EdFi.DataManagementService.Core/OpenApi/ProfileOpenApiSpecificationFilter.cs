@@ -45,7 +45,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     )
     {
         // Deep clone the specification to avoid modifying the cached base spec
-        JsonNode specification = JsonNode.Parse(baseSpecification.ToJsonString())!;
+        JsonNode specification = baseSpecification.DeepClone();
 
         // Update info.title with profile name
         UpdateInfoTitle(specification, profileDefinition.ProfileName);
@@ -323,7 +323,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         }
 
         // Clone the schema
-        JsonObject clone = JsonNode.Parse(baseSchemaObj.ToJsonString())!.AsObject();
+        JsonObject clone = baseSchemaObj.DeepClone().AsObject();
 
         // Apply property filtering only to root resource schemas (not referenced schemas)
         if (isRootResource && contentType is not null)
@@ -636,7 +636,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             )
             {
                 // Clone and update schema $ref
-                JsonNode clonedContent = JsonNode.Parse(jsonContent.ToJsonString())!;
+                JsonNode clonedContent = jsonContent.DeepClone();
                 UpdateSchemaRef(clonedContent, schemaSuffix);
 
                 requestContent[profileContentType] = clonedContent;
@@ -660,7 +660,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 )
                 {
                     // Clone and update schema $ref
-                    JsonNode clonedContent = JsonNode.Parse(jsonContent.ToJsonString())!;
+                    JsonNode clonedContent = jsonContent.DeepClone();
                     UpdateSchemaRef(clonedContent, schemaSuffix);
 
                     responseContent[profileContentType] = clonedContent;
