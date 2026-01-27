@@ -93,6 +93,7 @@ internal class CachedProfileService(
     private const string ApplicationProfilesCacheKeyPrefix = "ApplicationProfiles";
     private const string ProfileCatalogCacheKeyPrefix = "ProfileCatalog";
     private const string ProfileOpenApiCacheKeyPrefix = "ProfileOpenApi";
+    private readonly ProfileOpenApiSpecificationFilter profileFilter = new(logger);
 
     private static string GetApplicationCacheKey(string? tenantId, long applicationId)
     {
@@ -745,7 +746,6 @@ internal class CachedProfileService(
                 JsonNode baseSpecification = baseSpecificationProvider();
 
                 // Apply profile filtering to the OpenAPI spec
-                var profileFilter = new ProfileOpenApiSpecificationFilter(logger);
                 JsonNode filteredSpecification = profileFilter.CreateProfileSpecification(
                     baseSpecification,
                     profileDefinition!
