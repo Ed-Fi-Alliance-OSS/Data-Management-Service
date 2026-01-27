@@ -48,6 +48,7 @@ public class JwtAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Bearer valid-token",
@@ -124,6 +125,7 @@ public class JwtAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Bearer invalid-token",
@@ -209,6 +211,7 @@ public class JwtAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -260,6 +263,7 @@ public class JwtAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Basic dXNlcjpwYXNz",
@@ -315,6 +319,7 @@ public class JwtAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["authorization"] = "Bearer valid-token",

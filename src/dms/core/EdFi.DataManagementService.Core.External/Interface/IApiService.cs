@@ -38,6 +38,11 @@ public interface IApiService
     public Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest);
 
     /// <summary>
+    /// DMS entry point for the token introspection request
+    /// </summary>
+    public Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest);
+
+    /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
     public IList<IDataModelInfo> GetDataModelInfo();

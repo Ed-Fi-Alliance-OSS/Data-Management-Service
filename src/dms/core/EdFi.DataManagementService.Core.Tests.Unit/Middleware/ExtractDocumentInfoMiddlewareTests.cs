@@ -58,6 +58,7 @@ public class ExtractDocumentInfoMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/schools",

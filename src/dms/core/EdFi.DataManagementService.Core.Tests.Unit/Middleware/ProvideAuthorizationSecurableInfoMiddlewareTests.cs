@@ -56,6 +56,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
@@ -113,6 +114,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/students",
@@ -184,6 +186,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 new(
                     Path: "/ed-fi/StudentContactAssociations",
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("123"),
@@ -245,6 +248,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 new(
                     Path: "/ed-fi/contacts",
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("123"),
@@ -302,6 +306,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 new(
                     Path: "/ed-fi/Contacts",
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("123"),
@@ -354,6 +359,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
@@ -411,6 +417,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/staffs",
@@ -481,6 +488,7 @@ public class ProvideAuthorizationSecurableInfoMiddlewareTests
                 new(
                     Path: "/ed-fi/StudentStaffAssociations",
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("123"),

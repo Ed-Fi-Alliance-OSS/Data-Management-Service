@@ -481,6 +481,7 @@ public class ApiServiceHotReloadIntegrationTests
         return new FrontendRequest(
             Path: path,
             Body: body,
+            Form: null,
             Headers: [],
             QueryParameters: [],
             TraceId: new TraceId("test-trace-id"),

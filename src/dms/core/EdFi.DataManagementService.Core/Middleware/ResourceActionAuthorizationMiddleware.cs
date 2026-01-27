@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Middleware;
@@ -64,8 +65,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
                 return;
             }
 
-            ResourceClaim[] matchingClaims = FindMatchingResourceClaims(
-                claimSet,
+            ResourceClaim[] matchingClaims = claimSet.FindMatchingResourceClaims(
                 BuildResourceClaimUri(requestInfo)
             );
 
@@ -143,9 +143,7 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
             requestInfo.FrontendRequest.Tenant
         );
 
-        ClaimSet? claimSet = claimsList.SingleOrDefault(c =>
-            string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
-        );
+        ClaimSet? claimSet = claimsList.FindClaimSetByName(claimSetName);
 
         if (claimSet == null)
         {
@@ -178,24 +176,10 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// </summary>
     private string BuildResourceClaimUri(RequestInfo requestInfo)
     {
-        string resourceClaimName = requestInfo.ResourceSchema.ResourceName.Value;
-        string resourceClaimUri =
-            $"{Conventions.EdFiOdsResourceClaimBaseUri}/{requestInfo.PathComponents.ProjectEndpointName.Value}/{resourceClaimName}";
+        string resourceClaimUri = requestInfo.PathComponents.ProjectEndpointName.GetResourceClaimUri(requestInfo.ResourceSchema.ResourceName);
 
         _logger.LogDebug("resourceClaimUri: {ResourceClaimUri}", resourceClaimUri);
         return resourceClaimUri;
-    }
-
-    /// <summary>
-    /// Finds resource claims matching the requested resource URI.
-    /// </summary>
-    private static ResourceClaim[] FindMatchingResourceClaims(ClaimSet claimSet, string resourceClaimUri)
-    {
-        return claimSet
-            .ResourceClaims.Where(r =>
-                string.Equals(r.Name, resourceClaimUri, StringComparison.InvariantCultureIgnoreCase)
-            )
-            .ToArray();
     }
 
     /// <summary>

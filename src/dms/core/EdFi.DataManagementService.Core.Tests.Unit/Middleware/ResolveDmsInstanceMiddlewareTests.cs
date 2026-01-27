@@ -53,6 +53,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -117,6 +118,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -198,6 +200,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -285,6 +288,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -381,6 +385,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -461,6 +466,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -535,6 +541,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -599,6 +606,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),
@@ -669,6 +677,7 @@ public class ResolveDmsInstanceMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/ed-fi/students",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("123"),

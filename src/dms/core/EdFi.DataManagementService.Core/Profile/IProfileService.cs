@@ -60,4 +60,14 @@ internal interface IProfileService
         long applicationId,
         string? tenantId
     );
+
+    /// <summary>
+    /// Retrieves application profile definitions from cache or fetches them from the CMS if not cached.
+    /// </summary>
+    /// <param name="applicationId">The unique identifier of the application.</param>
+    /// <param name="tenantId">The tenant identifier, or <c>null</c> for single-tenant scenarios.</param>
+    /// <returns>
+    /// A <see cref="CachedApplicationProfiles"/> containing the profile definitions and assigned profile names.
+    /// </returns>
+    Task<CachedApplicationProfiles> GetOrFetchApplicationProfilesAsync(long applicationId, string? tenantId);
 }

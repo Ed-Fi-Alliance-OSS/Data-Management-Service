@@ -31,6 +31,7 @@ public class TenantValidationMiddlewareTests
         return new RequestInfo(
             new FrontendRequest(
                 Body: null,
+                Form: null,
                 Headers: [],
                 Path: "/ed-fi/schools",
                 QueryParameters: [],

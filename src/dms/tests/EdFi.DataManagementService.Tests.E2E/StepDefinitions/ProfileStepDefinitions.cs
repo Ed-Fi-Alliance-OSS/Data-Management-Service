@@ -10,6 +10,7 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
+using static EdFi.DataManagementService.Core.External.Backend.ResourceAuthorizationResult;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 
@@ -64,12 +65,34 @@ public class ProfileStepDefinitions(
         string namespacePrefixes
     )
     {
-        string[] profiles = profileNames
-            .Split(',', StringSplitOptions.RemoveEmptyEntries)
-            .Select(p => p.Trim())
-            .ToArray();
+        await SetAuthorizationTokenWithProfiles(
+            namespacePrefixes,
+            string.Empty,
+            claimSetName,
+            ParseCommaSeparatedProfiles(profileNames)
+        );
+    }
 
-        await SetAuthorizationTokenWithProfiles(namespacePrefixes, string.Empty, claimSetName, profiles);
+    /// <summary>
+    /// Sets up authorization with multiple profiles assigned to the application.
+    /// Profile names should be comma-separated.
+    /// </summary>
+    [Given(
+        @"the claimSet ""([^""]*)"" is authorized with profiles ""([^""]*)"" and namespacePrefixes ""([^""]*)"" and educationOrganizationIds ""([^""]*)"""
+    )]
+    public async Task GivenTheClaimSetIsAuthorizedWithProfilesAndNamespacesAndEducationOrganizationIds(
+        string claimSetName,
+        string profileNames,
+        string namespacePrefixes,
+        string educationOrganizationIds
+    )
+    {
+        await SetAuthorizationTokenWithProfiles(
+            namespacePrefixes,
+            educationOrganizationIds,
+            claimSetName,
+            ParseCommaSeparatedProfiles(profileNames)
+        );
     }
 
     /// <summary>
@@ -913,6 +936,11 @@ public class ProfileStepDefinitions(
     #endregion
 
     #region Helper Methods
+
+    private static string[] ParseCommaSeparatedProfiles(string profileNames)
+    {
+        return profileNames.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim()).ToArray();
+    }
 
     private async Task ExecutePostRequest(string url, string body)
     {

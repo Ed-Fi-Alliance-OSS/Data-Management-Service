@@ -53,6 +53,7 @@ public class DocumentValidatorTests
         var frontendRequest = new FrontendRequest(
             Path: "ed-fi/schools",
             Body: null,
+            Form: null,
             Headers: [],
             QueryParameters: [],
             TraceId: new TraceId("trace"),

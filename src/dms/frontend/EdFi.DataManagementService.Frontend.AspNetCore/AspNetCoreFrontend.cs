@@ -50,6 +50,15 @@ public static class AspNetCoreFrontend
     }
 
     /// <summary>
+    /// Extracts form data from an HTTP request and converts it to a dictionary.
+    /// </summary>
+    private static async Task<Dictionary<string, string>> ExtractFormFrom(HttpRequest request)
+    {
+        var formCollection = await request.ReadFormAsync();
+        return formCollection.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToString());
+    }
+
+    /// <summary>
     /// Takes an HttpRequest and returns a deserialized, not null or empty request Headers
     /// </summary>
     private static Dictionary<string, string> ExtractHeadersFrom(HttpRequest request) =>
@@ -151,11 +160,13 @@ public static class AspNetCoreFrontend
         HttpRequest httpRequest,
         string dmsPath,
         IOptions<AppSettings> appSettings,
-        bool includeBody
+        bool includeBody,
+        bool includeForm
     )
     {
         return new(
             Body: includeBody ? await ExtractJsonBodyFrom(httpRequest) : null,
+            Form: includeForm ? await ExtractFormFrom(httpRequest) : null,
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
@@ -215,7 +226,13 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.Upsert(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: true,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
@@ -234,7 +251,13 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.Get(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
@@ -253,7 +276,13 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.UpdateById(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: true,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
@@ -272,10 +301,40 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.DeleteById(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the token introspection request
+    /// </summary>
+    public static async Task<IResult> GetTokenInfo(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        return ToResult(
+            await apiService.GetTokenInfo(
+                await FromRequest(
+                    httpContext.Request,
+                    string.Empty,
+                    appSettings,
+                    includeBody: !httpContext.Request.HasFormContentType,
+                    includeForm: httpContext.Request.HasFormContentType
+                )
+            ),
+            httpContext,
+            string.Empty
         );
     }
 }

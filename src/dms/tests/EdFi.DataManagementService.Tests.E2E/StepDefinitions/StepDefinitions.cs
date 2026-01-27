@@ -346,6 +346,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             url = AddDataPrefixIfNecessary(url);
+
+            if (body.Contains("{token}"))
+            {
+                body = body.Replace(
+                    "{token}",
+                    _scenarioContext["dmsToken"].ToString()?.Replace("Bearer ", string.Empty)
+                );
+            }
+
             await ExecutePostRequest(url, body);
         }
 
@@ -855,9 +864,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ResponseBodyIs(expectedBody);
         }
 
+        [Then("the token_info response body is")]
+        public async Task ThenTheTokenInfoResponseBodyIs(string expectedBody)
+        {
+            await ResponseBodyIs(expectedBody, isTokenInfoEndpoint: true);
+        }
+
         private async Task ResponseBodyIs(
             string expectedBody,
-            bool IsDiscoveryEndpoint = false,
+            bool isDiscoveryEndpoint = false,
+            bool isTokenInfoEndpoint = false,
             bool isXml = false
         )
         {
@@ -878,7 +894,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseContent);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-            if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
+            if (
+                !isDiscoveryEndpoint
+                && !isTokenInfoEndpoint
+                && (_apiResponse.Status == 200 || _apiResponse.Status == 201)
+            )
             {
                 CheckAndRemoveMetadata(responseJson, true);
             }
@@ -893,10 +913,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             // The version value is retrieved from the DMS assembly,
             // so it will not not match value when testing against a published DMS.
-            if (IsDiscoveryEndpoint)
+            if (isDiscoveryEndpoint)
             {
                 (responseJson as JsonObject)?.Remove("version");
                 (expectedBodyJson as JsonObject)?.Remove("version");
+            }
+
+            if (isTokenInfoEndpoint && _apiResponse.Status == 200)
+            {
+                var clientId = ClientId(responseJson);
+                clientId.Should().NotBeNull();
+                (responseJson as JsonObject)?.Remove("client_id");
             }
 
             AreEqual(expectedBodyJson, responseJson)
@@ -958,7 +985,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the xsd response body is")]
         public async Task ThenTheXsdResponseBodyIs(string expectedBody)
         {
-            await ResponseBodyIs(expectedBody, true, true);
+            await ResponseBodyIs(expectedBody, isDiscoveryEndpoint: true, isXml: true);
         }
 
         /// <summary>
@@ -1023,6 +1050,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )
             {
                 return lastModifiedDate.GetValue<string?>();
+            }
+            return null;
+        }
+
+        private static string? ClientId(JsonNode response)
+        {
+            if (
+                response is JsonObject jsonObject
+                && jsonObject.TryGetPropertyValue("client_id", out JsonNode? clientId)
+                && clientId != null
+            )
+            {
+                return clientId.GetValue<string?>();
             }
             return null;
         }
@@ -1377,7 +1417,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith('/') ? input[1..] : input;
 
             // metadata should not have "data" added to the URL.
-            input = input.StartsWith("metadata") ? input : $"data/{input}";
+            input = input.StartsWith("metadata") || input.StartsWith("oauth") ? input : $"data/{input}";
 
             return input;
         }
@@ -1396,7 +1436,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
-            var list = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", _scenarioContext["dmsToken"].ToString() ?? string.Empty),
+            };
             return list;
         }
 

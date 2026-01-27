@@ -37,6 +37,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: "",
                 QueryParameters: [],
@@ -71,6 +72,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: "badpath",
                 QueryParameters: [],
@@ -105,6 +107,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: "/ed-fi/endpointName",
                 QueryParameters: [],
@@ -143,6 +146,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{documentUuid}",
                 QueryParameters: [],
@@ -181,6 +185,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: "/ed-fi/endpointName/invalidId",
                 QueryParameters: [],
@@ -225,6 +230,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: $"/ed-fi/endpointName/{Guid.NewGuid()}",
                 QueryParameters: [],
@@ -267,6 +273,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],
@@ -309,6 +316,7 @@ public class ParsePathMiddlewareTests
         {
             FrontendRequest frontendRequest = new(
                 Body: "{}",
+                Form: null,
                 Headers: [],
                 Path: "/ed-fi/endpointName/",
                 QueryParameters: [],

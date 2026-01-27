@@ -100,6 +100,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/academicWeeks",
                     Body: requestBody,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
@@ -199,6 +200,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/academicWeeks",
                     Body: requestBody,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
@@ -277,6 +279,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/academicWeeks",
                     Body: requestBody,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
@@ -355,6 +358,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/academicWeeks",
                     Body: requestBody,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
@@ -434,6 +438,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/academicWeeks",
                     Body: requestBody,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),
@@ -521,6 +526,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
                 var frontEndRequest = new FrontendRequest(
                     "ed-fi/academicWeeks",
                     Body: requestBody,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),

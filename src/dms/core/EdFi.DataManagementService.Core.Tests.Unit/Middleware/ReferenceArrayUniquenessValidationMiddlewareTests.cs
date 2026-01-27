@@ -52,6 +52,7 @@ public class ReferenceArrayUniquenessValidationMiddlewareTests
         FrontendRequest frontEndRequest = new(
             Path: $"ed-fi/{endpointName}",
             Body: jsonBody,
+            Form: null,
             Headers: [],
             QueryParameters: [],
             TraceId: new TraceId(""),

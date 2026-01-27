@@ -100,6 +100,7 @@ public class CoerceDateTimesMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/academicWeeks",
                 Body: requestBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -209,6 +210,7 @@ public class CoerceDateTimesMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/academicWeeks",
                 Body: requestBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -290,6 +292,7 @@ public class CoerceDateTimesMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/academicWeeks",
                 Body: requestBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -367,6 +370,7 @@ public class CoerceDateTimesMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/academicWeeks",
                 Body: requestBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -463,6 +467,7 @@ public class CoerceDateTimesMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/simpleResources",
                 Body: requestBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),

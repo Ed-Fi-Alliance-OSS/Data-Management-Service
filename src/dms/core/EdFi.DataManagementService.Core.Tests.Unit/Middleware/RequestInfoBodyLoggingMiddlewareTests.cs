@@ -64,6 +64,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -127,6 +128,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{"schoolId":"12345","nameOfInstitution":"School Test"}""",
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -192,6 +194,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -255,6 +258,7 @@ public class RequestInfoBodyLoggingMiddlewareTests
             FrontendRequest frontEndRequest = new(
                 Path: "ed-fi/schools",
                 Body: """{ "schoolId":"12345", "nameOfInstitution":"School Test"}""",
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),

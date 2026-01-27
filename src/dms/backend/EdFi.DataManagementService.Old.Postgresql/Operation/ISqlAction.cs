@@ -251,4 +251,9 @@ public interface ISqlAction
         NpgsqlConnection connection,
         NpgsqlTransaction transaction
     );
+
+    public Task<IReadOnlyList<TokenInfoEducationOrganization>> GetTokenInfoEducationOrganizations(
+        IEnumerable<EducationOrganizationId> educationOrganizationIds,
+        NpgsqlConnection connection
+    );
 }
