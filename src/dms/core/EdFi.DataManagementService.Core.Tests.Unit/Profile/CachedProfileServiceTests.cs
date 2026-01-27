@@ -186,6 +186,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader(
@@ -221,6 +227,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader(
@@ -253,6 +265,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader("Student", "OtherProfile", ProfileUsageType.Readable);
@@ -280,6 +298,12 @@ public class CachedProfileServiceTests
                     Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
                 );
 
             var service = CreateService(fakeCmsProvider);
@@ -309,6 +333,12 @@ public class CachedProfileServiceTests
                     Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
                 );
 
             var service = CreateService(fakeCmsProvider);
@@ -343,6 +373,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader(
@@ -376,6 +412,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "WriteOnlyProfile", WriteOnlyProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "WriteOnlyProfile", WriteOnlyProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
             var parsedHeader = new ParsedProfileHeader(
@@ -407,6 +449,12 @@ public class CachedProfileServiceTests
                     Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
                         new CmsProfileResponse(100, "ReadOnlyProfile", ReadOnlyProfileXml),
                     ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "ReadOnlyProfile", ReadOnlyProfileXml)
+                    )
                 );
 
             var service = CreateService(fakeCmsProvider);
@@ -444,6 +492,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
 
@@ -472,6 +526,12 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
                 );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
 
             var service = CreateService(fakeCmsProvider);
 
@@ -499,6 +559,18 @@ public class CachedProfileServiceTests
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                         new CmsProfileResponse(101, "ReadOnlyProfile", ReadOnlyProfileXml),
                     ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(101, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(101, "ReadOnlyProfile", ReadOnlyProfileXml)
+                    )
                 );
 
             var service = CreateService(fakeCmsProvider);
@@ -533,6 +605,12 @@ public class CachedProfileServiceTests
                     Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
                         new CmsProfileResponse(100, "StudentProfile", StudentProfileXml),
                     ])
+                );
+            A.CallTo(() => fakeCmsProvider.GetProfileAsync(100, A<string?>._))
+                .Returns(
+                    Task.FromResult<CmsProfileResponse?>(
+                        new CmsProfileResponse(100, "StudentProfile", StudentProfileXml)
+                    )
                 );
 
             var service = CreateService(fakeCmsProvider);
@@ -602,6 +680,18 @@ public class CachedProfileServiceTests
                             new CmsProfileResponse(2, "SchoolProfile", SchoolProfileXml),
                         ])
                     );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(2, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(2, "SchoolProfile", SchoolProfileXml)
+                        )
+                    );
 
                 var service = CreateService(fakeCmsProvider);
 
@@ -621,6 +711,12 @@ public class CachedProfileServiceTests
                         Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
                             new CmsProfileResponse(1, "StudentProfile", StudentProfileXml),
                         ])
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
                     );
 
                 var service = CreateService(fakeCmsProvider);
@@ -647,6 +743,24 @@ public class CachedProfileServiceTests
                             new CmsProfileResponse(3, "SchoolProfile", SchoolProfileXml),
                         ])
                     );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(2, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(2, "InvalidProfile", InvalidProfileXml)
+                        )
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(3, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(3, "SchoolProfile", SchoolProfileXml)
+                        )
+                    );
 
                 var service = CreateService(fakeCmsProvider);
 
@@ -668,6 +782,12 @@ public class CachedProfileServiceTests
                             new CmsProfileResponse(1, "StudentProfile", StudentProfileXml),
                         ])
                     );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
 
                 var service = CreateService(fakeCmsProvider);
 
@@ -686,6 +806,12 @@ public class CachedProfileServiceTests
                         Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
                             new CmsProfileResponse(1, "StudentProfile", StudentProfileXml),
                         ])
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
                     );
 
                 var service = CreateService(fakeCmsProvider);
@@ -712,6 +838,12 @@ public class CachedProfileServiceTests
                             new CmsProfileResponse(1, "StudentProfile", StudentProfileXml),
                         ])
                     );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
 
                 var sharedCache = CreateHybridCache();
                 var service = CreateService(fakeCmsProvider, sharedCache);
@@ -737,8 +869,20 @@ public class CachedProfileServiceTests
                 A.CallTo(() => fakeCmsProvider.GetProfilesAsync("tenant2"))
                     .Returns(
                         Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
-                            new CmsProfileResponse(2, "SchoolProfile", SchoolProfileXml),
+                            new CmsProfileResponse(1, "SchoolProfile", SchoolProfileXml),
                         ])
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, "tenant1"))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, "tenant2"))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "SchoolProfile", SchoolProfileXml)
+                        )
                     );
 
                 var sharedCache = CreateHybridCache();

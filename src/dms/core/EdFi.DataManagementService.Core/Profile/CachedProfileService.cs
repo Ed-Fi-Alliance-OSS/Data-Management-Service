@@ -629,14 +629,36 @@ internal class CachedProfileService(
                         );
                     }
 
+                    // Fetch all profile definitions in parallel
+                    var fetchTasks = profiles.Select(async profile =>
+                    {
+                        CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
+                            profile.Id,
+                            tenantId
+                        );
+                        return (ProfileId: profile.Id, Response: profileResponse);
+                    });
+
+                    var fetchResults = await Task.WhenAll(fetchTasks);
+
                     // Parse all profiles and build the store
                     var profilesByName = new Dictionary<string, ProfileDefinition>(
                         StringComparer.OrdinalIgnoreCase
                     );
                     var nameById = new Dictionary<long, string>();
 
-                    foreach (CmsProfileResponse profileResponse in profiles)
+                    foreach (var (profileId, profileResponse) in fetchResults)
                     {
+                        if (profileResponse is null)
+                        {
+                            logger.LogWarning(
+                                "Profile fetch returned null. ProfileId: {ProfileId}, Tenant: {Tenant}",
+                                profileId,
+                                LoggingSanitizer.SanitizeForLogging(tenantId)
+                            );
+                            continue;
+                        }
+
                         ProfileDefinitionParseResult parseResult = ProfileDefinitionParser.Parse(
                             profileResponse.Definition
                         );

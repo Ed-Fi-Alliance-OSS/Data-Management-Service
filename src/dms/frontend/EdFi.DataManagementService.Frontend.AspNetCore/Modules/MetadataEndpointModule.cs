@@ -260,9 +260,8 @@ public partial class MetadataEndpointModule : IEndpointModule
         endpoints.MapGet("/metadata/specifications/descriptors-spec.json", GetDescriptorOpenApiSpec);
         endpoints.MapGet("/metadata/specifications/{section}-spec.json", GetSectionMetadata);
 
-        endpoints.MapGet("/metadata/profiles", GetProfiles);
         endpoints.MapGet(
-            $"/metadata/profiles/{{profileName}}/resources-spec.json",
+            $"/metadata/specifications/profiles/{{profileName}}/resources-spec.json",
             GetProfileResourceOpenApiSpec
         );
     }
@@ -350,22 +349,7 @@ public partial class MetadataEndpointModule : IEndpointModule
     }
 
     /// <summary>
-    /// Lists profile names available to the caller's application/tenant.
-    /// </summary>
-    internal static async Task GetProfiles(HttpContext httpContext, IApiService apiService)
-    {
-        string? tenant = ExtractTenantFromRoute(httpContext);
-
-        IReadOnlyList<string> profileNames = await apiService.GetProfileNamesAsync(tenant);
-
-        await httpContext.Response.WriteAsSerializedJsonAsync(
-            new JsonArray(profileNames.Select(name => JsonValue.Create(name)).ToArray())
-        );
-    }
-
-    /// <summary>
     /// Returns resource OpenAPI spec for a specific profile (cached).
-    /// Currently returns the base spec; profile filtering will be added later.
     /// </summary>
     internal static async Task GetProfileResourceOpenApiSpec(
         HttpContext httpContext,
@@ -393,7 +377,7 @@ public partial class MetadataEndpointModule : IEndpointModule
         await httpContext.Response.WriteAsSerializedJsonAsync(content);
     }
 
-    internal static async Task GetSections(HttpContext httpContext)
+    internal static async Task GetSections(HttpContext httpContext, IApiService apiService)
     {
         var baseUrl = httpContext.Request.UrlWithPathSegment();
         List<RouteInformation> sections = [];
@@ -404,6 +388,19 @@ public partial class MetadataEndpointModule : IEndpointModule
                     section.name,
                     $"{baseUrl}/{section.name.ToLower()}-spec.json",
                     section.prefix
+                )
+            );
+        }
+
+        string? tenant = ExtractTenantFromRoute(httpContext);
+        IReadOnlyList<string> profileNames = await apiService.GetProfileNamesAsync(tenant);
+        foreach (string profileName in profileNames)
+        {
+            sections.Add(
+                new RouteInformation(
+                    profileName,
+                    $"{baseUrl}/profiles/{Uri.EscapeDataString(profileName)}/resources-spec.json",
+                    "Profiles"
                 )
             );
         }
