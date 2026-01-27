@@ -7,8 +7,30 @@ using System.Text;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Compiles and canonicalizes a constrained JSONPath syntax used throughout relational model derivation.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Supported syntax:
+/// </para>
+/// <list type="bullet">
+/// <item><description><c>$</c> as the root.</description></item>
+/// <item><description>Property segments via <c>.propertyName</c>.</description></item>
+/// <item><description>Array wildcard segments via <c>[*]</c> (must follow a property segment).</description></item>
+/// </list>
+/// <para>
+/// Property names are restricted to letters/digits plus <c>_</c> and <c>-</c>. The output canonical form is
+/// stable and is used for deterministic ordering and dictionary keys.
+/// </para>
+/// </remarks>
 public static class JsonPathExpressionCompiler
 {
+    /// <summary>
+    /// Parses a JSONPath string into a canonical <see cref="JsonPathExpression"/>.
+    /// </summary>
+    /// <param name="jsonPath">The JSONPath string to compile.</param>
+    /// <returns>A compiled expression with a canonical string and structured segments.</returns>
     public static JsonPathExpression Compile(string jsonPath)
     {
         if (jsonPath is null)
@@ -102,6 +124,10 @@ public static class JsonPathExpressionCompiler
         return new JsonPathExpression(canonical, segments.ToArray());
     }
 
+    /// <summary>
+    /// Creates a canonical <see cref="JsonPathExpression"/> from a sequence of validated segments.
+    /// </summary>
+    /// <param name="segments">The segments that make up the path.</param>
     public static JsonPathExpression FromSegments(IEnumerable<JsonPathSegment> segments)
     {
         if (segments is null)
@@ -117,6 +143,9 @@ public static class JsonPathExpressionCompiler
         return new JsonPathExpression(canonical, segmentArray);
     }
 
+    /// <summary>
+    /// Validates that segment sequences form a well-structured JSONPath (properties and <c>[*]</c> only).
+    /// </summary>
     private static void ValidateSegments(IReadOnlyList<JsonPathSegment> segments)
     {
         if (segments.Count == 0)
@@ -171,6 +200,9 @@ public static class JsonPathExpressionCompiler
         }
     }
 
+    /// <summary>
+    /// Builds the canonical JSONPath string for a validated segment sequence.
+    /// </summary>
     private static string BuildCanonical(IReadOnlyList<JsonPathSegment> segments)
     {
         if (segments.Count == 0)
@@ -201,6 +233,9 @@ public static class JsonPathExpressionCompiler
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Determines whether a property name contains only allowed characters.
+    /// </summary>
     private static bool IsValidPropertyName(string? name)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -219,6 +254,9 @@ public static class JsonPathExpressionCompiler
         return true;
     }
 
+    /// <summary>
+    /// Determines whether an individual character is allowed in a property name.
+    /// </summary>
     private static bool IsValidPropertyCharacter(char character)
     {
         return character is '_' or '-' || char.IsLetterOrDigit(character);

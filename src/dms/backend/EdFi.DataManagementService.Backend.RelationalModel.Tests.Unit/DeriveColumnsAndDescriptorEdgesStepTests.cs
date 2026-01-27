@@ -686,6 +686,7 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
     [SetUp]
     public void Setup()
     {
+        // Verify that additionalProperties (dynamic/unknown fields) do not create tables or columns.
         var schema = new JsonObject
         {
             ["type"] = "object",
@@ -750,6 +751,13 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
 
 internal static class DeriveColumnsAndDescriptorEdgesStepTestContext
 {
+    /// <summary>
+    /// Builds a minimal context and runs only the base traversal derivation steps (tables then columns).
+    /// </summary>
+    /// <remarks>
+    /// These unit tests intentionally bypass the full pipeline so each step can be tested in isolation. The
+    /// derivation steps still validate unsupported schema keywords on the schema nodes they visit.
+    /// </remarks>
     public static RelationalModelBuilderContext BuildContext(
         JsonObject schema,
         Action<RelationalModelBuilderContext>? configure = null

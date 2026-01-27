@@ -7,12 +7,35 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Derives the base set of relational table scopes from <c>resourceSchema.jsonSchemaForInsert</c>.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This step is responsible for creating the root table (<c>$</c>) and one child table per array path
+/// (including nested arrays). Child table primary keys are a composite of the root document id,
+/// ancestor ordinals, and the current <c>Ordinal</c> column.
+/// </para>
+/// <para>
+/// Object schemas are treated as inline containers and do not create new tables. The <c>_ext</c> property
+/// is intentionally skipped here and handled by extension-specific mapping steps.
+/// </para>
+/// <para>
+/// The traversal is deterministic: property iteration is ordinal-sorted, and no logic depends on dictionary
+/// enumeration order.
+/// </para>
+/// </remarks>
 public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName DmsSchemaName = new("dms");
     private static readonly DbTableName DocumentTableName = new(DmsSchemaName, "Document");
 
+    /// <summary>
+    /// Walks the JSON schema and populates <see cref="RelationalModelBuilderContext.ResourceModel"/> with the
+    /// base table inventory (root + collection tables) and their key/foreign-key columns.
+    /// </summary>
+    /// <param name="context">The builder context containing schema inputs and the output model.</param>
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -59,6 +82,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Creates the resource root table, keyed by <c>DocumentId</c> and FK'd to <c>dms.Document</c>.
+    /// </summary>
     private static TableScope CreateRootTable(DbSchemaName schema, string rootBaseName)
     {
         var tableName = new DbTableName(schema, rootBaseName);
@@ -94,6 +120,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return new TableScope(table, Array.Empty<string>());
     }
 
+    /// <summary>
+    /// Recursively discovers child tables for array schemas, keeping objects inline and skipping scalars.
+    /// </summary>
     private static void DiscoverTables(
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
@@ -140,6 +169,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Visits an object schema and recursively inspects its properties to discover array tables.
+    /// </summary>
     private static void DiscoverObjectSchema(
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
@@ -198,6 +230,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Visits an array schema, creates a child table for the array scope, and then descends into its item
+    /// schema for nested collections.
+    /// </summary>
     private static void DiscoverArraySchema(
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
@@ -256,6 +292,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Creates a child table for an array scope, including a composite PK and a cascading FK to its parent
+    /// table.
+    /// </summary>
     private static TableScope CreateChildTable(
         DbSchemaName schemaName,
         string rootBaseName,
@@ -290,6 +330,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return new TableScope(table, collectionBaseNames);
     }
 
+    /// <summary>
+    /// Builds the child-table PK columns: root document id, ancestor ordinals, and the current
+    /// <c>Ordinal</c>.
+    /// </summary>
     private static TableKey BuildChildTableKey(string rootBaseName, IReadOnlyList<string> collectionBaseNames)
     {
         List<DbKeyColumn> keyColumns =
@@ -315,6 +359,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return new TableKey(keyColumns.ToArray());
     }
 
+    /// <summary>
+    /// Builds the FK column list for a child table by projecting the parent's key parts onto the child.
+    /// </summary>
     private static DbColumnName[] BuildParentKeyColumnNames(
         string rootBaseName,
         IReadOnlyList<string> parentCollectionBaseNames
@@ -330,6 +377,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return keyColumns.ToArray();
     }
 
+    /// <summary>
+    /// Computes the physical child table name from the root name plus the concatenated collection base
+    /// names.
+    /// </summary>
     private static string BuildCollectionTableName(
         string rootBaseName,
         IReadOnlyList<string> collectionBaseNames
@@ -343,6 +394,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return rootBaseName + string.Concat(collectionBaseNames);
     }
 
+    /// <summary>
+    /// Seeds the table's column inventory with key columns, using scalar types appropriate for each key kind.
+    /// </summary>
     private static DbColumnModel[] BuildKeyColumns(IReadOnlyList<DbKeyColumn> keyColumns)
     {
         DbColumnModel[] columns = new DbColumnModel[keyColumns.Count];
@@ -365,6 +419,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return columns;
     }
 
+    /// <summary>
+    /// Resolves the scalar type used for key columns (document ids are <c>bigint</c>, ordinals are
+    /// <c>int</c>).
+    /// </summary>
     private static RelationalScalarType ResolveKeyColumnScalarType(DbKeyColumn keyColumn)
     {
         return keyColumn.Kind switch
@@ -380,6 +438,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Identifies columns that represent a <c>DocumentId</c> (root <c>DocumentId</c> or <c>*_DocumentId</c>
+    /// key parts).
+    /// </summary>
     private static bool IsDocumentIdColumn(DbColumnName columnName)
     {
         if (
@@ -396,6 +458,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Ensures required string inputs are present on the context before derivation proceeds.
+    /// </summary>
     private static string RequireContextValue(string? value, string name)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -406,5 +471,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return value;
     }
 
+    /// <summary>
+    /// Tracks the derived <see cref="DbTableModel"/> along with the collection-name chain used for key and FK
+    /// column derivation.
+    /// </summary>
     private sealed record TableScope(DbTableModel Table, IReadOnlyList<string> CollectionBaseNames);
 }

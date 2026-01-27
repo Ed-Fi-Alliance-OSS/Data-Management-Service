@@ -7,6 +7,9 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// The high-level schema shape needed by the relational model derivation traversal.
+/// </summary>
 internal enum SchemaKind
 {
     Object,
@@ -14,8 +17,21 @@ internal enum SchemaKind
     Scalar,
 }
 
+/// <summary>
+/// Determines how a JSON schema node should be interpreted for traversal when deriving relational tables and
+/// columns.
+/// </summary>
+/// <remarks>
+/// The Ed-Fi <c>jsonSchemaForInsert</c> payload is expected to be fully dereferenced and commonly includes
+/// explicit <c>type</c> keywords, but the implementation is tolerant of omitted <c>type</c> when other
+/// structure keywords (like <c>properties</c> or <c>items</c>) are present.
+/// </remarks>
 internal static class JsonSchemaTraversalConventions
 {
+    /// <summary>
+    /// Classifies a schema node as object/array/scalar, enforcing the root-must-be-object constraint when
+    /// requested.
+    /// </summary>
     internal static SchemaKind DetermineSchemaKind(
         JsonObject schema,
         string? path = null,
@@ -60,6 +76,9 @@ internal static class JsonSchemaTraversalConventions
         return SchemaKind.Scalar;
     }
 
+    /// <summary>
+    /// Reads the schema <c>type</c> keyword when present and validates it is a string.
+    /// </summary>
     private static string? GetSchemaType(JsonObject schema, string? path, bool includeTypePathInErrors)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
@@ -80,6 +99,9 @@ internal static class JsonSchemaTraversalConventions
         return schemaType;
     }
 
+    /// <summary>
+    /// Throws a consistent error when the root schema is not an object.
+    /// </summary>
     private static void ThrowRootSchemaMustBeObject(string? path)
     {
         var resolvedPath = string.IsNullOrWhiteSpace(path) ? "$" : path;
@@ -87,6 +109,10 @@ internal static class JsonSchemaTraversalConventions
         throw new InvalidOperationException($"Root schema must be an object at {resolvedPath}.");
     }
 
+    /// <summary>
+    /// Builds a type-validation error message, optionally including the <c>.type</c> suffix for more precise
+    /// diagnostics.
+    /// </summary>
     private static string BuildTypeErrorMessage(string? path, bool includeTypePathInErrors)
     {
         if (includeTypePathInErrors && !string.IsNullOrWhiteSpace(path))

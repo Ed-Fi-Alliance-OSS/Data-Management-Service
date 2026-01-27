@@ -8,12 +8,46 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Derives scalar columns (and descriptor foreign keys) for each previously-discovered table scope.
+/// </summary>
+/// <remarks>
+/// <para>
+/// This step walks <c>resourceSchema.jsonSchemaForInsert</c> and:
+/// </para>
+/// <list type="bullet">
+/// <item>
+/// <description>
+/// Inlines object properties (except <c>_ext</c>) by prefixing descendant scalar property names.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// Routes array item properties to the child table at that array's JSONPath scope.
+/// </description>
+/// </item>
+/// <item>
+/// <description>
+/// Converts descriptor value paths provided by <see cref="RelationalModelBuilderContext.DescriptorPathsByJsonPath"/>
+/// into <c>*_DescriptorId</c> FK columns and records <see cref="DescriptorEdgeSource"/> metadata.
+/// </description>
+/// </item>
+/// </list>
+/// <para>
+/// Nullability is derived from JSON Schema required-ness, <c>x-nullable</c>, and whether the value has an
+/// optional ancestor object.
+/// </para>
+/// </remarks>
 public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName DmsSchemaName = new("dms");
     private static readonly DbTableName DescriptorTableName = new(DmsSchemaName, "Descriptor");
 
+    /// <summary>
+    /// Populates derived scalar/descriptor columns for each table in the current <see cref="RelationalResourceModel"/>.
+    /// </summary>
+    /// <param name="context">The builder context containing schema inputs and the partially-derived model.</param>
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -84,6 +118,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         };
     }
 
+    /// <summary>
+    /// Walks a schema node and dispatches to the appropriate object/array visitor.
+    /// </summary>
     private static void WalkSchema(
         JsonObject schema,
         TableBuilder tableBuilder,
@@ -137,6 +174,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         }
     }
 
+    /// <summary>
+    /// Walks an object schema, descending into nested objects/arrays and producing scalar/descriptor columns
+    /// for scalar properties.
+    /// </summary>
     private static void WalkObjectSchema(
         JsonObject schema,
         TableBuilder tableBuilder,
@@ -231,6 +272,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         }
     }
 
+    /// <summary>
+    /// Walks an array schema by switching traversal to the derived child-table scope for that array
+    /// (<c>$.path.to.array[*]</c>).
+    /// </summary>
     private static void WalkArraySchema(
         JsonObject schema,
         List<JsonPathSegment> propertySegments,
@@ -305,6 +350,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         }
     }
 
+    /// <summary>
+    /// Handles arrays of descriptor strings by treating each element as a descriptor value path and emitting
+    /// a descriptor FK column on the array's child table.
+    /// </summary>
     private static void AddDescriptorArrayColumn(
         TableBuilder tableBuilder,
         JsonObject itemsSchema,
@@ -341,6 +390,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         );
     }
 
+    /// <summary>
+    /// Adds either a scalar column or (when the JSONPath is a descriptor path) a descriptor FK column.
+    /// </summary>
     private static void AddScalarOrDescriptorColumn(
         TableBuilder tableBuilder,
         JsonObject schema,
@@ -409,6 +461,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         tableBuilder.AddColumn(scalarColumn);
     }
 
+    /// <summary>
+    /// Resolves a relational scalar type from a JSON schema scalar node.
+    /// </summary>
     private static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -429,6 +484,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         };
     }
 
+    /// <summary>
+    /// Resolves a string scalar type, mapping well-known formats to temporal scalar kinds.
+    /// </summary>
     private static RelationalScalarType ResolveStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -451,6 +509,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return BuildStringType(schema, sourcePath, context);
     }
 
+    /// <summary>
+    /// Builds the default string scalar type (with <c>maxLength</c>) unless omission is allowed by metadata.
+    /// </summary>
     private static RelationalScalarType BuildStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -488,6 +549,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return new RelationalScalarType(ScalarKind.String, maxLength);
     }
 
+    /// <summary>
+    /// Indicates whether a missing <c>maxLength</c> is acceptable for a particular string JSONPath.
+    /// </summary>
     private static bool IsMaxLengthOmissionAllowed(
         JsonPathExpression sourcePath,
         RelationalModelBuilderContext context
@@ -496,6 +560,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
     }
 
+    /// <summary>
+    /// Resolves the integer scalar kind based on the optional <c>format</c> keyword.
+    /// </summary>
     private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)
     {
         var format = GetOptionalString(schema, "format", sourcePath.Canonical);
@@ -507,6 +574,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         };
     }
 
+    /// <summary>
+    /// Resolves a decimal scalar type using precomputed validation info (precision/scale) sourced from
+    /// schema metadata.
+    /// </summary>
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
         RelationalModelBuilderContext context
@@ -546,6 +617,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         );
     }
 
+    /// <summary>
+    /// Reads <c>x-nullable</c> (an OpenAPI extension commonly used in Ed-Fi schemas) as an override for
+    /// JSON Schema required-ness.
+    /// </summary>
     private static bool IsXNullable(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("x-nullable", out var nullableNode) || nullableNode is null)
@@ -561,6 +636,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return jsonValue.GetValue<bool>();
     }
 
+    /// <summary>
+    /// Gets the scalar type keyword from a JSON schema node, enforcing that <c>type</c> is present and a
+    /// string.
+    /// </summary>
     private static string GetSchemaType(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
@@ -575,6 +654,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         };
     }
 
+    /// <summary>
+    /// Reads an optional string-valued keyword from a schema node.
+    /// </summary>
     private static string? GetOptionalString(JsonObject schema, string propertyName, string path)
     {
         if (!schema.TryGetPropertyValue(propertyName, out var valueNode) || valueNode is null)
@@ -591,6 +673,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         };
     }
 
+    /// <summary>
+    /// Builds the physical column base name from the accumulated column-segment path using PascalCase.
+    /// </summary>
     private static string BuildColumnBaseName(IReadOnlyList<string> segments)
     {
         if (segments.Count == 0)
@@ -608,6 +693,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return builder.ToString();
     }
 
+    /// <summary>
+    /// For arrays of descriptor strings, derives the base column name from the owning array property.
+    /// </summary>
     private static List<string> BuildDescriptorArrayColumnSegments(
         IReadOnlyList<JsonPathSegment> propertySegments
     )
@@ -623,6 +711,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return columnSegments;
     }
 
+    /// <summary>
+    /// Appends a property segment to an existing JSONPath segment list.
+    /// </summary>
     private static List<JsonPathSegment> BuildPropertySegments(
         List<JsonPathSegment> pathSegments,
         string propertyName
@@ -637,6 +728,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return propertySegments;
     }
 
+    /// <summary>
+    /// Appends a property name to the current column-prefix segment list.
+    /// </summary>
     private static List<string> BuildPropertyColumnSegments(List<string> columnSegments, string propertyName)
     {
         List<string> propertyColumnSegments = [.. columnSegments, propertyName];
@@ -644,6 +738,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return propertyColumnSegments;
     }
 
+    /// <summary>
+    /// Reads and validates the <c>required</c> array on an object schema.
+    /// </summary>
     private static HashSet<string> GetRequiredProperties(
         JsonObject schema,
         List<JsonPathSegment> pathSegments
@@ -693,6 +790,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return requiredProperties;
     }
 
+    /// <summary>
+    /// Builds the canonical JSONPath for a single property under the provided scope segments.
+    /// </summary>
     private static string BuildPropertyPath(List<JsonPathSegment> scopeSegments, string propertyName)
     {
         List<JsonPathSegment> propertySegments =
@@ -704,6 +804,9 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         return JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
     }
 
+    /// <summary>
+    /// Ensures the descriptor metadata provided to the builder has a corresponding value in the JSON schema.
+    /// </summary>
     private static void EnsureAllDescriptorPathsUsed(
         RelationalModelBuilderContext context,
         HashSet<string> usedDescriptorPaths
@@ -734,10 +837,17 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         );
     }
 
+    /// <summary>
+    /// Mutable builder for a <see cref="DbTableModel"/> that enforces unique column names and accumulates
+    /// constraints during schema traversal.
+    /// </summary>
     private sealed class TableBuilder
     {
         private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
 
+        /// <summary>
+        /// Initializes a builder using an existing table definition (typically containing only key columns).
+        /// </summary>
         public TableBuilder(DbTableModel table)
         {
             Definition = table;
@@ -761,6 +871,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
 
         public List<TableConstraint> Constraints { get; }
 
+        /// <summary>
+        /// Adds a column, failing fast when a physical column name collides across different JSON source
+        /// paths.
+        /// </summary>
         public void AddColumn(DbColumnModel column)
         {
             if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
@@ -780,16 +894,26 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             Columns.Add(column);
         }
 
+        /// <summary>
+        /// Adds a table constraint (FKs, unique constraints, etc.) to the builder.
+        /// </summary>
         public void AddConstraint(TableConstraint constraint)
         {
             Constraints.Add(constraint);
         }
 
+        /// <summary>
+        /// Returns a new immutable <see cref="DbTableModel"/> with the accumulated column and constraint
+        /// inventory.
+        /// </summary>
         public DbTableModel Build()
         {
             return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
         }
 
+        /// <summary>
+        /// Converts a column source path into the most helpful canonical JSONPath for collision messages.
+        /// </summary>
         private string ResolveSourcePath(JsonPathExpression? sourcePath)
         {
             return (sourcePath ?? Definition.JsonScope).Canonical;

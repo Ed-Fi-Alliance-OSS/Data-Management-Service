@@ -7,6 +7,15 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Validates that <c>jsonSchemaForInsert</c> is fully dereferenced/expanded and does not contain schema
+/// constructs the relational builder does not support.
+/// </summary>
+/// <remarks>
+/// This validator is called at each schema node that the traversal visits. Nodes under
+/// <c>additionalProperties</c> are intentionally not visited (and therefore not validated) because
+/// <c>additionalProperties</c> is treated as "ignore/prune" for persistence.
+/// </remarks>
 internal static class JsonSchemaUnsupportedKeywordValidator
 {
     private static readonly IReadOnlyList<string> UnsupportedKeywords =
@@ -19,6 +28,12 @@ internal static class JsonSchemaUnsupportedKeywordValidator
         "patternProperties",
     ];
 
+    /// <summary>
+    /// Throws when an unsupported keyword is present on <paramref name="schema"/>, including the offending
+    /// keyword and the schema traversal path in the error message.
+    /// </summary>
+    /// <param name="schema">The schema node to validate.</param>
+    /// <param name="path">The schema traversal path used for error reporting.</param>
     internal static void Validate(JsonObject schema, string path)
     {
         foreach (var keyword in UnsupportedKeywords)

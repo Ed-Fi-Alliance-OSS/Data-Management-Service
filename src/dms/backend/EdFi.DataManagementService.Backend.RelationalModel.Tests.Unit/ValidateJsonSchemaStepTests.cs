@@ -380,6 +380,8 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Object
     [SetUp]
     public void Setup()
     {
+        // additionalProperties is treated as "ignore/prune" by the relational model builder, so unsupported
+        // keywords nested under additionalProperties must not cause validation to fail.
         var schema = ValidateJsonSchemaStepTestHelper.CreateRootSchemaWithAdditionalProperties(
             new JsonObject { ["$ref"] = "#/definitions/ignored" }
         );

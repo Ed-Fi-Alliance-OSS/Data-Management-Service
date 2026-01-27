@@ -1,216 +1,125 @@
 [
   {
-    "category": "Contract - jsonSchemaForInsert",
-    "description": "Adopt a single contract: JSON Schema keyword `enum` is unsupported anywhere inside `resourceSchema.jsonSchemaForInsert`. Acceptance: the relational-model build fails fast with a path-inclusive error when `enum` is present (e.g., `$.properties.status.enum`), and no derivation logic or tests assume `enum` can occur.",
+    "category": "Docs - Source",
+    "description": "Review `DeriveTableScopesAndKeysStep.cs` and ensure class-level + method-level documentation explains table-scope discovery and key/ordinal rules.",
     "steps-to-verify": [
-      "Confirm the contract text (story/design) explicitly states `enum` cannot occur in `jsonSchemaForInsert` and treat any occurrence as an invalid ApiSchema input.",
-      "Keep `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs` rejecting `enum` via `UnsupportedKeywords` with a message that includes `{path}.enum`.",
-      "Add/update at least one test that demonstrates a resource schema containing `$.properties.<name>.enum` fails with a message containing that canonical JSON path."
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs` and confirm the class summary describes: root table `$`, child table per array path, composite key parts, and deterministic traversal.",
+      "Confirm `Execute(...)` and all helper methods have concise XML documentation that matches current behavior (skips `_ext`, ignores `additionalProperties`, orders properties ordinally)."
     ],
     "completed": true
   },
   {
-    "category": "Relational Model - Guardrails",
-    "description": "Remove any implicit/accidental acceptance of `enum` when schema validation is skipped (e.g., direct step execution in unit tests). Acceptance: attempting to derive tables/columns from a schema containing `enum` fails with an unsupported-keyword error before any type/maxLength logic runs.",
+    "category": "Docs - Source",
+    "description": "Review `DeriveColumnsAndDescriptorEdgesStep.cs` and ensure documentation explains inlined object traversal, array-table routing, and nullability rules.",
     "steps-to-verify": [
-      "Choose one approach and apply consistently: (a) ensure unit-test helpers run `ValidateJsonSchemaStep` before derivation steps, or (b) factor unsupported-keyword validation into a shared helper and invoke it from the traversal entry points in derivation steps.",
-      "Ensure the failure message for `enum` still includes the canonical path to the keyword (e.g., `$.properties.status.enum`).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs` and confirm the class summary documents: object inlining, array child-table scope selection, descriptor FK handling, and nullability derivation.",
+      "Confirm `Execute(...)` and traversal helpers (`Walk*`, type resolvers, and `TableBuilder`) have XML documentation describing intent and error behavior (collisions, missing metadata)."
     ],
     "completed": true
   },
   {
-    "category": "Unit Tests - Derivation",
-    "description": "Align derivation unit tests with the `enum`-is-unsupported contract. Acceptance: no derivation unit test uses JSON Schema `enum` as a valid input; instead, tests either (a) expect validation to fail on `enum`, or (b) model MetaEd enumerations via `flatteningMetadata`/allow-list inputs without relying on JSON Schema `enum`.",
+    "category": "Docs - Source",
+    "description": "Review `ValidateJsonSchemaStep.cs` and ensure documentation states the supported JSON Schema subset and the closed-world `additionalProperties` contract.",
     "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs` to remove/replace the fixture that includes `\"enum\": [...]` under a string property.",
-      "If retaining coverage for enumeration-like shapes, represent them without JSON Schema `enum` and allow missing `maxLength` only via `StringMaxLengthOmissionPaths` (as extracted from `flatteningMetadata`).",
-      "Run the focused tests: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"Given_An_Enumeration_String_Without_MaxLength|Given_A_JsonSchema_With_Enum\"`"
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs` and confirm the class summary explains: dereferenced/expanded schema expectation, unsupported keyword failures, and `additionalProperties` pruning (not traversed).",
+      "Confirm `Execute(...)` and validation helpers have XML documentation that matches the current array item rules (object items except descriptor scalar arrays)."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `JsonSchemaUnsupportedKeywordValidator.cs` and ensure documentation clarifies what is rejected and why validation is path-inclusive.",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonSchemaUnsupportedKeywordValidator.cs` and confirm the summary explains the dereferenced-schema contract and the unsupported keyword set.",
+      "Confirm `Validate(...)` includes XML documentation and callers supply meaningful traversal paths."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `JsonSchemaTraversalConventions.cs` and ensure documentation explains how schema kind is inferred with/without explicit `type`.",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonSchemaTraversalConventions.cs` and confirm `SchemaKind` and `DetermineSchemaKind(...)` are documented.",
+      "Confirm private helpers (`GetSchemaType`, root-object error helpers) have method-level comments."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `JsonPathExpressionCompiler.cs` and ensure documentation describes supported JSONPath syntax and canonicalization rules.",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonPathExpressionCompiler.cs` and confirm the supported syntax is documented (`$`, `.property`, `[*]`).",
+      "Confirm `Compile(...)`, `FromSegments(...)`, and validation helpers have method-level comments."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `RelationalNameConventions.cs` and ensure naming rules are documented (schema normalization, PascalCase identifiers, and key/ordinal column naming).",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs` and confirm the class summary explains the deterministic, cross-database-safe naming policy.",
+      "Confirm public helpers (schema normalization, collection base naming, key-part column naming, and FK naming) have method-level XML documentation."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `RelationalModelInputTypes.cs` and ensure descriptor/decimal metadata inputs are documented.",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelInputTypes.cs` and confirm `DescriptorPathInfo` and `DecimalPropertyValidationInfo` have XML summaries and `<param ...>` documentation.",
+      "Confirm parameter docs describe how these inputs affect derived column types (descriptor FKs and decimal precision/scale)."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `RelationalModelBuilderPipeline.cs` and ensure context properties are documented (especially schema/metadata inputs).",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelBuilderPipeline.cs` and confirm `IRelationalModelBuilderStep`, `RelationalModelBuilderContext`, and `RelationalModelBuilderPipeline` have class/method documentation.",
+      "Confirm important `RelationalModelBuilderContext` properties have XML documentation describing their role in derivation (identity paths, descriptor paths, decimal metadata, and maxLength omission paths)."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Source",
+    "description": "Review `RelationalModelTypes.cs` and ensure core types/enums have documentation for important parameters/properties.",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelTypes.cs` and confirm public records/enums have XML summaries.",
+      "Confirm important record parameters are documented via `<param ...>` tags (resource names, table scope, key columns, scalar type metadata, and edge/binding metadata)."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Tests",
+    "description": "Review `DeriveTableScopesAndKeysStepTests.cs` and ensure the nested-collections/key-derivation intent is self-evident; add comments only where needed.",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs` and confirm the fixture and assertions clearly cover: root scope `$`, nested array table creation, and composite key parts/ordinals.",
+      "If any assertion depends on a non-obvious convention (e.g., naming/ordinal inheritance), add a brief comment explaining the rule being verified."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Tests",
+    "description": "Review `DeriveColumnsAndDescriptorEdgesStepTests.cs` and add comments where test intent is not obvious (descriptor special cases and `additionalProperties` pruning).",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs` and confirm tests cover: inlined object scalars, descriptor FK replacement, collisions, decimals, and additionalProperties ignore behavior.",
+      "Confirm any non-obvious setup (e.g., bypassing the full pipeline in the test helper) has a short comment explaining why."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs - Tests",
+    "description": "Review `ValidateJsonSchemaStepTests.cs` and add comments where the intent could be misread (especially `additionalProperties` behavior).",
+    "steps-to-verify": [
+      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ValidateJsonSchemaStepTests.cs` and confirm tests cover: unsupported keywords, root shape, array item rules, descriptor scalar array allowance, and additionalProperties variants.",
+      "Confirm any intentionally-ignored unsupported keywords nested under `additionalProperties` are explained with a short comment."
     ],
     "completed": true
   },
   {
     "category": "Build",
-    "description": "Build and run backend unit tests after aligning `enum` behavior. Acceptance: backend unit tests pass and the DMS solution builds cleanly.",
+    "description": "Run DMS solution build and relational-model unit tests after documentation updates.",
     "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Test Project Split",
-    "description": "Create a dedicated unit test project for `EdFi.DataManagementService.Backend.RelationalModel` at `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the new project is included in `./src/dms/EdFi.DataManagementService.sln`, references `EdFi.DataManagementService.Backend.RelationalModel`, and runs under NUnit.",
-    "steps-to-verify": [
-      "Create: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` with `TargetFramework=net10.0`, `IsTestProject=true`, `Nullable=enable`, `ImplicitUsings=enable`, and `TreatWarningsAsErrors=true`.",
-      "Add test packages: `Microsoft.NET.Test.Sdk`, `NUnit`, `NUnit3TestAdapter`, `FluentAssertions` (and any other packages required by moved tests).",
-      "Add `ProjectReference` to `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/EdFi.DataManagementService.Backend.RelationalModel.csproj`.",
-      "Add the new project to `src/dms/EdFi.DataManagementService.sln`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `CanonicalizeOrderingStepTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/CanonicalizeOrderingStepTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/CanonicalizeOrderingStepTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_Schemas_With_Different_Property_Order|Given_Descriptor_Path_Mappings_With_Different_Order\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `DeriveColumnsAndDescriptorEdgesStepTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_An_Inlined_Object_Property|Given_Colliding_Column_Names|Given_A_Descriptor_Path|Given_A_Descriptor_Scalar_Array|Given_Descriptor_Uri_Strings_Without_MaxLength|Given_A_Property_With_XNullable|Given_A_String_Property_Without_MaxLength|Given_String_Properties_With_Format_And_No_MaxLength|Given_A_Duration_String_Without_MaxLength|Given_An_Enumeration_String_Without_MaxLength|Given_A_Number_Property_With_Decimal_Validation|Given_A_Number_Property_Without_Decimal_Validation|Given_A_Number_Property_With_Incomplete_Decimal_Validation|Given_A_JsonSchema_With_AdditionalProperties_Schema\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `DeriveTableScopesAndKeysStepTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_JsonSchema_With_Nested_Collections\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `DiscoverExtensionSitesStepTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/DiscoverExtensionSitesStepTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DiscoverExtensionSitesStepTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_JsonSchema_With_Extension_Sites|Given_A_JsonSchema_With_Extension_Scalars\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `ExtractInputsStepTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ExtractInputsStepTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ExtractInputsStepTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_An_ApiSchema_With_A_Descriptor_Mapping\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `ForeignKeyReferentialActionTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ForeignKeyReferentialActionTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ForeignKeyReferentialActionTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Reference_Identity_Foreign_Key\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `JsonPathExpressionCompilerTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/JsonPathExpressionCompilerTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/JsonPathExpressionCompilerTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Root_JsonPath|Given_A_JsonPath_With_One_Property|Given_A_JsonPath_With_Two_Properties|Given_A_JsonPath_With_An_Array_Segment|Given_A_JsonPath_With_Array_And_Property_Segments|Given_A_JsonPath_With_Nested_Arrays|Given_A_JsonPath_With_A_Numeric_Index\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalModelAuthoritativeGoldenTests.cs` and its authoritative fixtures into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the golden test still finds fixtures and passes (or produces a meaningful diff) under the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelAuthoritativeGoldenTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelAuthoritativeGoldenTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Move fixtures: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Fixtures/authoritative/ds-5.2` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2`.",
-      "Update the `FindProjectRoot` logic to locate `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` (instead of `EdFi.DataManagementService.Backend.Tests.Unit.csproj`).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_An_Authoritative_ApiSchema_For_Ed_Fi\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalModelAuthoritativeStringMaxLengthAuditTests.cs` and ensure it still locates authoritative fixtures in the new project. Acceptance: the audit test runs and produces deterministic output on failure.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelAuthoritativeStringMaxLengthAuditTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelAuthoritativeStringMaxLengthAuditTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "If still using `FindProjectRoot`, update it to locate `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` and confirm the authoritative fixture root remains `Fixtures/authoritative/ds-5.2` under the new project.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalModelBuilderPipelineTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelBuilderPipelineTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelBuilderPipelineTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Relational_Model_Pipeline_With_Two_Steps\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalModelManifestEmitterTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelManifestEmitterTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelManifestEmitterTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Relational_Model_Manifest_Emitter|Given_Schemas_With_And_Without_AdditionalProperties\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalModelManifestOrderingTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelManifestOrderingTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelManifestOrderingTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Canonicalized_Model_When_Emitting_A_Manifest\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalModelPipelineEndToEndTests.cs` and `Fixtures/relational-model-fixture.json` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the E2E-style pipeline test still loads the fixture from the test output and passes.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalModelPipelineEndToEndTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelPipelineEndToEndTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Move fixture: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Fixtures/relational-model-fixture.json` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/relational-model-fixture.json`.",
-      "Update the new test project `.csproj` to copy `Fixtures/relational-model-fixture.json` to the output directory (preserve folder structure) so `TestContext.CurrentContext.TestDirectory/Fixtures/...` continues to work.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Complete_Relational_Model_Pipeline\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `RelationalNameConventionsTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/RelationalNameConventionsTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalNameConventionsTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Project_Endpoint_Name_With_Dashes|Given_A_Collection_Name_Ending_In_Ies|Given_A_Collection_Name_Ending_In_Ses|Given_A_Table_And_Columns_For_A_Foreign_Key|Given_An_Empty_Foreign_Key_Column_List\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "RelationalModel.Tests.Unit - Move Test File",
-    "description": "Move `ValidateJsonSchemaStepTests.cs` into `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`. Acceptance: the moved tests compile and pass in the new project.",
-    "steps-to-verify": [
-      "Move: `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/ValidateJsonSchemaStepTests.cs` -> `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ValidateJsonSchemaStepTests.cs`.",
-      "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_JsonSchema_With_A_Ref|Given_A_JsonSchema_With_OneOf|Given_A_JsonSchema_With_AnyOf|Given_A_JsonSchema_With_AllOf|Given_A_JsonSchema_With_Enum|Given_A_JsonSchema_With_PatternProperties|Given_A_JsonSchema_With_A_Type_Array|Given_A_JsonSchema_With_A_Non_Object_Root|Given_A_JsonSchema_With_Array_Items_Not_Object|Given_A_JsonSchema_With_A_Descriptor_Scalar_Array|Given_A_JsonSchema_With_AdditionalProperties_True|Given_A_JsonSchema_With_AdditionalProperties_False|Given_A_JsonSchema_With_AdditionalProperties_Object\"`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Test Project Split",
-    "description": "Clean up the original backend unit test project after moving relational-model tests. Acceptance: `EdFi.DataManagementService.Backend.Tests.Unit` still builds/runs its remaining tests, and it no longer depends on the relational-model test fixtures or the relational-model test source files.",
-    "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj` to remove the moved test files and any now-unneeded `ProjectReference`/`Content` items (notably the `EdFi.DataManagementService.Backend.RelationalModel` reference and `Fixtures/relational-model-fixture.json` copy rule if no longer needed).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],

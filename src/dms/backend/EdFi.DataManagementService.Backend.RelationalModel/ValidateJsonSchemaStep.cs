@@ -7,8 +7,27 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Validates <c>resourceSchema.jsonSchemaForInsert</c> for the assumptions required by relational model
+/// derivation.
+/// </summary>
+/// <remarks>
+/// <para>
+/// The relational model builder assumes the schema is fully dereferenced/expanded and uses a constrained
+/// subset of JSON Schema. Unsupported keywords (for example <c>$ref</c>, <c>oneOf</c>, and <c>enum</c>) are
+/// rejected with path-inclusive errors.
+/// </para>
+/// <para>
+/// Objects are traversed through <c>properties</c> only. <c>additionalProperties</c> is treated as
+/// "prune/ignore" (closed-world persistence) and is therefore not validated or traversed.
+/// </para>
+/// </remarks>
 public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
 {
+    /// <summary>
+    /// Validates the schema attached to <see cref="RelationalModelBuilderContext.JsonSchemaForInsert"/>.
+    /// </summary>
+    /// <param name="context">The builder context containing the schema and descriptor metadata.</param>
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -25,6 +44,10 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         ValidateSchema(rootSchema, "$", isRoot: true, [], context);
     }
 
+    /// <summary>
+    /// Validates a schema node and recursively validates its descendants according to the supported keyword
+    /// set.
+    /// </summary>
     private static void ValidateSchema(
         JsonObject schema,
         string path,
@@ -57,6 +80,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Validates an object schema by validating each property schema under <c>properties</c>.
+    /// </summary>
     private static void ValidateObjectSchema(
         JsonObject schema,
         string path,
@@ -99,6 +125,10 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Validates an array schema, enforcing the "arrays are tables" rule: items are normally objects, with a
+    /// special case for descriptor scalar arrays.
+    /// </summary>
     private static void ValidateArraySchema(
         JsonObject schema,
         string path,
@@ -152,6 +182,10 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arraySegments, context);
     }
 
+    /// <summary>
+    /// Gets the <c>type</c> keyword from a schema node when present, returning <see langword="null"/> when
+    /// omitted.
+    /// </summary>
     private static string? GetSchemaType(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
