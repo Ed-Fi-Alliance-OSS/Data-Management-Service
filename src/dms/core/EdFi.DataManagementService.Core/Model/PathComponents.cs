@@ -15,7 +15,7 @@ internal record PathComponents(
     /// <summary>
     /// Project endpoint name, lower kebab-case, ex: "ed-fi"
     /// </summary>
-    ApiSchema.Model.ProjectEndpointName ProjectEndpointName,
+    ProjectEndpointName ProjectEndpointName,
     /// <summary>
     /// Endpoint name, which is always decapitalized and plural
     /// </summary>

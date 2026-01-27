@@ -75,6 +75,11 @@ internal class ApiService : IApiService
     private readonly VersionedLazy<PipelineProvider> _deleteByIdSteps;
 
     /// <summary>
+    /// The pipeline steps to satisfy a get token introspection request
+    /// </summary>
+    private readonly VersionedLazy<PipelineProvider> _getTokenInfoSteps;
+
+    /// <summary>
     /// The OpenAPI specification derived from core and extension ApiSchemas
     /// </summary>
     private readonly VersionedLazy<JsonNode> _resourceOpenApiSpecification;
@@ -143,6 +148,11 @@ internal class ApiService : IApiService
 
         _deleteByIdSteps = new VersionedLazy<PipelineProvider>(
             CreateDeleteByIdPipeline,
+            () => _apiSchemaProvider.ReloadId
+        );
+
+        _getTokenInfoSteps = new VersionedLazy<PipelineProvider>(
+            CreateGetTokenInfoPipeline,
             () => _apiSchemaProvider.ReloadId
         );
 
@@ -358,6 +368,18 @@ internal class ApiService : IApiService
         return new PipelineProvider(steps);
     }
 
+    private PipelineProvider CreateGetTokenInfoPipeline()
+    {
+        var steps = GetCommonInitialSteps();
+        steps.AddRange([
+            new ApiSchemaValidationMiddleware(_apiSchemaProvider, _logger),
+            new ProvideApiSchemaMiddleware(_apiSchemaProvider, _logger, _compiledSchemaCache),
+            _serviceProvider.GetRequiredService<GetTokenInfoHandler>(),
+        ]);
+
+        return new PipelineProvider(steps);
+    }
+
     /// <summary>
     /// Parses the excluded domains configuration setting into an array of domain names
     /// </summary>
@@ -447,6 +469,16 @@ internal class ApiService : IApiService
     {
         RequestInfo requestInfo = new(frontendRequest, RequestMethod.DELETE);
         await _deleteByIdSteps.Value.Run(requestInfo);
+        return requestInfo.FrontendResponse;
+    }
+
+    /// <summary>
+    /// DMS entry point for the token introspection request
+    /// </summary>
+    public async Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest)
+    {
+        RequestInfo requestInfo = new(frontendRequest, RequestMethod.POST);
+        await _getTokenInfoSteps.Value.Run(requestInfo);
         return requestInfo.FrontendResponse;
     }
 

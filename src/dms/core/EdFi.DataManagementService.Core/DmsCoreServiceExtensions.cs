@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
+using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
@@ -87,7 +88,8 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IProfileCreatabilityValidator, ProfileCreatabilityValidator>()
             .AddTransient<ProfileResolutionMiddleware>()
             .AddTransient<ProfileFilteringMiddleware>()
-            .AddTransient<ProfileWriteValidationMiddleware>();
+            .AddTransient<ProfileWriteValidationMiddleware>()
+            .AddScoped<GetTokenInfoHandler>();
 
         return services;
 

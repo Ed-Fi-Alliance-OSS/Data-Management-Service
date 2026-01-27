@@ -4,9 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DataManagementService.Old.Postgresql.Operation;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
-using Npgsql;
+using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Old.Postgresql.Operation;
 
 namespace EdFi.DataManagementService.Old.Postgresql;
 
@@ -28,6 +29,14 @@ public class PostgresqlAuthorizationRepository(
         );
 
         return organizationIds.Distinct().ToArray();
+    }
+
+    public async Task<IEnumerable<TokenInfoEducationOrganization>> GetTokenInfoEducationOrganizations(
+        IReadOnlyCollection<EducationOrganizationId> educationOrganizationIds
+    )
+    {
+        await using var connection = await dataSourceProvider.DataSource.OpenConnectionAsync();
+        return await sqlAction.GetTokenInfoEducationOrganizations(educationOrganizationIds, connection);
     }
 
     public async Task<long[]> GetEducationOrganizationsForContact(string contactUniqueId)

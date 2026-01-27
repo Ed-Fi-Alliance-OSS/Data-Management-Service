@@ -196,6 +196,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noresourcenames/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -218,6 +219,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noIsDescriptors/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -240,6 +242,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noallowidentityupdates/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -267,6 +270,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noIsSchoolYearEnumerations/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -289,6 +293,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noJsonSchemaForInserts/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -311,6 +316,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noidentityjsonpaths/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -333,6 +339,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noequalityconstraints/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -355,6 +362,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noIsSubclasses/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -377,6 +385,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noSubClassTypes/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -399,6 +408,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/nosuperclassresourcenames/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -421,6 +431,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/nosuperclassprojectnames/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -443,6 +454,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/nosuperclassidentitydocumentkeys/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),
@@ -465,6 +477,7 @@ public class InvalidResourceSchemasTests
                 FrontendRequest request = new(
                     Path: new("/ed-fi/noSubclassIdentityDocumentKeys/123"),
                     Body: null,
+                    Form: null,
                     Headers: AuthHeaders,
                     QueryParameters: [],
                     TraceId: new TraceId(""),

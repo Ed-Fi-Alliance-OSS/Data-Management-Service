@@ -51,6 +51,7 @@ public class ProfileResolutionMiddlewareTests
         var frontendRequest = new FrontendRequest(
             Path: $"/ed-fi/{resourceName.ToLowerInvariant()}s",
             Body: "{}",
+            Form: null,
             Headers: headers ?? new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
             QueryParameters: [],
             TraceId: new TraceId("test-trace-id"),

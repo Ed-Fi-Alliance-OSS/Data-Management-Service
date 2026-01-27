@@ -50,7 +50,6 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private string _dependentId = string.Empty;
         private string _referencedResourceId = string.Empty;
         private ScenarioVariables _scenarioVariables = new();
-        private string _dmsToken = string.Empty;
         private Dictionary<string, string> _relationships = [];
         private int _lastUploadStatusCode = 0;
 
@@ -107,13 +106,13 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the resulting token is stored in the {string} variable")]
         public void GivenTheResultingTokenIsStoredInTheVariable(string variableName)
         {
-            _scenarioVariables.Add(variableName, _dmsToken);
+            _scenarioVariables.Add(variableName, GetDmsTokenFromContext());
         }
 
         [Given("the token gets switched to the one in the {string} variable")]
         public void GivenTheTokenGetsSwitchedToTheOneInTheVariable(string variableName)
         {
-            _dmsToken = _scenarioVariables.GetValueByName(variableName);
+            _scenarioContext["dmsToken"] = _scenarioVariables.GetValueByName(variableName);
         }
 
         private async Task SetAuthorizationToken(
@@ -137,8 +136,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             );
 
             var bearerToken = await AuthorizationDataProvider.GetToken();
-            _dmsToken = $"Bearer {bearerToken}";
-            _scenarioContext["dmsToken"] = _dmsToken;
+            _scenarioContext["dmsToken"] = $"Bearer {bearerToken}";
         }
 
         // Helper method to clear the DMS claimset cache
@@ -177,7 +175,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("there is no Authorization header")]
         public void GivenThereIsNoAuthorizationHeader()
         {
-            _dmsToken = string.Empty;
+            _scenarioContext["dmsToken"] = string.Empty;
         }
 
         [Given("a POST request is made to {string} with")]
@@ -194,11 +192,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Given("the token signature is manipulated")]
         public void TokenSignatureManipulated()
         {
-            var token = _dmsToken;
+            var token = GetDmsTokenFromContext();
             var segments = token.Split('.');
             var signature = segments[2].ToCharArray();
             new Random().Shuffle(signature);
-            _dmsToken = $"{segments[0]}.{segments[1]}.{signature}";
+            _scenarioContext["dmsToken"] = $"{segments[0]}.{segments[1]}.{signature}";
         }
 
         private static (string, Dictionary<string, object>) ExtractDescriptorBody(string descriptorValue)
@@ -346,6 +344,15 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public async Task WhenSendingAPOSTRequestToWithBody(string url, string body)
         {
             url = AddDataPrefixIfNecessary(url);
+
+            if (body.Contains("{token}"))
+            {
+                body = body.Replace(
+                    "{token}",
+                    GetDmsTokenFromContext().Replace("Bearer ", string.Empty)
+                );
+            }
+
             await ExecutePostRequest(url, body);
         }
 
@@ -855,9 +862,16 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             await ResponseBodyIs(expectedBody);
         }
 
+        [Then("the token_info response body is")]
+        public async Task ThenTheTokenInfoResponseBodyIs(string expectedBody)
+        {
+            await ResponseBodyIs(expectedBody, isTokenInfoEndpoint: true);
+        }
+
         private async Task ResponseBodyIs(
             string expectedBody,
-            bool IsDiscoveryEndpoint = false,
+            bool isDiscoveryEndpoint = false,
+            bool isTokenInfoEndpoint = false,
             bool isXml = false
         )
         {
@@ -878,7 +892,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             JsonDocument responseJsonDoc = JsonDocument.Parse(responseContent);
             JsonNode responseJson = JsonNode.Parse(responseJsonDoc.RootElement.ToString())!;
 
-            if (!IsDiscoveryEndpoint && (_apiResponse.Status == 200 || _apiResponse.Status == 201))
+            if (
+                !isDiscoveryEndpoint
+                && !isTokenInfoEndpoint
+                && (_apiResponse.Status == 200 || _apiResponse.Status == 201)
+            )
             {
                 CheckAndRemoveMetadata(responseJson, true);
             }
@@ -893,10 +911,17 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
             // The version value is retrieved from the DMS assembly,
             // so it will not not match value when testing against a published DMS.
-            if (IsDiscoveryEndpoint)
+            if (isDiscoveryEndpoint)
             {
                 (responseJson as JsonObject)?.Remove("version");
                 (expectedBodyJson as JsonObject)?.Remove("version");
+            }
+
+            if (isTokenInfoEndpoint && _apiResponse.Status == 200)
+            {
+                var clientId = ClientId(responseJson);
+                clientId.Should().NotBeNull();
+                (responseJson as JsonObject)?.Remove("client_id");
             }
 
             AreEqual(expectedBodyJson, responseJson)
@@ -958,7 +983,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         [Then("the xsd response body is")]
         public async Task ThenTheXsdResponseBodyIs(string expectedBody)
         {
-            await ResponseBodyIs(expectedBody, true, true);
+            await ResponseBodyIs(expectedBody, isDiscoveryEndpoint: true, isXml: true);
         }
 
         /// <summary>
@@ -1023,6 +1048,19 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             )
             {
                 return lastModifiedDate.GetValue<string?>();
+            }
+            return null;
+        }
+
+        private static string? ClientId(JsonNode response)
+        {
+            if (
+                response is JsonObject jsonObject
+                && jsonObject.TryGetPropertyValue("client_id", out JsonNode? clientId)
+                && clientId != null
+            )
+            {
+                return clientId.GetValue<string?>();
             }
             return null;
         }
@@ -1377,7 +1415,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
             input = input.StartsWith('/') ? input[1..] : input;
 
             // metadata should not have "data" added to the URL.
-            input = input.StartsWith("metadata") ? input : $"data/{input}";
+            input = input.StartsWith("metadata") || input.StartsWith("oauth") ? input : $"data/{input}";
 
             return input;
         }
@@ -1396,7 +1434,10 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
 
         private IEnumerable<KeyValuePair<string, string>> GetHeaders()
         {
-            var list = new List<KeyValuePair<string, string>> { new("Authorization", _dmsToken) };
+            var list = new List<KeyValuePair<string, string>>
+            {
+                new("Authorization", GetDmsTokenFromContext()),
+            };
             return list;
         }
 
@@ -1404,7 +1445,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         {
             var list = new List<KeyValuePair<string, string>>
             {
-                new("Authorization", _dmsToken),
+                new("Authorization", GetDmsTokenFromContext()),
                 new("If-Match", ifMatch),
             };
             return list;
@@ -1414,7 +1455,7 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         public void ThenTheJwtTokenShouldContainTheDmsInstanceIdsClaim()
         {
             // Extract the Bearer token
-            var token = _dmsToken.Replace("Bearer ", string.Empty);
+            var token = GetDmsTokenFromContext().Replace("Bearer ", string.Empty);
 
             // Parse the JWT token
             var tokenHandler = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler();
@@ -1439,6 +1480,11 @@ namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions
         private class ResourceClaimResponse
         {
             // Properties intentionally left empty as we only care about the count
+        }
+
+        private string GetDmsTokenFromContext()
+        {
+            return _scenarioContext.GetValueOrDefault("dmsToken")?.ToString() ?? string.Empty;
         }
     }
 }

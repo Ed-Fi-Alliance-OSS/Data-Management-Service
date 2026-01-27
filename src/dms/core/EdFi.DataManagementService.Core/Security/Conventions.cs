@@ -16,4 +16,14 @@ public static class Conventions
         Justification = "Intentional constant"
     )]
     public const string EdFiOdsResourceClaimBaseUri = "http://ed-fi.org/identity/claims";
+
+    /// <summary>
+    /// Gets the base URI used to represent a resource claim in the Ed-Fi security database.
+    /// </summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Minor Code Smell",
+        "S1075:URIs should not be hardcoded",
+        Justification = "Intentional constant"
+    )]
+    public const string EdFiOdsServiceClaimBaseUri = "http://ed-fi.org/identity/claims/services";
 }

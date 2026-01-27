@@ -47,6 +47,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/schools",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
@@ -118,6 +119,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/schools",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
@@ -224,6 +226,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
@@ -374,6 +377,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
@@ -451,6 +455,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),
@@ -532,6 +537,7 @@ public class ValidateQueryMiddlewareTests
             FrontendRequest frontendRequest = new(
                 Path: "/ed-fi/academicWeeks",
                 Body: null,
+                Form: null,
                 Headers: [],
                 QueryParameters: queryParameters,
                 TraceId: new TraceId(""),

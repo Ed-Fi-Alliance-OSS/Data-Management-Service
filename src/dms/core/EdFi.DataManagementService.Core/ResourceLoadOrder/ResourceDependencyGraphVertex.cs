@@ -5,7 +5,6 @@
 
 using EdFi.DataManagementService.Core.ApiSchema.Model;
 using EdFi.DataManagementService.Core.External.Model;
-using ProjectEndpointName = EdFi.DataManagementService.Core.Model.ProjectEndpointName;
 
 namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 

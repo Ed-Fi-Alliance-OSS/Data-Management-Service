@@ -3,17 +3,16 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Threading;
-using EdFi.DataManagementService.Old.Postgresql.Model;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Old.Postgresql.Model;
 using Npgsql;
-using EdFi.DataManagementService.Backend;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Operation;
 
@@ -1371,5 +1370,94 @@ public partial class SqlAction() : ISqlAction
             },
         };
         return await command.ExecuteNonQueryAsync();
+    }
+
+    public async Task<IReadOnlyList<TokenInfoEducationOrganization>> GetTokenInfoEducationOrganizations(
+        IEnumerable<EducationOrganizationId> educationOrganizationIds,
+        NpgsqlConnection connection
+    )
+    {
+        if (!educationOrganizationIds.Any())
+        {
+            return Array.Empty<TokenInfoEducationOrganization>();
+        }
+
+        await using NpgsqlCommand command = new(
+            @"WITH RECURSIVE EducationOrganizationIdToEducationOrganizationId(
+	            SourceId,
+	            TargetId,
+	            ParentId,
+	            SourceEducationOrganizationId,
+	            TargetEducationOrganizationId,
+	            SourceDocumentId,
+	            SourceDocumentPartitionKey,
+	            TargetDocumentId,
+	            TargetDocumentPartitionKey
+            ) AS (
+	            SELECT 
+		            Id,
+		            Id,
+		            ParentId,
+		            EducationOrganizationId,
+		            EducationOrganizationId,
+		            DocumentId,
+		            DocumentPartitionKey,
+		            DocumentId,
+		            DocumentPartitionKey
+	            FROM dms.EducationOrganizationHierarchy
+                UNION ALL
+	            SELECT 
+		            parent.SourceId,
+		            child.Id,
+		            child.ParentId,
+		            parent.SourceEducationOrganizationId,
+		            child.EducationOrganizationId,
+		            parent.SourceDocumentId,
+		            parent.SourceDocumentPartitionKey,
+		            child.DocumentId,
+		            child.DocumentPartitionKey
+	            FROM EducationOrganizationIdToEducationOrganizationId parent
+	            JOIN dms.EducationOrganizationHierarchy child ON child.ParentId = parent.TargetId
+            )
+            SELECT  accessibleTuples.TargetEducationOrganizationId AS EducationOrganizationId,
+                    accessibleEdOrg.EdfiDoc->>'nameOfInstitution' AS NameOfInstitution,
+                    accessibleEdOrg.ResourceName AS Discriminator,
+                    ancestorTuples.SourceEducationOrganizationId AS AncestorEducationOrganizationId,
+                    ancestorEdOrg.ResourceName AS AncestorDiscriminator
+            FROM    EducationOrganizationIdToEducationOrganizationId accessibleTuples
+                    INNER JOIN dms.Document accessibleEdOrg
+                        ON accessibleTuples.TargetDocumentId = accessibleEdOrg.Id AND accessibleTuples.TargetDocumentPartitionKey = accessibleEdOrg.DocumentPartitionKey
+                    INNER JOIN EducationOrganizationIdToEducationOrganizationId ancestorTuples
+                        ON accessibleTuples.TargetEducationOrganizationId = ancestorTuples.TargetEducationOrganizationId
+                    INNER JOIN dms.Document ancestorEdOrg
+                        ON ancestorTuples.SourceDocumentId = ancestorEdOrg.Id AND ancestorTuples.SourceDocumentPartitionKey = ancestorEdOrg.DocumentPartitionKey
+            WHERE	accessibleTuples.SourceEducationOrganizationId = ANY($1);",
+            connection
+        )
+        {
+            Parameters =
+            {
+                new() { Value = educationOrganizationIds.Select(edOrgId => edOrgId.Value).ToArray() },
+            },
+        };
+
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+        var educationOrganizations = new List<TokenInfoEducationOrganization>();
+
+        while (await reader.ReadAsync())
+        {
+            educationOrganizations.Add(
+                new TokenInfoEducationOrganization(
+                    EducationOrganizationId: reader.GetInt64(reader.GetOrdinal("EducationOrganizationId")),
+                    NameOfInstitution: reader.GetString(reader.GetOrdinal("NameOfInstitution")),
+                    Discriminator: reader.GetString(reader.GetOrdinal("Discriminator")),
+                    AncestorDiscriminator: reader.GetString(reader.GetOrdinal("AncestorDiscriminator")),
+                    AncestorEducationOrganizationId: reader.GetInt64(
+                        reader.GetOrdinal("AncestorEducationOrganizationId")
+                    )
+                )
+            );
+        }
+        return educationOrganizations;
     }
 }

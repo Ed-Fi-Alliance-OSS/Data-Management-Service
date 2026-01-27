@@ -91,7 +91,8 @@ internal class CachedProfileService(
         return HandleImplicitProfileSelection(method, resourceName, cachedProfiles);
     }
 
-    private async Task<CachedApplicationProfiles> GetOrFetchApplicationProfilesAsync(
+    /// <inheritdoc />
+    public async Task<CachedApplicationProfiles> GetOrFetchApplicationProfilesAsync(
         long applicationId,
         string? tenantId
     )

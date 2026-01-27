@@ -55,6 +55,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -123,6 +124,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -193,6 +195,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: "ed-fi/bellschedules",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -261,6 +264,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -329,6 +333,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: "ed-fi/schools",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -387,6 +392,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: $"ed-fi/students/{id}",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -455,6 +461,7 @@ public class DuplicatePropertiesMiddlewareTest
             var frontEndRequest = new FrontendRequest(
                 Path: $"ed-fi/schools/{id}",
                 Body: jsonBody,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),

@@ -140,6 +140,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -171,6 +172,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -202,6 +204,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -278,6 +281,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -309,6 +313,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -340,6 +345,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -383,6 +389,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -429,6 +436,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -473,6 +481,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -520,6 +529,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -567,6 +577,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -599,6 +610,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -646,6 +658,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -692,6 +705,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -739,6 +753,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -770,6 +785,7 @@ public class ValidateDocumentMiddlewareTests
             var frontEndRequest = new FrontendRequest(
                 "ed-fi/schools",
                 Body: jsonData,
+                Form: null,
                 Headers: [],
                 QueryParameters: [],
                 TraceId: new TraceId("traceId"),
@@ -786,6 +802,7 @@ public class ValidateDocumentMiddlewareTests
                 new FrontendRequest(
                     "ed-fi/schools/7687",
                     Body: null,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     TraceId: new TraceId("traceId"),

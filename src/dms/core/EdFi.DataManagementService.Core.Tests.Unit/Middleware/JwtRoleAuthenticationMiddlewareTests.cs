@@ -51,6 +51,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase),
                 QueryParameters: [],
                 TraceId: new TraceId("trace123"),
@@ -119,6 +120,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Invalid token",
@@ -167,6 +169,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Bearer invalid-token",
@@ -223,6 +226,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Bearer valid-token",
@@ -306,6 +310,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Bearer valid-token",
@@ -377,6 +382,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["Authorization"] = "Bearer valid-token",
@@ -445,6 +451,7 @@ public class JwtRoleAuthenticationMiddlewareTests
             var frontendRequest = new FrontendRequest(
                 Path: "/test",
                 Body: "{}",
+                Form: null,
                 Headers: new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
                 {
                     ["authorization"] = "Bearer valid-token", // lowercase

@@ -57,6 +57,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/assessments",
@@ -119,6 +120,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",
@@ -184,6 +186,7 @@ public class ExtractDocumentSecurityElementsMiddlewareTests
             requestInfo = new(
                 new(
                     Body: body,
+                    Form: null,
                     Headers: [],
                     QueryParameters: [],
                     Path: "/ed-fi/academicWeeks",

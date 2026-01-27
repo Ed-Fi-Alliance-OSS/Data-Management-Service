@@ -3,12 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.Utilities;
+
 namespace EdFi.DataManagementService.Core.ResourceLoadOrder;
 
 internal static class ResourceDependencyGraphVertexExtensions
 {
     internal static string GetEndpointName(this ResourceDependencyGraphVertex vertex)
     {
-        return $"/{vertex.ProjectEndpointName.Value}/{vertex.ResourceEndpointName.Value}";
+        return vertex.ProjectEndpointName.GetEndpointUri(vertex.ResourceEndpointName);
     }
 }

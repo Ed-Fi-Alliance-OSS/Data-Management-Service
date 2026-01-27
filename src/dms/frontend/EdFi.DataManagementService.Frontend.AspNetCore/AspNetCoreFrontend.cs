@@ -3,16 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.IO;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -47,6 +45,15 @@ public static class AspNetCoreFrontend
         }
 
         return requestBodyString;
+    }
+
+    /// <summary>
+    /// Extracts form data from an HTTP request and converts it to a dictionary.
+    /// </summary>
+    private static async Task<Dictionary<string, string>> ExtractFormFrom(HttpRequest request)
+    {
+        var formCollection = await request.ReadFormAsync();
+        return formCollection.ToDictionary(kvp => kvp.Key, kvp => kvp.Value.ToString());
     }
 
     /// <summary>
@@ -151,11 +158,13 @@ public static class AspNetCoreFrontend
         HttpRequest httpRequest,
         string dmsPath,
         IOptions<AppSettings> appSettings,
-        bool includeBody
+        bool includeBody,
+        bool includeForm
     )
     {
         return new(
             Body: includeBody ? await ExtractJsonBodyFrom(httpRequest) : null,
+            Form: includeForm ? await ExtractFormFrom(httpRequest) : null,
             Headers: ExtractHeadersFrom(httpRequest),
             Path: $"/{dmsPath}",
             QueryParameters: httpRequest.Query.ToDictionary(FromValidatedQueryParam, x => x.Value[^1] ?? ""),
@@ -215,7 +224,13 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.Upsert(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: true,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
@@ -234,7 +249,13 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.Get(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
@@ -253,7 +274,13 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.UpdateById(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: true)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: true,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
@@ -272,10 +299,47 @@ public static class AspNetCoreFrontend
     {
         return ToResult(
             await apiService.DeleteById(
-                await FromRequest(httpContext.Request, dmsPath, appSettings, includeBody: false)
+                await FromRequest(
+                    httpContext.Request,
+                    dmsPath,
+                    appSettings,
+                    includeBody: false,
+                    includeForm: false
+                )
             ),
             httpContext,
             dmsPath
+        );
+    }
+
+    /// <summary>
+    /// ASP.NET Core entry point for the token introspection request
+    /// </summary>
+    public static async Task<IResult> GetTokenInfo(
+        HttpContext httpContext,
+        IApiService apiService,
+        IOptions<AppSettings> appSettings
+    )
+    {
+        var isUrlEncodedForm =
+            MediaTypeHeaderValue.TryParse(httpContext.Request.ContentType, out var mediaType)
+            && mediaType.MediaType?.Equals(
+                "application/x-www-form-urlencoded",
+                StringComparison.OrdinalIgnoreCase
+            ) == true;
+
+        return ToResult(
+            await apiService.GetTokenInfo(
+                await FromRequest(
+                    httpContext.Request,
+                    string.Empty,
+                    appSettings,
+                    includeBody: !isUrlEncodedForm,
+                    includeForm: isUrlEncodedForm
+                )
+            ),
+            httpContext,
+            string.Empty
         );
     }
 }

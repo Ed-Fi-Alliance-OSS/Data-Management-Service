@@ -21,6 +21,10 @@ public record FrontendRequest(
     /// </summary>
     string? Body,
     /// <summary>
+    /// Request form provided by the frontend service as a dictionary, or null if the Content-Type header isn't "x-www-form-urlencoded"
+    /// </summary>
+    Dictionary<string, string>? Form,
+    /// <summary>
     /// Request Headers provided by the frontend service as a **case-insensitive** dictionary
     /// </summary>
     Dictionary<string, string> Headers,
