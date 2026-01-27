@@ -350,6 +350,20 @@ public class ProfileOpenApiSpecificationFilterTests
             studentByIdPath!.ContainsKey("put").Should().BeFalse();
             studentByIdPath.ContainsKey("get").Should().BeTrue();
         }
+
+        [Test]
+        public void It_removes_DELETE_operation()
+        {
+            var filter = CreateFilter();
+            var profile = CreateReadOnlyStudentProfile();
+
+            var result = filter.CreateProfileSpecification(GetBaseSpec(), profile);
+
+            var studentByIdPath = result["paths"]!["/ed-fi/students/{id}"] as JsonObject;
+            studentByIdPath.Should().NotBeNull();
+            studentByIdPath!.ContainsKey("delete").Should().BeFalse();
+            studentByIdPath.ContainsKey("get").Should().BeTrue();
+        }
     }
 
     [TestFixture]

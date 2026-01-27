@@ -537,6 +537,15 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 resourceName
             );
         }
+
+        if (pathObject["delete"] is not null && resourceProfile.WriteContentType is null)
+        {
+            pathObject.Remove("delete");
+            logger.LogDebug(
+                "Removed DELETE operation for '{Resource}' - profile has no writable content type",
+                resourceName
+            );
+        }
     }
 
     /// <summary>
