@@ -32,7 +32,6 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
-        <ProjectReference Include="..\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj" />
     </ItemGroup>
     <ItemGroup>
