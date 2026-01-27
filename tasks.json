@@ -1,128 +1,55 @@
 [
   {
-    "category": "Docs - Source",
-    "description": "Review `DeriveTableScopesAndKeysStep.cs` and ensure class-level + method-level documentation explains table-scope discovery and key/ordinal rules.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs` and confirm the class summary describes: root table `$`, child table per array path, composite key parts, and deterministic traversal.",
-      "Confirm `Execute(...)` and all helper methods have concise XML documentation that matches current behavior (skips `_ext`, ignores `additionalProperties`, orders properties ordinally)."
+    "category": "RelationalModel",
+    "description": "Propagate ApiSchema `resourceSchema.isDescriptor` into the relational-model build context so descriptor resources can be handled with the shared `dms.Descriptor` storage design.",
+    "stepsToVerify": [
+      "Add a boolean (e.g., `IsDescriptorResource`) to the builder context and set it from ApiSchema in `ExtractInputsStep`.",
+      "Add/adjust a unit test that builds a context for a known descriptor endpoint (e.g., `academicSubjectDescriptors`) and asserts `IsDescriptorResource == true`, and another non-descriptor endpoint (e.g., `schools`) asserts `false`.",
+      "Run `dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` and ensure all tests pass."
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Docs - Source",
-    "description": "Review `DeriveColumnsAndDescriptorEdgesStep.cs` and ensure documentation explains inlined object traversal, array-table routing, and nullability rules.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndDescriptorEdgesStep.cs` and confirm the class summary documents: object inlining, array child-table scope selection, descriptor FK handling, and nullability derivation.",
-      "Confirm `Execute(...)` and traversal helpers (`Walk*`, type resolvers, and `TableBuilder`) have XML documentation describing intent and error behavior (collisions, missing metadata)."
+    "category": "RelationalModel",
+    "description": "Introduce a first-class storage classification for resources (e.g., `ResourceStorageKind.RelationalTables` vs `ResourceStorageKind.SharedDescriptorTable`) and surface it in the relational-model manifest output.",
+    "stepsToVerify": [
+      "Add a `ResourceStorageKind` enum matching the design docs (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).",
+      "Plumb the storage kind through the model/build result and emit it in `RelationalModelManifestEmitter` (acceptance: every resource manifest includes a `storage_kind` field).",
+      "Update/extend unit tests to assert: non-descriptor resources emit `RelationalTables`; descriptor resources emit `SharedDescriptorTable`.",
+      "Run the unit test project and confirm the authoritative manifest test passes after updating goldens."
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Docs - Source",
-    "description": "Review `ValidateJsonSchemaStep.cs` and ensure documentation states the supported JSON Schema subset and the closed-world `additionalProperties` contract.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs` and confirm the class summary explains: dereferenced/expanded schema expectation, unsupported keyword failures, and `additionalProperties` pruning (not traversed).",
-      "Confirm `Execute(...)` and validation helpers have XML documentation that matches the current array item rules (object items except descriptor scalar arrays)."
+    "category": "RelationalModel",
+    "description": "Stop generating per-resource tables for descriptor resources; instead model descriptor resources as using the shared `dms.Descriptor` table (no `{projectSchema}.{DescriptorName}` root table).",
+    "stepsToVerify": [
+      "Update the pipeline so when `IsDescriptorResource == true` the derived model does not call `DeriveTableScopesAndKeysStep`/generic table derivation for the descriptor resource, and does not create any tables named after the descriptor resource.",
+      "Acceptance: building a model for a descriptor endpoint produces a root table of `dms.Descriptor` and `TablesInReadDependencyOrder` contains only that shared table (no child collection tables).",
+      "Acceptance: descriptor resources still participate in `dms.ResourceKey` seeding (no change), and non-descriptor resources are unchanged.",
+      "Run unit tests; add a targeted test asserting the absence of any table named like `AcademicSubjectDescriptor` when building that resource."
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Docs - Source",
-    "description": "Review `JsonSchemaUnsupportedKeywordValidator.cs` and ensure documentation clarifies what is rejected and why validation is path-inclusive.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonSchemaUnsupportedKeywordValidator.cs` and confirm the summary explains the dereferenced-schema contract and the unsupported keyword set.",
-      "Confirm `Validate(...)` includes XML documentation and callers supply meaningful traversal paths."
+    "category": "Tests",
+    "description": "Update the authoritative relational-model golden fixture(s) so descriptor endpoints reflect shared-table storage rather than per-descriptor tables.",
+    "stepsToVerify": [
+      "Run `UPDATE_GOLDENS=1 dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` to regenerate goldens.",
+      "Run the same `dotnet test` command again without `UPDATE_GOLDENS` and confirm it passes with an empty git diff for the fixture outputs.",
+      "Acceptance: the generated manifest no longer contains `create`/table entries like `edfi.<SomeDescriptorName>` for descriptor resources, and descriptor resources include `storage_kind: SharedDescriptorTable`."
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Docs - Source",
-    "description": "Review `JsonSchemaTraversalConventions.cs` and ensure documentation explains how schema kind is inferred with/without explicit `type`.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonSchemaTraversalConventions.cs` and confirm `SchemaKind` and `DetermineSchemaKind(...)` are documented.",
-      "Confirm private helpers (`GetSchemaType`, root-object error helpers) have method-level comments."
+    "category": "DDL Generation",
+    "description": "Ensure future DDL generation logic treats descriptor resources as `SharedDescriptorTable`: emit `dms.Descriptor` once and do not emit per-descriptor resource tables in the project schema.",
+    "stepsToVerify": [
+      "Locate the DDL generation entry point that consumes the derived model (or implement it if still placeholder) and branch on `ResourceStorageKind`.",
+      "Acceptance: generated DDL contains exactly one `CREATE TABLE dms.Descriptor` and contains no `CREATE TABLE <projectSchema>.*Descriptor` tables for descriptor resources.",
+      "Acceptance: all `..._DescriptorId` foreign keys in resource/collection tables reference `dms.Descriptor(DocumentId)`.",
+      "Add or update a unit/integration test for DDL output (snapshot or assertions) to cover the above and run it in CI."
     ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Source",
-    "description": "Review `JsonPathExpressionCompiler.cs` and ensure documentation describes supported JSONPath syntax and canonicalization rules.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/JsonPathExpressionCompiler.cs` and confirm the supported syntax is documented (`$`, `.property`, `[*]`).",
-      "Confirm `Compile(...)`, `FromSegments(...)`, and validation helpers have method-level comments."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Source",
-    "description": "Review `RelationalNameConventions.cs` and ensure naming rules are documented (schema normalization, PascalCase identifiers, and key/ordinal column naming).",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs` and confirm the class summary explains the deterministic, cross-database-safe naming policy.",
-      "Confirm public helpers (schema normalization, collection base naming, key-part column naming, and FK naming) have method-level XML documentation."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Source",
-    "description": "Review `RelationalModelInputTypes.cs` and ensure descriptor/decimal metadata inputs are documented.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelInputTypes.cs` and confirm `DescriptorPathInfo` and `DecimalPropertyValidationInfo` have XML summaries and `<param ...>` documentation.",
-      "Confirm parameter docs describe how these inputs affect derived column types (descriptor FKs and decimal precision/scale)."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Source",
-    "description": "Review `RelationalModelBuilderPipeline.cs` and ensure context properties are documented (especially schema/metadata inputs).",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelBuilderPipeline.cs` and confirm `IRelationalModelBuilderStep`, `RelationalModelBuilderContext`, and `RelationalModelBuilderPipeline` have class/method documentation.",
-      "Confirm important `RelationalModelBuilderContext` properties have XML documentation describing their role in derivation (identity paths, descriptor paths, decimal metadata, and maxLength omission paths)."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Source",
-    "description": "Review `RelationalModelTypes.cs` and ensure core types/enums have documentation for important parameters/properties.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelTypes.cs` and confirm public records/enums have XML summaries.",
-      "Confirm important record parameters are documented via `<param ...>` tags (resource names, table scope, key columns, scalar type metadata, and edge/binding metadata)."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Tests",
-    "description": "Review `DeriveTableScopesAndKeysStepTests.cs` and ensure the nested-collections/key-derivation intent is self-evident; add comments only where needed.",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTableScopesAndKeysStepTests.cs` and confirm the fixture and assertions clearly cover: root scope `$`, nested array table creation, and composite key parts/ordinals.",
-      "If any assertion depends on a non-obvious convention (e.g., naming/ordinal inheritance), add a brief comment explaining the rule being verified."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Tests",
-    "description": "Review `DeriveColumnsAndDescriptorEdgesStepTests.cs` and add comments where test intent is not obvious (descriptor special cases and `additionalProperties` pruning).",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveColumnsAndDescriptorEdgesStepTests.cs` and confirm tests cover: inlined object scalars, descriptor FK replacement, collisions, decimals, and additionalProperties ignore behavior.",
-      "Confirm any non-obvious setup (e.g., bypassing the full pipeline in the test helper) has a short comment explaining why."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs - Tests",
-    "description": "Review `ValidateJsonSchemaStepTests.cs` and add comments where the intent could be misread (especially `additionalProperties` behavior).",
-    "steps-to-verify": [
-      "Open `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ValidateJsonSchemaStepTests.cs` and confirm tests cover: unsupported keywords, root shape, array item rules, descriptor scalar array allowance, and additionalProperties variants.",
-      "Confirm any intentionally-ignored unsupported keywords nested under `additionalProperties` are explained with a short comment."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Build",
-    "description": "Run DMS solution build and relational-model unit tests after documentation updates.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
+    "completed": false
   }
 ]
