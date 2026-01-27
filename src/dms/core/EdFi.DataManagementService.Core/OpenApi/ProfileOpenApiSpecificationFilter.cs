@@ -16,6 +16,24 @@ namespace EdFi.DataManagementService.Core.OpenApi;
 public class ProfileOpenApiSpecificationFilter(ILogger logger)
 {
     /// <summary>
+    /// Server-generated metadata fields that are always included in readable schemas
+    /// and always excluded from writable schemas.
+    /// </summary>
+    private static readonly HashSet<string> _serverGeneratedFields =
+    [
+        "id",
+        "link",
+        "_etag",
+        "_lastModifiedDate",
+    ];
+
+    /// <summary>
+    /// Property name suffixes that identify natural key and reference fields.
+    /// These are always included in both readable and writable schemas.
+    /// </summary>
+    private static readonly string[] _identityFieldSuffixes = ["Reference", "UniqueId"];
+
+    /// <summary>
     /// Creates a profile-filtered OpenAPI specification from a base specification.
     /// </summary>
     /// <param name="baseSpecification">The base OpenAPI specification to filter</param>
@@ -990,22 +1008,13 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         var excludedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         CollectPropertyRules(contentType, allowedProperties, excludedProperties);
 
-        // Writable schemas MUST exclude these server-generated/metadata fields
-        var writableExcludedFields = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "id",
-            "_etag",
-            "_lastModifiedDate",
-            "link",
-        };
-
         // Determine which properties to remove based on MemberSelection mode
         var propertiesToRemove = new List<string>();
 
         foreach ((string propertyName, JsonNode? _) in properties)
         {
             // Writable schemas: Always exclude server-generated fields
-            if (writableExcludedFields.Contains(propertyName))
+            if (_serverGeneratedFields.Contains(propertyName))
             {
                 propertiesToRemove.Add(propertyName);
                 continue;
@@ -1081,12 +1090,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     /// </summary>
     private static bool IsReadableRequiredProperty(string propertyName)
     {
-        return propertyName.Equals("id", StringComparison.OrdinalIgnoreCase)
-            || propertyName.Equals("link", StringComparison.OrdinalIgnoreCase)
-            || propertyName.Equals("_etag", StringComparison.OrdinalIgnoreCase)
-            || propertyName.Equals("_lastModifiedDate", StringComparison.OrdinalIgnoreCase)
-            || propertyName.EndsWith("Reference", StringComparison.OrdinalIgnoreCase)
-            || propertyName.EndsWith("UniqueId", StringComparison.OrdinalIgnoreCase);
+        return _serverGeneratedFields.Contains(propertyName)
+            || Array.Exists(
+                _identityFieldSuffixes,
+                suffix => propertyName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+            );
     }
 
     /// <summary>
@@ -1096,9 +1104,11 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     private static bool IsWritableIdentityProperty(string propertyName)
     {
         // Natural identity fields (UniqueId) and references are kept in writable
-        // Server-generated fields (id, _etag, _lastModifiedDate, link) are excluded elsewhere
-        return propertyName.EndsWith("Reference", StringComparison.OrdinalIgnoreCase)
-            || propertyName.EndsWith("UniqueId", StringComparison.OrdinalIgnoreCase);
+        // Server-generated fields are excluded elsewhere via _serverGeneratedFields
+        return Array.Exists(
+            _identityFieldSuffixes,
+            suffix => propertyName.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)
+        );
     }
 
     /// <summary>

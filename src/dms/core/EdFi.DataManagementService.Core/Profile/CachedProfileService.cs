@@ -410,7 +410,7 @@ internal class CachedProfileService(
             new ProfileResolutionError(
                 StatusCode: 403,
                 ErrorType: "urn:ed-fi:api:security:data-policy:incorrect-usage",
-                Title: "Data Policy Failure Due To Incorrect Usage",
+                Title: "Data Policy Failure Due to Incorrect Usage",
                 Detail: "A data policy failure was encountered. The request was not constructed correctly for the data policy that has been applied to this data for the caller.",
                 Errors:
                 [
