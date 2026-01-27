@@ -183,7 +183,7 @@
       "Update the new test project `.csproj` to copy `Fixtures/relational-model-fixture.json` to the output directory (preserve folder structure) so `TestContext.CurrentContext.TestDirectory/Fixtures/...` continues to work.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_Complete_Relational_Model_Pipeline\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "RelationalModel.Tests.Unit - Move Test File",

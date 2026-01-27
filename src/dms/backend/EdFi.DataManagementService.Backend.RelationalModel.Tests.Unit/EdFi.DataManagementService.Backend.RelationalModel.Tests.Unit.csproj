@@ -29,4 +29,9 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <Content Include="Fixtures\relational-model-fixture.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+    </ItemGroup>
 </Project>

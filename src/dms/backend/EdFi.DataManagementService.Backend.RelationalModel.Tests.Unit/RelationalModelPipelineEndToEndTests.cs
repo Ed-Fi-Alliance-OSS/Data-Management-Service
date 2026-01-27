@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
 [TestFixture]
 public class Given_A_Complete_Relational_Model_Pipeline

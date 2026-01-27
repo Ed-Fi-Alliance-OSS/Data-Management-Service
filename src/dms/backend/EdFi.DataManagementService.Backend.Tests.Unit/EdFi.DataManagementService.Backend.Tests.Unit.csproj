@@ -36,11 +36,6 @@
         <ProjectReference Include="..\EdFi.DataManagementService.Old.Postgresql\EdFi.DataManagementService.Old.Postgresql.csproj" />
     </ItemGroup>
     <ItemGroup>
-        <Content Include="Fixtures\relational-model-fixture.json">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </Content>
-    </ItemGroup>
-    <ItemGroup>
         <PackageReference Include="Npgsql" />
     </ItemGroup>
 </Project>
