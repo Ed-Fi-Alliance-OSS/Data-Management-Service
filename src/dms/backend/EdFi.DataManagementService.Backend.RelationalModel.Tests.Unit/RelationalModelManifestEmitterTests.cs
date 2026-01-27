@@ -110,6 +110,12 @@ public class Given_A_Relational_Model_Manifest_Emitter
             ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
 
         root["storage_kind"]!.GetValue<string>().Should().Be("SharedDescriptorTable");
+
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        tables.Should().BeEmpty("descriptor resources do not create per-resource tables");
     }
 
     [Test]

@@ -57,9 +57,12 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("tables");
         writer.WriteStartArray();
-        foreach (var table in resourceModel.TablesInReadDependencyOrder)
+        if (resourceModel.StorageKind != ResourceStorageKind.SharedDescriptorTable)
         {
-            WriteTable(writer, table);
+            foreach (var table in resourceModel.TablesInReadDependencyOrder)
+            {
+                WriteTable(writer, table);
+            }
         }
         writer.WriteEndArray();
 
