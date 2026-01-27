@@ -26,6 +26,8 @@ Key responsibilities:
   - descriptor/document-reference target validation against the effective schema set,
   - abstract resource metadata lookup for polymorphic identity artifacts.
 
+Note (current code): `ExtractInputsStep` performs project-wide descriptor-path inference on every per-resource run (`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs:108`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs:135`). This needs to move into the `DMS-1033` set-level pass context so the inferred descriptor-path map can be computed once (per project/effective schema set) and reused across per-resource steps.
+
 Clarification: the per-resource derivation pipeline in this epic builds a model for **one resource at a time** (selected by resource endpoint name). This story’s builder is responsible for looping over *all* resources across *all* configured `ApiSchema.json` inputs (core + extensions) to produce the complete `DerivedRelationalModelSet`.
 
 Implementation note (ordered passes): implement this story as an ordered set-level pipeline of **passes**, where each pass performs a single iterative scan over the full effective schema set (projects/resources) and is allowed to consult other resources/projects as needed. Cross-resource derivation logic should live with the pass/story that needs it (e.g., reference/descriptor inference in DMS-930, abstract hierarchy discovery in DMS-933), rather than being forced into a single shared registry for performance. Determinism is still required: every pass must iterate projects/resources in canonical ordinal order and must not depend on dictionary iteration order.
