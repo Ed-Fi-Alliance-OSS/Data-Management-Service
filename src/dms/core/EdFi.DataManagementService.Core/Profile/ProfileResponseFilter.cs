@@ -34,7 +34,7 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     /// <inheritdoc />
     public HashSet<string> ExtractIdentityPropertyNames(IEnumerable<JsonPath> identityJsonPaths)
     {
-        return ExtractTopLevelPropertyNames(identityJsonPaths);
+        return ExtractRootPropertyNames(identityJsonPaths);
     }
 
     /// <summary>
@@ -426,12 +426,12 @@ internal class ProfileResponseFilter : IProfileResponseFilter
     }
 
     /// <summary>
-    /// Extracts top-level property names from JSON paths.
-    /// For paths like "$.schoolId" or "$.studentUniqueId", returns "schoolId" and "studentUniqueId".
-    /// Nested paths like "$.courseOfferingReference.localCourseCode" are not included as
-    /// they reference properties within nested objects, not top-level identity properties.
+    /// Extracts the root property name from each JSON path.
+    /// For simple paths like "$.schoolId", returns "schoolId".
+    /// For nested paths like "$.courseOfferingReference.localCourseCode", extracts the first segment
+    /// "courseOfferingReference" so the entire reference object is preserved during filtering.
     /// </summary>
-    private static HashSet<string> ExtractTopLevelPropertyNames(IEnumerable<JsonPath> jsonPaths)
+    private static HashSet<string> ExtractRootPropertyNames(IEnumerable<JsonPath> jsonPaths)
     {
         return jsonPaths
             .Select(path => path.Value)
@@ -440,17 +440,19 @@ internal class ProfileResponseFilter : IProfileResponseFilter
                 // Remove leading "$." or "$" if present
                 if (pathValue.StartsWith("$."))
                 {
-                    return pathValue[2..];
+                    pathValue = pathValue[2..];
                 }
-
-                if (pathValue.StartsWith('$'))
+                else if (pathValue.StartsWith('$'))
                 {
-                    return pathValue[1..];
+                    pathValue = pathValue[1..];
                 }
 
-                return pathValue;
+                // Extract first segment (parent object name for nested paths)
+                // "courseOfferingReference.localCourseCode" -> "courseOfferingReference"
+                // "schoolId" -> "schoolId"
+                int dotIndex = pathValue.IndexOf('.');
+                return dotIndex > 0 ? pathValue[..dotIndex] : pathValue;
             })
-            .Where(pathValue => !pathValue.Contains('.'))
             .ToHashSet();
     }
 }

@@ -128,6 +128,7 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Write Filtering")]
     [Scope(Feature = "Profile Creatability Validation")]
     [Scope(Feature = "Profile PUT Merge Functionality")]
+    [Scope(Feature = "Profile Nested Identity Preservation")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();
@@ -157,6 +158,56 @@ public class ProfileStepDefinitions(
     }
 
     /// <summary>
+    /// Creates entities needed for the test data (e.g., schools, schoolYearTypes).
+    /// Uses a non-profile token with E2E-NoFurtherAuthRequiredClaimSet to have broad permissions.
+    /// </summary>
+    [Given(@"the system has these ""([^""]*)""")]
+    [Scope(Feature = "Profile Nested Identity Preservation")]
+    public async Task GivenTheSystemHasTheseEntities(string entityType, DataTable dataTable)
+    {
+        string token = await GetTokenForPrerequisiteEntities();
+        var headers = new List<KeyValuePair<string, string>> { new("Authorization", $"Bearer {token}") };
+
+        // First create any descriptors referenced in the data
+        foreach (var descriptor in dataTable.ExtractDescriptors())
+        {
+            string descriptorName = descriptor["descriptorName"]?.ToString() ?? "";
+            string url = $"data/ed-fi/{descriptorName}";
+            _logger.log.Information($"Creating prerequisite descriptor: {descriptorName}");
+
+            IAPIResponse response = await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { DataObject = descriptor, Headers = headers }
+            )!;
+
+            string body = await response.TextAsync();
+            _logger.log.Information($"Descriptor response: {response.Status} - {body}");
+
+            response
+                .Status.Should()
+                .BeOneOf([200, 201], $"POST for {entityType} descriptor {descriptorName} failed:\n{body}");
+        }
+
+        // Then create the entities
+        foreach (var row in dataTable.Rows)
+        {
+            string url = $"data/ed-fi/{entityType}";
+            string body = row.Parse();
+            _logger.log.Information($"Creating {entityType} at {url}");
+
+            IAPIResponse response = await _playwrightContext.ApiRequestContext?.PostAsync(
+                url,
+                new() { Data = body, Headers = headers }
+            )!;
+
+            string responseBody = await response.TextAsync();
+            _logger.log.Information($"Response: {response.Status} - {responseBody}");
+
+            response.Status.Should().BeOneOf([200, 201], $"POST for {entityType} failed:\n{responseBody}");
+        }
+    }
+
+    /// <summary>
     /// Gets a token with EdFiSandbox claimset for creating extension descriptors.
     /// The E2E-NoFurtherAuthRequiredClaimSet doesn't include permissions for extension-only
     /// descriptors like CTEProgramServiceDescriptor, so we use EdFiSandbox which does.
@@ -171,6 +222,25 @@ public class ProfileStepDefinitions(
             "",
             SystemAdministrator.Token,
             "EdFiSandbox"
+        );
+
+        return await ProfileAwareAuthorizationProvider.GetToken();
+    }
+
+    /// <summary>
+    /// Gets a token with E2E-NoFurtherAuthRequiredClaimSet for creating prerequisite entities.
+    /// This claimset has broad permissions including SchoolYearType which EdFiSandbox lacks.
+    /// </summary>
+    private static async Task<string> GetTokenForPrerequisiteEntities()
+    {
+        await ProfileAwareAuthorizationProvider.CreateClientCredentialsWithProfiles(
+            $"Entity Creator {Guid.NewGuid()}",
+            "Entity Creator",
+            "entity@test.com",
+            "uri://ed-fi.org",
+            "",
+            SystemAdministrator.Token,
+            "E2E-NoFurtherAuthRequiredClaimSet"
         );
 
         return await ProfileAwareAuthorizationProvider.GetToken();
