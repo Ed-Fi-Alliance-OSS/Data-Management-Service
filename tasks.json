@@ -203,7 +203,7 @@
       "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_A_JsonSchema_With_A_Ref|Given_A_JsonSchema_With_OneOf|Given_A_JsonSchema_With_AnyOf|Given_A_JsonSchema_With_AllOf|Given_A_JsonSchema_With_Enum|Given_A_JsonSchema_With_PatternProperties|Given_A_JsonSchema_With_A_Type_Array|Given_A_JsonSchema_With_A_Non_Object_Root|Given_A_JsonSchema_With_Array_Items_Not_Object|Given_A_JsonSchema_With_A_Descriptor_Scalar_Array|Given_A_JsonSchema_With_AdditionalProperties_True|Given_A_JsonSchema_With_AdditionalProperties_False|Given_A_JsonSchema_With_AdditionalProperties_Object\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Test Project Split",
