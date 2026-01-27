@@ -28,8 +28,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
-    private static readonly DbSchemaName DmsSchemaName = new("dms");
-    private static readonly DbTableName DocumentTableName = new(DmsSchemaName, "Document");
+    private static readonly DbSchemaName _dmsSchemaName = new("dms");
+    private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
 
     /// <summary>
     /// Walks the JSON schema and populates <see cref="RelationalModelBuilderContext.ResourceModel"/> with the
@@ -109,7 +109,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             new TableConstraint.ForeignKey(
                 fkName,
                 new[] { RelationalNameConventions.DocumentIdColumnName },
-                DocumentTableName,
+                _documentTableName,
                 new[] { RelationalNameConventions.DocumentIdColumnName },
                 OnDelete: ReferentialAction.Cascade
             ),

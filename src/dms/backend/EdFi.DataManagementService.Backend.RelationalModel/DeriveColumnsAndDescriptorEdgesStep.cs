@@ -41,8 +41,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
-    private static readonly DbSchemaName DmsSchemaName = new("dms");
-    private static readonly DbTableName DescriptorTableName = new(DmsSchemaName, "Descriptor");
+    private static readonly DbSchemaName _dmsSchemaName = new("dms");
+    private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
     /// Populates derived scalar/descriptor columns for each table in the current <see cref="RelationalResourceModel"/>.
@@ -426,7 +426,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
                         new[] { columnName }
                     ),
                     new[] { columnName },
-                    DescriptorTableName,
+                    _descriptorTableName,
                     new[] { RelationalNameConventions.DocumentIdColumnName },
                     OnDelete: ReferentialAction.NoAction,
                     OnUpdate: ReferentialAction.NoAction

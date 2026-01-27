@@ -18,7 +18,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </remarks>
 internal static class JsonSchemaUnsupportedKeywordValidator
 {
-    private static readonly IReadOnlyList<string> UnsupportedKeywords =
+    private static readonly IReadOnlyList<string> _unsupportedKeywords =
     [
         "$ref",
         "oneOf",
@@ -36,7 +36,7 @@ internal static class JsonSchemaUnsupportedKeywordValidator
     /// <param name="path">The schema traversal path used for error reporting.</param>
     internal static void Validate(JsonObject schema, string path)
     {
-        foreach (var keyword in UnsupportedKeywords)
+        foreach (var keyword in _unsupportedKeywords)
         {
             if (schema.ContainsKey(keyword))
             {

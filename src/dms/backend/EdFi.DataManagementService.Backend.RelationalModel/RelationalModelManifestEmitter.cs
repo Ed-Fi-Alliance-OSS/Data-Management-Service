@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 public static class RelationalModelManifestEmitter
 {
-    private static readonly JsonWriterOptions WriterOptions = new() { Indented = true };
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
 
     public static string Emit(RelationalModelBuildResult buildResult)
     {
@@ -33,7 +33,7 @@ public static class RelationalModelManifestEmitter
 
         var buffer = new ArrayBufferWriter<byte>();
 
-        using (var writer = new Utf8JsonWriter(buffer, WriterOptions))
+        using (var writer = new Utf8JsonWriter(buffer, _writerOptions))
         {
             WriteManifest(writer, resourceModel, extensionSites);
         }
