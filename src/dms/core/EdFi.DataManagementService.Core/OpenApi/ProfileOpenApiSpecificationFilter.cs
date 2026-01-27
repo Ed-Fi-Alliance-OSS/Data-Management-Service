@@ -32,14 +32,25 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         // Update info.title with profile name
         UpdateInfoTitle(specification, profileDefinition.ProfileName);
 
-        // Create separate _readable and _writable schemas based on profile rules
-        CreateProfileSchemas(specification, profileDefinition);
-
-        // Filter paths to only include resources covered by the profile
-        // and update $ref to use _readable or _writable schemas
+        // Step 1: Filter paths to only include resources covered by the profile and remove disallowed operations
         FilterPaths(specification, profileDefinition);
 
-        // Remove unused tags
+        // Step 2: Remove unused component parameters now that paths are filtered
+        RemoveUnusedParameters(specification);
+
+        // Step 3: Remove schemas not referenced by filtered paths (keep transitive refs)
+        RemoveUnusedSchemas(specification);
+
+        // Step 4: Create _readable/_writable schemas and rewrite operations (avoids double suffixes)
+        CreateProfileSchemasAndRewriteOperations(specification, profileDefinition);
+
+        // Step 5: Remove base schemas that now have suffixed versions
+        RemoveBaseSchemasWithSuffixedVersions(specification);
+
+        // Step 6: Final cleanup - remove any schemas orphaned after profile schema creation
+        RemoveUnusedSchemas(specification);
+
+        // Step 7: Remove unused tags
         RemoveUnusedTags(specification);
 
         return specification;
@@ -63,9 +74,13 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     }
 
     /// <summary>
-    /// Creates separate _readable and _writable schemas for resources covered by the profile.
+    /// Creates _readable/_writable schemas for profile resources and rewrites operations.
+    /// Ensures suffixes are only added once to avoid double-suffixing.
     /// </summary>
-    private void CreateProfileSchemas(JsonNode specification, ProfileDefinition profileDefinition)
+    private void CreateProfileSchemasAndRewriteOperations(
+        JsonNode specification,
+        ProfileDefinition profileDefinition
+    )
     {
         if (
             specification["components"] is not JsonObject components
@@ -75,65 +90,355 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             return;
         }
 
-        // Build a lookup of resource profiles by resource name (case-insensitive)
+        if (specification["paths"] is not JsonObject paths)
+        {
+            return;
+        }
+
+        // Track which suffixed schemas have been created to avoid duplicates
+        var createdSuffixedSchemas = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        // Build resource profile lookup
         var resourceProfilesByName = profileDefinition.Resources.ToDictionary(
             r => r.ResourceName.ToLowerInvariant(),
             r => r
         );
 
-        // Track schemas to create
-        var schemasToCreate = new List<(string baseName, JsonObject baseSchema, ResourceProfile profile)>();
-
-        foreach ((string schemaName, JsonNode? schemaValue) in schemas)
+        // Process each path and its operations
+        foreach ((string pathKey, JsonNode? pathValue) in paths)
         {
-            if (schemaValue is not JsonObject schemaObject)
+            if (pathValue is not JsonObject pathObject)
             {
                 continue;
             }
 
-            // Extract resource name from schema name (e.g., "EdFi_Student" -> "Student")
-            string? resourceName = ExtractResourceNameFromSchemaName(schemaName);
+            string? resourceName = ExtractResourceNameFromPath(pathKey);
             if (resourceName is null)
             {
                 continue;
             }
 
-            // Check if this resource is covered by the profile
             if (
-                resourceProfilesByName.TryGetValue(
+                !resourceProfilesByName.TryGetValue(
                     resourceName.ToLowerInvariant(),
                     out ResourceProfile? resourceProfile
                 )
             )
             {
-                schemasToCreate.Add((schemaName, schemaObject, resourceProfile));
+                continue;
+            }
+
+            // Process GET operations (readable)
+            if (pathObject["get"] is JsonObject getOperation && resourceProfile.ReadContentType is not null)
+            {
+                ProcessOperationSchemas(
+                    schemas,
+                    getOperation,
+                    "_readable",
+                    createdSuffixedSchemas,
+                    resourceProfile.ReadContentType,
+                    isReadable: true
+                );
+                UpdateOperationContentType(
+                    getOperation,
+                    profileDefinition.ProfileName,
+                    resourceName,
+                    "readable",
+                    isRequest: false
+                );
+            }
+
+            // Process POST operations (writable)
+            if (
+                pathObject["post"] is JsonObject postOperation
+                && resourceProfile.WriteContentType is not null
+            )
+            {
+                ProcessOperationSchemas(
+                    schemas,
+                    postOperation,
+                    "_writable",
+                    createdSuffixedSchemas,
+                    resourceProfile.WriteContentType,
+                    isReadable: false
+                );
+                UpdateOperationContentType(
+                    postOperation,
+                    profileDefinition.ProfileName,
+                    resourceName,
+                    "writable",
+                    isRequest: true
+                );
+            }
+
+            // Process PUT operations (writable)
+            if (pathObject["put"] is JsonObject putOperation && resourceProfile.WriteContentType is not null)
+            {
+                ProcessOperationSchemas(
+                    schemas,
+                    putOperation,
+                    "_writable",
+                    createdSuffixedSchemas,
+                    resourceProfile.WriteContentType,
+                    isReadable: false
+                );
+                UpdateOperationContentType(
+                    putOperation,
+                    profileDefinition.ProfileName,
+                    resourceName,
+                    "writable",
+                    isRequest: true
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Processes an operation's schema references, creating suffixed versions.
+    /// </summary>
+    private void ProcessOperationSchemas(
+        JsonObject schemas,
+        JsonObject operation,
+        string suffix,
+        HashSet<string> createdSuffixedSchemas,
+        ContentTypeDefinition contentType,
+        bool isReadable
+    )
+    {
+        // Collect all schema refs from the operation
+        var schemaRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        CollectSchemaRefs(operation, schemaRefs);
+
+        // Create suffixed schemas for each referenced schema
+        foreach (string baseSchemaName in schemaRefs)
+        {
+            CreateSuffixedSchema(
+                schemas,
+                baseSchemaName,
+                suffix,
+                createdSuffixedSchemas,
+                contentType,
+                isReadable,
+                isRootResource: true
+            );
+        }
+    }
+
+    /// <summary>
+    /// Collects all schema $ref names from a JSON node.
+    /// </summary>
+    private static void CollectSchemaRefs(JsonNode node, HashSet<string> schemaRefs)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach ((string propertyName, JsonNode? child) in obj)
+                {
+                    if (child is null)
+                    {
+                        continue;
+                    }
+
+                    if (propertyName.Equals("$ref", StringComparison.OrdinalIgnoreCase))
+                    {
+                        string? refValue = child.GetValue<string?>();
+                        if (refValue is null)
+                        {
+                            continue;
+                        }
+
+                        const string SchemaPrefix = "#/components/schemas/";
+                        if (refValue.StartsWith(SchemaPrefix, StringComparison.OrdinalIgnoreCase))
+                        {
+                            schemaRefs.Add(refValue[SchemaPrefix.Length..]);
+                        }
+                        continue;
+                    }
+
+                    CollectSchemaRefs(child, schemaRefs);
+                }
+                break;
+
+            case JsonArray array:
+                foreach (JsonNode item in array.Where(item => item is not null)!)
+                {
+                    CollectSchemaRefs(item, schemaRefs);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Creates a suffixed schema version, avoiding double suffixes.
+    /// </summary>
+    private void CreateSuffixedSchema(
+        JsonObject schemas,
+        string baseSchemaName,
+        string suffix,
+        HashSet<string> createdSuffixedSchemas,
+        ContentTypeDefinition? contentType,
+        bool isReadable,
+        bool isRootResource
+    )
+    {
+        // Avoid double suffixes - if already has a profile suffix, skip
+        if (HasProfileSuffix(baseSchemaName))
+        {
+            return;
+        }
+
+        string targetName = $"{baseSchemaName}{suffix}";
+
+        // Skip if already created
+        if (!createdSuffixedSchemas.Add(targetName))
+        {
+            return;
+        }
+
+        // Get the base schema
+        if (
+            !schemas.TryGetPropertyValue(baseSchemaName, out JsonNode? baseSchemaNode)
+            || baseSchemaNode is not JsonObject baseSchemaObj
+        )
+        {
+            return;
+        }
+
+        // Clone the schema
+        JsonObject clone = JsonNode.Parse(baseSchemaObj.ToJsonString())!.AsObject();
+
+        // Apply property filtering only to root resource schemas (not referenced schemas)
+        if (isRootResource && contentType is not null)
+        {
+            if (isReadable)
+            {
+                FilterSchemaForReadable(clone, contentType);
+            }
+            else
+            {
+                FilterSchemaForWritable(clone, contentType);
             }
         }
 
-        // Create _readable and _writable schemas for each covered resource
-        foreach (var (baseName, baseSchema, profile) in schemasToCreate)
+        // Collect nested schema refs before updating them
+        var nestedRefs = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        CollectSchemaRefs(clone, nestedRefs);
+
+        // Update $refs in the clone to use suffixed versions (avoids double suffixes)
+        UpdateSchemaRefsInPlace(clone, suffix);
+
+        // Add the suffixed schema
+        schemas[targetName] = clone;
+        logger.LogDebug("Created {Suffix} schema '{SchemaName}' for profile", suffix, targetName);
+
+        // Recursively create suffixed versions for nested refs
+        foreach (string nestedRef in nestedRefs)
         {
-            // Create _readable schema if profile has ReadContentType
-            if (profile.ReadContentType is not null)
+            CreateSuffixedSchema(
+                schemas,
+                nestedRef,
+                suffix,
+                createdSuffixedSchemas,
+                contentType: null, // Don't apply property filtering to nested schemas
+                isReadable,
+                isRootResource: false
+            );
+        }
+    }
+
+    /// <summary>
+    /// Checks if a schema name already has a profile suffix.
+    /// </summary>
+    private static bool HasProfileSuffix(string schemaName)
+    {
+        return schemaName.EndsWith("_readable", StringComparison.OrdinalIgnoreCase)
+            || schemaName.EndsWith("_writable", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Updates $ref values in place, avoiding double suffixes.
+    /// </summary>
+    private static void UpdateSchemaRefsInPlace(JsonNode node, string suffix)
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                if (
+                    obj["$ref"] is JsonValue refValue
+                    && refValue.GetValueKind() == System.Text.Json.JsonValueKind.String
+                )
+                {
+                    string refString = refValue.GetValue<string>();
+                    const string SchemaPrefix = "#/components/schemas/";
+
+                    if (refString.StartsWith(SchemaPrefix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        string schemaName = refString[SchemaPrefix.Length..];
+
+                        // Only add suffix if not already suffixed
+                        if (!HasProfileSuffix(schemaName))
+                        {
+                            obj["$ref"] = $"{refString}{suffix}";
+                        }
+                    }
+                }
+
+                foreach (JsonNode? childValue in obj.Select(kvp => kvp.Value).Where(v => v is not null))
+                {
+                    UpdateSchemaRefsInPlace(childValue!, suffix);
+                }
+                break;
+
+            case JsonArray arr:
+                foreach (JsonNode item in arr.Where(item => item is not null)!)
+                {
+                    UpdateSchemaRefsInPlace(item, suffix);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// Removes base schemas that have suffixed versions (cleanup after profile schema creation).
+    /// </summary>
+    private static void RemoveBaseSchemasWithSuffixedVersions(JsonNode specification)
+    {
+        if (
+            specification["components"] is not JsonObject components
+            || components["schemas"] is not JsonObject schemas
+        )
+        {
+            return;
+        }
+
+        // Find all base schema names that have suffixed versions
+        var schemasToRemove = new List<string>();
+        var suffixedSchemas = schemas
+            .Where(kvp => HasProfileSuffix(kvp.Key))
+            .Select(kvp => kvp.Key)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach ((string schemaName, JsonNode? _) in schemas)
+        {
+            // Skip suffixed schemas
+            if (HasProfileSuffix(schemaName))
             {
-                string readableName = $"{baseName}_readable";
-                JsonObject readableSchema = JsonNode.Parse(baseSchema.ToJsonString())!.AsObject();
-                FilterSchemaForReadable(readableSchema, profile.ReadContentType);
-                UpdateNestedSchemaRefs(readableSchema, "_readable");
-                schemas[readableName] = readableSchema;
-                logger.LogDebug("Created readable schema '{SchemaName}' for profile", readableName);
+                continue;
             }
 
-            // Create _writable schema if profile has WriteContentType
-            if (profile.WriteContentType is not null)
+            // Check if suffixed version exists
+            string readableName = $"{schemaName}_readable";
+            string writableName = $"{schemaName}_writable";
+
+            if (suffixedSchemas.Contains(readableName) || suffixedSchemas.Contains(writableName))
             {
-                string writableName = $"{baseName}_writable";
-                JsonObject writableSchema = JsonNode.Parse(baseSchema.ToJsonString())!.AsObject();
-                FilterSchemaForWritable(writableSchema, profile.WriteContentType);
-                UpdateNestedSchemaRefs(writableSchema, "_writable");
-                schemas[writableName] = writableSchema;
-                logger.LogDebug("Created writable schema '{SchemaName}' for profile", writableName);
+                schemasToRemove.Add(schemaName);
             }
+        }
+
+        foreach (string schemaName in schemasToRemove)
+        {
+            schemas.Remove(schemaName);
         }
     }
 
@@ -182,8 +487,8 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            // Update operations based on profile content types
-            UpdatePathOperations(pathObject, profileDefinition.ProfileName, resourceProfile, resourceName);
+            // Remove disallowed operations based on profile content types without rewriting schemas yet
+            RemoveDisallowedOperations(pathObject, resourceProfile, resourceName);
         }
 
         // Remove paths for resources not in the profile
@@ -193,6 +498,43 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             logger.LogDebug(
                 "Removed path '{Path}' from profile OpenAPI spec - resource not covered by profile",
                 pathToRemove
+            );
+        }
+    }
+
+    /// <summary>
+    /// Removes operations that are not allowed by the profile (read/write) without rewriting content types.
+    /// </summary>
+    private void RemoveDisallowedOperations(
+        JsonObject pathObject,
+        ResourceProfile resourceProfile,
+        string resourceName
+    )
+    {
+        if (pathObject["get"] is not null && resourceProfile.ReadContentType is null)
+        {
+            pathObject.Remove("get");
+            logger.LogDebug(
+                "Removed GET operation for '{Resource}' - profile has no readable content type",
+                resourceName
+            );
+        }
+
+        if (pathObject["post"] is not null && resourceProfile.WriteContentType is null)
+        {
+            pathObject.Remove("post");
+            logger.LogDebug(
+                "Removed POST operation for '{Resource}' - profile has no writable content type",
+                resourceName
+            );
+        }
+
+        if (pathObject["put"] is not null && resourceProfile.WriteContentType is null)
+        {
+            pathObject.Remove("put");
+            logger.LogDebug(
+                "Removed PUT operation for '{Resource}' - profile has no writable content type",
+                resourceName
             );
         }
     }
@@ -240,64 +582,6 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             return plural[..^1];
         }
         return plural;
-    }
-
-    /// <summary>
-    /// Updates path operations with profile-specific content types and schema references.
-    /// </summary>
-    private void UpdatePathOperations(
-        JsonObject pathObject,
-        string profileName,
-        ResourceProfile resourceProfile,
-        string resourceName
-    )
-    {
-        // Update GET operations (use readable content type and _readable schema)
-        if (pathObject["get"] is JsonObject getOperation && resourceProfile.ReadContentType is not null)
-        {
-            UpdateOperationContentType(getOperation, profileName, resourceName, "readable", isRequest: false);
-        }
-        else if (pathObject["get"] is not null && resourceProfile.ReadContentType is null)
-        {
-            // Remove GET if profile doesn't have read content type
-            pathObject.Remove("get");
-            logger.LogDebug(
-                "Removed GET operation for '{Resource}' - profile has no readable content type",
-                resourceName
-            );
-        }
-
-        // Update POST operations (use writable content type and _writable schema)
-        if (pathObject["post"] is JsonObject postOperation && resourceProfile.WriteContentType is not null)
-        {
-            UpdateOperationContentType(postOperation, profileName, resourceName, "writable", isRequest: true);
-        }
-        else if (pathObject["post"] is not null && resourceProfile.WriteContentType is null)
-        {
-            // Remove POST if profile doesn't have write content type
-            pathObject.Remove("post");
-            logger.LogDebug(
-                "Removed POST operation for '{Resource}' - profile has no writable content type",
-                resourceName
-            );
-        }
-
-        // Update PUT operations (use writable content type and _writable schema)
-        if (pathObject["put"] is JsonObject putOperation && resourceProfile.WriteContentType is not null)
-        {
-            UpdateOperationContentType(putOperation, profileName, resourceName, "writable", isRequest: true);
-        }
-        else if (pathObject["put"] is not null && resourceProfile.WriteContentType is null)
-        {
-            // Remove PUT if profile doesn't have write content type
-            pathObject.Remove("put");
-            logger.LogDebug(
-                "Removed PUT operation for '{Resource}' - profile has no writable content type",
-                resourceName
-            );
-        }
-
-        // DELETE operations are not affected by profiles
     }
 
     /// <summary>
@@ -361,6 +645,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
     /// <summary>
     /// Updates $ref values in a JSON node to append a suffix (e.g., _readable or _writable).
+    /// Avoids double suffixes by checking if already suffixed.
     /// </summary>
     private static void UpdateSchemaRef(JsonNode node, string suffix)
     {
@@ -376,7 +661,12 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 // Update ref from "#/components/schemas/EdFi_Student" to "#/components/schemas/EdFi_Student_readable"
                 if (refString.StartsWith("#/components/schemas/"))
                 {
-                    obj["$ref"] = $"{refString}{suffix}";
+                    string schemaName = refString["#/components/schemas/".Length..];
+                    // Only add suffix if not already suffixed
+                    if (!HasProfileSuffix(schemaName))
+                    {
+                        obj["$ref"] = $"{refString}{suffix}";
+                    }
                 }
             }
 
@@ -405,20 +695,6 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 UpdateSchemaRef(item, suffix);
             }
         }
-    }
-
-    /// <summary>
-    /// Extracts the resource name from a schema name.
-    /// </summary>
-    private static string? ExtractResourceNameFromSchemaName(string schemaName)
-    {
-        // Schema names are typically like "EdFi_Student" or "TPDM_Candidate"
-        int underscoreIndex = schemaName.IndexOf('_');
-        if (underscoreIndex > 0 && underscoreIndex < schemaName.Length - 1)
-        {
-            return schemaName[(underscoreIndex + 1)..];
-        }
-        return null;
     }
 
     /// <summary>
@@ -475,6 +751,214 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         // Update required array to remove filtered properties
         UpdateRequiredArray(schemaObject, propertiesToRemove);
+    }
+
+    /// <summary>
+    /// Removes schemas that are not referenced by any remaining paths or dependent schemas.
+    /// </summary>
+    private static void RemoveUnusedSchemas(JsonNode specification)
+    {
+        if (specification["components"] is not JsonObject components)
+        {
+            return;
+        }
+
+        if (components["schemas"] is not JsonObject schemas)
+        {
+            return;
+        }
+
+        var keep = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void EnqueueSchema(string name)
+        {
+            if (
+                keep.Add(name)
+                && schemas.TryGetPropertyValue(name, out JsonNode? schemaNode)
+                && schemaNode is not null
+            )
+            {
+                ExploreNode(schemaNode);
+            }
+        }
+
+        void ExploreNode(JsonNode node)
+        {
+            switch (node)
+            {
+                case JsonObject obj:
+                    foreach ((string propertyName, JsonNode? child) in obj)
+                    {
+                        if (child is null)
+                        {
+                            continue;
+                        }
+
+                        if (propertyName.Equals("$ref", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string? refValue = child.GetValue<string?>();
+                            if (refValue is null)
+                            {
+                                continue;
+                            }
+
+                            const string SchemaPrefix = "#/components/schemas/";
+                            const string ResponsePrefix = "#/components/responses/";
+                            const string ParameterPrefix = "#/components/parameters/";
+                            const string RequestBodyPrefix = "#/components/requestBodies/";
+
+                            if (refValue.StartsWith(SchemaPrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                EnqueueSchema(refValue[SchemaPrefix.Length..]);
+                                continue;
+                            }
+
+                            if (
+                                refValue.StartsWith(ResponsePrefix, StringComparison.OrdinalIgnoreCase)
+                                && components["responses"] is JsonObject responses
+                                && responses.TryGetPropertyValue(
+                                    refValue[ResponsePrefix.Length..],
+                                    out JsonNode? response
+                                )
+                                && response is not null
+                            )
+                            {
+                                ExploreNode(response);
+                                continue;
+                            }
+
+                            if (
+                                refValue.StartsWith(ParameterPrefix, StringComparison.OrdinalIgnoreCase)
+                                && components["parameters"] is JsonObject parameters
+                                && parameters.TryGetPropertyValue(
+                                    refValue[ParameterPrefix.Length..],
+                                    out JsonNode? parameter
+                                )
+                                && parameter is not null
+                            )
+                            {
+                                ExploreNode(parameter);
+                                continue;
+                            }
+
+                            if (
+                                refValue.StartsWith(RequestBodyPrefix, StringComparison.OrdinalIgnoreCase)
+                                && components["requestBodies"] is JsonObject requestBodies
+                                && requestBodies.TryGetPropertyValue(
+                                    refValue[RequestBodyPrefix.Length..],
+                                    out JsonNode? requestBody
+                                )
+                                && requestBody is not null
+                            )
+                            {
+                                ExploreNode(requestBody);
+                            }
+
+                            continue;
+                        }
+
+                        ExploreNode(child);
+                    }
+                    break;
+
+                case JsonArray array:
+                    foreach (JsonNode item in array.Where(item => item is not null)!)
+                    {
+                        ExploreNode(item);
+                    }
+                    break;
+            }
+        }
+
+        // Seed references from paths
+        if (specification["paths"] is JsonObject paths)
+        {
+            ExploreNode(paths);
+        }
+
+        // Traverse schema graph to include transitive dependencies (handled during enqueue)
+
+        // Remove unreferenced schemas
+        var schemasToRemove = schemas.Where(kvp => !keep.Contains(kvp.Key)).Select(kvp => kvp.Key).ToList();
+
+        foreach (string schemaName in schemasToRemove)
+        {
+            schemas.Remove(schemaName);
+        }
+    }
+
+    /// <summary>
+    /// Removes component parameters that are not referenced by any filtered paths.
+    /// </summary>
+    private static void RemoveUnusedParameters(JsonNode specification)
+    {
+        if (specification["components"] is not JsonObject components)
+        {
+            return;
+        }
+
+        if (components["parameters"] is not JsonObject parameters)
+        {
+            return;
+        }
+
+        var usedParameters = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void ExploreParameters(JsonNode node)
+        {
+            switch (node)
+            {
+                case JsonObject obj:
+                    foreach ((string propertyName, JsonNode? child) in obj)
+                    {
+                        if (child is null)
+                        {
+                            continue;
+                        }
+
+                        if (propertyName.Equals("$ref", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string? refValue = child.GetValue<string?>();
+                            if (refValue is null)
+                            {
+                                continue;
+                            }
+
+                            const string ParameterPrefix = "#/components/parameters/";
+                            if (refValue.StartsWith(ParameterPrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                usedParameters.Add(refValue[ParameterPrefix.Length..]);
+                                continue;
+                            }
+                        }
+
+                        ExploreParameters(child);
+                    }
+                    break;
+
+                case JsonArray array:
+                    foreach (JsonNode item in array.Where(item => item is not null)!)
+                    {
+                        ExploreParameters(item);
+                    }
+                    break;
+            }
+        }
+
+        if (specification["paths"] is JsonObject paths)
+        {
+            ExploreParameters(paths);
+        }
+
+        var parametersToRemove = parameters
+            .Where(kvp => !usedParameters.Contains(kvp.Key))
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (string parameterName in parametersToRemove)
+        {
+            parameters.Remove(parameterName);
+        }
     }
 
     /// <summary>
@@ -547,51 +1031,6 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
 
         // Update required array to remove filtered properties
         UpdateRequiredArray(schemaObject, propertiesToRemove);
-    }
-
-    /// <summary>
-    /// Updates nested $ref values within a schema to use the appropriate suffix.
-    /// This ensures collections and nested objects reference the correct schema variant.
-    /// </summary>
-    private static void UpdateNestedSchemaRefs(JsonObject schemaObject, string suffix)
-    {
-        if (schemaObject["properties"] is not JsonObject properties)
-        {
-            return;
-        }
-
-        foreach ((string _, JsonNode? propertyValue) in properties)
-        {
-            if (propertyValue is JsonObject propObj)
-            {
-                // Handle direct $ref
-                if (
-                    propObj["$ref"] is JsonValue refValue
-                    && refValue.GetValueKind() == System.Text.Json.JsonValueKind.String
-                )
-                {
-                    string refString = refValue.GetValue<string>();
-                    if (refString.StartsWith("#/components/schemas/"))
-                    {
-                        propObj["$ref"] = $"{refString}{suffix}";
-                    }
-                }
-
-                // Handle array items with $ref
-                if (
-                    propObj["items"] is JsonObject itemsObj
-                    && itemsObj["$ref"] is JsonValue itemsRef
-                    && itemsRef.GetValueKind() == System.Text.Json.JsonValueKind.String
-                )
-                {
-                    string refString = itemsRef.GetValue<string>();
-                    if (refString.StartsWith("#/components/schemas/"))
-                    {
-                        itemsObj["$ref"] = $"{refString}{suffix}";
-                    }
-                }
-            }
-        }
     }
 
     /// <summary>
