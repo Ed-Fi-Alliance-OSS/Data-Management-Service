@@ -84,11 +84,13 @@ public sealed class RelationalModelBuilderContext
     /// Decimal validation metadata (precision/scale) keyed by canonical JSONPath, used to map JSON Schema
     /// <c>number</c> properties to a deterministic relational decimal type.
     /// </summary>
+#pragma warning disable IDE0055
     public IReadOnlyDictionary<
         string,
         DecimalPropertyValidationInfo
     > DecimalPropertyValidationInfosByPath { get; set; } =
         new Dictionary<string, DecimalPropertyValidationInfo>(StringComparer.Ordinal);
+#pragma warning restore IDE0055
 
     /// <summary>
     /// Canonical JSONPaths where missing string <c>maxLength</c> is acceptable (e.g., duration and
