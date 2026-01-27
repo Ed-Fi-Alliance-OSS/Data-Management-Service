@@ -146,13 +146,17 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
             throw new InvalidOperationException($"Array schema items must be an object at {path}.items.");
         }
 
-        var itemsType = GetSchemaType(itemsSchema, $"{path}.items");
+        var itemsKind = JsonSchemaTraversalConventions.DetermineSchemaKind(
+            itemsSchema,
+            $"{path}.items",
+            includeTypePathInErrors: true
+        );
 
-        if (!string.Equals(itemsType, "object", StringComparison.Ordinal))
+        if (itemsKind != SchemaKind.Object)
         {
             var arrayPath = JsonPathExpressionCompiler.FromSegments(jsonPathSegments).Canonical;
 
-            if (string.Equals(itemsType, "array", StringComparison.Ordinal))
+            if (itemsKind == SchemaKind.Array)
             {
                 throw new InvalidOperationException(
                     $"Array schema items must be type object at {arrayPath}."
@@ -180,26 +184,5 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         List<JsonPathSegment> arraySegments = [.. jsonPathSegments, new JsonPathSegment.AnyArrayElement()];
 
         ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arraySegments, context);
-    }
-
-    /// <summary>
-    /// Gets the <c>type</c> keyword from a schema node when present, returning <see langword="null"/> when
-    /// omitted.
-    /// </summary>
-    private static string? GetSchemaType(JsonObject schema, string path)
-    {
-        if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
-        {
-            return null;
-        }
-
-        return typeNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<string>(),
-            JsonArray => throw new InvalidOperationException(
-                $"Unsupported schema keyword 'type' at {path}.type."
-            ),
-            _ => throw new InvalidOperationException($"Expected type to be a string at {path}.type."),
-        };
     }
 }

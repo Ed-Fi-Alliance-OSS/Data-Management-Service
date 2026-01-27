@@ -285,6 +285,36 @@ public class Given_A_JsonSchema_With_Array_Items_Not_Object
 }
 
 [TestFixture]
+public class Given_A_JsonSchema_With_Array_Items_Object_Schema_Without_Type
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = ValidateJsonSchemaStepTestHelper.CreateRootSchemaWithProperty(
+            "collection",
+            new JsonObject
+            {
+                ["type"] = "array",
+                ["items"] = new JsonObject
+                {
+                    ["properties"] = new JsonObject { ["id"] = new JsonObject { ["type"] = "string" } },
+                },
+            }
+        );
+
+        _exception = ValidateJsonSchemaStepTestHelper.Execute(schema);
+    }
+
+    [Test]
+    public void It_should_not_throw()
+    {
+        _exception.Should().BeNull();
+    }
+}
+
+[TestFixture]
 public class Given_A_JsonSchema_With_A_Descriptor_Scalar_Array
 {
     private Exception? _exception;
