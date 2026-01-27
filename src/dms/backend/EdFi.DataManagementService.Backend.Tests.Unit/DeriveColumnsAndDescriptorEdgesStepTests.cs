@@ -510,9 +510,9 @@ public class Given_A_Duration_String_Without_MaxLength
 }
 
 [TestFixture]
-public class Given_A_JsonSchema_With_Enum_When_Deriving_Columns
+public class Given_An_Enumeration_String_Without_MaxLength
 {
-    private Exception? _exception;
+    private DbColumnModel _column = default!;
 
     [SetUp]
     public void Setup()
@@ -522,30 +522,34 @@ public class Given_A_JsonSchema_With_Enum_When_Deriving_Columns
             ["type"] = "object",
             ["properties"] = new JsonObject
             {
-                ["status"] = new JsonObject
-                {
-                    ["type"] = "string",
-                    ["enum"] = new JsonArray("Active", "Inactive"),
-                },
+                ["deliveryMethodType"] = new JsonObject { ["type"] = "string" },
             },
-            ["required"] = new JsonArray("status"),
+            ["required"] = new JsonArray("deliveryMethodType"),
         };
 
-        try
-        {
-            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
-        }
-        catch (Exception exception)
-        {
-            _exception = exception;
-        }
+        var enumerationPath = JsonPathExpressionCompiler.Compile("$.deliveryMethodType");
+
+        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.StringMaxLengthOmissionPaths = new HashSet<string>(StringComparer.Ordinal)
+                {
+                    enumerationPath.Canonical,
+                };
+            }
+        );
+
+        _column = context.ResourceModel!.Root.Columns.Single(column =>
+            column.ColumnName.Value == "DeliveryMethodType"
+        );
     }
 
     [Test]
-    public void It_should_fail_with_the_enum_path()
+    public void It_should_allow_missing_max_length_for_enumeration_strings()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception?.Message.Should().Contain("$.properties.status.enum");
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String));
+        _column.IsNullable.Should().BeFalse();
     }
 }
 

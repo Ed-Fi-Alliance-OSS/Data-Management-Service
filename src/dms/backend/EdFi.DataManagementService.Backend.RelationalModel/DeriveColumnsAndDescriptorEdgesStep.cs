@@ -459,7 +459,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     {
         if (!schema.TryGetPropertyValue("maxLength", out var maxLengthNode) || maxLengthNode is null)
         {
-            if (IsMaxLengthOmissionAllowed(schema, sourcePath, context))
+            if (IsMaxLengthOmissionAllowed(sourcePath, context))
             {
                 return new RelationalScalarType(ScalarKind.String);
             }
@@ -489,22 +489,11 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     }
 
     private static bool IsMaxLengthOmissionAllowed(
-        JsonObject schema,
         JsonPathExpression sourcePath,
         RelationalModelBuilderContext context
     )
     {
-        if (context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical))
-        {
-            return true;
-        }
-
-        if (!schema.TryGetPropertyValue("enum", out var enumNode) || enumNode is null)
-        {
-            return false;
-        }
-
-        return enumNode is JsonArray;
+        return context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
     }
 
     private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)

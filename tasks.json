@@ -27,7 +27,7 @@
       "If retaining coverage for enumeration-like shapes, represent them without JSON Schema `enum` and allow missing `maxLength` only via `StringMaxLengthOmissionPaths` (as extracted from `flatteningMetadata`).",
       "Run the focused tests: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj --filter \"Given_An_Enumeration_String_Without_MaxLength|Given_A_JsonSchema_With_Enum\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Build",
