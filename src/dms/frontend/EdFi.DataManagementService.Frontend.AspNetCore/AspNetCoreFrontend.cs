@@ -3,16 +3,14 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.IO;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 using EdFi.DataManagementService.Core.External.Frontend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
@@ -323,14 +321,21 @@ public static class AspNetCoreFrontend
         IOptions<AppSettings> appSettings
     )
     {
+        var isUrlEncodedForm =
+            MediaTypeHeaderValue.TryParse(httpContext.Request.ContentType, out var mediaType)
+            && mediaType.MediaType?.Equals(
+                "application/x-www-form-urlencoded",
+                StringComparison.OrdinalIgnoreCase
+            ) == true;
+
         return ToResult(
             await apiService.GetTokenInfo(
                 await FromRequest(
                     httpContext.Request,
                     string.Empty,
                     appSettings,
-                    includeBody: !httpContext.Request.HasFormContentType,
-                    includeForm: httpContext.Request.HasFormContentType
+                    includeBody: !isUrlEncodedForm,
+                    includeForm: isUrlEncodedForm
                 )
             ),
             httpContext,

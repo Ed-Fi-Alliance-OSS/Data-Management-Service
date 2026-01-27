@@ -23,9 +23,11 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Core.Handler;
 
 /// <summary>
-/// Handles a delete request that has made it through the middleware pipeline steps.
+/// Handles token introspection requests by validating the provided token and returning
+/// information about the token's authorizations, including education organizations,
+/// resources, services, and assigned profiles.
 /// </summary>
-internal class GetTokenInfoHandler(
+internal partial class GetTokenInfoHandler(
     ILogger<GetTokenInfoHandler> logger,
     IJwtValidationService jwtValidationService,
     IClaimSetProvider claimSetProvider,
@@ -35,8 +37,11 @@ internal class GetTokenInfoHandler(
 ) : IPipelineStep
 {
     private const string EdFiOdsServiceClaimBaseUri = $"{Conventions.EdFiOdsServiceClaimBaseUri}/";
+    private const string ErrorDetail = "An invalid token was provided";
+    private const string NotProcessableOrMissingTokenError =
+        "The token was not present, or was not processable.";
 
-    public async Task Execute(RequestInfo requestInfo, Func<Task> next)
+    async Task IPipelineStep.Execute(RequestInfo requestInfo, Func<Task> next)
     {
         logger.LogDebug(
             $"Entering {nameof(GetTokenInfoHandler)} - {{TraceId}}",
@@ -47,11 +52,35 @@ internal class GetTokenInfoHandler(
 
         if (!string.IsNullOrWhiteSpace(requestInfo.FrontendRequest.Body))
         {
-            tokenFromBody = JsonNode.Parse(requestInfo.FrontendRequest.Body)?["Token"]?.GetValue<string?>();
+            try
+            {
+                tokenFromBody = JsonNode
+                    .Parse(requestInfo.FrontendRequest.Body)
+                    ?.AsObject()
+                    ?.FirstOrDefault(kvp => kvp.Key.Equals("Token", StringComparison.OrdinalIgnoreCase))
+                    .Value?.GetValue<string?>();
+            }
+            catch
+            {
+                requestInfo.FrontendResponse = new FrontendResponse(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForBadRequest(
+                        ErrorDetail,
+                        traceId: requestInfo.FrontendRequest.TraceId,
+                        [],
+                        [NotProcessableOrMissingTokenError]
+                    ),
+                    Headers: []
+                );
+                return;
+            }
         }
         else if (requestInfo.FrontendRequest.Form != null)
         {
-            tokenFromBody = requestInfo.FrontendRequest.Form.GetValueOrDefault("token");
+            tokenFromBody = new Dictionary<string, string>(
+                requestInfo.FrontendRequest.Form,
+                StringComparer.OrdinalIgnoreCase
+            ).GetValueOrDefault("Token");
         }
 
         if (tokenFromBody == null)
@@ -59,10 +88,10 @@ internal class GetTokenInfoHandler(
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(
-                    "An invalid token was provided",
+                    ErrorDetail,
                     traceId: requestInfo.FrontendRequest.TraceId,
                     [],
-                    ["The token was not present, or was not processable."]
+                    [NotProcessableOrMissingTokenError]
                 ),
                 Headers: []
             );
@@ -82,7 +111,7 @@ internal class GetTokenInfoHandler(
             requestInfo.FrontendResponse = new FrontendResponse(
                 StatusCode: 400,
                 Body: FailureResponse.ForBadRequest(
-                    "An invalid token was provided",
+                    ErrorDetail,
                     traceId: requestInfo.FrontendRequest.TraceId,
                     [],
                     ["The Authorization header token does not match the token in the request body."]
@@ -158,13 +187,14 @@ internal class GetTokenInfoHandler(
         );
     }
 
-    public async Task<IEnumerable<OrderedDictionary<string, object>>> GetAuthorizedEducationOrganizations(
+    private async Task<IEnumerable<OrderedDictionary<string, object>>> GetAuthorizedEducationOrganizations(
         IReadOnlyCollection<EducationOrganizationId> clientEducationOrganizationIds
     )
     {
         return (
             await authorizationRepository.GetTokenInfoEducationOrganizations(clientEducationOrganizationIds)
         )
+            .OrderBy(edOrg => edOrg.EducationOrganizationId)
             .GroupBy(
                 edOrg => (edOrg.EducationOrganizationId, edOrg.NameOfInstitution, edOrg.Discriminator),
                 edOrg =>
@@ -198,7 +228,7 @@ internal class GetTokenInfoHandler(
             });
     }
 
-    public async Task<IEnumerable<TokenInfoResource>> GetAuthorizedResources(
+    private async Task<IEnumerable<TokenInfoResource>> GetAuthorizedResources(
         ClaimSet clientClaimSet,
         ProjectSchema[] allProjectSchemas
     )
@@ -232,10 +262,11 @@ internal class GetTokenInfoHandler(
                     Operations = authorizedActions,
                 };
             })
-            .Where(resource => resource.Operations.Any());
+            .Where(resource => resource.Operations.Any())
+            .OrderBy(resource => resource.Resource);
     }
 
-    private IReadOnlyList<TokenInfoService> GetAuthorizedServices(ClaimSet clientClaimSet)
+    private IEnumerable<TokenInfoService> GetAuthorizedServices(ClaimSet clientClaimSet)
     {
         return clientClaimSet
             .ResourceClaims.Where(resourceClaim => !string.IsNullOrWhiteSpace(resourceClaim.Name))
@@ -255,13 +286,13 @@ internal class GetTokenInfoHandler(
                     .Distinct(),
             })
             .Where(service => service.Operations.Any())
-            .ToList();
+            .OrderBy(service => service.Service);
     }
 
     private async Task<IEnumerable<string>> GetAssignedProfiles(long ApplicationId, string? tenantId)
     {
         var profiles = await profileService.GetOrFetchApplicationProfilesAsync(ApplicationId, tenantId);
-        return profiles.AssignedProfileNames;
+        return profiles.AssignedProfileNames.OrderBy(profile => profile);
     }
 
     /// <summary>
@@ -271,16 +302,22 @@ internal class GetTokenInfoHandler(
     /// <returns>If given `localEducationAgencyId` returns `local_education_agency_id`</returns>
     private static string ConvertPascalToSnakeCase(string pascalCasedWord)
     {
-        return Regex
+        return WhitespaceAndHyphenRegex()
             .Replace(
-                Regex.Replace(
-                    Regex.Replace(pascalCasedWord, @"([A-Z]+)([A-Z][a-z])", "$1_$2"),
-                    @"([a-z\d])([A-Z])",
-                    "$1_$2"
-                ),
-                @"[-\s]",
+                LowercaseToUppercaseRegex()
+                    .Replace(UppercaseSequenceRegex().Replace(pascalCasedWord, "$1_$2"), "$1_$2"),
                 "_"
             )
             .ToLower();
     }
+
+    // Source-generated regex patterns for pascal to snake case conversion
+    [GeneratedRegex(@"([A-Z]+)([A-Z][a-z])")]
+    private static partial Regex UppercaseSequenceRegex();
+
+    [GeneratedRegex(@"([a-z\d])([A-Z])")]
+    private static partial Regex LowercaseToUppercaseRegex();
+
+    [GeneratedRegex(@"[-\s]")]
+    private static partial Regex WhitespaceAndHyphenRegex();
 }

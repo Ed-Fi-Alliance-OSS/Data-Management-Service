@@ -116,7 +116,7 @@ Feature: JWT Token Introspection
       When a POST request is made to "/oauth/token_info" with
         """
         {
-            "Token": "{token}"
+            "tOkEn": "{token}"
         }
         """
       Then it should respond with 200
@@ -130,12 +130,6 @@ Feature: JWT Token Introspection
           ],
           "education_organizations": [
             {
-              "education_organization_id": 255950,
-              "name_of_institution": "ESC Test",
-              "type": "edfi.EducationServiceCenter",
-              "education_service_center_id": 255950
-            },
-            {
               "education_organization_id": 255901,
               "name_of_institution": "LEA Test",
               "type": "edfi.LocalEducationAgency",
@@ -143,11 +137,9 @@ Feature: JWT Token Introspection
               "education_service_center_id": 255950
             },
             {
-              "education_organization_id": 255901001,
-              "name_of_institution": "School Test",
-              "type": "edfi.School",
-              "school_id": 255901001,
-              "local_education_agency_id": 255901,
+              "education_organization_id": 255950,
+              "name_of_institution": "ESC Test",
+              "type": "edfi.EducationServiceCenter",
               "education_service_center_id": 255950
             },
             {
@@ -163,6 +155,14 @@ Feature: JWT Token Introspection
               "name_of_institution": "CP Test",
               "type": "edfi.CommunityProvider",
               "community_provider_id": 19255901
+            },
+            {
+              "education_organization_id": 255901001,
+              "name_of_institution": "School Test",
+              "type": "edfi.School",
+              "school_id": 255901001,
+              "local_education_agency_id": 255901,
+              "education_service_center_id": 255950
             }
           ],
           "assigned_profiles": [

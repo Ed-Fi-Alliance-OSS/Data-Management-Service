@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Tests.E2E.Management;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
-using static EdFi.DataManagementService.Core.External.Backend.ResourceAuthorizationResult;
 
 namespace EdFi.DataManagementService.Tests.E2E.StepDefinitions;
 
