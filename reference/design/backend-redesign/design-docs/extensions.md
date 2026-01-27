@@ -87,6 +87,8 @@ This supports either `ProjectEndpointName` tokens (recommended) or MetaEd projec
 
 The mapper discovers these sites by walking `jsonSchemaForInsert` and finding `_ext` at any depth.
 
+Note: common-type extension attachment points must be represented explicitly in ApiSchema so core `jsonSchemaForInsert` includes `_ext` at those sites. Do not rely on OpenAPI fragments `openApiFragments.resources.exts` (schema patches) for relational mapping; see `reference/design/backend-redesign/epics/01-relational-model/09-common-extensions.md`.
+
 ## Relational mapping rules
 
 ### 1) Resource-level `_ext` → extension root table (1:1 per project)

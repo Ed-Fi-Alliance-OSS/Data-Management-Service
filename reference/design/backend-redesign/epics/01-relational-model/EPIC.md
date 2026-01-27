@@ -43,3 +43,4 @@ The end-to-end build is orchestrated by `DMS-1033` as an ordered set-level build
 - `DMS-942` — `06-descriptor-resource-mapping.md` — Map descriptor resources to `dms.Descriptor` (no per-descriptor tables)
 - `DMS-945` — `07-index-and-trigger-inventory.md` — Derive deterministic indexes + triggers inventory (DDL intent)
 - `DMS-1033` — `08-derived-relational-model-set-builder.md` — Build `DerivedRelationalModelSet` from the effective schema set
+- `TBD` — `09-common-extensions.md` — Common-type extensions (`_ext` attachment to commons) schema support
