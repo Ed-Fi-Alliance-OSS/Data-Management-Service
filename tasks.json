@@ -7,7 +7,7 @@
       "Keep `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ValidateJsonSchemaStep.cs` rejecting `enum` via `UnsupportedKeywords` with a message that includes `{path}.enum`.",
       "Add/update at least one test that demonstrates a resource schema containing `$.properties.<name>.enum` fails with a message containing that canonical JSON path."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Relational Model - Guardrails",
