@@ -130,7 +130,7 @@
       "Update the `FindProjectRoot` logic to locate `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` (instead of `EdFi.DataManagementService.Backend.Tests.Unit.csproj`).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_An_Authoritative_ApiSchema_For_Ed_Fi\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "RelationalModel.Tests.Unit - Move Test File",
