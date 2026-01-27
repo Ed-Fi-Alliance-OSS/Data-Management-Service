@@ -8,9 +8,9 @@ using System.Text.Json.Nodes;
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
+/// <para>
 /// Derives the base set of relational table scopes from <c>resourceSchema.jsonSchemaForInsert</c>.
-/// </summary>
-/// <remarks>
+/// </para>
 /// <para>
 /// This step is responsible for creating the root table (<c>$</c>) and one child table per array path
 /// (including nested arrays). Child table primary keys are a composite of the root document id,
@@ -24,7 +24,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// The traversal is deterministic: property iteration is ordinal-sorted, and no logic depends on dictionary
 /// enumeration order.
 /// </para>
-/// </remarks>
+/// </summary>
 public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";

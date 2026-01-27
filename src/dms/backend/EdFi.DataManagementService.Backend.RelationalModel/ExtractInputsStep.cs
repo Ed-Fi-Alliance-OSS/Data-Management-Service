@@ -7,8 +7,18 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Extracts the API schema inputs required to build a relational resource model and populates the
+/// <see cref="RelationalModelBuilderContext"/> with normalized values and precompiled paths.
+/// </summary>
 public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 {
+    /// <summary>
+    /// Reads <see cref="RelationalModelBuilderContext.ApiSchemaRoot"/> and the current resource endpoint
+    /// name, then populates the context with project metadata, resource metadata, and derived path maps
+    /// consumed by subsequent relational model builder steps.
+    /// </summary>
+    /// <param name="context">The builder context holding the API schema and target resource endpoint.</param>
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -78,6 +88,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         context.StringMaxLengthOmissionPaths = stringMaxLengthOmissionPaths;
     }
 
+    /// <summary>
+    /// Compiles identity JSON path strings defined by a resource schema into canonical
+    /// <see cref="JsonPathExpression"/> instances.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema containing <c>identityJsonPaths</c>.</param>
+    /// <returns>The compiled identity paths.</returns>
     private static IReadOnlyList<JsonPathExpression> ExtractIdentityJsonPaths(JsonObject resourceSchema)
     {
         var identityJsonPaths = RequireArray(resourceSchema, "identityJsonPaths");
@@ -99,6 +115,14 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return compiledPaths.ToArray();
     }
 
+    /// <summary>
+    /// Resolves descriptor reference paths for the current resource, using the project schema to locate
+    /// descriptor mappings and reference-based propagation rules.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema for the current resource.</param>
+    /// <param name="projectSchema">The project schema containing all resource schemas.</param>
+    /// <param name="projectName">The current project name.</param>
+    /// <returns>A mapping of canonical JSON path to descriptor path information.</returns>
     private static Dictionary<string, DescriptorPathInfo> ExtractDescriptorPaths(
         JsonObject resourceSchema,
         JsonObject projectSchema,
@@ -117,12 +141,27 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return new Dictionary<string, DescriptorPathInfo>(descriptorPaths, StringComparer.Ordinal);
     }
 
+    /// <summary>
+    /// Represents a reference mapping used to propagate descriptor paths from a referenced resource to a
+    /// reference JSON path in the current resource.
+    /// </summary>
     private sealed record ReferenceJsonPathInfo(
         QualifiedResourceName ReferencedResource,
         JsonPathExpression IdentityPath,
         JsonPathExpression ReferencePath
     );
 
+    /// <summary>
+    /// Builds descriptor path maps for all resources in the project schema, including abstract resources,
+    /// and then iteratively propagates descriptor paths through reference mappings until no new paths are
+    /// discovered.
+    /// </summary>
+    /// <param name="projectSchema">The project schema containing resource definitions.</param>
+    /// <param name="projectName">The current project name.</param>
+    /// <returns>
+    /// A mapping from qualified resource name to a dictionary of canonical JSON path to descriptor path
+    /// information for that resource.
+    /// </returns>
     private static Dictionary<
         QualifiedResourceName,
         Dictionary<string, DescriptorPathInfo>
@@ -213,6 +252,17 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return descriptorPathsByResource;
     }
 
+    /// <summary>
+    /// Adds descriptor path mappings and reference path information for each resource schema entry found
+    /// in a schema collection (e.g., <c>resourceSchemas</c> or <c>abstractResources</c>).
+    /// </summary>
+    /// <param name="resourceSchemas">The collection of resource schemas to process.</param>
+    /// <param name="projectName">The current project name.</param>
+    /// <param name="descriptorPathsByResource">Target dictionary to populate with descriptor paths.</param>
+    /// <param name="referenceJsonPathsByResource">
+    /// Target dictionary to populate with reference mappings.
+    /// </param>
+    /// <param name="resourceSchemasPath">A schema path used for exception messages.</param>
     private static void AddResourceDescriptors(
         JsonObject resourceSchemas,
         string projectName,
@@ -255,6 +305,13 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Determines a resource name for a schema entry by preferring the explicit <c>resourceName</c>
+    /// property and falling back to the schema dictionary key.
+    /// </summary>
+    /// <param name="resourceKey">The key used in the resource schema dictionary.</param>
+    /// <param name="resourceSchema">The resource schema object.</param>
+    /// <returns>The resolved resource name.</returns>
     private static string GetResourceName(string resourceKey, JsonObject resourceSchema)
     {
         if (resourceSchema.TryGetPropertyValue("resourceName", out var resourceNameNode))
@@ -292,6 +349,13 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return resourceKey;
     }
 
+    /// <summary>
+    /// Extracts descriptor reference paths for a resource schema using <c>documentPathsMapping</c> when
+    /// available; otherwise infers descriptor paths from <c>identityJsonPaths</c>.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema to inspect.</param>
+    /// <param name="projectName">The current project name.</param>
+    /// <returns>A mapping of canonical JSON path to descriptor path information.</returns>
     private static Dictionary<string, DescriptorPathInfo> ExtractDescriptorPathsForResource(
         JsonObject resourceSchema,
         string projectName
@@ -365,6 +429,13 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return descriptorPathsByJsonPath;
     }
 
+    /// <summary>
+    /// Infers descriptor paths from <c>identityJsonPaths</c> by selecting identity paths whose terminal
+    /// property name ends with <c>Descriptor</c>.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema to inspect.</param>
+    /// <param name="projectName">The current project name used to qualify descriptor resources.</param>
+    /// <returns>A mapping of canonical identity JSON path to descriptor path information.</returns>
     private static Dictionary<string, DescriptorPathInfo> ExtractDescriptorPathsFromIdentityJsonPaths(
         JsonObject resourceSchema,
         string projectName
@@ -411,6 +482,17 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return descriptorPathsByJsonPath;
     }
 
+    /// <summary>
+    /// Attempts to infer a descriptor resource name from an identity path by inspecting its last segment.
+    /// </summary>
+    /// <param name="identityPath">The identity path to inspect.</param>
+    /// <param name="descriptorResourceName">
+    /// When this method returns <see langword="true"/>, contains the inferred descriptor resource name.
+    /// </param>
+    /// <returns>
+    /// <see langword="true"/> when a descriptor resource name can be inferred; otherwise
+    /// <see langword="false"/>.
+    /// </returns>
     private static bool TryGetDescriptorResourceName(
         JsonPathExpression identityPath,
         out string descriptorResourceName
@@ -437,6 +519,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return true;
     }
 
+    /// <summary>
+    /// Extracts reference identity and reference JSON paths from <c>documentPathsMapping</c> entries,
+    /// producing a set of reference mappings used for descriptor path propagation.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema containing <c>documentPathsMapping</c>.</param>
+    /// <returns>The extracted reference mappings.</returns>
     private static List<ReferenceJsonPathInfo> ExtractReferenceJsonPaths(JsonObject resourceSchema)
     {
         if (resourceSchema["documentPathsMapping"] is not JsonObject documentPathsMapping)
@@ -485,7 +573,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             if (referenceJsonPathsNode is not JsonArray referenceJsonPathsArray)
             {
                 throw new InvalidOperationException(
-                    "Expected referenceJsonPaths to be an array on documentPathsMapping entry, invalid ApiSchema."
+                    "Expected referenceJsonPaths to be an array on documentPathsMapping entry, "
+                        + "invalid ApiSchema."
                 );
             }
 
@@ -525,6 +614,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return referenceJsonPaths;
     }
 
+    /// <summary>
+    /// Extracts canonical JSON paths for properties whose string-length constraints should be omitted
+    /// based on <c>flatteningMetadata</c> column type and max-length information.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema containing <c>flatteningMetadata</c>.</param>
+    /// <returns>A set of canonical JSON paths where string max length should be omitted.</returns>
     private static HashSet<string> ExtractStringMaxLengthOmissionPaths(JsonObject resourceSchema)
     {
         if (resourceSchema["flatteningMetadata"] is not JsonObject flatteningMetadata)
@@ -543,6 +638,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return omissionPaths;
     }
 
+    /// <summary>
+    /// Recursively traverses a <c>flatteningMetadata</c> table node and accumulates omission paths for
+    /// qualifying column definitions, including nested child tables.
+    /// </summary>
+    /// <param name="tableNode">The flattening metadata table node to inspect.</param>
+    /// <param name="omissionPaths">The target set to receive omission paths.</param>
     private static void CollectStringMaxLengthOmissionPaths(
         JsonObject tableNode,
         HashSet<string> omissionPaths
@@ -645,6 +746,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Extracts decimal validation metadata from <c>decimalPropertyValidationInfos</c>, keyed by the
+    /// canonical JSON path.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema containing decimal validation metadata.</param>
+    /// <returns>A mapping of canonical JSON path to decimal validation information.</returns>
     private static Dictionary<string, DecimalPropertyValidationInfo> ExtractDecimalPropertyValidationInfos(
         JsonObject resourceSchema
     )
@@ -693,6 +800,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return decimalInfosByPath;
     }
 
+    /// <summary>
+    /// Ensures a node is a <see cref="JsonObject"/> and throws a schema validation exception otherwise.
+    /// </summary>
+    /// <param name="node">The node to validate.</param>
+    /// <param name="propertyName">The schema property path used for exception messages.</param>
+    /// <returns>The validated object.</returns>
     private static JsonObject RequireObject(JsonNode? node, string propertyName)
     {
         return node switch
@@ -707,6 +820,13 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Ensures a named property on an object is a <see cref="JsonArray"/> and throws a schema validation
+    /// exception otherwise.
+    /// </summary>
+    /// <param name="node">The node holding the property.</param>
+    /// <param name="propertyName">The property name to read.</param>
+    /// <returns>The validated array.</returns>
     private static JsonArray RequireArray(JsonObject node, string propertyName)
     {
         return node[propertyName] switch
@@ -721,6 +841,13 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Ensures a named property on an object is a non-empty string and throws a schema validation
+    /// exception otherwise.
+    /// </summary>
+    /// <param name="node">The node holding the property.</param>
+    /// <param name="propertyName">The property name to read.</param>
+    /// <returns>The validated string value.</returns>
     private static string RequireString(JsonObject node, string propertyName)
     {
         var value = node[propertyName] switch

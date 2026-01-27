@@ -5,8 +5,18 @@
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Normalizes ordering of tables, columns, constraints, and related metadata to ensure deterministic
+/// relational model output regardless of source enumeration order.
+/// </summary>
 public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
 {
+    /// <summary>
+    /// Applies canonical ordering rules to the current <see cref="RelationalModelBuilderContext"/>,
+    /// including table ordering, column and constraint ordering, document reference bindings,
+    /// descriptor edges, and extension sites.
+    /// </summary>
+    /// <param name="context">The relational model builder context to canonicalize.</param>
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -72,6 +82,11 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         context.ExtensionSites.AddRange(orderedExtensionSites);
     }
 
+    /// <summary>
+    /// Reorders table columns and constraints into a stable, predictable sequence.
+    /// </summary>
+    /// <param name="table">The table model to canonicalize.</param>
+    /// <returns>A copy of the table model with canonical column and constraint order.</returns>
     private static DbTableModel CanonicalizeTable(DbTableModel table)
     {
         var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
@@ -94,6 +109,11 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Builds a lookup from key column name to its ordinal position within the key definition.
+    /// </summary>
+    /// <param name="keyColumns">The key columns to index.</param>
+    /// <returns>A mapping of column name to key position.</returns>
     private static Dictionary<string, int> BuildKeyColumnOrder(IReadOnlyList<DbKeyColumn> keyColumns)
     {
         Dictionary<string, int> keyOrder = new(StringComparer.Ordinal);
@@ -106,6 +126,13 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         return keyOrder;
     }
 
+    /// <summary>
+    /// Assigns a grouping bucket used to order columns such that key columns come first,
+    /// followed by descriptor foreign keys, scalar columns, and then all remaining kinds.
+    /// </summary>
+    /// <param name="column">The column to classify.</param>
+    /// <param name="keyColumnOrder">Lookup of key column names to their key order.</param>
+    /// <returns>A numeric group value used for ordering.</returns>
     private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
     {
         if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
@@ -121,6 +148,13 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Returns the ordinal position of a column within the key, or <see cref="int.MaxValue"/>
+    /// when the column is not part of the key.
+    /// </summary>
+    /// <param name="column">The column whose key index is requested.</param>
+    /// <param name="keyColumnOrder">Lookup of key column names to their key order.</param>
+    /// <returns>The key ordinal index, or <see cref="int.MaxValue"/> when not a key column.</returns>
     private static int GetColumnKeyIndex(
         DbColumnModel column,
         IReadOnlyDictionary<string, int> keyColumnOrder
@@ -129,6 +163,12 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         return keyColumnOrder.TryGetValue(column.ColumnName.Value, out var index) ? index : int.MaxValue;
     }
 
+    /// <summary>
+    /// Assigns a grouping bucket used to order constraints with uniques first, then foreign keys,
+    /// and finally any other constraint types.
+    /// </summary>
+    /// <param name="constraint">The constraint to classify.</param>
+    /// <returns>A numeric group value used for ordering.</returns>
     private static int GetConstraintGroup(TableConstraint constraint)
     {
         return constraint switch
@@ -139,6 +179,11 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Extracts the constraint name used as a stable tiebreaker during ordering.
+    /// </summary>
+    /// <param name="constraint">The constraint whose name should be returned.</param>
+    /// <returns>The constraint name, or an empty string when unnamed.</returns>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch
@@ -149,6 +194,12 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Counts the number of array segments within a JSON path, which is used to ensure
+    /// parent scopes are ordered ahead of deeper array scopes.
+    /// </summary>
+    /// <param name="scope">The JSON scope to inspect.</param>
+    /// <returns>The number of array-depth segments in the scope.</returns>
     private static int CountArrayDepth(JsonPathExpression scope)
     {
         var depth = 0;
@@ -164,6 +215,12 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         return depth;
     }
 
+    /// <summary>
+    /// Produces a stable ordering for extension sites by normalizing project key ordering and then
+    /// ordering by owning scope, extension path, and project keys.
+    /// </summary>
+    /// <param name="extensionSites">The extension sites to canonicalize.</param>
+    /// <returns>An ordered collection of extension sites.</returns>
     private static IReadOnlyList<ExtensionSite> CanonicalizeExtensionSites(
         IReadOnlyList<ExtensionSite> extensionSites
     )

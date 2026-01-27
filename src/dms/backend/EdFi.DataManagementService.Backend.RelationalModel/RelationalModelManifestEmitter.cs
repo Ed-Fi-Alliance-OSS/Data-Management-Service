@@ -9,10 +9,19 @@ using System.Text.Json;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Emits a deterministic JSON manifest for a relational resource model build, intended for diagnostics
+/// and validation.
+/// </summary>
 public static class RelationalModelManifestEmitter
 {
     private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
 
+    /// <summary>
+    /// Emits a JSON manifest for a completed relational model build.
+    /// </summary>
+    /// <param name="buildResult">The build result containing the resource model and extension sites.</param>
+    /// <returns>The JSON manifest.</returns>
     public static string Emit(RelationalModelBuildResult buildResult)
     {
         if (buildResult is null)
@@ -23,6 +32,12 @@ public static class RelationalModelManifestEmitter
         return Emit(buildResult.ResourceModel, buildResult.ExtensionSites);
     }
 
+    /// <summary>
+    /// Emits a JSON manifest for a resource model and its associated extension sites.
+    /// </summary>
+    /// <param name="resourceModel">The resource model to serialize.</param>
+    /// <param name="extensionSites">The ordered extension sites to include.</param>
+    /// <returns>The JSON manifest.</returns>
     public static string Emit(
         RelationalResourceModel resourceModel,
         IReadOnlyList<ExtensionSite> extensionSites
@@ -43,6 +58,12 @@ public static class RelationalModelManifestEmitter
         return json + "\n";
     }
 
+    /// <summary>
+    /// Writes the top-level manifest object to the provided JSON writer.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="resourceModel">The resource model to serialize.</param>
+    /// <param name="extensionSites">The extension sites to include.</param>
     private static void WriteManifest(
         Utf8JsonWriter writer,
         RelationalResourceModel resourceModel,
@@ -85,6 +106,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes the resource identity portion of the manifest.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="resource">The resource identity to write.</param>
     private static void WriteResource(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WritePropertyName("resource");
@@ -94,6 +120,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a table model entry, including key columns, columns, and constraints.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="table">The table model to write.</param>
     private static void WriteTable(Utf8JsonWriter writer, DbTableModel table)
     {
         writer.WriteStartObject();
@@ -128,6 +159,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a key column entry.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="keyColumn">The key column to write.</param>
     private static void WriteKeyColumn(Utf8JsonWriter writer, DbKeyColumn keyColumn)
     {
         writer.WriteStartObject();
@@ -136,6 +172,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a table column entry, including kind, scalar type, nullability, and source JSON path.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="column">The column model to write.</param>
     private static void WriteColumn(Utf8JsonWriter writer, DbColumnModel column)
     {
         writer.WriteStartObject();
@@ -156,6 +197,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a scalar type entry, including optional max length and decimal precision/scale metadata.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="scalarType">The scalar type to write.</param>
     private static void WriteScalarType(Utf8JsonWriter writer, RelationalScalarType? scalarType)
     {
         if (scalarType is null)
@@ -181,6 +227,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a table constraint entry, using a constraint-type specific shape.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="constraint">The constraint to write.</param>
     private static void WriteConstraint(Utf8JsonWriter writer, TableConstraint constraint)
     {
         writer.WriteStartObject();
@@ -216,6 +267,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes an array of column names.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="columns">The column names to write.</param>
     private static void WriteColumnNameList(Utf8JsonWriter writer, IReadOnlyList<DbColumnName> columns)
     {
         writer.WriteStartArray();
@@ -226,6 +282,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes a descriptor edge source entry.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="edge">The descriptor edge source to write.</param>
     private static void WriteDescriptorEdge(Utf8JsonWriter writer, DescriptorEdgeSource edge)
     {
         writer.WriteStartObject();
@@ -239,6 +300,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes an extension site entry.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="site">The extension site to write.</param>
     private static void WriteExtensionSite(Utf8JsonWriter writer, ExtensionSite site)
     {
         writer.WriteStartObject();
@@ -254,6 +320,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a table reference object containing schema and name.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="tableName">The referenced table name.</param>
     private static void WriteTableReference(Utf8JsonWriter writer, DbTableName tableName)
     {
         writer.WriteStartObject();
@@ -262,6 +333,11 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a resource reference object containing project name and resource name.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="resource">The referenced resource identity.</param>
     private static void WriteResourceReference(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WriteStartObject();

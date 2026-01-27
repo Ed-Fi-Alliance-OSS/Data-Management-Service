@@ -11,15 +11,14 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Deterministic naming helpers used when deriving physical schemas, tables, columns, and constraints from
 /// resource metadata.
-/// </summary>
-/// <remarks>
+///
 /// These helpers intentionally apply a restricted, cross-database-safe identifier policy:
 /// <list type="bullet">
 /// <item><description>Schema names are normalized to lowercase ASCII letters/digits (with a leading letter).</description></item>
 /// <item><description>Property and collection segments are transformed into PascalCase identifiers.</description></item>
 /// <item><description>Collection tables and key parts follow the root+ordinals conventions in the redesign docs.</description></item>
 /// </list>
-/// </remarks>
+/// </summary>
 public static class RelationalNameConventions
 {
     /// <summary>

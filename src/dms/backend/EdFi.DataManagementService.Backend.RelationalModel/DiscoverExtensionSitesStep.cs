@@ -7,10 +7,19 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Discovers extension sites in <see cref="RelationalModelBuilderContext.JsonSchemaForInsert"/> and records them in
+/// <see cref="RelationalModelBuilderContext.ExtensionSites"/>.
+/// </summary>
 public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
 
+    /// <summary>
+    /// Clears and repopulates <see cref="RelationalModelBuilderContext.ExtensionSites"/> by traversing the insert JSON
+    /// schema and collecting every object scope that defines an <c>_ext</c> property.
+    /// </summary>
+    /// <param name="context">The builder context containing schema inputs and extension site output.</param>
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -31,6 +40,9 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         DiscoverSchema(rootSchema, [], context.ExtensionSites);
     }
 
+    /// <summary>
+    /// Recursively discovers extension sites, dispatching to object/array visitors based on schema kind.
+    /// </summary>
     private static void DiscoverSchema(
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
@@ -54,6 +66,10 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Discovers extension sites in an object schema by finding <c>_ext</c> properties and recursing into child
+    /// properties.
+    /// </summary>
     private static void DiscoverObjectSchema(
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
@@ -109,6 +125,10 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Discovers extension sites within the item schema of an array by recursing into the <c>items</c> schema at the
+    /// current array scope.
+    /// </summary>
     private static void DiscoverArraySchema(
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
@@ -132,6 +152,9 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         DiscoverSchema(itemsSchema, itemSegments, extensionSites);
     }
 
+    /// <summary>
+    /// Extracts extension project keys (property names under the extension site) from an extension schema object.
+    /// </summary>
     private static IReadOnlyList<string> ExtractProjectKeys(
         JsonObject extensionSchema,
         JsonPathExpression extensionPath
@@ -173,6 +196,9 @@ public sealed class DiscoverExtensionSitesStep : IRelationalModelBuilderStep
         return projectKeys.ToArray();
     }
 
+    /// <summary>
+    /// Builds the canonical JSONPath for a named property under the given scope.
+    /// </summary>
     private static string BuildPropertyPath(List<JsonPathSegment> scopeSegments, string propertyName)
     {
         List<JsonPathSegment> propertySegments =

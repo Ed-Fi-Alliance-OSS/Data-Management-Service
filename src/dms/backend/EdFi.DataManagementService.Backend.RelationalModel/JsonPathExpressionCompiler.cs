@@ -9,8 +9,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
 /// Compiles and canonicalizes a constrained JSONPath syntax used throughout relational model derivation.
-/// </summary>
-/// <remarks>
 /// <para>
 /// Supported syntax:
 /// </para>
@@ -23,7 +21,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// Property names are restricted to letters/digits plus <c>_</c> and <c>-</c>. The output canonical form is
 /// stable and is used for deterministic ordering and dictionary keys.
 /// </para>
-/// </remarks>
+/// </summary>
 public static class JsonPathExpressionCompiler
 {
     /// <summary>

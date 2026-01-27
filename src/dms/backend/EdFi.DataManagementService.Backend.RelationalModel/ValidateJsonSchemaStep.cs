@@ -10,18 +10,14 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Validates <c>resourceSchema.jsonSchemaForInsert</c> for the assumptions required by relational model
 /// derivation.
-/// </summary>
-/// <remarks>
-/// <para>
+///
 /// The relational model builder assumes the schema is fully dereferenced/expanded and uses a constrained
 /// subset of JSON Schema. Unsupported keywords (for example <c>$ref</c>, <c>oneOf</c>, and <c>enum</c>) are
 /// rejected with path-inclusive errors.
-/// </para>
-/// <para>
+///
 /// Objects are traversed through <c>properties</c> only. <c>additionalProperties</c> is treated as
 /// "prune/ignore" (closed-world persistence) and is therefore not validated or traversed.
-/// </para>
-/// </remarks>
+/// </summary>
 public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
 {
     /// <summary>

@@ -10,8 +10,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
 /// Derives scalar columns (and descriptor foreign keys) for each previously-discovered table scope.
-/// </summary>
-/// <remarks>
 /// <para>
 /// This step walks <c>resourceSchema.jsonSchemaForInsert</c> and:
 /// </para>
@@ -37,7 +35,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// Nullability is derived from JSON Schema required-ness, <c>x-nullable</c>, and whether the value has an
 /// optional ancestor object.
 /// </para>
-/// </remarks>
+/// </summary>
 public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";

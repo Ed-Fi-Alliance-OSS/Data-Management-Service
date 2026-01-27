@@ -21,11 +21,10 @@ public interface IRelationalModelBuilderStep
 
 /// <summary>
 /// Shared mutable context passed through the relational model builder pipeline.
-/// </summary>
-/// <remarks>
+///
 /// This context aggregates schema inputs, extracted metadata, and derived outputs. Pipeline steps are expected
 /// to validate required inputs at their entry points and fail fast with actionable errors.
-/// </remarks>
+/// </summary>
 public sealed class RelationalModelBuilderContext
 {
     /// <summary>

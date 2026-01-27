@@ -20,12 +20,11 @@ internal enum SchemaKind
 /// <summary>
 /// Determines how a JSON schema node should be interpreted for traversal when deriving relational tables and
 /// columns.
-/// </summary>
-/// <remarks>
+///
 /// The Ed-Fi <c>jsonSchemaForInsert</c> payload is expected to be fully dereferenced and commonly includes
 /// explicit <c>type</c> keywords, but the implementation is tolerant of omitted <c>type</c> when other
 /// structure keywords (like <c>properties</c> or <c>items</c>) are present.
-/// </remarks>
+/// </summary>
 internal static class JsonSchemaTraversalConventions
 {
     /// <summary>

@@ -10,12 +10,11 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Validates that <c>jsonSchemaForInsert</c> is fully dereferenced/expanded and does not contain schema
 /// constructs the relational builder does not support.
-/// </summary>
-/// <remarks>
+///
 /// This validator is called at each schema node that the traversal visits. Nodes under
 /// <c>additionalProperties</c> are intentionally not visited (and therefore not validated) because
 /// <c>additionalProperties</c> is treated as "ignore/prune" for persistence.
-/// </remarks>
+/// </summary>
 internal static class JsonSchemaUnsupportedKeywordValidator
 {
     private static readonly IReadOnlyList<string> _unsupportedKeywords =
