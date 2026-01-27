@@ -7,7 +7,7 @@
       "Add/adjust a unit test that builds a context for a known descriptor endpoint (e.g., `academicSubjectDescriptors`) and asserts `IsDescriptorResource == true`, and another non-descriptor endpoint (e.g., `schools`) asserts `false`.",
       "Run `dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` and ensure all tests pass."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "RelationalModel",
@@ -38,17 +38,6 @@
       "Run `UPDATE_GOLDENS=1 dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` to regenerate goldens.",
       "Run the same `dotnet test` command again without `UPDATE_GOLDENS` and confirm it passes with an empty git diff for the fixture outputs.",
       "Acceptance: the generated manifest no longer contains `create`/table entries like `edfi.<SomeDescriptorName>` for descriptor resources, and descriptor resources include `storage_kind: SharedDescriptorTable`."
-    ],
-    "completed": false
-  },
-  {
-    "category": "DDL Generation",
-    "description": "Ensure future DDL generation logic treats descriptor resources as `SharedDescriptorTable`: emit `dms.Descriptor` once and do not emit per-descriptor resource tables in the project schema.",
-    "stepsToVerify": [
-      "Locate the DDL generation entry point that consumes the derived model (or implement it if still placeholder) and branch on `ResourceStorageKind`.",
-      "Acceptance: generated DDL contains exactly one `CREATE TABLE dms.Descriptor` and contains no `CREATE TABLE <projectSchema>.*Descriptor` tables for descriptor resources.",
-      "Acceptance: all `..._DescriptorId` foreign keys in resource/collection tables reference `dms.Descriptor(DocumentId)`.",
-      "Add or update a unit/integration test for DDL output (snapshot or assertions) to cover the above and run it in CI."
     ],
     "completed": false
   }

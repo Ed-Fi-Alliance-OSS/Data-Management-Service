@@ -41,11 +41,18 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
             .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
     }
 
+    [Test]
+    public void It_should_mark_the_resource_as_non_descriptor()
+    {
+        _context.IsDescriptorResource.Should().BeFalse();
+    }
+
     private static JsonNode CreateApiSchemaRoot()
     {
         var resourceSchema = new JsonObject
         {
             ["resourceName"] = "School",
+            ["isDescriptor"] = false,
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject
@@ -67,6 +74,62 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
             ["projectVersion"] = "5.0.0",
             ["projectEndpointName"] = "ed-fi",
             ["resourceSchemas"] = new JsonObject { ["schools"] = resourceSchema },
+        };
+
+        return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema };
+    }
+}
+
+[TestFixture]
+public class Given_An_ApiSchema_With_A_Descriptor_Resource
+{
+    private RelationalModelBuilderContext _context = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var apiSchemaRoot = CreateApiSchemaRoot(
+            "academicSubjectDescriptors",
+            "AcademicSubjectDescriptor",
+            true
+        );
+        _context = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = "academicSubjectDescriptors",
+        };
+
+        var step = new ExtractInputsStep();
+
+        step.Execute(_context);
+    }
+
+    [Test]
+    public void It_should_mark_the_resource_as_descriptor()
+    {
+        _context.IsDescriptorResource.Should().BeTrue();
+    }
+
+    private static JsonNode CreateApiSchemaRoot(
+        string resourceEndpointName,
+        string resourceName,
+        bool isDescriptor
+    )
+    {
+        var resourceSchema = new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = isDescriptor,
+            ["jsonSchemaForInsert"] = new JsonObject(),
+            ["identityJsonPaths"] = new JsonArray(),
+        };
+
+        var projectSchema = new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectVersion"] = "5.0.0",
+            ["projectEndpointName"] = "ed-fi",
+            ["resourceSchemas"] = new JsonObject { [resourceEndpointName] = resourceSchema },
         };
 
         return new JsonObject { ["apiSchemaVersion"] = "1.0.0", ["projectSchema"] = projectSchema };

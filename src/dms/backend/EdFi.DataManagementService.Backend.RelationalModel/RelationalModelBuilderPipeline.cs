@@ -59,6 +59,11 @@ public sealed class RelationalModelBuilderContext
     public string? ResourceName { get; set; }
 
     /// <summary>
+    /// Whether the resource is a descriptor resource.
+    /// </summary>
+    public bool IsDescriptorResource { get; set; }
+
+    /// <summary>
     /// The fully dereferenced JSON schema used for inserts/updates (<c>resourceSchema.jsonSchemaForInsert</c>).
     /// </summary>
     public JsonNode? JsonSchemaForInsert { get; set; }

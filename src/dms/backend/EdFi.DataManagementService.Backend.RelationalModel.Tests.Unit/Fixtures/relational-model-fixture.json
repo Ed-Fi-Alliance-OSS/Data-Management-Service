@@ -5,12 +5,13 @@
     "projectEndpointName": "ed-fi",
     "projectVersion": "5.0.0",
     "resourceSchemas": {
-      "schools": {
-        "resourceName": "School",
-        "identityJsonPaths": [
-          "$.schoolId",
-          "$.schoolTypeDescriptor"
-        ],
+    "schools": {
+      "resourceName": "School",
+      "isDescriptor": false,
+      "identityJsonPaths": [
+        "$.schoolId",
+        "$.schoolTypeDescriptor"
+      ],
         "documentPathsMapping": {
           "SchoolTypeDescriptor": {
             "isReference": true,

@@ -50,6 +50,11 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
 
         var resourceName = RequireString(resourceSchema, "resourceName");
+        var isDescriptor =
+            resourceSchema["isDescriptor"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected isDescriptor to be on ResourceSchema, invalid ApiSchema."
+            );
         var jsonSchemaForInsert =
             resourceSchema["jsonSchemaForInsert"]
             ?? throw new InvalidOperationException(
@@ -65,6 +70,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         context.ProjectEndpointName = projectEndpointName;
         context.ProjectVersion = projectVersion;
         context.ResourceName = resourceName;
+        context.IsDescriptorResource = isDescriptor;
         context.JsonSchemaForInsert = jsonSchemaForInsert;
         context.IdentityJsonPaths = identityJsonPaths;
         context.DescriptorPathsByJsonPath = descriptorPathsByJsonPath;

@@ -1,0 +1,4 @@
+- Task: Propagate ApiSchema resourceSchema.isDescriptor into RelationalModelBuilderContext (story reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md).
+- Decision: require isDescriptor on resourceSchema (matches Core ResourceSchema contract) and set context.IsDescriptorResource in ExtractInputsStep.
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelBuilderPipeline.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ExtractInputsStepTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/relational-model-fixture.json.
+- Notes: dotnet build ./src/dms/EdFi.DataManagementService.sln (warning about missing DocumentValidation.feature); dotnet test relational model unit project passed.
