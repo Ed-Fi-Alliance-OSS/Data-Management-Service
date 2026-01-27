@@ -1072,10 +1072,26 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
         }
 
         // Add object rules
-        allowedProperties.UnionWith(contentType.Objects.Select(obj => obj.Name));
+        var objectNames = contentType.Objects.Select(obj => obj.Name);
+        if (contentType.MemberSelection == MemberSelection.ExcludeOnly)
+        {
+            excludedProperties.UnionWith(objectNames);
+        }
+        else
+        {
+            allowedProperties.UnionWith(objectNames);
+        }
 
         // Add collection rules
-        allowedProperties.UnionWith(contentType.Collections.Select(coll => coll.Name));
+        var collectionNames = contentType.Collections.Select(coll => coll.Name);
+        if (contentType.MemberSelection == MemberSelection.ExcludeOnly)
+        {
+            excludedProperties.UnionWith(collectionNames);
+        }
+        else
+        {
+            allowedProperties.UnionWith(collectionNames);
+        }
 
         // Add extension rules (extensions are typically under _ext)
         if (contentType.Extensions.Count > 0)
