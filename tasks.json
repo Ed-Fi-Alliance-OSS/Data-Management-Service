@@ -68,7 +68,7 @@
       "Update the file-scoped namespace to `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj --filter \"Given_An_Inlined_Object_Property|Given_Colliding_Column_Names|Given_A_Descriptor_Path|Given_A_Descriptor_Scalar_Array|Given_Descriptor_Uri_Strings_Without_MaxLength|Given_A_Property_With_XNullable|Given_A_String_Property_Without_MaxLength|Given_String_Properties_With_Format_And_No_MaxLength|Given_A_Duration_String_Without_MaxLength|Given_An_Enumeration_String_Without_MaxLength|Given_A_Number_Property_With_Decimal_Validation|Given_A_Number_Property_Without_Decimal_Validation|Given_A_Number_Property_With_Incomplete_Decimal_Validation|Given_A_JsonSchema_With_AdditionalProperties_Schema\"`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "RelationalModel.Tests.Unit - Move Test File",
