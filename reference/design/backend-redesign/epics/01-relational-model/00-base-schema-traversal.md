@@ -20,6 +20,11 @@ and `enum` cannot occur. If any appear, treat them as invalid schema input.
 
 This story produces the base per-resource table/column shape used to populate `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).
 
+## Integration (ordered passes)
+
+- Per-resource: implemented as pipeline steps that derive tables/keys and scalar columns from a single `resourceSchema.jsonSchemaForInsert`.
+- Set-level (`DMS-1033`): runs this per-resource pipeline for **every** concrete resource across the effective schema set as the initial “base traversal” pass. Later passes enrich these per-resource models (references, extensions, naming, indexes/triggers, etc.).
+
 ## Acceptance Criteria
 
 - For a small fixture resource schema, derived tables match expected scopes:
@@ -40,3 +45,4 @@ This story produces the base per-resource table/column shape used to populate `D
    1. nested collections,
    2. scalar-inlined objects,
    3. `additionalProperties` behavior.
+4. Wire this derivation into the `DMS-1033` set-level builder as the initial “base traversal” pass over all resources.

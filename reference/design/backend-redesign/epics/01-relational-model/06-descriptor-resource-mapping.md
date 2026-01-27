@@ -15,6 +15,13 @@ Treat descriptor resources as a special-case storage shape:
 
 This aligns DMS descriptor storage with the Ed-Fi ODS pattern of a single descriptor table while keeping the redesign’s “tables per resource” approach for non-descriptor resources.
 
+## Integration (ordered passes)
+
+- Set-level (`DMS-1033`): implement as a whole-schema pass that:
+  - detects which resources are descriptor endpoints across the effective schema set,
+  - validates all descriptor resources are compatible with the shared `dms.Descriptor` contract, and
+  - sets `StorageKind = SharedDescriptorTable` for descriptor resources in the final `DerivedRelationalModelSet`.
+
 ## Acceptance Criteria
 
 - The derived relational model identifies descriptor resources from the effective schema and produces a dedicated model/plan shape that targets:
@@ -39,3 +46,4 @@ This aligns DMS descriptor storage with the Ed-Fi ODS pattern of a single descri
    - “no per-descriptor tables” invariant,
    - descriptor query field mapping determinism,
    - fail-fast on incompatible descriptor schema shapes.
+5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

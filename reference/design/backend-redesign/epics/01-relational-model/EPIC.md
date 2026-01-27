@@ -22,6 +22,16 @@ This epic also produces a deterministic `relational-model.manifest.json` suitabl
 
 Authorization objects remain out of scope.
 
+## Implementation approach (ordered passes)
+
+The end-to-end build is orchestrated by `DMS-1033` as an ordered set-level builder over the full effective schema set (core + extensions).
+
+- The per-resource derivation pipeline builds a model for one resource at a time (given a specific `resourceSchema` selection).
+- The set-level builder executes **ordered passes**, where each pass iterates all projects/resources in canonical ordinal order and may consult any other resource/project metadata as needed.
+- A story may contribute:
+  - per-resource pipeline step(s) that derive additional per-resource model detail, and/or
+  - a set-level pass that stitches/validates cross-resource artifacts, registered into the ordered pass list in `DMS-1033`.
+
 ## Stories
 
 - `DMS-929` — `00-base-schema-traversal.md` — Traverse JSON schema → base tables/columns

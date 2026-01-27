@@ -19,6 +19,10 @@ Important: index and trigger inventories are derived as “DDL intent” and emb
 
 The manifest is a *semantic* representation (not engine introspection) and must be stable across runs.
 
+## Integration (ordered passes)
+
+- Set-level (`DMS-1033`): the manifest is emitted from the final `DerivedRelationalModelSet` after all ordered passes have completed. The emitter must serialize shared inventories (tables/constraints/indexes/triggers/etc.) and must not perform independent re-derivation that could drift from the builder output.
+
 ## Acceptance Criteria
 
 - Manifest includes, at minimum, stable inventories for:
@@ -39,3 +43,4 @@ The manifest is a *semantic* representation (not engine introspection) and must 
 3. Emit `relational-model.manifest.json` for fixtures via a shared artifact emitter.
 4. Ensure indexes/triggers are serialized from `DerivedRelationalModelSet` inventories (no divergent derivation logic).
 5. Add snapshot/golden tests for at least one small fixture validating exact output.
+6. Wire manifest emission to consume the final `DerivedRelationalModelSet` produced by the `DMS-1033` ordered-pass builder.

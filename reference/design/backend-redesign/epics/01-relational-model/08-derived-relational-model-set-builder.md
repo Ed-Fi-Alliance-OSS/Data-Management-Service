@@ -26,7 +26,23 @@ Key responsibilities:
   - descriptor/document-reference target validation against the effective schema set,
   - abstract resource metadata lookup for polymorphic identity artifacts.
 
-Implementation note (important for epic-sibling integration): the per-resource pipeline should not scan other resources/projects to build cross-resource metadata (e.g., inferring descriptor paths for descriptor identity parts inside reference objects). That logic belongs in this set-level builder/registry so it can consider the full effective schema set (core + extensions) once, avoid O(N×M) per-resource JSON scans, and provide deterministic, validated lookups to the per-resource derivation steps.
+Clarification: the per-resource derivation pipeline in this epic builds a model for **one resource at a time** (selected by resource endpoint name). This story’s builder is responsible for looping over *all* resources across *all* configured `ApiSchema.json` inputs (core + extensions) to produce the complete `DerivedRelationalModelSet`.
+
+Implementation note (ordered passes): implement this story as an ordered set-level pipeline of **passes**, where each pass performs a single iterative scan over the full effective schema set (projects/resources) and is allowed to consult other resources/projects as needed. Cross-resource derivation logic should live with the pass/story that needs it (e.g., reference/descriptor inference in DMS-930, abstract hierarchy discovery in DMS-933), rather than being forced into a single shared registry for performance. Determinism is still required: every pass must iterate projects/resources in canonical ordinal order and must not depend on dictionary iteration order.
+
+### Proposed pass ordering (initial)
+
+This list is intentionally “high level”; exact pass boundaries can be adjusted as the implementations land:
+
+1. **Base traversal pass** (DMS-929): derive root/collection tables + scalar columns and discover `_ext` sites.
+2. **Extension pass** (DMS-932): derive extension tables for discovered `_ext` sites (including project-key resolution).
+3. **Reference/descriptor/constraint pass** (DMS-930): bind document references + descriptor edges and derive unique/FK/CHECK constraints, consulting the full effective schema set as needed.
+4. **Abstract artifact pass** (DMS-933): derive abstract identity tables and optional union views by scanning all resources in the hierarchy.
+5. **Descriptor storage-kind pass** (DMS-942): detect/validate descriptor resources and apply the `SharedDescriptorTable` storage kind rules.
+6. **Naming/override pass** (DMS-931): apply naming rules, overrides, dialect shortening, and whole-set collision detection.
+7. **Index/trigger inventory pass** (DMS-945): derive index/trigger intent inventories and any dialect-conditional cascade-fallback requirements.
+
+`DMS-934` (manifest emission) should serialize the final `DerivedRelationalModelSet` inventories and should not re-derive anything independently.
 
 ## Acceptance Criteria
 
@@ -54,12 +70,13 @@ Implementation note (important for epic-sibling integration): the per-resource p
    - the target SQL dialect.
 2. Implement a `DerivedRelationalModelSetBuilder` that:
    - constructs `ProjectSchemasInEndpointOrder` (including physical schema name normalization + collision validation),
-   - iterates all concrete resources and invokes the per-resource derivation pipeline steps from this epic,
+   - defines a stable pass hook point (e.g., `IRelationalModelSetPass` + a shared builder context) so other stories can register set-level passes,
+   - configures and executes ordered full-schema passes (each pass scans all projects/resources),
    - aggregates results into a single `DerivedRelationalModelSet` per `compiled-mapping-set.md`.
-3. Add a set-level project/resource registry used by derivation steps for:
-   - `_ext` project-key resolution/validation,
-   - cross-project target validation for descriptor/document-reference bindings,
-   - abstract resource metadata lookup.
+3. Provide pass implementations direct access to the full effective schema set (core + extensions) so they can:
+   - resolve `_ext` project keys,
+   - validate descriptor/document-reference targets,
+   - and discover abstract resource hierarchies.
 4. Add unit tests using a small multi-project fixture (core + extension) that assert:
    1. determinism across input ordering,
    2. unknown `_ext` key failure,

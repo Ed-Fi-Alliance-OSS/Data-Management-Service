@@ -25,6 +25,11 @@ false fail-fast errors.
 
 This story contributes extension schemas/tables into the unified `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`).
 
+## Integration (ordered passes)
+
+- Set-level (`DMS-1033`): run as a whole-schema “extension pass” after the base traversal pass has discovered `_ext` sites per resource. This pass may consult the full effective schema set to resolve `_ext` project keys to configured projects and to validate extension schema availability.
+- Per-resource: extension derivation is still aligned to a specific owning resource/scope; the set-level pass loops all resources and derives extension tables for each discovered site.
+
 ## Acceptance Criteria
 
 - Extension project schemas are created deterministically from resolved `ProjectEndpointName`.
@@ -43,3 +48,4 @@ This story contributes extension schemas/tables into the unified `DerivedRelatio
    1. root `_ext` + collection `_ext`,
    2. multiple extension projects,
    3. unknown `_ext` key failure.
+6. Wire this derivation into the `DMS-1033` set-level builder as the whole-schema extension pass.
