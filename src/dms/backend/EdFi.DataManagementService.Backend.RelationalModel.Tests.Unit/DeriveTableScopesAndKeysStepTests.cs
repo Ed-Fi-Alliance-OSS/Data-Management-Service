@@ -210,3 +210,65 @@ public class Given_A_JsonSchema_With_Nested_Collections
         };
     }
 }
+
+[TestFixture]
+public class Given_A_Descriptor_Resource
+{
+    private RelationalResourceModel _resourceModel = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = CreateDescriptorSchema();
+        var context = new RelationalModelBuilderContext
+        {
+            ProjectName = "Ed-Fi",
+            ProjectEndpointName = "ed-fi",
+            ResourceName = "AcademicSubjectDescriptor",
+            JsonSchemaForInsert = schema,
+            IsDescriptorResource = true,
+        };
+
+        var step = new DeriveTableScopesAndKeysStep();
+        step.Execute(context);
+
+        _resourceModel = context.ResourceModel!;
+    }
+
+    [Test]
+    public void It_should_mark_storage_kind_as_shared_descriptor_table()
+    {
+        _resourceModel.StorageKind.Should().Be(ResourceStorageKind.SharedDescriptorTable);
+    }
+
+    [Test]
+    public void It_should_use_the_shared_descriptor_table_as_root()
+    {
+        _resourceModel.Root.Table.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+    }
+
+    [Test]
+    public void It_should_not_create_per_descriptor_tables()
+    {
+        _resourceModel.TablesInReadDependencyOrder.Should().ContainSingle();
+        _resourceModel
+            .TablesInReadDependencyOrder.Select(table => table.Table.Name)
+            .Should()
+            .NotContain("AcademicSubjectDescriptor");
+    }
+
+    private static JsonObject CreateDescriptorSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                ["shortDescription"] = new JsonObject { ["type"] = "string", ["maxLength"] = 75 },
+            },
+            ["required"] = new JsonArray("namespace", "codeValue", "shortDescription"),
+        };
+    }
+}

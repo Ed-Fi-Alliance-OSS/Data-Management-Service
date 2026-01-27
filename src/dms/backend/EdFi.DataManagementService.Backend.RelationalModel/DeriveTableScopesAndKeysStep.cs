@@ -30,6 +30,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
     private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
+    private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
     /// Walks the JSON schema and populates <see cref="RelationalModelBuilderContext.ResourceModel"/> with the
@@ -65,6 +66,25 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var storageKind = context.IsDescriptorResource
             ? ResourceStorageKind.SharedDescriptorTable
             : ResourceStorageKind.RelationalTables;
+
+        if (context.IsDescriptorResource)
+        {
+            var descriptorRootTableScope = CreateDescriptorRootTable();
+            var descriptorTables = new[] { descriptorRootTableScope.Table };
+
+            context.ResourceModel = new RelationalResourceModel(
+                new QualifiedResourceName(projectName, resourceName),
+                physicalSchema,
+                storageKind,
+                descriptorRootTableScope.Table,
+                descriptorTables,
+                descriptorTables,
+                Array.Empty<DocumentReferenceBinding>(),
+                Array.Empty<DescriptorEdgeSource>()
+            );
+
+            return;
+        }
 
         var rootTableScope = CreateRootTable(physicalSchema, rootBaseName);
 
@@ -120,6 +140,43 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         ];
 
         var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
+
+        return new TableScope(table, Array.Empty<string>());
+    }
+
+    /// <summary>
+    /// Creates the shared descriptor table root (<c>dms.Descriptor</c>), keyed by <c>DocumentId</c> and
+    /// FK'd to <c>dms.Document</c>.
+    /// </summary>
+    private static TableScope CreateDescriptorRootTable()
+    {
+        var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
+        var key = new TableKey(
+            new[]
+            {
+                new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
+            }
+        );
+
+        var columns = BuildKeyColumns(key.Columns);
+
+        var fkName = RelationalNameConventions.ForeignKeyName(
+            _descriptorTableName.Name,
+            new[] { RelationalNameConventions.DocumentIdColumnName }
+        );
+
+        TableConstraint[] constraints =
+        [
+            new TableConstraint.ForeignKey(
+                fkName,
+                new[] { RelationalNameConventions.DocumentIdColumnName },
+                _documentTableName,
+                new[] { RelationalNameConventions.DocumentIdColumnName },
+                OnDelete: ReferentialAction.Cascade
+            ),
+        ];
+
+        var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints);
 
         return new TableScope(table, Array.Empty<string>());
     }

@@ -93,7 +93,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
     [Test]
     public void It_should_emit_descriptor_storage_kind()
     {
-        var descriptorSchema = CreateSchema();
+        var descriptorSchema = CreateDescriptorSchema();
         var buildResult = RelationalModelManifestEmitterTestContext.BuildResult(
             descriptorSchema,
             context =>
@@ -156,6 +156,21 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 ["addresses"] = addressesSchema,
                 ["_ext"] = extensionSchema,
             },
+        };
+    }
+
+    private static JsonObject CreateDescriptorSchema()
+    {
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                ["shortDescription"] = new JsonObject { ["type"] = "string", ["maxLength"] = 75 },
+            },
+            ["required"] = new JsonArray("namespace", "codeValue", "shortDescription"),
         };
     }
 

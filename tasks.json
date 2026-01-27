@@ -29,7 +29,7 @@
       "Acceptance: descriptor resources still participate in `dms.ResourceKey` seeding (no change), and non-descriptor resources are unchanged.",
       "Run unit tests; add a targeted test asserting the absence of any table named like `AcademicSubjectDescriptor` when building that resource."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Tests",
