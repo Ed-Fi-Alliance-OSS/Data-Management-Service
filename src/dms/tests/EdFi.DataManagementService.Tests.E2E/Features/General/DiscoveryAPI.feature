@@ -175,6 +175,11 @@ Feature: The Discovery API provides information about the application version, s
                           "name": "E2E-Test-School-Write-GradeLevelFilterPreserve",
                           "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-GradeLevelFilterPreserve/resources-spec.json",
                           "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-Calendar-Write-IncludeOnly",
+                          "endpointUri": "http://localhost:8080/metadata/specifications/profiles/E2E-Test-Calendar-Write-IncludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
                       }
                   ]
                   """
