@@ -35,6 +35,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             throw new InvalidOperationException("Json schema root must be an object.");
         }
 
+        JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
+
         var physicalSchema = RelationalNameConventions.NormalizeSchemaName(projectEndpointName);
         var rootBaseName = RelationalNameConventions.ToPascalCase(resourceName);
 
@@ -42,7 +44,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         List<TableScope> tableScopes = [rootTableScope];
 
-        DiscoverTables(rootSchema, [], [], rootTableScope, tableScopes, physicalSchema, rootBaseName);
+        DiscoverTables(rootSchema, [], [], rootTableScope, tableScopes, physicalSchema, rootBaseName, "$");
 
         var tables = tableScopes.Select(scope => scope.Table).ToArray();
 
@@ -99,7 +101,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         TableScope parentTable,
         List<TableScope> tables,
         DbSchemaName schemaName,
-        string rootBaseName
+        string rootBaseName,
+        string schemaPath
     )
     {
         var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(schema);
@@ -114,7 +117,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                     parentTable,
                     tables,
                     schemaName,
-                    rootBaseName
+                    rootBaseName,
+                    schemaPath
                 );
                 break;
             case SchemaKind.Array:
@@ -125,7 +129,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                     parentTable,
                     tables,
                     schemaName,
-                    rootBaseName
+                    rootBaseName,
+                    schemaPath
                 );
                 break;
             case SchemaKind.Scalar:
@@ -142,7 +147,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         TableScope parentTable,
         List<TableScope> tables,
         DbSchemaName schemaName,
-        string rootBaseName
+        string rootBaseName,
+        string schemaPath
     )
     {
         if (!schema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is null)
@@ -169,6 +175,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 );
             }
 
+            var propertySchemaPath = $"{schemaPath}.properties.{property.Key}";
+
+            JsonSchemaUnsupportedKeywordValidator.Validate(propertySchema, propertySchemaPath);
+
             List<JsonPathSegment> propertySegments =
             [
                 .. scopeSegments,
@@ -182,7 +192,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 parentTable,
                 tables,
                 schemaName,
-                rootBaseName
+                rootBaseName,
+                propertySchemaPath
             );
         }
     }
@@ -194,7 +205,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         TableScope parentTable,
         List<TableScope> tables,
         DbSchemaName schemaName,
-        string rootBaseName
+        string rootBaseName,
+        string schemaPath
     )
     {
         if (!schema.TryGetPropertyValue("items", out var itemsNode) || itemsNode is null)
@@ -206,6 +218,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         {
             throw new InvalidOperationException("Array schema items must be an object.");
         }
+
+        var itemsSchemaPath = $"{schemaPath}.items";
+
+        JsonSchemaUnsupportedKeywordValidator.Validate(itemsSchema, itemsSchemaPath);
 
         if (scopeSegments.Count == 0 || scopeSegments[^1] is not JsonPathSegment.Property propertySegment)
         {
@@ -235,7 +251,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             childTableScope,
             tables,
             schemaName,
-            rootBaseName
+            rootBaseName,
+            itemsSchemaPath
         );
     }
 

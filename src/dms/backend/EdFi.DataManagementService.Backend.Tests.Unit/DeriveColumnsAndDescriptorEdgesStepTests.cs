@@ -510,9 +510,9 @@ public class Given_A_Duration_String_Without_MaxLength
 }
 
 [TestFixture]
-public class Given_An_Enumeration_String_Without_MaxLength
+public class Given_A_JsonSchema_With_Enum_When_Deriving_Columns
 {
-    private DbColumnModel _column = default!;
+    private Exception? _exception;
 
     [SetUp]
     public void Setup()
@@ -531,16 +531,21 @@ public class Given_An_Enumeration_String_Without_MaxLength
             ["required"] = new JsonArray("status"),
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
-
-        _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Status");
+        try
+        {
+            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
     }
 
     [Test]
-    public void It_should_allow_missing_max_length_for_enumerations()
+    public void It_should_fail_with_the_enum_path()
     {
-        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String));
-        _column.IsNullable.Should().BeFalse();
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception?.Message.Should().Contain("$.properties.status.enum");
     }
 }
 

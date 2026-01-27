@@ -9,16 +9,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
 {
-    private static readonly IReadOnlyList<string> UnsupportedKeywords =
-    [
-        "$ref",
-        "oneOf",
-        "anyOf",
-        "allOf",
-        "enum",
-        "patternProperties",
-    ];
-
     public void Execute(RelationalModelBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -43,7 +33,7 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         RelationalModelBuilderContext context
     )
     {
-        ValidateUnsupportedKeywords(schema, path);
+        JsonSchemaUnsupportedKeywordValidator.Validate(schema, path);
 
         var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(
             schema,
@@ -160,24 +150,6 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         List<JsonPathSegment> arraySegments = [.. jsonPathSegments, new JsonPathSegment.AnyArrayElement()];
 
         ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arraySegments, context);
-    }
-
-    private static void ValidateUnsupportedKeywords(JsonObject schema, string path)
-    {
-        foreach (var keyword in UnsupportedKeywords)
-        {
-            if (schema.ContainsKey(keyword))
-            {
-                throw new InvalidOperationException(
-                    $"Unsupported schema keyword '{keyword}' at {path}.{keyword}."
-                );
-            }
-        }
-
-        if (schema.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonArray)
-        {
-            throw new InvalidOperationException($"Unsupported schema keyword 'type' at {path}.type.");
-        }
     }
 
     private static string? GetSchemaType(JsonObject schema, string path)

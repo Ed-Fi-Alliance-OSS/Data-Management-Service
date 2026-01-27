@@ -35,6 +35,8 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             throw new InvalidOperationException("Json schema root must be an object.");
         }
 
+        JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
+
         var tableBuilders = resourceModel
             .TablesInReadDependencyOrder.Select(table => new TableBuilder(table))
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
@@ -56,6 +58,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             rootTable,
             [],
             [],
+            "$",
             hasOptionalAncestor: false,
             context,
             tableBuilders,
@@ -86,6 +89,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         TableBuilder tableBuilder,
         List<JsonPathSegment> pathSegments,
         List<string> columnSegments,
+        string schemaPath,
         bool hasOptionalAncestor,
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
@@ -105,6 +109,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
                     tableBuilder,
                     pathSegments,
                     columnSegments,
+                    schemaPath,
                     hasOptionalAncestor,
                     context,
                     tableBuilders,
@@ -117,6 +122,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
                 WalkArraySchema(
                     schema,
                     pathSegments,
+                    schemaPath,
                     context,
                     tableBuilders,
                     identityPaths,
@@ -136,6 +142,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         TableBuilder tableBuilder,
         List<JsonPathSegment> pathSegments,
         List<string> columnSegments,
+        string schemaPath,
         bool hasOptionalAncestor,
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
@@ -177,33 +184,27 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             var propertyPathSegments = BuildPropertySegments(pathSegments, property.Key);
             var propertyColumnSegments = BuildPropertyColumnSegments(columnSegments, property.Key);
             var propertyPath = JsonPathExpressionCompiler.FromSegments(propertyPathSegments);
+            var propertySchemaPath = $"{schemaPath}.properties.{property.Key}";
             var isRequired = requiredProperties.Contains(property.Key);
             var isXNullable = IsXNullable(propertySchema, propertyPath.Canonical);
             var isOptional = !isRequired;
             var isNullable = hasOptionalAncestor || isOptional || isXNullable;
             var nextHasOptionalAncestor = hasOptionalAncestor || isOptional || isXNullable;
 
+            JsonSchemaUnsupportedKeywordValidator.Validate(propertySchema, propertySchemaPath);
+
             var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(propertySchema);
             switch (schemaKind)
             {
                 case SchemaKind.Object:
+                case SchemaKind.Array:
                     WalkSchema(
                         propertySchema,
                         tableBuilder,
                         propertyPathSegments,
                         propertyColumnSegments,
+                        propertySchemaPath,
                         nextHasOptionalAncestor,
-                        context,
-                        tableBuilders,
-                        identityPaths,
-                        usedDescriptorPaths,
-                        descriptorEdgeSources
-                    );
-                    break;
-                case SchemaKind.Array:
-                    WalkArraySchema(
-                        propertySchema,
-                        propertyPathSegments,
                         context,
                         tableBuilders,
                         identityPaths,
@@ -233,6 +234,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
     private static void WalkArraySchema(
         JsonObject schema,
         List<JsonPathSegment> propertySegments,
+        string schemaPath,
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
@@ -251,6 +253,10 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
         {
             throw new InvalidOperationException($"Array schema items must be an object at {arrayPath}.");
         }
+
+        var itemsSchemaPath = $"{schemaPath}.items";
+
+        JsonSchemaUnsupportedKeywordValidator.Validate(itemsSchema, itemsSchemaPath);
 
         List<JsonPathSegment> arraySegments = [.. propertySegments, new JsonPathSegment.AnyArrayElement()];
 
@@ -271,6 +277,7 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
                     childTable,
                     arraySegments,
                     [],
+                    itemsSchemaPath,
                     hasOptionalAncestor: false,
                     context,
                     tableBuilders,

@@ -17,7 +17,7 @@
       "Ensure the failure message for `enum` still includes the canonical path to the keyword (e.g., `$.properties.status.enum`).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Unit Tests - Derivation",
