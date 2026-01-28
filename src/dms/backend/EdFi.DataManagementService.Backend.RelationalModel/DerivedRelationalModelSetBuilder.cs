@@ -79,24 +79,29 @@ public sealed class DerivedRelationalModelSetBuilder
             throw new InvalidOperationException("Pass type name must be non-empty.");
         }
 
-        var duplicateKeys = passEntries
-            .GroupBy(entry => (entry.Order, entry.TypeName), entry => entry.Pass)
+        var duplicateOrders = passEntries
+            .GroupBy(entry => entry.Order)
             .Where(group => group.Count() > 1)
-            .Select(group => $"Order {group.Key.Order}, {group.Key.TypeName}")
+            .Select(group =>
+                $"Order {group.Key}: "
+                + string.Join(
+                    ", ",
+                    group
+                        .Select(entry => entry.TypeName)
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(name => name, StringComparer.Ordinal)
+                )
+            )
             .ToArray();
 
-        if (duplicateKeys.Length > 0)
+        if (duplicateOrders.Length > 0)
         {
             throw new InvalidOperationException(
-                "Duplicate pass ordering keys detected: " + string.Join("; ", duplicateKeys)
+                "Duplicate pass order values detected: " + string.Join("; ", duplicateOrders)
             );
         }
 
-        var orderedPasses = passEntries
-            .OrderBy(entry => entry.Order)
-            .ThenBy(entry => entry.TypeName, StringComparer.Ordinal)
-            .Select(entry => entry.Pass)
-            .ToArray();
+        var orderedPasses = passEntries.OrderBy(entry => entry.Order).Select(entry => entry.Pass).ToArray();
 
         return orderedPasses;
     }
