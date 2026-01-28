@@ -1,7 +1,7 @@
 [
   {
     "category": "Contracts",
-    "description": "Introduce a shared set-level input contract for backend-redesign schema/model compilation (DMS-1033) as a new folder `External` under `src/dms/core/EdFi.DataManagementService.Backend/` with namespace `EdFi.DataManagementService.Backend.External`. Define public, immutable types aligned to `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` for: `SqlDialect` (Pgsql/Mssql), `SchemaComponentInfo`, `ResourceKeyEntry`, and `EffectiveSchemaInfo` (effective schema hash + ordered schema components + ordered resource keys). Acceptance: `dotnet build` succeeds, nullable is enabled + warnings are errors, and the contract can be referenced by `EdFi.DataManagementService.Backend.RelationalModel` without introducing file I/O or an intermediate model.",
+    "description": "Introduce a shared set-level input contract for backend-redesign schema/model compilation (DMS-1033) as a new folder `External` under `src/dms/backend/EdFi.DataManagementService.Backend/` with namespace `EdFi.DataManagementService.Backend.External`. Define public, immutable types aligned to `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` for: `SqlDialect` (Pgsql/Mssql), `SchemaComponentInfo`, `ResourceKeyEntry`, and `EffectiveSchemaInfo` (effective schema hash + ordered schema components + ordered resource keys). Acceptance: `dotnet build` succeeds, nullable is enabled + warnings are errors, and the contract can be referenced by `EdFi.DataManagementService.Backend.RelationalModel` without introducing file I/O or an intermediate model.",
     "steps-to-verify": [
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
