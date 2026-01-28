@@ -1110,4 +1110,154 @@ public class ProfileStepDefinitions(
     }
 
     #endregion
+
+    #region OpenAPI Specification Validation Steps
+
+    /// <summary>
+    /// Validates that the OpenAPI spec contains a specific path.
+    /// </summary>
+    [Then(@"the OpenAPI spec should contain path ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecShouldContainPath(string path)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonObject? paths = spec!["paths"] as JsonObject;
+        paths.Should().NotBeNull("OpenAPI spec should have paths section");
+
+        paths!
+            .Any(kvp => string.Equals(kvp.Key, path, StringComparison.OrdinalIgnoreCase))
+            .Should()
+            .BeTrue($"OpenAPI spec should contain path '{path}'");
+    }
+
+    /// <summary>
+    /// Validates that the OpenAPI spec does not contain a specific path.
+    /// </summary>
+    [Then(@"the OpenAPI spec should not contain path ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecShouldNotContainPath(string path)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonObject? paths = spec!["paths"] as JsonObject;
+        paths.Should().NotBeNull("OpenAPI spec should have paths section");
+
+        paths!
+            .Any(kvp => string.Equals(kvp.Key, path, StringComparison.OrdinalIgnoreCase))
+            .Should()
+            .BeFalse($"OpenAPI spec should not contain path '{path}'");
+    }
+
+    /// <summary>
+    /// Validates that the OpenAPI spec contains a specific schema.
+    /// </summary>
+    [Then(@"the OpenAPI spec should contain schema ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecShouldContainSchema(string schemaName)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonObject? schemas = spec!["components"]?["schemas"] as JsonObject;
+        schemas.Should().NotBeNull("OpenAPI spec should have components.schemas section");
+
+        schemas!
+            .Any(kvp => string.Equals(kvp.Key, schemaName, StringComparison.OrdinalIgnoreCase))
+            .Should()
+            .BeTrue($"OpenAPI spec should contain schema '{schemaName}'");
+    }
+
+    /// <summary>
+    /// Validates that the OpenAPI spec does not contain a specific schema.
+    /// </summary>
+    [Then(@"the OpenAPI spec should not contain schema ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecShouldNotContainSchema(string schemaName)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonObject? schemas = spec!["components"]?["schemas"] as JsonObject;
+        schemas.Should().NotBeNull("OpenAPI spec should have components.schemas section");
+
+        schemas!
+            .Any(kvp => string.Equals(kvp.Key, schemaName, StringComparison.OrdinalIgnoreCase))
+            .Should()
+            .BeFalse($"OpenAPI spec should not contain schema '{schemaName}'");
+    }
+
+    /// <summary>
+    /// Validates that the OpenAPI spec contains a specific tag.
+    /// </summary>
+    [Then(@"the OpenAPI spec should contain tag ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecShouldContainTag(string tagName)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonArray? tags = spec!["tags"] as JsonArray;
+        tags.Should().NotBeNull("OpenAPI spec should have tags section");
+
+        bool tagExists = tags!.Any(t =>
+            t?["name"]?.GetValue<string>().Equals(tagName, StringComparison.OrdinalIgnoreCase) == true
+        );
+        tagExists.Should().BeTrue($"OpenAPI spec should contain tag '{tagName}'");
+    }
+
+    /// <summary>
+    /// Validates that the OpenAPI spec does not contain a specific tag.
+    /// </summary>
+    [Then(@"the OpenAPI spec should not contain tag ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecShouldNotContainTag(string tagName)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonArray? tags = spec!["tags"] as JsonArray;
+        tags.Should().NotBeNull("OpenAPI spec should have tags section");
+
+        bool tagExists = tags!.Any(t =>
+            t?["name"]?.GetValue<string>().Equals(tagName, StringComparison.OrdinalIgnoreCase) == true
+        );
+        tagExists.Should().BeFalse($"OpenAPI spec should not contain tag '{tagName}'");
+    }
+
+    /// <summary>
+    /// Validates that a specific path has a specific operation in the OpenAPI spec.
+    /// </summary>
+    [Then(@"the OpenAPI spec path ""([^""]*)"" should have operation ""([^""]*)""")]
+    public async Task ThenTheOpenApiSpecPathShouldHaveOperation(string path, string operation)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? spec = JsonNode.Parse(responseBody);
+        spec.Should().NotBeNull("OpenAPI spec should be returned");
+
+        JsonObject? paths = spec!["paths"] as JsonObject;
+        paths.Should().NotBeNull("OpenAPI spec should have paths section");
+
+        JsonObject? pathObj = paths![path] as JsonObject;
+        pathObj.Should().NotBeNull($"Path '{path}' should exist in OpenAPI spec");
+
+        pathObj!
+            .ContainsKey(operation.ToLowerInvariant())
+            .Should()
+            .BeTrue($"Path '{path}' should have {operation.ToUpperInvariant()} operation");
+    }
+
+    /// <summary>
+    /// Makes a GET request.
+    /// </summary>
+    [When(@"a GET request is made to ""([^""]*)""")]
+    [Scope(Feature = "Profile OpenAPI Specification Filtering")]
+    public async Task WhenAGETRequestIsMadeTo(string url)
+    {
+        await WhenAGETRequestIsMadeToWithoutProfileHeader(url);
+    }
+
+    #endregion
 }
