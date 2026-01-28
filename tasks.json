@@ -137,5 +137,63 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Validation",
+    "description": "Harden `EffectiveSchemaInfo.SchemaComponentsInEndpointOrder` validation. In addition to set equality with `EffectiveSchemaSet.ProjectsInEndpointOrder`, fail fast when schema components contain duplicate `ProjectEndpointName` values and when the list is not already sorted ordinal by `ProjectEndpointName`. Acceptance: (1) duplicates produce an actionable error listing the duplicated endpoint name(s), and (2) out-of-order components produce an actionable error indicating the first out-of-order pair; add unit tests for duplicate schema components and out-of-order schema components.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Builder",
+    "description": "Add set-level invariant enforcement for derived inventories to prevent silent duplication. Introduce context helpers (or `BuildResult()` checks) that enforce: (1) no null entries, (2) no duplicate `ConcreteResourceModel` entries per `(ProjectName, ResourceName)`, and (3) no duplicate index/trigger names per table. Acceptance: `BuildResult()` fails fast with an actionable error when duplicates are present; add unit tests that intentionally add duplicates via a fake pass and assert the thrown message identifies the duplicate key.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Builder",
+    "description": "Prevent pass-registration drift by providing a single canonical default pass list for `DerivedRelationalModelSetBuilder`. Add a factory (e.g., `RelationalModelSetPasses.CreateDefault()`) that returns the ordered pass list used by runtime compilation and DDL emission, and ensure all production call sites use it. Acceptance: there is exactly one default pass-list definition in the codebase; a unit test asserts the default list order begins with base traversal and is stable; all existing unit tests remain green.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Derivation",
+    "description": "Pragmatic DMS-929/DMS-930 alignment: keep current behavior where the base traversal pipeline binds descriptor paths to `*_DescriptorId` columns (and emits descriptor-edge metadata), but clarify responsibilities to prevent future drift. (1) Rename `DeriveColumnsAndDescriptorEdgesStep` to reflect it performs descriptor binding (not just base traversal), and rename `BaseTraversalRelationalModelSetPass` if needed to avoid implying it is scalars-only. (2) Update epic docs so DMS-929 vs DMS-930 responsibilities match what is implemented (base tables/scalars vs descriptor binding vs reference binding/constraints): update `reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md` and `reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md`. Acceptance: no functional behavior change; `dotnet build` and relational-model unit tests remain green; doc wording clearly states descriptor binding happens in the base traversal pass while document-reference binding/constraints remain in DMS-930.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Validation",
+    "description": "Enforce that `_ext` project keys resolve to extension projects only. When resolving `_ext` keys, fail fast if the resolved project has `IsExtensionProject == false`, since `_ext` tables must live in an extension project schema. Acceptance: resolving an `_ext` key that matches a non-extension project throws an `InvalidOperationException` including the key, the owning resource, and the resolved project endpoint/name; add a unit test that configures a matching non-extension project and asserts the failure.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Validation",
+    "description": "Validate `ResourceKeyEntry.IsAbstractResource` consistency with the effective schema payload. When indexing effective resources, record whether each resource originates from `projectSchema.abstractResources` vs `projectSchema.resourceSchemas`, and fail fast when a `ResourceKeyEntry` marks a resource abstract/non-abstract incorrectly. Acceptance: a mismatched `IsAbstractResource` flag produces an actionable error identifying the resource and expected/actual abstract-ness; add a unit test that injects a mismatched resource key entry and asserts the failure message.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Determinism",
+    "description": "Strengthen collision safety for identifier shortening. Add explicit post-shortening collision detection over the full derived inventory (tables/columns/constraints/indexes/triggers) so collisions fail fast with actionable diagnostics. Acceptance: a unit test that forces two distinct identifiers to shorten to the same physical name results in a deterministic fail-fast error that lists both sources and the collided identifier; no existing identifier-shortening tests regress.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
