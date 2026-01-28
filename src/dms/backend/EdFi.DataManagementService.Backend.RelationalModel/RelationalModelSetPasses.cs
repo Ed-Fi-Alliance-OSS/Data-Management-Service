@@ -9,7 +9,7 @@ public static class RelationalModelSetPasses
 {
     public static IReadOnlyList<IRelationalModelSetPass> CreateDefault()
     {
-        IRelationalModelSetPass[] passes = [new BaseTraversalRelationalModelSetPass()];
+        IRelationalModelSetPass[] passes = [new BaseTraversalAndDescriptorBindingRelationalModelSetPass()];
 
         return passes;
     }

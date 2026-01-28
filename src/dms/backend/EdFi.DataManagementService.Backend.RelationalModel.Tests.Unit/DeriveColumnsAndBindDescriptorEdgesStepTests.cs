@@ -43,7 +43,7 @@ public class Given_An_Inlined_Object_Property
             },
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
 
         var rootTable = context.ResourceModel!.Root;
         _column = rootTable.Columns.Single(column => column.ColumnName.Value == "ABC");
@@ -83,7 +83,7 @@ public class Given_Colliding_Column_Names
 
         try
         {
-            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
         }
         catch (Exception exception)
         {
@@ -129,7 +129,7 @@ public class Given_A_Descriptor_Path
             new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
         );
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
             schema,
             builderContext =>
             {
@@ -214,7 +214,7 @@ public class Given_A_Descriptor_Scalar_Array
             new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
         );
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
             schema,
             builderContext =>
             {
@@ -313,7 +313,7 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
             new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
         );
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
             schema,
             builderContext =>
             {
@@ -383,7 +383,7 @@ public class Given_A_Property_With_XNullable
             ["required"] = new JsonArray("value"),
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
 
         _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Value");
     }
@@ -412,7 +412,7 @@ public class Given_A_String_Property_Without_MaxLength
 
         try
         {
-            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
         }
         catch (Exception exception)
         {
@@ -451,7 +451,7 @@ public class Given_String_Properties_With_Format_And_No_MaxLength
             ["required"] = new JsonArray("birthDate", "lastModifiedDateTime", "startTime"),
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
 
         var rootTable = context.ResourceModel!.Root;
         _dateColumn = rootTable.Columns.Single(column => column.ColumnName.Value == "BirthDate");
@@ -487,7 +487,7 @@ public class Given_A_Duration_String_Without_MaxLength
 
         var durationPath = JsonPathExpressionCompiler.Compile("$.duration");
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
             schema,
             builderContext =>
             {
@@ -529,7 +529,7 @@ public class Given_An_Enumeration_String_Without_MaxLength
 
         var enumerationPath = JsonPathExpressionCompiler.Compile("$.deliveryMethodType");
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
             schema,
             builderContext =>
             {
@@ -571,7 +571,7 @@ public class Given_A_Number_Property_With_Decimal_Validation
         var decimalPath = JsonPathExpressionCompiler.Compile("$.amount");
         var decimalInfo = new DecimalPropertyValidationInfo(decimalPath, 9, 2);
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
             schema,
             builderContext =>
             {
@@ -613,7 +613,7 @@ public class Given_A_Number_Property_Without_Decimal_Validation
 
         try
         {
-            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
         }
         catch (Exception exception)
         {
@@ -649,7 +649,7 @@ public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
 
         try
         {
-            _ = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(
+            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
                 schema,
                 builderContext =>
                 {
@@ -728,7 +728,7 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
             },
         };
 
-        var context = DeriveColumnsAndDescriptorEdgesStepTestContext.BuildContext(schema);
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(schema);
 
         _rootTable = context.ResourceModel!.Root;
         _tableNames = context
@@ -749,7 +749,7 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
     }
 }
 
-internal static class DeriveColumnsAndDescriptorEdgesStepTestContext
+internal static class DeriveColumnsAndBindDescriptorEdgesStepTestContext
 {
     /// <summary>
     /// Builds a minimal context and runs only the base traversal derivation steps (tables then columns).
@@ -776,7 +776,7 @@ internal static class DeriveColumnsAndDescriptorEdgesStepTestContext
         var deriveTablesStep = new DeriveTableScopesAndKeysStep();
         deriveTablesStep.Execute(context);
 
-        var deriveColumnsStep = new DeriveColumnsAndDescriptorEdgesStep();
+        var deriveColumnsStep = new DeriveColumnsAndBindDescriptorEdgesStep();
         deriveColumnsStep.Execute(context);
 
         return context;

@@ -141,7 +141,7 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
                 new ValidateJsonSchemaStep(),
                 new DiscoverExtensionSitesStep(),
                 new DeriveTableScopesAndKeysStep(),
-                new DeriveColumnsAndDescriptorEdgesStep(),
+                new DeriveColumnsAndBindDescriptorEdgesStep(),
                 new CanonicalizeOrderingStep(),
             }
         );
