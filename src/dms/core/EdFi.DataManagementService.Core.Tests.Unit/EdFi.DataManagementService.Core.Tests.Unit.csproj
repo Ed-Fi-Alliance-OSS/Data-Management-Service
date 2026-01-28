@@ -31,6 +31,7 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
         </PackageReference>
+        <PackageReference Include="EdFi.DataStandard52.ApiSchema" />
     </ItemGroup>
     <ItemGroup>
         <None Include="ApiSchema/InvalidResourceSchemas.json">

@@ -569,4 +569,20 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
     /// The OpenAPI fragments for this resource, containing resources and/or descriptors fragments
     /// </summary>
     public JsonNode? OpenApiFragments => _openApiFragments.Value;
+
+    private readonly Lazy<RelationalMetadata?> _relational = new(() =>
+    {
+        var relationalNode = _resourceSchemaNode["relational"];
+        if (relationalNode == null)
+        {
+            return null;
+        }
+
+        return new RelationalMetadata(relationalNode);
+    });
+
+    /// <summary>
+    /// Optional relational metadata providing physical naming overrides
+    /// </summary>
+    public RelationalMetadata? Relational => _relational.Value;
 }
