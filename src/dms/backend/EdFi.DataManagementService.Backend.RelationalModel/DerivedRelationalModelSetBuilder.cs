@@ -75,7 +75,9 @@ public sealed class RelationalModelSetBuilderContext
         Dialect = dialect;
         DialectRules = dialectRules;
 
-        ValidateEffectiveSchemaInfo(effectiveSchemaSet);
+        var effectiveResources = BuildEffectiveSchemaResourceIndex(effectiveSchemaSet);
+        ValidateEffectiveSchemaInfo(effectiveSchemaSet, effectiveResources);
+        ValidateDocumentPathsMappingTargets(effectiveSchemaSet, effectiveResources);
 
         var projectsInEndpointOrder = NormalizeProjectsInEndpointOrder(effectiveSchemaSet);
         var projectSchemaBundle = BuildProjectSchemaContexts(projectsInEndpointOrder);
@@ -312,7 +314,10 @@ public sealed class RelationalModelSetBuilderContext
         return orderedResources;
     }
 
-    private static void ValidateEffectiveSchemaInfo(EffectiveSchemaSet effectiveSchemaSet)
+    private static void ValidateEffectiveSchemaInfo(
+        EffectiveSchemaSet effectiveSchemaSet,
+        IReadOnlySet<QualifiedResourceName> effectiveResources
+    )
     {
         if (effectiveSchemaSet.EffectiveSchema is null)
         {
@@ -382,7 +387,6 @@ public sealed class RelationalModelSetBuilderContext
             throw new InvalidOperationException(string.Join(" ", messageParts));
         }
 
-        var effectiveResources = CollectEffectiveSchemaResources(effectiveSchemaSet);
         var resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
             entry => entry.Resource
         );
@@ -423,7 +427,7 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
-    private static HashSet<QualifiedResourceName> CollectEffectiveSchemaResources(
+    private static HashSet<QualifiedResourceName> BuildEffectiveSchemaResourceIndex(
         EffectiveSchemaSet effectiveSchemaSet
     )
     {
@@ -472,6 +476,174 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         return resources;
+    }
+
+    private static void ValidateDocumentPathsMappingTargets(
+        EffectiveSchemaSet effectiveSchemaSet,
+        IReadOnlySet<QualifiedResourceName> effectiveResources
+    )
+    {
+        if (effectiveSchemaSet.ProjectsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaSet.ProjectsInEndpointOrder must be provided."
+            );
+        }
+
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    "EffectiveSchemaSet.ProjectsInEndpointOrder must not contain null entries."
+                );
+            }
+
+            if (project.ProjectSchema is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema to be present in EffectiveProjectSchema."
+                );
+            }
+
+            var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
+            var resourceSchemas = RequireObject(
+                project.ProjectSchema["resourceSchemas"],
+                "projectSchema.resourceSchemas"
+            );
+
+            ValidateDocumentPathsMappingTargetsForResourceSchemas(
+                projectName,
+                resourceSchemas,
+                effectiveResources,
+                "projectSchema.resourceSchemas"
+            );
+
+            if (project.ProjectSchema["abstractResources"] is JsonObject abstractResources)
+            {
+                ValidateDocumentPathsMappingTargetsForResourceSchemas(
+                    projectName,
+                    abstractResources,
+                    effectiveResources,
+                    "projectSchema.abstractResources"
+                );
+            }
+        }
+    }
+
+    private static void ValidateDocumentPathsMappingTargetsForResourceSchemas(
+        string projectName,
+        JsonObject resourceSchemas,
+        IReadOnlySet<QualifiedResourceName> effectiveResources,
+        string resourceSchemasPath
+    )
+    {
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+
+            ValidateDocumentPathsMappingTargetsForResource(
+                projectName,
+                resourceName,
+                resourceSchema,
+                effectiveResources
+            );
+        }
+    }
+
+    private static void ValidateDocumentPathsMappingTargetsForResource(
+        string projectName,
+        string resourceName,
+        JsonObject resourceSchema,
+        IReadOnlySet<QualifiedResourceName> effectiveResources
+    )
+    {
+        if (resourceSchema["documentPathsMapping"] is not JsonObject documentPathsMapping)
+        {
+            return;
+        }
+
+        foreach (var mapping in documentPathsMapping)
+        {
+            if (mapping.Value is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected documentPathsMapping entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (mapping.Value is not JsonObject mappingObject)
+            {
+                throw new InvalidOperationException(
+                    "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            var isReference =
+                mappingObject["isReference"]?.GetValue<bool>()
+                ?? throw new InvalidOperationException(
+                    "Expected isReference to be on documentPathsMapping entry, invalid ApiSchema."
+                );
+
+            if (!isReference)
+            {
+                continue;
+            }
+
+            var targetProjectName = RequireString(mappingObject, "projectName");
+            var targetResourceName = RequireString(mappingObject, "resourceName");
+            var targetResource = new QualifiedResourceName(targetProjectName, targetResourceName);
+
+            if (effectiveResources.Contains(targetResource))
+            {
+                continue;
+            }
+
+            var mappingLabel = FormatDocumentPathsMappingLabel(mapping.Key, mappingObject);
+
+            throw new InvalidOperationException(
+                $"documentPathsMapping {mappingLabel} on resource '{projectName}:{resourceName}' "
+                    + $"references unknown resource '{targetProjectName}:{targetResourceName}'."
+            );
+        }
+    }
+
+    private static string FormatDocumentPathsMappingLabel(string mappingKey, JsonObject mappingObject)
+    {
+        if (string.IsNullOrWhiteSpace(mappingKey))
+        {
+            return "entry '<empty>'";
+        }
+
+        var path = TryGetOptionalString(mappingObject, "path");
+
+        if (path is null)
+        {
+            return $"entry '{mappingKey}'";
+        }
+
+        return $"entry '{mappingKey}' (path '{path}')";
     }
 
     private static void AddResourceEntries(
@@ -527,6 +699,60 @@ public sealed class RelationalModelSetBuilderContext
                 $"Expected {propertyName} to be an object, invalid ApiSchema."
             ),
         };
+    }
+
+    private static string RequireString(JsonObject node, string propertyName)
+    {
+        var value = node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<string>(),
+            null => throw new InvalidOperationException(
+                $"Expected {propertyName} to be present, invalid ApiSchema."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be a string, invalid ApiSchema."
+            ),
+        };
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Expected {propertyName} to be non-empty, invalid ApiSchema."
+            );
+        }
+
+        return value;
+    }
+
+    private static string? TryGetOptionalString(JsonObject node, string propertyName)
+    {
+        if (!node.TryGetPropertyValue(propertyName, out var value))
+        {
+            return null;
+        }
+
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is not JsonValue jsonValue)
+        {
+            throw new InvalidOperationException(
+                $"Expected {propertyName} to be a string, invalid ApiSchema."
+            );
+        }
+
+        var text = jsonValue.GetValue<string>();
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new InvalidOperationException(
+                $"Expected {propertyName} to be non-empty, invalid ApiSchema."
+            );
+        }
+
+        return text;
     }
 
     private static string GetResourceName(string resourceKey, JsonObject resourceSchema)

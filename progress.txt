@@ -22,3 +22,7 @@
   - Decisions: validate ResourceKeyCount, duplicate ResourceKeyId/resource pairs, and missing/extra resource keys in RelationalModelSetBuilderContext before passes; include resourceSchemas + abstractResources + isResourceExtension entries.
   - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DerivedRelationalModelSetBuilder.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EffectiveSchemaInfoValidationTests.cs; tasks.json.
   - Notes: dotnet build + relational-model unit tests passed.
+- Task: documentPathsMapping target validation (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: built effective resource index once in builder context; validate documentPathsMapping entries with isReference=true against index and include mapping key/path + source/target in errors.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DerivedRelationalModelSetBuilder.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DocumentPathsMappingValidationTests.cs; tasks.json.
+  - Notes: dotnet build + relational-model unit tests passed.
