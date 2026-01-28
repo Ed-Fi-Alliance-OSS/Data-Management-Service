@@ -68,6 +68,9 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName,
         IReadOnlyList<ExtensionSite>
     > _extensionSitesByResource = new();
+    private readonly Dictionary<string, ProjectSchemaInfo> _extensionProjectsByKey = new(
+        StringComparer.OrdinalIgnoreCase
+    );
     private static readonly IReadOnlyList<ExtensionSite> EmptyExtensionSites = Array.Empty<ExtensionSite>();
     private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> EmptyDescriptorPaths =
         new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
@@ -265,8 +268,26 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        ValidateExtensionProjectKeys(resource, extensionSites);
+
         _extensionSitesByResource[resource] =
             extensionSites.Count == 0 ? EmptyExtensionSites : extensionSites;
+    }
+
+    /// <summary>
+    /// Resolves an extension project key to a configured project schema.
+    /// </summary>
+    /// <param name="projectKey">The extension project key found under <c>_ext</c>.</param>
+    /// <param name="extensionSite">The extension site that declared the key.</param>
+    /// <param name="resource">The resource owning the extension site.</param>
+    /// <returns>The resolved project schema info.</returns>
+    public ProjectSchemaInfo ResolveExtensionProjectKey(
+        string projectKey,
+        ExtensionSite extensionSite,
+        QualifiedResourceName resource
+    )
+    {
+        return ResolveExtensionProjectKeyInternal(projectKey, extensionSite, resource);
     }
 
     /// <summary>
@@ -878,6 +899,97 @@ public sealed class RelationalModelSetBuilderContext
         return $"{resource.ProjectName}:{resource.ResourceName}";
     }
 
+    private void ValidateExtensionProjectKeys(
+        QualifiedResourceName resource,
+        IReadOnlyList<ExtensionSite> extensionSites
+    )
+    {
+        foreach (var extensionSite in extensionSites)
+        {
+            if (extensionSite is null)
+            {
+                throw new InvalidOperationException(
+                    $"Extension sites for resource '{FormatResource(resource)}' must not contain null entries."
+                );
+            }
+
+            foreach (var projectKey in extensionSite.ProjectKeys)
+            {
+                ResolveExtensionProjectKeyInternal(projectKey, extensionSite, resource);
+            }
+        }
+    }
+
+    private ProjectSchemaInfo ResolveExtensionProjectKeyInternal(
+        string projectKey,
+        ExtensionSite? extensionSite,
+        QualifiedResourceName? resource
+    )
+    {
+        if (string.IsNullOrWhiteSpace(projectKey))
+        {
+            throw new InvalidOperationException(
+                $"Extension project key is empty{FormatExtensionSiteContext(extensionSite, resource)}."
+            );
+        }
+
+        if (_extensionProjectsByKey.TryGetValue(projectKey, out var cachedProject))
+        {
+            return cachedProject;
+        }
+
+        var endpointMatches = ProjectSchemasInEndpointOrder
+            .Where(project =>
+                string.Equals(project.ProjectEndpointName, projectKey, StringComparison.OrdinalIgnoreCase)
+            )
+            .ToArray();
+
+        if (endpointMatches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Extension project key '{projectKey}'{FormatExtensionSiteContext(extensionSite, resource)} "
+                    + "matches multiple configured projects by endpoint name: "
+                    + $"{FormatProjectCandidates(endpointMatches)}."
+            );
+        }
+
+        if (endpointMatches.Length == 1)
+        {
+            return CacheExtensionProjectKey(projectKey, endpointMatches[0]);
+        }
+
+        var projectNameMatches = ProjectSchemasInEndpointOrder
+            .Where(project =>
+                string.Equals(project.ProjectName, projectKey, StringComparison.OrdinalIgnoreCase)
+            )
+            .ToArray();
+
+        if (projectNameMatches.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Extension project key '{projectKey}'{FormatExtensionSiteContext(extensionSite, resource)} "
+                    + "matches multiple configured projects by project name: "
+                    + $"{FormatProjectCandidates(projectNameMatches)}."
+            );
+        }
+
+        if (projectNameMatches.Length == 1)
+        {
+            return CacheExtensionProjectKey(projectKey, projectNameMatches[0]);
+        }
+
+        throw new InvalidOperationException(
+            $"Extension project key '{projectKey}'{FormatExtensionSiteContext(extensionSite, resource)} "
+                + "does not match any configured project."
+        );
+    }
+
+    private ProjectSchemaInfo CacheExtensionProjectKey(string projectKey, ProjectSchemaInfo project)
+    {
+        _extensionProjectsByKey[projectKey] = project;
+        return project;
+    }
+
     private static JsonObject RequireObject(JsonNode? node, string propertyName)
     {
         return node switch
@@ -973,6 +1085,40 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         return value;
+    }
+
+    private static string FormatExtensionSiteContext(
+        ExtensionSite? extensionSite,
+        QualifiedResourceName? resource
+    )
+    {
+        List<string> contextParts = new();
+
+        if (resource is { } resourceValue)
+        {
+            contextParts.Add($"resource '{FormatResource(resourceValue)}'");
+        }
+
+        if (extensionSite is not null)
+        {
+            contextParts.Add($"owning scope '{extensionSite.OwningScope.Canonical}'");
+            contextParts.Add($"extension path '{extensionSite.ExtensionPath.Canonical}'");
+        }
+
+        if (contextParts.Count == 0)
+        {
+            return string.Empty;
+        }
+
+        return " (" + string.Join(", ", contextParts) + ")";
+    }
+
+    private static string FormatProjectCandidates(IReadOnlyList<ProjectSchemaInfo> candidates)
+    {
+        return string.Join(
+            "; ",
+            candidates.Select(project => $"{project.ProjectEndpointName} ({project.ProjectName})")
+        );
     }
 
     private static bool IsExtensionScoped(JsonPathExpression path)
