@@ -695,19 +695,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 }
             }
 
-            // Check schema property which may contain $ref
-            if (obj["schema"] is JsonObject schemaObj)
-            {
-                UpdateSchemaRef(schemaObj, suffix);
-            }
-
-            // Check items for array schemas
-            if (obj["items"] is JsonObject itemsObj)
-            {
-                UpdateSchemaRef(itemsObj, suffix);
-            }
-
-            // Recurse into properties
+            // Recurse into all child properties
             foreach (JsonNode? childValue in obj.Select(kvp => kvp.Value).Where(v => v is not null))
             {
                 UpdateSchemaRef(childValue!, suffix);
