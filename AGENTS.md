@@ -47,7 +47,6 @@ Data-Management-Service/
 - **Required**: Obey the `.editorconfig` file settings at all times. The project uses:
   - UTF-8 character encoding
   - LF line endings
-  - 2-space indentation
   - Spaces for indentation style
   - Final newlines required
   - Trailing whitespace must be trimmed
@@ -91,7 +90,7 @@ The Data Management Service E2E tests directory is `src/dms/tests/EdFi.DataManag
 
 The Data Management Service E2E tests interact with a Docker stack named dms-local. Examine the docker log files to assist in debugging E2E tests.
 
-Testcontainers is obsolete, DO NOT use them when working with the E2E tests.
+Testcontainers is obsolete, do not use them when working with the E2E tests.
 
 If docker is not running, on Linux start it with `systemctl --user start docker-desktop`
 
