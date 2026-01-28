@@ -114,6 +114,7 @@ public class ApiServiceJwtAuthenticationTests
         // Create an instance of ApiService to test GetCommonInitialSteps
         var apiService = new ApiService(
             A.Fake<IApiSchemaProvider>(),
+            A.Fake<IEffectiveApiSchemaProvider>(),
             A.Fake<IClaimSetProvider>(),
             A.Fake<IDocumentValidator>(),
             A.Fake<IMatchingDocumentUuidsValidator>(),
@@ -126,11 +127,9 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
-            A.Fake<IUploadApiSchemaService>(),
             serviceProvider,
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            new CompiledSchemaCache(),
             A.Fake<IProfileService>()
         );
 
@@ -164,6 +163,7 @@ public class ApiServiceJwtAuthenticationTests
         // Create an instance of ApiService to test GetCommonInitialSteps
         var apiService = new ApiService(
             A.Fake<IApiSchemaProvider>(),
+            A.Fake<IEffectiveApiSchemaProvider>(),
             A.Fake<IClaimSetProvider>(),
             A.Fake<IDocumentValidator>(),
             A.Fake<IMatchingDocumentUuidsValidator>(),
@@ -176,11 +176,9 @@ public class ApiServiceJwtAuthenticationTests
             A.Fake<IAuthorizationServiceFactory>(),
             ResiliencePipeline.Empty,
             A.Fake<ResourceLoadOrderCalculator>(),
-            A.Fake<IUploadApiSchemaService>(),
             serviceProvider,
             A.Fake<CachedClaimSetProvider>(),
             A.Fake<IResourceDependencyGraphMLFactory>(),
-            new CompiledSchemaCache(),
             A.Fake<IProfileService>()
         );
 

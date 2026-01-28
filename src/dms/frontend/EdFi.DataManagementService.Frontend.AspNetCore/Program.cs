@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Security;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
@@ -120,6 +121,7 @@ if (!ReportInvalidConfiguration(app))
     // Initialize DMS instances first to ensure connection strings are available
     await InitializeDmsInstances(app);
     InitializeDatabase(app);
+    await InitializeApiSchemas(app);
     await RetrieveAndCacheClaimSets(app);
     await WarmUpOidcMetadataCache(app);
 
@@ -270,6 +272,26 @@ void InitializeDatabase(WebApplication app)
         }
     }
 }
+
+async Task InitializeApiSchemas(WebApplication app)
+{
+    app.Logger.LogInformation("Initializing API schemas at startup");
+    try
+    {
+        var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+        await orchestrator.RunAllAsync(CancellationToken.None);
+        app.Logger.LogInformation("API schema initialization completed successfully");
+    }
+    catch (Exception ex)
+    {
+        app.Logger.LogCritical(
+            ex,
+            "API schema initialization failed. DMS cannot start with invalid schemas."
+        );
+        Environment.Exit(-1);
+    }
+}
+
 async Task RetrieveAndCacheClaimSets(WebApplication app)
 {
     app.Logger.LogInformation("Retrieving and caching required claim sets");

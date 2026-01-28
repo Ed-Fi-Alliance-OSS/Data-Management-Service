@@ -54,14 +54,13 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
         );
 
         var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+        var fakeEffectiveApiSchemaProvider = A.Fake<IEffectiveApiSchemaProvider>();
         var fakeDocumentValidator = A.Fake<IDocumentValidator>();
         var fakeMatchingDocumentUuidsValidator = A.Fake<IMatchingDocumentUuidsValidator>();
         var fakeEqualityConstraintValidator = A.Fake<IEqualityConstraintValidator>();
         var fakeDecimalValidator = A.Fake<IDecimalValidator>();
         var fakeAuthorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
-        var fakeApiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
         var fakeResourceDependencyGraphMLFactory = A.Fake<IResourceDependencyGraphMLFactory>();
-        var fakeCompiledSchemaCache = new CompiledSchemaCache();
         var fakeResourceDependencyGraphFactory = A.Fake<IResourceDependencyGraphFactory>();
         var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
             [],
@@ -84,6 +83,7 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
 
         return new ApiService(
             fakeApiSchemaProvider,
+            fakeEffectiveApiSchemaProvider,
             cachedClaimSetProvider, // Use as IClaimSetProvider
             fakeDocumentValidator,
             fakeMatchingDocumentUuidsValidator,
@@ -94,11 +94,9 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             fakeAuthorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
-            fakeApiSchemaUploadService,
             serviceProvider,
             cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
-            fakeCompiledSchemaCache,
             A.Fake<IProfileService>()
         );
     }
@@ -217,14 +215,13 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
         );
 
         var fakeApiSchemaProvider = A.Fake<IApiSchemaProvider>();
+        var fakeEffectiveApiSchemaProvider = A.Fake<IEffectiveApiSchemaProvider>();
         var fakeDocumentValidator = A.Fake<IDocumentValidator>();
         var fakeMatchingDocumentUuidsValidator = A.Fake<IMatchingDocumentUuidsValidator>();
         var fakeEqualityConstraintValidator = A.Fake<IEqualityConstraintValidator>();
         var fakeDecimalValidator = A.Fake<IDecimalValidator>();
         var fakeAuthorizationServiceFactory = A.Fake<IAuthorizationServiceFactory>();
-        var fakeApiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
         var fakeResourceDependencyGraphMLFactory = A.Fake<IResourceDependencyGraphMLFactory>();
-        var fakeCompiledSchemaCache = new CompiledSchemaCache();
         var fakeResourceDependencyGraphFactory = A.Fake<IResourceDependencyGraphFactory>();
         var resourceLoadOrderCalculator = new ResourceLoadOrderCalculator(
             [],
@@ -246,6 +243,7 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
 
         return new ApiService(
             fakeApiSchemaProvider,
+            fakeEffectiveApiSchemaProvider,
             cachedClaimSetProvider,
             fakeDocumentValidator,
             fakeMatchingDocumentUuidsValidator,
@@ -256,11 +254,9 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             fakeAuthorizationServiceFactory,
             ResiliencePipeline.Empty,
             resourceLoadOrderCalculator,
-            fakeApiSchemaUploadService,
             serviceProvider,
             cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
-            fakeCompiledSchemaCache,
             A.Fake<IProfileService>()
         );
     }

@@ -3,46 +3,35 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
-/// Service for managing API schemas including loading, providing, and reloading
+/// Service for loading and providing API schemas.
+/// Schema loading occurs once at startup; runtime reload is not supported.
 /// </summary>
 public interface IApiSchemaProvider
 {
     /// <summary>
-    /// Returns core and extension ApiSchemas
+    /// Returns core and extension ApiSchemas.
+    /// This triggers schema loading on first access if not already loaded.
     /// </summary>
-    public ApiSchemaDocumentNodes GetApiSchemaNodes();
+    ApiSchemaDocumentNodes GetApiSchemaNodes();
 
     /// <summary>
-    /// Gets the current reload identifier.
-    /// This identifier changes whenever the schema is reloaded.
+    /// Gets the unique identifier for the loaded schema.
+    /// This value is stable for the lifetime of the process.
     /// </summary>
-    public Guid ReloadId { get; }
+    Guid ReloadId { get; }
 
     /// <summary>
-    /// Gets whether the currently loaded API schema is valid
+    /// Gets whether the currently loaded API schema is valid.
     /// </summary>
-    public bool IsSchemaValid { get; }
+    bool IsSchemaValid { get; }
 
     /// <summary>
-    /// Gets the failures from the last schema operation
+    /// Gets the failures from the schema loading operation.
     /// </summary>
-    public List<ApiSchemaFailure> ApiSchemaFailures { get; }
-
-    /// <summary>
-    /// Reloads the API schema from the configured source
-    /// </summary>
-    /// <returns>Success status and any failures that occurred</returns>
-    public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync();
-
-    /// <summary>
-    /// Loads API schemas from the provided JSON nodes
-    /// </summary>
-    /// <returns>Success status and any failures that occurred</returns>
-    public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(JsonNode coreSchema, JsonNode[] extensionSchemas);
+    List<ApiSchemaFailure> ApiSchemaFailures { get; }
 }

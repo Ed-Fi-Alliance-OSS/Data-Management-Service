@@ -15,7 +15,8 @@ internal static class ClaimSetExtensions
     public static ClaimSet? FindClaimSetByName(this IEnumerable<ClaimSet> claimSets, string claimSetName)
     {
         return claimSets.SingleOrDefault(c =>
-            string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase));
+            string.Equals(c.Name, claimSetName, StringComparison.InvariantCultureIgnoreCase)
+        );
     }
 
     /// <summary>

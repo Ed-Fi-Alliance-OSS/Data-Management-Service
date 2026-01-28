@@ -55,14 +55,12 @@ public class ConfigurationServiceTokenHandler(
     {
         logger.LogDebug("Cache miss - fetching new token from Configuration service");
 
-        var urlEncodedData = new FormUrlEncodedContent(
-            [
-                new KeyValuePair<string, string>("client_id", clientId),
-                new KeyValuePair<string, string>("client_secret", clientSecret),
-                new KeyValuePair<string, string>("grant_type", "client_credentials"),
-                new KeyValuePair<string, string>("scope", scope),
-            ]
-        );
+        var urlEncodedData = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("client_id", clientId),
+            new KeyValuePair<string, string>("client_secret", clientSecret),
+            new KeyValuePair<string, string>("grant_type", "client_credentials"),
+            new KeyValuePair<string, string>("scope", scope),
+        ]);
 
         var response = await configurationServiceApiClient.Client.PostAsync(
             "connect/token",
