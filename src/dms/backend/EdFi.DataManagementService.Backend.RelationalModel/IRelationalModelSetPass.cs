@@ -11,7 +11,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 public interface IRelationalModelSetPass
 {
     /// <summary>
-    /// The explicit order for this pass; lower values execute first.
+    /// The explicit order for this pass; lower values execute first. Order values must be unique
+    /// across the pass list because the builder does not use type names as a tie-breaker.
     /// </summary>
     int Order { get; }
 
