@@ -1276,6 +1276,13 @@ public sealed class DerivedRelationalModelSetBuilder
         ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
         ArgumentNullException.ThrowIfNull(dialectRules);
 
+        if (dialectRules.Dialect != dialect)
+        {
+            throw new InvalidOperationException(
+                $"Dialect mismatch: requested {dialect} but dialect rules target {dialectRules.Dialect}."
+            );
+        }
+
         var context = new RelationalModelSetBuilderContext(effectiveSchemaSet, dialect, dialectRules);
 
         foreach (var pass in _passes)
