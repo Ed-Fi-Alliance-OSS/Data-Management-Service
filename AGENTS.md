@@ -44,14 +44,14 @@ Data-Management-Service/
 
 ### Code Quality
 
-- **REQUIRED**: Obey the `.editorconfig` file settings at all times. The project uses:
+- **Required**: Obey the `.editorconfig` file settings at all times. The project uses:
   - UTF-8 character encoding
   - LF line endings
   - 2-space indentation
   - Spaces for indentation style
   - Final newlines required
   - Trailing whitespace must be trimmed
-- **REQUIRED**: run the appropriate build process and correct any build errors with the following scripts:
+- **Required**: run the appropriate build process and correct any build errors with the following scripts:
   - If modifying code in `./src/dms` then run `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`
   - If modifying code in `./src/config` then run `dotnet build --no-restore ./src/config/EdFi.DmsConfigurationService.sln`
 
@@ -121,8 +121,8 @@ The DMS Configuration Management Service E2E tests have a similar setup and envi
 
 ## Testing Guidelines
 
-- We use NUnit tests.
-- We use FluentAssertions for assertions.
+- Use NUnit tests.
+- Use FluentAssertions for assertions.
 - Use FakeItEasy for mocking in tests.
 - Copy existing style in nearby files for test method names and capitalization.
 - NUnit tests should follow the existing style, which is TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
