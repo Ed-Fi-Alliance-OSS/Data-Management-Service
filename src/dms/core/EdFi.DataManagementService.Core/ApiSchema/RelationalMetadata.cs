@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Core.ApiSchema.Model;
+namespace EdFi.DataManagementService.Core.ApiSchema;
 
 /// <summary>
 /// Optional relational metadata for deterministic physical naming overrides
