@@ -277,6 +277,109 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
     }
 }
 
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
+        var duplicateComponents = new[]
+        {
+            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+        };
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
+            projectSchema,
+            resourceKeys,
+            schemaComponentsOverride: duplicateComponents
+        );
+
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_duplicate_schema_components()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("duplicate");
+        _exception.Message.Should().Contain("ed-fi");
+    }
+}
+
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var extensionSchema = EffectiveSchemaFixture.CreateProjectSchema(("students", "Student", false));
+        var projects = new[]
+        {
+            new EffectiveProjectSchema("ed-fi", "Ed-Fi", "5.0.0", false, coreSchema),
+            new EffectiveProjectSchema("tpdm", "TPDM", "1.0.0", true, extensionSchema),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("TPDM", "Student"), "1.0.0", false),
+        };
+
+        var schemaComponents = new[]
+        {
+            new SchemaComponentInfo("tpdm", "TPDM", "1.0.0", true),
+            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+        };
+
+        var effectiveSchemaInfo = new EffectiveSchemaInfo(
+            "1.0.0",
+            "1.0.0",
+            "deadbeef",
+            resourceKeys.Length,
+            new byte[] { 0x01 },
+            schemaComponents,
+            resourceKeys
+        );
+
+        var effectiveSchemaSet = new EffectiveSchemaSet(effectiveSchemaInfo, projects);
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_out_of_order_schema_components()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("SchemaComponentsInEndpointOrder");
+        _exception.Message.Should().Contain("tpdm");
+        _exception.Message.Should().Contain("ed-fi");
+    }
+}
+
 internal static class EffectiveSchemaFixture
 {
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(

@@ -98,3 +98,7 @@
   - Decisions: BuildResult now validates derived inventories for null entries, duplicate concrete resources, and duplicate index/trigger names per table; duplicate keys reported as resource or schema.table:name.
   - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelSetBuilderContext.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DerivedRelationalModelSetBuilderInvariantTests.cs; tasks.json.
   - Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj.
+- Task: Harden EffectiveSchemaInfo.SchemaComponentsInEndpointOrder validation (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: added duplicate endpoint detection and out-of-order check (first offending pair) before set-equality validation; errors list duplicate endpoint names or out-of-order pair.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelSetValidation.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EffectiveSchemaInfoValidationTests.cs; tasks.json.
+  - Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj.

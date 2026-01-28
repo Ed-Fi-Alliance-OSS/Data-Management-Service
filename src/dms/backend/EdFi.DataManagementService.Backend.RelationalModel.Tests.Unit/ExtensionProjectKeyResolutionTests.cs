@@ -335,6 +335,7 @@ internal static class ExtensionProjectKeyFixture
     )
     {
         var schemaComponents = projects
+            .OrderBy(project => project.ProjectEndpointName, StringComparer.Ordinal)
             .Select(project => new SchemaComponentInfo(
                 project.ProjectEndpointName,
                 project.ProjectName,
