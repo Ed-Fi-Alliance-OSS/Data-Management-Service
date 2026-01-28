@@ -28,6 +28,12 @@ public interface IRelationalModelBuilderStep
 public sealed class RelationalModelBuilderContext
 {
     /// <summary>
+    /// Controls whether descriptor path inference should be computed from schema inputs or supplied
+    /// externally (for example, from a set-level derivation pass).
+    /// </summary>
+    public DescriptorPathSource DescriptorPathSource { get; set; } = DescriptorPathSource.InferFromSchema;
+
+    /// <summary>
     /// The root <c>ApiSchema.json</c> document node (when building from a full schema payload).
     /// </summary>
     public JsonNode? ApiSchemaRoot { get; set; }
@@ -152,6 +158,22 @@ public sealed class RelationalModelBuilderContext
 
         return new RelationalModelBuildResult(ResourceModel, ExtensionSites.ToArray());
     }
+}
+
+/// <summary>
+/// Indicates how descriptor paths should be supplied to the per-resource pipeline.
+/// </summary>
+public enum DescriptorPathSource
+{
+    /// <summary>
+    /// Infer descriptor paths from the resource schema.
+    /// </summary>
+    InferFromSchema,
+
+    /// <summary>
+    /// Use precomputed descriptor paths supplied by the caller.
+    /// </summary>
+    Precomputed,
 }
 
 /// <summary>
