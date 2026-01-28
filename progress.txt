@@ -1,0 +1,4 @@
+- Task: DMS-1033 set-level contract surface + dialect rules (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: new Backend.External project for shared contracts; SqlDialect + SchemaComponentInfo/ResourceKeyEntry/EffectiveSchemaInfo in EdFi.DataManagementService.Backend.External; ISqlDialectRules with deterministic truncate+hash shortening (byte-based for Pgsql, char-based for Mssql); scalar type defaults aligned to data-model.md.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.External/EdFi.DataManagementService.Backend.External.csproj; src/dms/backend/EdFi.DataManagementService.Backend.External/EffectiveSchemaContracts.cs; src/dms/backend/EdFi.DataManagementService.Backend.External/SqlDialectRules.cs; src/dms/EdFi.DataManagementService.sln; tasks.json.
+  - Notes: build warning persists: missing feature for Features/SyntheticTests/DocumentValidation.feature.cs.
