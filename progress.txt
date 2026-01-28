@@ -46,3 +46,7 @@
   - Decisions: built deterministic manifest from derived set using RelationalModelManifestEmitter per resource; added capture pass to record extension sites for manifest inclusion; manifest includes project list + per-resource tables/columns/descriptor edges/extension sites.
   - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DerivedRelationalModelSetDeterminismTests.cs; tasks.json.
   - Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj.
+- Task: Deterministic pass ordering tests (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: added pass-ordering fixture with distinct pass types to assert sort by Order then type name; duplicate key test asserts fast-fail InvalidOperationException.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DerivedRelationalModelSetBuilderPassOrderingTests.cs; tasks.json.
+  - Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj.
