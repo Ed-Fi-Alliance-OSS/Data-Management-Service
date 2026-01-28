@@ -212,6 +212,38 @@ internal static class RelationalModelSetValidation
             )
             .ToArray();
 
+        var duplicateSchemaComponents = schemaComponentEndpointNames
+            .GroupBy(name => name, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateSchemaComponents.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "SchemaComponentsInEndpointOrder contains duplicate ProjectEndpointName values: "
+                    + string.Join(", ", duplicateSchemaComponents)
+            );
+        }
+
+        for (var index = 1; index < schemaComponentEndpointNames.Length; index++)
+        {
+            if (
+                StringComparer.Ordinal.Compare(
+                    schemaComponentEndpointNames[index - 1],
+                    schemaComponentEndpointNames[index]
+                ) > 0
+            )
+            {
+                throw new InvalidOperationException(
+                    "SchemaComponentsInEndpointOrder is not sorted by ProjectEndpointName: "
+                        + $"'{schemaComponentEndpointNames[index - 1]}' appears before "
+                        + $"'{schemaComponentEndpointNames[index]}'."
+                );
+            }
+        }
+
         var projectEndpointNames = effectiveSchemaSet
             .ProjectsInEndpointOrder.Select(project =>
                 RequireNonEmpty(project.ProjectEndpointName, "ProjectEndpointName")
