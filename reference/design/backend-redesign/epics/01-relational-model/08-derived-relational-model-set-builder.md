@@ -14,6 +14,11 @@ Implement the set-level orchestration that derives a single dialect-aware `Deriv
 - `reference/design/backend-redesign/design-docs/data-model.md` (project schema normalization + collision rules)
 - `reference/design/backend-redesign/design-docs/extensions.md` (`_ext` project-key resolution rules)
 
+Dialect note: “dialect-aware” includes deterministic identifier-length handling and any other engine-specific defaults
+that affect the SQL-free derived model inventories (e.g., collision detection and manifests). These “dialect rules”
+(identifier length limits, shortening algorithm, type defaults) must be implemented once as a reusable component and
+shared between E01 derivation (this epic) and E02 SQL emission, rather than duplicated in both layers.
+
 This story introduces the missing “multi-document glue” between:
 - the effective schema set (projects + resources) loaded/normalized by E00, and
 - the per-resource derivation steps in this epic (DMS-929/930/931/932/933/942/945).
@@ -69,7 +74,7 @@ This list is intentionally “high level”; exact pass boundaries can be adjust
 1. Define a set-level input contract (library-first) that consumes:
    - the normalized multi-project schema set produced by E00,
    - the deterministic schema component list and resource key seed summary (`EffectiveSchemaInfo`),
-   - the target SQL dialect.
+   - the target SQL dialect and shared dialect rules (identifier limits/shortening/type defaults).
 2. Implement a `DerivedRelationalModelSetBuilder` that:
    - constructs `ProjectSchemasInEndpointOrder` (including physical schema name normalization + collision validation),
    - defines a stable pass hook point (e.g., `IRelationalModelSetPass` + a shared builder context) so other stories can register set-level passes,
