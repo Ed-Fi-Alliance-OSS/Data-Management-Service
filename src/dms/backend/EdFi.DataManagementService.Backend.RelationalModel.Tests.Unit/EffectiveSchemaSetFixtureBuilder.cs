@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
@@ -240,67 +241,6 @@ internal static class EffectiveSchemaSetFixtureBuilder
         projectSchema["resourceSchemas"] = reordered;
 
         return projectSchema;
-    }
-
-    private static string GetResourceName(string resourceKey, JsonObject resourceSchema)
-    {
-        if (resourceSchema.TryGetPropertyValue("resourceName", out var resourceNameNode))
-        {
-            return resourceNameNode switch
-            {
-                JsonValue jsonValue => RequireNonEmpty(jsonValue.GetValue<string>(), "resourceName"),
-                null => throw new InvalidOperationException(
-                    "Expected resourceName to be present, invalid ApiSchema."
-                ),
-                _ => throw new InvalidOperationException(
-                    "Expected resourceName to be a string, invalid ApiSchema."
-                ),
-            };
-        }
-
-        return RequireNonEmpty(resourceKey, "resourceName");
-    }
-
-    private static JsonObject RequireObject(JsonNode? node, string propertyName)
-    {
-        return node switch
-        {
-            JsonObject jsonObject => jsonObject,
-            null => throw new InvalidOperationException(
-                $"Expected {propertyName} to be present, invalid ApiSchema."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Expected {propertyName} to be an object, invalid ApiSchema."
-            ),
-        };
-    }
-
-    private static string RequireString(JsonObject node, string propertyName)
-    {
-        var value = node[propertyName] switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<string>(),
-            null => throw new InvalidOperationException(
-                $"Expected {propertyName} to be present, invalid ApiSchema."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Expected {propertyName} to be a string, invalid ApiSchema."
-            ),
-        };
-
-        return RequireNonEmpty(value, propertyName);
-    }
-
-    private static string RequireNonEmpty(string? value, string propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException(
-                $"Expected {propertyName} to be non-empty, invalid ApiSchema."
-            );
-        }
-
-        return value;
     }
 
     private sealed record ResourceKeySeed(
