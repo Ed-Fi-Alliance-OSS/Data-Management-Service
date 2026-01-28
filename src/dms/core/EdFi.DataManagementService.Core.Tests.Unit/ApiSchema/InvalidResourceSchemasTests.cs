@@ -147,10 +147,10 @@ public class InvalidResourceSchemasTests
             );
 
             var serviceProvider = services.BuildServiceProvider();
-            var apiSchemaUploadService = A.Fake<IUploadApiSchemaService>();
 
             return new ApiService(
                 apiSchemaProvider,
+                A.Fake<IEffectiveApiSchemaProvider>(),
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
                 new DocumentValidator(new CompiledSchemaCache()),
                 new MatchingDocumentUuidsValidator(),
@@ -161,11 +161,9 @@ public class InvalidResourceSchemasTests
                 new NamedAuthorizationServiceFactory(serviceProvider),
                 ResiliencePipeline.Empty,
                 new ResourceLoadOrderCalculator([], A.Fake<IResourceDependencyGraphFactory>()),
-                apiSchemaUploadService,
                 serviceProvider,
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                new CompiledSchemaCache(),
                 A.Fake<IProfileService>()
             );
         }

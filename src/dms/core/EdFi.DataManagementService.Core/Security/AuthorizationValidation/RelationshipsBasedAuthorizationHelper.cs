@@ -80,9 +80,9 @@ public static class RelationshipsBasedAuthorizationHelper
                 hints.Distinct().ToArray()
             );
         }
-        return new ResourceAuthorizationResult.NotAuthorized(
-            [BuildErrorMessage(authorizationFilters, missingProperties, notAuthorizedProperties)]
-        );
+        return new ResourceAuthorizationResult.NotAuthorized([
+            BuildErrorMessage(authorizationFilters, missingProperties, notAuthorizedProperties),
+        ]);
     }
 
     private static bool IsAuthorized(AuthorizationFilter[] authorizationFilters, long[]? educationOrgIds)

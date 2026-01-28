@@ -20,38 +20,38 @@ public interface IApiService
     /// <summary>
     /// DMS entry point for API upsert requests
     /// </summary>
-    public Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> Upsert(FrontendRequest frontendRequest);
 
     /// <summary>
     /// DMS entry point for all API GET by id requests
     /// </summary>
-    public Task<IFrontendResponse> Get(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> Get(FrontendRequest frontendRequest);
 
     /// <summary>
     /// DMS entry point for all API PUT requests, which are "by id"
     /// </summary>
-    public Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> UpdateById(FrontendRequest frontendRequest);
 
     /// <summary>
     /// DMS entry point for all API DELETE requests, which are "by id"
     /// </summary>
-    public Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> DeleteById(FrontendRequest frontendRequest);
 
     /// <summary>
     /// DMS entry point for the token introspection request
     /// </summary>
-    public Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest);
+    Task<IFrontendResponse> GetTokenInfo(FrontendRequest frontendRequest);
 
     /// <summary>
     /// DMS entry point for data model information from ApiSchema.json
     /// </summary>
-    public IList<IDataModelInfo> GetDataModelInfo();
+    IList<IDataModelInfo> GetDataModelInfo();
 
     /// <summary>
     /// DMS entry point to get resource dependencies
     /// </summary>
     /// <returns>JSON array ordered by dependency sequence</returns>
-    public JsonArray GetDependencies();
+    JsonArray GetDependencies();
 
     /// <summary>
     /// Retrieves dependency data in the GraphML format.
@@ -59,48 +59,38 @@ public interface IApiService
     /// <returns>
     /// A GraphML model representing dependencies to be serialized to GraphML format (XML-based).
     /// </returns>
-    public GraphML GetDependenciesAsGraphML();
+    GraphML GetDependenciesAsGraphML();
 
     /// <summary>
     /// DMS entry point to get the OpenAPI specification for resources, derived from core and extension ApiSchemas
     /// Servers array should be provided by the front end.
     /// </summary>
-    public JsonNode GetResourceOpenApiSpecification(JsonArray servers);
+    JsonNode GetResourceOpenApiSpecification(JsonArray servers);
 
     /// <summary>
     /// DMS entry point to get the OpenAPI specification for descriptors, derived from core and extension ApiSchemas
     /// Servers array should be provided by the front end.
     /// </summary>
-    public JsonNode GetDescriptorOpenApiSpecification(JsonArray servers);
-
-    /// <summary>
-    /// DMS entry point to reload the API schema from the configured source
-    /// </summary>
-    public Task<IFrontendResponse> ReloadApiSchemaAsync();
-
-    /// <summary>
-    /// DMS entry point to upload API schemas from the provided content
-    /// </summary>
-    public Task<IFrontendResponse> UploadApiSchemaAsync(UploadSchemaRequest request);
+    JsonNode GetDescriptorOpenApiSpecification(JsonArray servers);
 
     /// <summary>
     /// DMS entry point to reload the claimsets cache
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
-    public Task<IFrontendResponse> ReloadClaimsetsAsync(string? tenant = null);
+    Task<IFrontendResponse> ReloadClaimsetsAsync(string? tenant = null);
 
     /// <summary>
     /// DMS entry point to view current claimsets from the provider
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
-    public Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null);
+    Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null);
 
     /// <summary>
     /// Gets all available profile names for a tenant (cached).
     /// </summary>
     /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
     /// <returns>List of profile names</returns>
-    public Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId);
+    Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId);
 
     /// <summary>
     /// Gets the OpenAPI specification for a specific profile (cached).
@@ -109,7 +99,7 @@ public interface IApiService
     /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
     /// <param name="servers">The servers array for the OpenAPI spec</param>
     /// <returns>The filtered OpenAPI specification, or null if profile not found</returns>
-    public Task<JsonNode?> GetProfileOpenApiSpecificationAsync(
+    Task<JsonNode?> GetProfileOpenApiSpecificationAsync(
         string profileName,
         string? tenantId,
         JsonArray servers
