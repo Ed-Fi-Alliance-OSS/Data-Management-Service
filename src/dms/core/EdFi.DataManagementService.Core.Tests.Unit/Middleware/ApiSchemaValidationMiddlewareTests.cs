@@ -50,14 +50,6 @@ public class ApiSchemaValidationMiddlewareTests
 
             public List<ApiSchemaFailure> ApiSchemaFailures =>
                 [new ApiSchemaFailure("Validation", "Invalid schema", new JsonPath("$.projectSchemas"))];
-
-            public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync() =>
-                Task.FromResult(new ApiSchemaLoadStatus(true, []));
-
-            public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(
-                JsonNode coreSchema,
-                JsonNode[] extensionSchemas
-            ) => Task.FromResult(new ApiSchemaLoadStatus(true, []));
         }
 
         [SetUp]

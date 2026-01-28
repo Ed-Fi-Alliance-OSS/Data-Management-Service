@@ -50,11 +50,9 @@ public class NamespaceBasedValidator : IAuthorizationValidator
                 authorizationFilters.Select(x => $"'{x.Value}'")
             );
             return await Task.FromResult(
-                new ResourceAuthorizationResult.NotAuthorized(
-                    [
-                        $"Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claimNamespacePrefixes}.",
-                    ]
-                )
+                new ResourceAuthorizationResult.NotAuthorized([
+                    $"Access to the resource item could not be authorized based on the caller's NamespacePrefix claims: {claimNamespacePrefixes}.",
+                ])
             );
         }
         return await Task.FromResult(new ResourceAuthorizationResult.Authorized());

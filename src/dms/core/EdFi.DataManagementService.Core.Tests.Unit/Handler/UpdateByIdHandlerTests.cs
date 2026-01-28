@@ -45,14 +45,6 @@ public class UpdateByIdHandlerTests
         public bool IsSchemaValid => true;
 
         public List<ApiSchemaFailure> ApiSchemaFailures => [];
-
-        public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync() =>
-            Task.FromResult(new ApiSchemaLoadStatus(true, []));
-
-        public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(
-            JsonNode coreSchema,
-            JsonNode[] extensionSchemas
-        ) => Task.FromResult(new ApiSchemaLoadStatus(true, []));
     }
 
     internal static IPipelineStep Handler(IDocumentStoreRepository documentStoreRepository)
