@@ -1,46 +1,5 @@
 [
   {
-    "category": "Contracts",
-    "description": "Introduce the `DerivedRelationalModelSet` contract surface in `EdFi.DataManagementService.Backend.External`, aligned to `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`: `ProjectSchemaInfo`, `ConcreteResourceModel`, `AbstractIdentityTableInfo`, `AbstractUnionViewInfo`, `DbIndexKind/DbIndexName/DbIndexInfo`, `DbTriggerKind/DbTriggerName/DbTriggerInfo`, and `DerivedRelationalModelSet`. Ensure ordering-sensitive collections are expressed as ordered lists (no required dictionaries) and that the model can represent empty inventories for abstract identity tables, union views, indexes, and triggers (placeholders until later passes). Acceptance: `dotnet build` succeeds and `DerivedRelationalModelSet` can be constructed from unit tests without pulling in SQL/DDL emission code.",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Builder",
-    "description": "Implement the ordered set-level pass plugin model and orchestrator in `EdFi.DataManagementService.Backend.RelationalModel`: define `IRelationalModelSetPass` + a shared `RelationalModelSetBuilderContext`, then implement `DerivedRelationalModelSetBuilder` that takes passes via constructor (`IReadOnlyList<IRelationalModelSetPass>`) and builds a single `DerivedRelationalModelSet` from `(EffectiveSchemaSet effectiveSchemaSet, SqlDialect dialect, ISqlDialectRules dialectRules)`. Pass ordering must be explicit and deterministic: do not rely on DI registration order. Options: (A) `IRelationalModelSetPass` exposes an `Order` (or similar) and the builder sorts passes by `(Order, pass type full name ordinal)`; or (B) the builder requires callers to provide an already-ordered list and validates it (no duplicates/missing). Provide builder-context helper enumerators for canonical iteration (projects in endpoint order; resources in name order) so every pass uses the same stable enumeration and does not depend on `JsonObject`/dictionary iteration order. Acceptance: builder enforces canonical ordering (projects by `ProjectEndpointName` ordinal; concrete resources by `(ProjectName, ResourceName)` ordinal), executes passes in deterministic order, and fails fast on physical schema normalization collisions (two projects normalize to the same physical schema name).",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Validation",
-    "description": "Add set-level validation utilities in the `DerivedRelationalModelSetBuilder` context to (1) build an effective-schema resource index across all projects that includes `resourceSchemas`, `abstractResources`, and `isResourceExtension: true` resources, and (2) validate `documentPathsMapping` targets up front for all resources (first missing target throws). Acceptance: missing `(projectName, resourceName)` targets for both descriptor mappings and document-reference mappings fail fast with an actionable error indicating the source resource and mapping key/path.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Validation",
-    "description": "Validate `EffectiveSchemaInfo` consistency against the `EffectiveSchemaSet` before running passes: (1) `ResourceKeyCount` matches the number of `ResourceKeysInIdOrder`; (2) every effective-schema resource (including `resourceSchemas`, `abstractResources`, and `isResourceExtension: true` resources) has exactly one corresponding `ResourceKeyEntry` by `(ProjectName, ResourceName)`; and (3) there are no duplicate `ResourceKeyId` values or duplicate `(ProjectName, ResourceName)` pairs in the seed list. Fail fast with actionable errors describing the missing/extra resource key(s) and/or the colliding key(s). Acceptance: unit tests cover missing resource keys, duplicate resource keys, and `ResourceKeyCount` mismatch failures.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Derivation",
-    "description": "Implement cross-project descriptor-path inference as a set-level computation (not per-resource): compute descriptor paths for all resources (including `abstractResources` and cross-project reference propagation via `documentPathsMapping.referenceJsonPaths`) across the entire `EffectiveSchemaSet`. Refactor `ExtractInputsStep` so it can accept a precomputed descriptor-path map from the set-level context and stop recomputing descriptor-path inference on every per-resource run. Ensure `_ext` compatibility: because the base schema traversal skips `_ext` (by design), the descriptor-path map provided to the initial base traversal pass must not include descriptor paths that live under `_ext.*` subtrees (otherwise `DeriveColumnsAndBindDescriptorEdgesStep` will fail its \"all descriptor paths must be encountered\" enforcement). Track/partition excluded extension-scoped descriptor paths for later passes (DMS-932) rather than silently dropping them. Acceptance: cross-project descriptor-path propagation works (unit tests with a synthetic multi-project fixture), base traversal does not fail due to `_ext`-scoped descriptor paths, and per-resource pipeline behavior remains deterministic.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
     "category": "Passes",
     "description": "Implement the initial set-level **Base traversal pass** (DMS-929 integration) as an `IRelationalModelSetPass` that loops all concrete, non-extension resources across all projects in canonical order and runs the existing per-resource `RelationalModelBuilderPipeline` (using the set-level precomputed descriptor-path map). Ensure the pass uses a descriptor-path map filtered/partitioned appropriately so base traversal does not fail on descriptor paths that exist only under `_ext` (see `reference/design/backend-redesign/epics/01-relational-model/03-ext-mapping.md`). Aggregate per-resource outputs into `ConcreteResourcesInNameOrder` as `ConcreteResourceModel` entries and track discovered `_ext` sites (and any extension-scoped descriptor-path partitions) for later passes. Acceptance: all eligible resources contribute a `ConcreteResourceModel`, ordering is stable, and `_ext` sites are discovered deterministically without false fail-fast errors from extension-only descriptor paths.",
     "steps-to-verify": [
@@ -75,80 +34,6 @@
   {
     "category": "Tests",
     "description": "Add unit tests for identifier shortening in `PgsqlDialectRules` and `MssqlDialectRules`: (1) identifiers at/below the dialect limit are unchanged; (2) over-limit identifiers are shortened deterministically (same input -> same output) and produce results within the limit; (3) PostgreSQL shortening measures UTF-8 byte length (include a multibyte input case) while SQL Server uses character count. Acceptance: tests validate length enforcement and multibyte handling without requiring any database or SQL emission.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Tests",
-    "description": "Add a unit test proving `documentPathsMapping` target validation applies to `abstractResources` as well as `resourceSchemas`: create an `abstractResources` schema containing a `documentPathsMapping` entry whose `(projectName, resourceName)` target is missing from the effective schema set. Acceptance: `DerivedRelationalModelSetBuilder.Build(...)` throws an `InvalidOperationException` mentioning `documentPathsMapping`, the source abstract resource, and the missing target resource (and includes the mapping key/path when available).",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Validation",
-    "description": "Fail fast when `DerivedRelationalModelSetBuilder.Build(...)` is called with a `dialect` that does not match `dialectRules.Dialect`. This prevents silently deriving a model with the wrong identifier-length semantics and scalar defaults. Acceptance: `Build(...)` throws an `InvalidOperationException` before executing any passes; the message includes both the requested `dialect` and the `dialectRules.Dialect` values. Add a unit test that passes `(SqlDialect.Pgsql, new MssqlDialectRules())` and asserts the exception text is actionable.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Determinism",
-    "description": "Remove remaining nondeterministic iteration over `JsonObject` and dictionary keys in set-level validation and descriptor-path inference. Specifically: (1) ensure `ValidateDocumentPathsMappingTargets(...)` iterates projects/resources/mappings in canonical ordinal order (not `JsonObject` enumeration order), and (2) ensure `DescriptorPathInference` propagation does not depend on `Dictionary` iteration order. Acceptance: given the same logical schema content with JSON property order varied, derived descriptor-path maps and fail-fast validation behavior are stable; determinism tests cover at least one case with reordered `resourceSchemas` keys and reordered `documentPathsMapping` keys.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Validation",
-    "description": "Validate that `EffectiveSchemaInfo.SchemaComponentsInEndpointOrder` matches the `EffectiveSchemaSet.ProjectsInEndpointOrder` payload. Acceptance: `RelationalModelSetBuilderContext` (or `DerivedRelationalModelSetBuilder`) fails fast when the schema-components list is missing projects, has extra projects, or has a project endpoint-name mismatch compared to the projects payload; the exception message lists missing/extra endpoint names. Add unit tests for (1) missing schema component and (2) extra schema component.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Determinism",
-    "description": "Enforce canonical ordering for every ordering-sensitive collection in `DerivedRelationalModelSet`, not just `ConcreteResourcesInNameOrder`. Acceptance: `BuildResult()` (or `DerivedRelationalModelSetBuilder.Build(...)`) returns `AbstractIdentityTablesInNameOrder` and `AbstractUnionViewsInNameOrder` sorted ordinal by `(project_name, resource_name)`, and provides a deterministic, documented ordering for `IndexesInCreateOrder` and `TriggersInCreateOrder` (or validates that passes supply them in that deterministic order). Add unit tests that populate these lists out-of-order in a fake pass and assert the final model set ordering is deterministic.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Reduce maintenance risk in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DerivedRelationalModelSetBuilder.cs` by splitting the large file into focused types/files (e.g., `IRelationalModelSetPass`, `RelationalModelSetBuilderContext`, validation helpers, and the `DerivedRelationalModelSetBuilder` orchestrator). Acceptance: no public API changes, no behavior changes, and unit tests remain green.",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Eliminate duplicated schema-parsing helpers (e.g., `GetResourceName`, `RequireNonEmpty`, and `RequireObject` variants) across `DerivedRelationalModelSetBuilder`, `DescriptorPathInference`, and unit-test fixture builders to reduce drift. Acceptance: shared helper(s) are used consistently; error messages remain actionable; and tests still pass.",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Validation",
-    "description": "Harden `EffectiveSchemaInfo.SchemaComponentsInEndpointOrder` validation. In addition to set equality with `EffectiveSchemaSet.ProjectsInEndpointOrder`, fail fast when schema components contain duplicate `ProjectEndpointName` values and when the list is not already sorted ordinal by `ProjectEndpointName`. Acceptance: (1) duplicates produce an actionable error listing the duplicated endpoint name(s), and (2) out-of-order components produce an actionable error indicating the first out-of-order pair; add unit tests for duplicate schema components and out-of-order schema components.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Builder",
-    "description": "Add set-level invariant enforcement for derived inventories to prevent silent duplication. Introduce context helpers (or `BuildResult()` checks) that enforce: (1) no null entries, (2) no duplicate `ConcreteResourceModel` entries per `(ProjectName, ResourceName)`, and (3) no duplicate index/trigger names per table. Acceptance: `BuildResult()` fails fast with an actionable error when duplicates are present; add unit tests that intentionally add duplicates via a fake pass and assert the thrown message identifies the duplicate key.",
     "steps-to-verify": [
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
