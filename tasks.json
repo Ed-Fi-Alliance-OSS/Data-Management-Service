@@ -1,0 +1,18 @@
+[
+  {
+    "category": "Contracts",
+    "description": "Introduce a shared set-level input contract for backend-redesign schema/model compilation (DMS-1033) as a new folder `External` under `src/dms/core/EdFi.DataManagementService.Backend/` with namespace `EdFi.DataManagementService.Backend.External`. Define public, immutable types aligned to `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` for: `SqlDialect` (Pgsql/Mssql), `SchemaComponentInfo`, `ResourceKeyEntry`, and `EffectiveSchemaInfo` (effective schema hash + ordered schema components + ordered resource keys). Acceptance: `dotnet build` succeeds, nullable is enabled + warnings are errors, and the contract can be referenced by `EdFi.DataManagementService.Backend.RelationalModel` without introducing file I/O or an intermediate model.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Add an `EffectiveSchemaSet` contract type in the `EdFi.DataManagementService.Backend.External` namespace that carries the normalized multi-project effective schema payload needed by DMS-1033 without doing file I/O. Suggested shape: `EffectiveSchemaSet(EffectiveSchemaInfo EffectiveSchema, IReadOnlyList<EffectiveProjectSchema> ProjectsInEndpointOrder)` where each `EffectiveProjectSchema` includes the project metadata (endpoint/name/version/isExtension) and the normalized JSON payload (`JsonNode` root or `JsonObject projectSchema`). Acceptance: DMS-1033 can enumerate projects/resources in canonical ordinal order using only this contract; callers are not forced to provide dictionaries; and the contract clearly documents whether the stored JSON is `ApiSchema.json` root(s) or `projectSchema` node(s).",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  }
+]
