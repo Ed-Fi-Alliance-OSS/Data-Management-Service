@@ -310,15 +310,37 @@ public sealed class RelationalModelSetBuilderContext
             .ThenBy(resource => resource.ResourceKey.Resource.ResourceName, StringComparer.Ordinal)
             .ToArray();
 
+        var orderedAbstractIdentityTables = AbstractIdentityTablesInNameOrder
+            .OrderBy(table => table.AbstractResourceKey.Resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(table => table.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        var orderedAbstractUnionViews = AbstractUnionViewsInNameOrder
+            .OrderBy(view => view.AbstractResourceKey.Resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(view => view.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        var orderedIndexes = IndexesInCreateOrder
+            .OrderBy(index => index.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(index => index.Table.Name, StringComparer.Ordinal)
+            .ThenBy(index => index.Name.Value, StringComparer.Ordinal)
+            .ToArray();
+
+        var orderedTriggers = TriggersInCreateOrder
+            .OrderBy(trigger => trigger.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
+            .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
+            .ToArray();
+
         return new DerivedRelationalModelSet(
             EffectiveSchemaSet.EffectiveSchema,
             Dialect,
             ProjectSchemasInEndpointOrder.ToArray(),
             orderedConcreteResources,
-            AbstractIdentityTablesInNameOrder.ToArray(),
-            AbstractUnionViewsInNameOrder.ToArray(),
-            IndexesInCreateOrder.ToArray(),
-            TriggersInCreateOrder.ToArray()
+            orderedAbstractIdentityTables,
+            orderedAbstractUnionViews,
+            orderedIndexes,
+            orderedTriggers
         );
     }
 
