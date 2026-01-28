@@ -55,6 +55,16 @@ public sealed class RelationalModelSetBuilderContext
 {
     private readonly IReadOnlyList<ProjectSchemaContext> _projectsInEndpointOrder;
     private readonly IReadOnlyList<ConcreteResourceSchemaContext> _concreteResourceSchemasInNameOrder;
+    private readonly IReadOnlyDictionary<
+        QualifiedResourceName,
+        IReadOnlyDictionary<string, DescriptorPathInfo>
+    > _descriptorPathsByResource;
+    private readonly IReadOnlyDictionary<
+        QualifiedResourceName,
+        IReadOnlyDictionary<string, DescriptorPathInfo>
+    > _extensionDescriptorPathsByResource;
+    private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> EmptyDescriptorPaths =
+        new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
 
     /// <summary>
     /// Creates a new builder context for the supplied effective schema set and dialect.
@@ -84,6 +94,9 @@ public sealed class RelationalModelSetBuilderContext
 
         _projectsInEndpointOrder = projectSchemaBundle.ProjectSchemas;
         ProjectSchemasInEndpointOrder = projectSchemaBundle.ProjectSchemaInfos;
+        var descriptorPathMaps = BuildDescriptorPathMaps(_projectsInEndpointOrder);
+        _descriptorPathsByResource = descriptorPathMaps.BaseDescriptorPathsByResource;
+        _extensionDescriptorPathsByResource = descriptorPathMaps.ExtensionDescriptorPathsByResource;
         _concreteResourceSchemasInNameOrder = BuildConcreteResourceSchemasInNameOrder(
             _projectsInEndpointOrder
         );
@@ -148,6 +161,63 @@ public sealed class RelationalModelSetBuilderContext
     public IEnumerable<ConcreteResourceSchemaContext> EnumerateConcreteResourceSchemasInNameOrder()
     {
         return _concreteResourceSchemasInNameOrder;
+    }
+
+    /// <summary>
+    /// Returns descriptor paths excluding extension-scoped paths for the requested resource.
+    /// </summary>
+    public IReadOnlyDictionary<string, DescriptorPathInfo> GetDescriptorPathsForResource(
+        QualifiedResourceName resource
+    )
+    {
+        return _descriptorPathsByResource.TryGetValue(resource, out var paths) ? paths : EmptyDescriptorPaths;
+    }
+
+    /// <summary>
+    /// Returns descriptor paths that occur under <c>_ext</c> for the requested resource.
+    /// </summary>
+    public IReadOnlyDictionary<string, DescriptorPathInfo> GetExtensionDescriptorPathsForResource(
+        QualifiedResourceName resource
+    )
+    {
+        return _extensionDescriptorPathsByResource.TryGetValue(resource, out var paths)
+            ? paths
+            : EmptyDescriptorPaths;
+    }
+
+    /// <summary>
+    /// Returns all descriptor paths for the requested resource, including extension-scoped paths.
+    /// </summary>
+    public IReadOnlyDictionary<string, DescriptorPathInfo> GetAllDescriptorPathsForResource(
+        QualifiedResourceName resource
+    )
+    {
+        var basePaths = GetDescriptorPathsForResource(resource);
+        var extensionPaths = GetExtensionDescriptorPathsForResource(resource);
+
+        if (extensionPaths.Count == 0)
+        {
+            return basePaths;
+        }
+
+        if (basePaths.Count == 0)
+        {
+            return extensionPaths;
+        }
+
+        Dictionary<string, DescriptorPathInfo> combined = new(StringComparer.Ordinal);
+
+        foreach (var entry in basePaths)
+        {
+            combined[entry.Key] = entry.Value;
+        }
+
+        foreach (var entry in extensionPaths)
+        {
+            combined[entry.Key] = entry.Value;
+        }
+
+        return combined;
     }
 
     /// <summary>
@@ -312,6 +382,68 @@ public sealed class RelationalModelSetBuilderContext
             .ToArray();
 
         return orderedResources;
+    }
+
+    private static (
+        IReadOnlyDictionary<
+            QualifiedResourceName,
+            IReadOnlyDictionary<string, DescriptorPathInfo>
+        > BaseDescriptorPathsByResource,
+        IReadOnlyDictionary<
+            QualifiedResourceName,
+            IReadOnlyDictionary<string, DescriptorPathInfo>
+        > ExtensionDescriptorPathsByResource
+    ) BuildDescriptorPathMaps(IReadOnlyList<ProjectSchemaContext> projectsInEndpointOrder)
+    {
+        if (projectsInEndpointOrder.Count == 0)
+        {
+            return (
+                new Dictionary<QualifiedResourceName, IReadOnlyDictionary<string, DescriptorPathInfo>>(),
+                new Dictionary<QualifiedResourceName, IReadOnlyDictionary<string, DescriptorPathInfo>>()
+            );
+        }
+
+        var projectSchemas = projectsInEndpointOrder
+            .Select(project => new DescriptorPathInference.ProjectDescriptorSchema(
+                project.ProjectSchema.ProjectName,
+                project.EffectiveProject.ProjectSchema
+            ))
+            .ToArray();
+
+        var descriptorPathsByResource = DescriptorPathInference.BuildDescriptorPathsByResource(
+            projectSchemas
+        );
+
+        Dictionary<
+            QualifiedResourceName,
+            IReadOnlyDictionary<string, DescriptorPathInfo>
+        > baseDescriptorPathsByResource = new();
+        Dictionary<
+            QualifiedResourceName,
+            IReadOnlyDictionary<string, DescriptorPathInfo>
+        > extensionDescriptorPathsByResource = new();
+
+        foreach (var resourceEntry in descriptorPathsByResource)
+        {
+            Dictionary<string, DescriptorPathInfo> basePaths = new(StringComparer.Ordinal);
+            Dictionary<string, DescriptorPathInfo> extensionPaths = new(StringComparer.Ordinal);
+
+            foreach (var pathEntry in resourceEntry.Value)
+            {
+                if (IsExtensionScoped(pathEntry.Value.DescriptorValuePath))
+                {
+                    extensionPaths.Add(pathEntry.Key, pathEntry.Value);
+                    continue;
+                }
+
+                basePaths.Add(pathEntry.Key, pathEntry.Value);
+            }
+
+            baseDescriptorPathsByResource[resourceEntry.Key] = basePaths;
+            extensionDescriptorPathsByResource[resourceEntry.Key] = extensionPaths;
+        }
+
+        return (baseDescriptorPathsByResource, extensionDescriptorPathsByResource);
     }
 
     private static void ValidateEffectiveSchemaInfo(
@@ -782,6 +914,11 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         return value;
+    }
+
+    private static bool IsExtensionScoped(JsonPathExpression path)
+    {
+        return path.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" });
     }
 }
 
