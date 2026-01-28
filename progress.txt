@@ -18,3 +18,7 @@
   - Decisions: added IRelationalModelSetPass with explicit Order; builder sorts passes by (Order, type name) and fails on duplicate ordering keys; context precomputes canonical project/resource order, validates physical-schema collisions, exposes canonical enumerators, and sorts concrete resources in BuildResult for deterministic output.
   - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DerivedRelationalModelSetBuilder.cs; tasks.json.
   - Notes: dotnet build + relational-model unit tests passed.
+- Task: EffectiveSchemaInfo consistency validation (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: validate ResourceKeyCount, duplicate ResourceKeyId/resource pairs, and missing/extra resource keys in RelationalModelSetBuilderContext before passes; include resourceSchemas + abstractResources + isResourceExtension entries.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DerivedRelationalModelSetBuilder.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EffectiveSchemaInfoValidationTests.cs; tasks.json.
+  - Notes: dotnet build + relational-model unit tests passed.

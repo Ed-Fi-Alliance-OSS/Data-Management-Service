@@ -75,6 +75,8 @@ public sealed class RelationalModelSetBuilderContext
         Dialect = dialect;
         DialectRules = dialectRules;
 
+        ValidateEffectiveSchemaInfo(effectiveSchemaSet);
+
         var projectsInEndpointOrder = NormalizeProjectsInEndpointOrder(effectiveSchemaSet);
         var projectSchemaBundle = BuildProjectSchemaContexts(projectsInEndpointOrder);
 
@@ -308,6 +310,209 @@ public sealed class RelationalModelSetBuilderContext
             .ToArray();
 
         return orderedResources;
+    }
+
+    private static void ValidateEffectiveSchemaInfo(EffectiveSchemaSet effectiveSchemaSet)
+    {
+        if (effectiveSchemaSet.EffectiveSchema is null)
+        {
+            throw new InvalidOperationException("EffectiveSchemaSet.EffectiveSchema must be provided.");
+        }
+
+        if (effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaInfo.ResourceKeysInIdOrder must be provided."
+            );
+        }
+
+        if (
+            effectiveSchemaSet.EffectiveSchema.ResourceKeyCount
+            != effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Count
+        )
+        {
+            throw new InvalidOperationException(
+                $"EffectiveSchemaInfo.ResourceKeyCount ({effectiveSchemaSet.EffectiveSchema.ResourceKeyCount}) "
+                    + "does not match ResourceKeysInIdOrder count "
+                    + $"({effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Count})."
+            );
+        }
+
+        if (effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Any(entry => entry is null))
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaInfo.ResourceKeysInIdOrder must not contain null entries."
+            );
+        }
+
+        var duplicateIds = effectiveSchemaSet
+            .EffectiveSchema.ResourceKeysInIdOrder.GroupBy(entry => entry.ResourceKeyId)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(id => id)
+            .ToArray();
+
+        var duplicateResources = effectiveSchemaSet
+            .EffectiveSchema.ResourceKeysInIdOrder.GroupBy(entry => entry.Resource)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateIds.Length > 0 || duplicateResources.Length > 0)
+        {
+            List<string> messageParts = new();
+
+            if (duplicateIds.Length > 0)
+            {
+                messageParts.Add(
+                    "Duplicate ResourceKeyId values detected: " + string.Join(", ", duplicateIds)
+                );
+            }
+
+            if (duplicateResources.Length > 0)
+            {
+                messageParts.Add(
+                    "Duplicate resource keys detected for: "
+                        + string.Join(", ", duplicateResources.Select(FormatResource))
+                );
+            }
+
+            throw new InvalidOperationException(string.Join(" ", messageParts));
+        }
+
+        var effectiveResources = CollectEffectiveSchemaResources(effectiveSchemaSet);
+        var resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
+            entry => entry.Resource
+        );
+
+        var missingResources = effectiveResources
+            .Where(resource => !resourceKeysByResource.ContainsKey(resource))
+            .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        var extraResources = resourceKeysByResource
+            .Where(entry => !effectiveResources.Contains(entry.Key))
+            .Select(entry => entry.Key)
+            .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (missingResources.Length > 0 || extraResources.Length > 0)
+        {
+            List<string> messageParts = new();
+
+            if (missingResources.Length > 0)
+            {
+                messageParts.Add(
+                    "Missing resource keys for: " + string.Join(", ", missingResources.Select(FormatResource))
+                );
+            }
+
+            if (extraResources.Length > 0)
+            {
+                messageParts.Add(
+                    "Resource keys reference unknown resources: "
+                        + string.Join(", ", extraResources.Select(FormatResource))
+                );
+            }
+
+            throw new InvalidOperationException(string.Join(" ", messageParts));
+        }
+    }
+
+    private static HashSet<QualifiedResourceName> CollectEffectiveSchemaResources(
+        EffectiveSchemaSet effectiveSchemaSet
+    )
+    {
+        if (effectiveSchemaSet.ProjectsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaSet.ProjectsInEndpointOrder must be provided."
+            );
+        }
+
+        HashSet<QualifiedResourceName> resources = new();
+
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    "EffectiveSchemaSet.ProjectsInEndpointOrder must not contain null entries."
+                );
+            }
+
+            if (project.ProjectSchema is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema to be present in EffectiveProjectSchema."
+                );
+            }
+
+            var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
+            var resourceSchemas = RequireObject(
+                project.ProjectSchema["resourceSchemas"],
+                "projectSchema.resourceSchemas"
+            );
+
+            AddResourceEntries(resources, resourceSchemas, projectName, "projectSchema.resourceSchemas");
+
+            if (project.ProjectSchema["abstractResources"] is JsonObject abstractResources)
+            {
+                AddResourceEntries(
+                    resources,
+                    abstractResources,
+                    projectName,
+                    "projectSchema.abstractResources"
+                );
+            }
+        }
+
+        return resources;
+    }
+
+    private static void AddResourceEntries(
+        HashSet<QualifiedResourceName> resources,
+        JsonObject resourceSchemas,
+        string projectName,
+        string resourceSchemasPath
+    )
+    {
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+
+            resources.Add(new QualifiedResourceName(projectName, resourceName));
+        }
+    }
+
+    private static string FormatResource(QualifiedResourceName resource)
+    {
+        return $"{resource.ProjectName}:{resource.ResourceName}";
     }
 
     private static JsonObject RequireObject(JsonNode? node, string propertyName)
