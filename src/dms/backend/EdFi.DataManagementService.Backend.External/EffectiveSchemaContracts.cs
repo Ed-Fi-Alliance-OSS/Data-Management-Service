@@ -22,13 +22,6 @@ public enum SqlDialect
 }
 
 /// <summary>
-/// Identifies a resource by project and resource name.
-/// </summary>
-/// <param name="ProjectName">The logical project name (e.g., <c>Ed-Fi</c>).</param>
-/// <param name="ResourceName">The logical resource name (e.g., <c>School</c>).</param>
-public readonly record struct QualifiedResourceName(string ProjectName, string ResourceName);
-
-/// <summary>
 /// Describes a schema component participating in the effective schema set.
 /// </summary>
 /// <param name="ProjectEndpointName">The stable API endpoint name (e.g., <c>ed-fi</c>).</param>
