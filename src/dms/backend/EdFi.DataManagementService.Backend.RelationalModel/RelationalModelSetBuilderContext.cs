@@ -323,6 +323,14 @@ public sealed class RelationalModelSetBuilderContext
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
 
+        ValidateIdentifierShorteningCollisions(
+            orderedConcreteResources,
+            orderedAbstractIdentityTables,
+            orderedAbstractUnionViews,
+            orderedIndexes,
+            orderedTriggers
+        );
+
         return new DerivedRelationalModelSet(
             EffectiveSchemaSet.EffectiveSchema,
             Dialect,
@@ -345,6 +353,124 @@ public sealed class RelationalModelSetBuilderContext
         ValidateConcreteResourceUniqueness();
         ValidateIndexNameUniqueness();
         ValidateTriggerNameUniqueness();
+    }
+
+    private void ValidateIdentifierShorteningCollisions(
+        IReadOnlyList<ConcreteResourceModel> orderedConcreteResources,
+        IReadOnlyList<AbstractIdentityTableInfo> orderedAbstractIdentityTables,
+        IReadOnlyList<AbstractUnionViewInfo> orderedAbstractUnionViews,
+        IReadOnlyList<DbIndexInfo> orderedIndexes,
+        IReadOnlyList<DbTriggerInfo> orderedTriggers
+    )
+    {
+        var detector = new IdentifierCollisionDetector(DialectRules);
+
+        foreach (var resource in orderedConcreteResources)
+        {
+            var resourceLabel = FormatResource(resource.ResourceKey.Resource);
+
+            foreach (var table in resource.RelationalModel.TablesInReadDependencyOrder)
+            {
+                detector.RegisterTable(
+                    table.Table,
+                    $"table {FormatTable(table.Table)} (resource {resourceLabel})"
+                );
+
+                foreach (var column in table.Columns)
+                {
+                    detector.RegisterColumn(
+                        table.Table,
+                        column.ColumnName,
+                        $"column {FormatColumn(table.Table, column.ColumnName)} "
+                            + $"(resource {resourceLabel})"
+                    );
+                }
+
+                foreach (var constraint in table.Constraints)
+                {
+                    var constraintName = GetConstraintName(constraint);
+
+                    detector.RegisterConstraint(
+                        table.Table,
+                        constraintName,
+                        $"constraint {constraintName} on {FormatTable(table.Table)} "
+                            + $"(resource {resourceLabel})"
+                    );
+                }
+            }
+        }
+
+        foreach (var table in orderedAbstractIdentityTables)
+        {
+            var resourceLabel = FormatResource(table.AbstractResourceKey.Resource);
+
+            detector.RegisterTable(
+                table.Table,
+                $"table {FormatTable(table.Table)} (abstract identity for {resourceLabel})"
+            );
+
+            foreach (var column in table.ColumnsInIdentityOrder)
+            {
+                detector.RegisterColumn(
+                    table.Table,
+                    column.ColumnName,
+                    $"column {FormatColumn(table.Table, column.ColumnName)} "
+                        + $"(abstract identity for {resourceLabel})"
+                );
+            }
+
+            foreach (var constraint in table.Constraints)
+            {
+                var constraintName = GetConstraintName(constraint);
+
+                detector.RegisterConstraint(
+                    table.Table,
+                    constraintName,
+                    $"constraint {constraintName} on {FormatTable(table.Table)} "
+                        + $"(abstract identity for {resourceLabel})"
+                );
+            }
+        }
+
+        foreach (var view in orderedAbstractUnionViews)
+        {
+            var resourceLabel = FormatResource(view.AbstractResourceKey.Resource);
+
+            detector.RegisterTable(
+                view.ViewName,
+                $"view {FormatTable(view.ViewName)} (abstract union for {resourceLabel})"
+            );
+
+            foreach (var column in view.ColumnsInIdentityOrder)
+            {
+                detector.RegisterColumn(
+                    view.ViewName,
+                    column.ColumnName,
+                    $"column {FormatColumn(view.ViewName, column.ColumnName)} "
+                        + $"(abstract union for {resourceLabel})"
+                );
+            }
+        }
+
+        foreach (var index in orderedIndexes)
+        {
+            detector.RegisterIndex(
+                index.Table,
+                index.Name,
+                $"index {index.Name.Value} on {FormatTable(index.Table)}"
+            );
+        }
+
+        foreach (var trigger in orderedTriggers)
+        {
+            detector.RegisterTrigger(
+                trigger.Table,
+                trigger.Name,
+                $"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}"
+            );
+        }
+
+        detector.ThrowIfCollisions();
     }
 
     private void ValidateConcreteResourceUniqueness()
@@ -428,6 +554,199 @@ public sealed class RelationalModelSetBuilderContext
         public string Format()
         {
             return $"{Schema}.{Table}:{Name}";
+        }
+    }
+
+    private static string GetConstraintName(TableConstraint constraint)
+    {
+        return constraint switch
+        {
+            TableConstraint.Unique unique => unique.Name,
+            TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            _ => throw new InvalidOperationException(
+                $"Unsupported constraint type '{constraint.GetType().Name}'."
+            ),
+        };
+    }
+
+    private static string FormatTable(DbTableName table)
+    {
+        return $"{table.Schema.Value}.{table.Name}";
+    }
+
+    private static string FormatColumn(DbTableName table, DbColumnName column)
+    {
+        return $"{FormatTable(table)}.{column.Value}";
+    }
+
+    private sealed class IdentifierCollisionDetector
+    {
+        private readonly ISqlDialectRules _dialectRules;
+        private readonly Dictionary<IdentifierScope, Dictionary<string, List<IdentifierSource>>> _sources =
+            new();
+
+        public IdentifierCollisionDetector(ISqlDialectRules dialectRules)
+        {
+            _dialectRules = dialectRules ?? throw new ArgumentNullException(nameof(dialectRules));
+        }
+
+        public void RegisterTable(DbTableName table, string description)
+        {
+            Register(
+                new IdentifierScope(IdentifierScopeKind.Table, table.Schema.Value),
+                table.Name,
+                new IdentifierSource(table.Name, description)
+            );
+        }
+
+        public void RegisterColumn(DbTableName table, DbColumnName column, string description)
+        {
+            Register(
+                new IdentifierScope(IdentifierScopeKind.Column, table.Schema.Value, table.Name),
+                column.Value,
+                new IdentifierSource(column.Value, description)
+            );
+        }
+
+        public void RegisterConstraint(DbTableName table, string constraintName, string description)
+        {
+            Register(
+                new IdentifierScope(IdentifierScopeKind.Constraint, table.Schema.Value),
+                constraintName,
+                new IdentifierSource(constraintName, description)
+            );
+        }
+
+        public void RegisterIndex(DbTableName table, DbIndexName indexName, string description)
+        {
+            Register(
+                new IdentifierScope(IdentifierScopeKind.Index, table.Schema.Value),
+                indexName.Value,
+                new IdentifierSource(indexName.Value, description)
+            );
+        }
+
+        public void RegisterTrigger(DbTableName table, DbTriggerName triggerName, string description)
+        {
+            Register(
+                new IdentifierScope(IdentifierScopeKind.Trigger, table.Schema.Value),
+                triggerName.Value,
+                new IdentifierSource(triggerName.Value, description)
+            );
+        }
+
+        public void ThrowIfCollisions()
+        {
+            List<IdentifierCollision> collisions = [];
+
+            var orderedScopes = _sources
+                .Keys.OrderBy(scope => scope.Kind)
+                .ThenBy(scope => scope.Schema, StringComparer.Ordinal)
+                .ThenBy(scope => scope.Table, StringComparer.Ordinal)
+                .ToArray();
+
+            foreach (var scope in orderedScopes)
+            {
+                var names = _sources[scope];
+
+                foreach (var shortenedName in names.Keys.OrderBy(name => name, StringComparer.Ordinal))
+                {
+                    var sources = names[shortenedName]
+                        .GroupBy(source => source.Name, StringComparer.Ordinal)
+                        .OrderBy(group => group.Key, StringComparer.Ordinal)
+                        .Select(group =>
+                            group.OrderBy(source => source.Description, StringComparer.Ordinal).First()
+                        )
+                        .ToArray();
+
+                    if (sources.Length > 1)
+                    {
+                        collisions.Add(new IdentifierCollision(scope, shortenedName, sources));
+                    }
+                }
+            }
+
+            if (collisions.Count == 0)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException(
+                "Identifier shortening collisions detected: "
+                    + string.Join("; ", collisions.Select(collision => collision.Format()))
+            );
+        }
+
+        private void Register(IdentifierScope scope, string originalName, IdentifierSource source)
+        {
+            var shortenedName = _dialectRules.ShortenIdentifier(originalName);
+
+            if (!_sources.TryGetValue(scope, out var entries))
+            {
+                entries = new Dictionary<string, List<IdentifierSource>>(StringComparer.Ordinal);
+                _sources[scope] = entries;
+            }
+
+            if (!entries.TryGetValue(shortenedName, out var sources))
+            {
+                sources = [];
+                entries[shortenedName] = sources;
+            }
+
+            sources.Add(source);
+        }
+
+        private enum IdentifierScopeKind
+        {
+            Table,
+            Column,
+            Constraint,
+            Index,
+            Trigger,
+        }
+
+        private readonly record struct IdentifierScope(
+            IdentifierScopeKind Kind,
+            string Schema,
+            string Table = ""
+        );
+
+        private readonly record struct IdentifierSource(string Name, string Description)
+        {
+            public string Format()
+            {
+                return Description;
+            }
+        }
+
+        private sealed record IdentifierCollision(
+            IdentifierScope Scope,
+            string ShortenedName,
+            IReadOnlyList<IdentifierSource> Sources
+        )
+        {
+            public string Format()
+            {
+                var category = Scope.Kind switch
+                {
+                    IdentifierScopeKind.Table => "table name",
+                    IdentifierScopeKind.Column => "column name",
+                    IdentifierScopeKind.Constraint => "constraint name",
+                    IdentifierScopeKind.Index => "index name",
+                    IdentifierScopeKind.Trigger => "trigger name",
+                    _ => "identifier",
+                };
+
+                var scope = Scope.Kind switch
+                {
+                    IdentifierScopeKind.Column => $"in table '{Scope.Schema}.{Scope.Table}'",
+                    _ => $"in schema '{Scope.Schema}'",
+                };
+
+                var sources = string.Join(", ", Sources.Select(source => source.Format()));
+
+                return $"{category} '{ShortenedName}' {scope}: {sources}";
+            }
         }
     }
 
