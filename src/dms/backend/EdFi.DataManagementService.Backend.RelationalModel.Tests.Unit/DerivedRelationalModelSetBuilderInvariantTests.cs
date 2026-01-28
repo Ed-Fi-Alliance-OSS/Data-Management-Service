@@ -113,10 +113,10 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
             var schema = new DbSchemaName("edfi");
             var table = new DbTableName(schema, "School");
 
-            context.IndexesInCreateOrder.Add(
+            context.IndexInventory.Add(
                 new DbIndexInfo(new DbIndexName("IX_School"), table, [], false, DbIndexKind.ForeignKeySupport)
             );
-            context.IndexesInCreateOrder.Add(
+            context.IndexInventory.Add(
                 new DbIndexInfo(new DbIndexName("IX_School"), table, [], false, DbIndexKind.ForeignKeySupport)
             );
         }
@@ -165,10 +165,10 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
             var schema = new DbSchemaName("edfi");
             var table = new DbTableName(schema, "School");
 
-            context.TriggersInCreateOrder.Add(
+            context.TriggerInventory.Add(
                 new DbTriggerInfo(new DbTriggerName("TR_School"), table, DbTriggerKind.DocumentStamping, [])
             );
-            context.TriggersInCreateOrder.Add(
+            context.TriggerInventory.Add(
                 new DbTriggerInfo(new DbTriggerName("TR_School"), table, DbTriggerKind.DocumentStamping, [])
             );
         }

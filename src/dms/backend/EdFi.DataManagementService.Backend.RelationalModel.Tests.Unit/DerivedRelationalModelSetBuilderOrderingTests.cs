@@ -151,7 +151,7 @@ public class Given_Unordered_Derived_Collections
                 new AbstractUnionViewInfo(_school, new DbTableName(edfiSchema, "School_View"), [])
             );
 
-            context.IndexesInCreateOrder.Add(
+            context.IndexInventory.Add(
                 new DbIndexInfo(
                     new DbIndexName("IX_Section_B"),
                     new DbTableName(sampleSchema, "Section"),
@@ -160,7 +160,7 @@ public class Given_Unordered_Derived_Collections
                     DbIndexKind.ForeignKeySupport
                 )
             );
-            context.IndexesInCreateOrder.Add(
+            context.IndexInventory.Add(
                 new DbIndexInfo(
                     new DbIndexName("IX_School_B"),
                     new DbTableName(edfiSchema, "School"),
@@ -169,7 +169,7 @@ public class Given_Unordered_Derived_Collections
                     DbIndexKind.ForeignKeySupport
                 )
             );
-            context.IndexesInCreateOrder.Add(
+            context.IndexInventory.Add(
                 new DbIndexInfo(
                     new DbIndexName("IX_SchoolTypeDescriptor"),
                     new DbTableName(edfiSchema, "SchoolTypeDescriptor"),
@@ -178,7 +178,7 @@ public class Given_Unordered_Derived_Collections
                     DbIndexKind.ForeignKeySupport
                 )
             );
-            context.IndexesInCreateOrder.Add(
+            context.IndexInventory.Add(
                 new DbIndexInfo(
                     new DbIndexName("IX_School_A"),
                     new DbTableName(edfiSchema, "School"),
@@ -188,7 +188,7 @@ public class Given_Unordered_Derived_Collections
                 )
             );
 
-            context.TriggersInCreateOrder.Add(
+            context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_Section_B"),
                     new DbTableName(sampleSchema, "Section"),
@@ -196,7 +196,7 @@ public class Given_Unordered_Derived_Collections
                     []
                 )
             );
-            context.TriggersInCreateOrder.Add(
+            context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_School_B"),
                     new DbTableName(edfiSchema, "School"),
@@ -204,7 +204,7 @@ public class Given_Unordered_Derived_Collections
                     []
                 )
             );
-            context.TriggersInCreateOrder.Add(
+            context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_SchoolTypeDescriptor"),
                     new DbTableName(edfiSchema, "SchoolTypeDescriptor"),
@@ -212,7 +212,7 @@ public class Given_Unordered_Derived_Collections
                     []
                 )
             );
-            context.TriggersInCreateOrder.Add(
+            context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_School_A"),
                     new DbTableName(edfiSchema, "School"),

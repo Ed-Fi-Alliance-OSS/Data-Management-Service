@@ -162,8 +162,12 @@ public sealed record DbTriggerInfo(
 /// <param name="ConcreteResourcesInNameOrder">Concrete resources ordered by (project, resource) name.</param>
 /// <param name="AbstractIdentityTablesInNameOrder">Abstract identity tables ordered by resource name.</param>
 /// <param name="AbstractUnionViewsInNameOrder">Abstract union views ordered by resource name.</param>
-/// <param name="IndexesInCreateOrder">Index inventory in create order.</param>
-/// <param name="TriggersInCreateOrder">Trigger inventory in create order.</param>
+/// <param name="IndexesInCreateOrder">
+/// Index inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved.
+/// </param>
+/// <param name="TriggersInCreateOrder">
+/// Trigger inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved.
+/// </param>
 public sealed record DerivedRelationalModelSet(
     EffectiveSchemaInfo EffectiveSchema,
     SqlDialect Dialect,

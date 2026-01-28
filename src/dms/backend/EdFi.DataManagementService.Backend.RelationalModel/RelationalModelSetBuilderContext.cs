@@ -139,14 +139,16 @@ public sealed class RelationalModelSetBuilderContext
     public List<AbstractUnionViewInfo> AbstractUnionViewsInNameOrder { get; } = [];
 
     /// <summary>
-    /// Derived index inventory in creation order.
+    /// Derived index inventory. BuildResult canonicalizes ordering by schema, table, and name; passes must not
+    /// rely on insertion order.
     /// </summary>
-    public List<DbIndexInfo> IndexesInCreateOrder { get; } = [];
+    public List<DbIndexInfo> IndexInventory { get; } = [];
 
     /// <summary>
-    /// Derived trigger inventory in creation order.
+    /// Derived trigger inventory. BuildResult canonicalizes ordering by schema, table, and name; passes must not
+    /// rely on insertion order.
     /// </summary>
-    public List<DbTriggerInfo> TriggersInCreateOrder { get; } = [];
+    public List<DbTriggerInfo> TriggerInventory { get; } = [];
 
     /// <summary>
     /// Enumerates projects in canonical endpoint order.
@@ -311,13 +313,13 @@ public sealed class RelationalModelSetBuilderContext
             .ThenBy(view => view.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
             .ToArray();
 
-        var orderedIndexes = IndexesInCreateOrder
+        var canonicalIndexes = IndexInventory
             .OrderBy(index => index.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(index => index.Table.Name, StringComparer.Ordinal)
             .ThenBy(index => index.Name.Value, StringComparer.Ordinal)
             .ToArray();
 
-        var orderedTriggers = TriggersInCreateOrder
+        var canonicalTriggers = TriggerInventory
             .OrderBy(trigger => trigger.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
@@ -327,8 +329,8 @@ public sealed class RelationalModelSetBuilderContext
             orderedConcreteResources,
             orderedAbstractIdentityTables,
             orderedAbstractUnionViews,
-            orderedIndexes,
-            orderedTriggers
+            canonicalIndexes,
+            canonicalTriggers
         );
 
         return new DerivedRelationalModelSet(
@@ -338,8 +340,8 @@ public sealed class RelationalModelSetBuilderContext
             orderedConcreteResources,
             orderedAbstractIdentityTables,
             orderedAbstractUnionViews,
-            orderedIndexes,
-            orderedTriggers
+            canonicalIndexes,
+            canonicalTriggers
         );
     }
 
@@ -348,8 +350,8 @@ public sealed class RelationalModelSetBuilderContext
         ValidateNoNullEntries(ConcreteResourcesInNameOrder, nameof(ConcreteResourcesInNameOrder));
         ValidateNoNullEntries(AbstractIdentityTablesInNameOrder, nameof(AbstractIdentityTablesInNameOrder));
         ValidateNoNullEntries(AbstractUnionViewsInNameOrder, nameof(AbstractUnionViewsInNameOrder));
-        ValidateNoNullEntries(IndexesInCreateOrder, nameof(IndexesInCreateOrder));
-        ValidateNoNullEntries(TriggersInCreateOrder, nameof(TriggersInCreateOrder));
+        ValidateNoNullEntries(IndexInventory, nameof(IndexInventory));
+        ValidateNoNullEntries(TriggerInventory, nameof(TriggerInventory));
         ValidateConcreteResourceUniqueness();
         ValidateIndexNameUniqueness();
         ValidateTriggerNameUniqueness();
@@ -359,8 +361,8 @@ public sealed class RelationalModelSetBuilderContext
         IReadOnlyList<ConcreteResourceModel> orderedConcreteResources,
         IReadOnlyList<AbstractIdentityTableInfo> orderedAbstractIdentityTables,
         IReadOnlyList<AbstractUnionViewInfo> orderedAbstractUnionViews,
-        IReadOnlyList<DbIndexInfo> orderedIndexes,
-        IReadOnlyList<DbTriggerInfo> orderedTriggers
+        IReadOnlyList<DbIndexInfo> canonicalIndexes,
+        IReadOnlyList<DbTriggerInfo> canonicalTriggers
     )
     {
         var detector = new IdentifierCollisionDetector(DialectRules);
@@ -452,7 +454,7 @@ public sealed class RelationalModelSetBuilderContext
             }
         }
 
-        foreach (var index in orderedIndexes)
+        foreach (var index in canonicalIndexes)
         {
             detector.RegisterIndex(
                 index.Table,
@@ -461,7 +463,7 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
-        foreach (var trigger in orderedTriggers)
+        foreach (var trigger in canonicalTriggers)
         {
             detector.RegisterTrigger(
                 trigger.Table,
@@ -494,7 +496,7 @@ public sealed class RelationalModelSetBuilderContext
 
     private void ValidateIndexNameUniqueness()
     {
-        var duplicateIndexKeys = IndexesInCreateOrder
+        var duplicateIndexKeys = IndexInventory
             .GroupBy(index => new TableNamedObjectKey(
                 index.Table.Schema.Value,
                 index.Table.Name,
@@ -518,7 +520,7 @@ public sealed class RelationalModelSetBuilderContext
 
     private void ValidateTriggerNameUniqueness()
     {
-        var duplicateTriggerKeys = TriggersInCreateOrder
+        var duplicateTriggerKeys = TriggerInventory
             .GroupBy(trigger => new TableNamedObjectKey(
                 trigger.Table.Schema.Value,
                 trigger.Table.Name,
