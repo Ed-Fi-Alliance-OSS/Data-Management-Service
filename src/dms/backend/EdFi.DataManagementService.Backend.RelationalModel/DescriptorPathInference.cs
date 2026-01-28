@@ -13,6 +13,9 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </summary>
 internal static class DescriptorPathInference
 {
+    /// <summary>
+    /// Captures the normalized inputs for a single resource schema entry within a project schema.
+    /// </summary>
     private sealed record ResourceSchemaEntry(
         string ResourceKey,
         string ResourceName,
@@ -101,6 +104,13 @@ internal static class DescriptorPathInference
         JsonPathExpression ReferencePath
     );
 
+    /// <summary>
+    /// Propagates descriptor paths from referenced resources to reference paths until a fixed point is reached.
+    /// </summary>
+    /// <param name="descriptorPathsByResource">Descriptor paths keyed by resource.</param>
+    /// <param name="referenceJsonPathsByResource">
+    /// Reference path metadata keyed by resource, used to determine where propagation should occur.
+    /// </param>
     private static void PropagateDescriptorPaths(
         Dictionary<QualifiedResourceName, Dictionary<string, DescriptorPathInfo>> descriptorPathsByResource,
         Dictionary<QualifiedResourceName, List<ReferenceJsonPathInfo>> referenceJsonPathsByResource
@@ -173,6 +183,14 @@ internal static class DescriptorPathInference
         }
     }
 
+    /// <summary>
+    /// Adds descriptor path inventories and reference propagation metadata for each resource in the provided schema set.
+    /// </summary>
+    /// <param name="resourceSchemas">The <c>resourceSchemas</c> or <c>abstractResources</c> object.</param>
+    /// <param name="projectName">The logical project name.</param>
+    /// <param name="descriptorPathsByResource">The target dictionary for descriptor paths.</param>
+    /// <param name="referenceJsonPathsByResource">The target dictionary for reference propagation metadata.</param>
+    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
     private static void AddResourceDescriptors(
         JsonObject resourceSchemas,
         string projectName,
@@ -205,6 +223,13 @@ internal static class DescriptorPathInference
         }
     }
 
+    /// <summary>
+    /// Extracts descriptor paths for a single resource, preferring explicit <c>documentPathsMapping</c>
+    /// entries and falling back to identity-path inference when mappings are not present.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema payload.</param>
+    /// <param name="projectName">The owning project name.</param>
+    /// <returns>A mapping of canonical JSONPath to descriptor path metadata.</returns>
     private static Dictionary<string, DescriptorPathInfo> ExtractDescriptorPathsForResource(
         JsonObject resourceSchema,
         string projectName
@@ -279,6 +304,13 @@ internal static class DescriptorPathInference
         return descriptorPathsByJsonPath;
     }
 
+    /// <summary>
+    /// Infers descriptor paths from <c>identityJsonPaths</c> by locating identity properties that
+    /// represent descriptor values.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema payload.</param>
+    /// <param name="projectName">The owning project name.</param>
+    /// <returns>A mapping of canonical JSONPath to descriptor path metadata.</returns>
     private static Dictionary<string, DescriptorPathInfo> ExtractDescriptorPathsFromIdentityJsonPaths(
         JsonObject resourceSchema,
         string projectName
@@ -325,6 +357,13 @@ internal static class DescriptorPathInference
         return descriptorPathsByJsonPath;
     }
 
+    /// <summary>
+    /// Determines whether an identity JSONPath corresponds to a descriptor property and returns the
+    /// inferred descriptor resource name.
+    /// </summary>
+    /// <param name="identityPath">The identity JSONPath to inspect.</param>
+    /// <param name="descriptorResourceName">The inferred descriptor resource name when matched.</param>
+    /// <returns><see langword="true"/> when the identity path targets a descriptor property.</returns>
     private static bool TryGetDescriptorResourceName(
         JsonPathExpression identityPath,
         out string descriptorResourceName
@@ -351,6 +390,12 @@ internal static class DescriptorPathInference
         return true;
     }
 
+    /// <summary>
+    /// Extracts reference JSONPath propagation rules from <c>documentPathsMapping</c>, which are used to
+    /// infer descriptor paths by following references between resources.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema payload.</param>
+    /// <returns>A list of reference propagation metadata entries.</returns>
     private static List<ReferenceJsonPathInfo> ExtractReferenceJsonPaths(JsonObject resourceSchema)
     {
         if (resourceSchema["documentPathsMapping"] is not JsonObject documentPathsMapping)
@@ -441,6 +486,12 @@ internal static class DescriptorPathInference
         return referenceJsonPaths;
     }
 
+    /// <summary>
+    /// Orders resource schema entries deterministically by resource name and schema key.
+    /// </summary>
+    /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
+    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
+    /// <returns>The ordered resource schema entries.</returns>
     private static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
         JsonObject resourceSchemas,
         string resourceSchemasPath
@@ -475,6 +526,11 @@ internal static class DescriptorPathInference
             .ToArray();
     }
 
+    /// <summary>
+    /// Orders <c>documentPathsMapping</c> entries deterministically by key.
+    /// </summary>
+    /// <param name="documentPathsMapping">The mapping object.</param>
+    /// <returns>An ordered list of mapping entries.</returns>
     private static IReadOnlyList<KeyValuePair<string, JsonNode?>> OrderDocumentPathsMappingEntries(
         JsonObject documentPathsMapping
     )

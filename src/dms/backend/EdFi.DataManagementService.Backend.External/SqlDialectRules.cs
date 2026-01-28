@@ -131,16 +131,33 @@ public sealed class MssqlDialectRules : ISqlDialectRules
     }
 }
 
+/// <summary>
+/// Represents the unit used when enforcing dialect identifier length limits.
+/// </summary>
 internal enum IdentifierLengthUnit
 {
     Characters,
     Bytes,
 }
 
+/// <summary>
+/// Shared utilities used to implement dialect rules consistently across derivation and emission.
+/// </summary>
 internal static class SqlDialectRulesUtilities
 {
     private const int HashSegmentLength = 10;
 
+    /// <summary>
+    /// Applies deterministic identifier shortening based on the dialect's length constraints.
+    /// </summary>
+    /// <param name="identifier">The identifier to shorten.</param>
+    /// <param name="maxLength">The maximum allowed identifier length.</param>
+    /// <param name="lengthUnit">
+    /// The measurement unit for the identifier length (characters vs UTF-8 bytes).
+    /// </param>
+    /// <returns>
+    /// The original identifier when within limits, otherwise a truncated identifier suffixed with a hash segment.
+    /// </returns>
     internal static string ShortenIdentifier(
         string identifier,
         int maxLength,
@@ -191,6 +208,12 @@ internal static class SqlDialectRulesUtilities
         return $"{prefix}{suffix}";
     }
 
+    /// <summary>
+    /// Gets the identifier length according to the specified length unit.
+    /// </summary>
+    /// <param name="identifier">The identifier to measure.</param>
+    /// <param name="lengthUnit">The measurement unit to apply.</param>
+    /// <returns>The identifier length.</returns>
     private static int GetIdentifierLength(string identifier, IdentifierLengthUnit lengthUnit)
     {
         var length = lengthUnit switch
@@ -207,6 +230,11 @@ internal static class SqlDialectRulesUtilities
         return length;
     }
 
+    /// <summary>
+    /// Computes a lowercase SHA-256 hexadecimal string for the supplied identifier.
+    /// </summary>
+    /// <param name="identifier">The identifier to hash.</param>
+    /// <returns>A lowercase SHA-256 hex string.</returns>
     private static string ComputeSha256Hex(string identifier)
     {
         using var sha256 = SHA256.Create();
@@ -216,6 +244,12 @@ internal static class SqlDialectRulesUtilities
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
 
+    /// <summary>
+    /// Truncates a string so that its UTF-8 encoded byte length does not exceed the specified limit.
+    /// </summary>
+    /// <param name="value">The value to truncate.</param>
+    /// <param name="maxBytes">The maximum UTF-8 byte length.</param>
+    /// <returns>A truncated string whose UTF-8 byte length is at most <paramref name="maxBytes"/>.</returns>
     private static string TruncateToUtf8Bytes(string value, int maxBytes)
     {
         if (value.Length == 0 || maxBytes <= 0)

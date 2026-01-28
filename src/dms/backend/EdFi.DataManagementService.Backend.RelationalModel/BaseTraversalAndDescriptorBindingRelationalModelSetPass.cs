@@ -88,6 +88,10 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
         }
     }
 
+    /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag to determine whether the schema entry represents a
+    /// resource-extension document rather than a concrete base resource.
+    /// </summary>
     private static bool IsResourceExtension(ConcreteResourceSchemaContext resourceContext)
     {
         if (
@@ -115,6 +119,13 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
         };
     }
 
+    /// <summary>
+    /// Builds (and caches) a minimal <c>ApiSchema.json</c>-shaped root node for the per-resource pipeline.
+    /// </summary>
+    /// <param name="apiSchemaRootsByProjectEndpoint">Cache of root nodes by project endpoint name.</param>
+    /// <param name="projectEndpointName">The project endpoint name for the resource.</param>
+    /// <param name="projectSchema">The project schema node.</param>
+    /// <returns>A root object containing the <c>projectSchema</c> property.</returns>
     private static JsonObject GetApiSchemaRoot(
         IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
         string projectEndpointName,
@@ -133,6 +144,10 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
         return apiSchemaRoot;
     }
 
+    /// <summary>
+    /// Creates the canonical per-resource pipeline used to derive base tables, columns, descriptor bindings,
+    /// and extension site metadata.
+    /// </summary>
     private static RelationalModelBuilderPipeline CreateDefaultPipeline()
     {
         IRelationalModelBuilderStep[] steps =

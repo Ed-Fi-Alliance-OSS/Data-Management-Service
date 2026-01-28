@@ -5,8 +5,15 @@
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Provides factory methods for the canonical set-level relational model derivation passes.
+/// </summary>
 public static class RelationalModelSetPasses
 {
+    /// <summary>
+    /// Creates the default ordered pass list for deriving a <see cref="DerivedRelationalModelSet"/>.
+    /// </summary>
+    /// <returns>The ordered pass list.</returns>
     public static IReadOnlyList<IRelationalModelSetPass> CreateDefault()
     {
         IRelationalModelSetPass[] passes = [new BaseTraversalAndDescriptorBindingRelationalModelSetPass()];
