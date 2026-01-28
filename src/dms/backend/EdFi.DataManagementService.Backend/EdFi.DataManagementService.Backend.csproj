@@ -19,5 +19,6 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core.External\EdFi.DataManagementService.Core.External.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
     </ItemGroup>
 </Project>
