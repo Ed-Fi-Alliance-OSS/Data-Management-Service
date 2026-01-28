@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.Profile;
 using Microsoft.Extensions.Logging;
 
@@ -130,7 +131,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
                 continue;
             }
 
-            string? resourceName = ExtractResourceNameFromPath(pathKey);
+            string? resourceName = ExtractResourceNameFromPath(pathObject);
             if (resourceName is null)
             {
                 continue;
@@ -487,7 +488,7 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
             }
 
             // Extract resource name from path (e.g., "/ed-fi/students" -> "student")
-            string? resourceName = ExtractResourceNameFromPath(pathKey);
+            string? resourceName = ExtractResourceNameFromPath(pathObject);
             if (resourceName is null)
             {
                 continue;
@@ -567,48 +568,45 @@ public class ProfileOpenApiSpecificationFilter(ILogger logger)
     }
 
     /// <summary>
-    /// Extracts the singular resource name from an OpenAPI path.
+    /// Extracts the singular resource name from an OpenAPI path object by inspecting the GET operation's response schema.
     /// </summary>
-    private static string? ExtractResourceNameFromPath(string path)
+    private string? ExtractResourceNameFromPath(JsonObject pathObject)
     {
-        // Path format: /ed-fi/students or /ed-fi/students/{id}
-        var segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        if (segments.Length < 2)
+        const string SchemaJsonPath = "$.get.responses['200'].content[\"application/json\"].schema";
+        const string SchemaPrefix = "#/components/schemas/";
+
+        // Get the schema node
+        JsonNode? schemaNode = pathObject.SelectNodeFromPath(SchemaJsonPath, logger);
+        if (schemaNode is not JsonObject schemaObj)
         {
             return null;
         }
 
-        // Get the resource segment (usually the second one after namespace)
-        string resourceSegment = segments[1];
+        // Try direct $ref first (for individual item endpoints)
+        string? refString = null;
+        if (schemaObj["$ref"] is JsonValue directRefValue)
+        {
+            refString = directRefValue.GetValue<string>();
+        }
+        // Try items.$ref for collection endpoints
+        else if (schemaObj["items"] is JsonObject itemsObj && itemsObj["$ref"] is JsonValue itemsRefValue)
+        {
+            refString = itemsRefValue.GetValue<string>();
+        }
 
-        // Convert plural to singular (basic conversion)
-        return ConvertPluralToSingular(resourceSegment);
-    }
+        if (refString is null || !refString.StartsWith(SchemaPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
 
-    /// <summary>
-    /// Basic plural to singular conversion for resource names.
-    /// </summary>
-    private static string ConvertPluralToSingular(string plural)
-    {
-        // Handle common cases
-        if (plural.EndsWith("ies", StringComparison.OrdinalIgnoreCase))
-        {
-            return plural[..^3] + "y";
-        }
-        if (
-            plural.EndsWith("ses", StringComparison.OrdinalIgnoreCase)
-            || plural.EndsWith("xes", StringComparison.OrdinalIgnoreCase)
-            || plural.EndsWith("ches", StringComparison.OrdinalIgnoreCase)
-            || plural.EndsWith("shes", StringComparison.OrdinalIgnoreCase)
-        )
-        {
-            return plural[..^2];
-        }
-        if (plural.EndsWith("s", StringComparison.OrdinalIgnoreCase))
-        {
-            return plural[..^1];
-        }
-        return plural;
+        string schemaName = refString[SchemaPrefix.Length..];
+        int underscoreIndex = schemaName.IndexOf('_');
+        string resourceName =
+            underscoreIndex >= 0
+                ? schemaName[(underscoreIndex + 1)..].ToLowerInvariant()
+                : schemaName.ToLowerInvariant();
+
+        return resourceName;
     }
 
     /// <summary>
