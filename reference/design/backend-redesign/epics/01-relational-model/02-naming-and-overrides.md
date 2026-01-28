@@ -18,6 +18,11 @@ Implement deterministic physical naming per `reference/design/backend-redesign/d
 
 This story is part of building the unified `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`) so DDL emission and plan compilation consume the same physical names.
 
+## Integration (ordered passes)
+
+- Shared services: naming/override/shortening helpers are used by all per-resource derivation code when producing physical identifiers.
+- Set-level (`DMS-1033`): include a whole-schema pass that validates override keys, applies any required post-processing (e.g., dialect shortening), and performs collision detection across the complete derived inventory (tables/columns/constraints/indexes/triggers/views).
+
 ## Acceptance Criteria
 
 - Given the same effective schema, physical names are deterministic and stable across runs.
@@ -43,3 +48,4 @@ This story is part of building the unified `DerivedRelationalModelSet` (see `ref
    2. unknown override keys,
    3. collisions,
    4. length-limit shortening determinism.
+6. Wire whole-set collision detection (and any dialect-shortening validation) into the `DMS-1033` ordered-pass builder.

@@ -3,7 +3,7 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 86 stories).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 87 stories).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -122,7 +122,7 @@ Epic: `01-relational-model/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E01-S00 | [`00-base-schema-traversal.md`](01-relational-model/00-base-schema-traversal.md) | E00-S00 | — | Logical table/column scopes from JSON schema (`$ref` resolution, arrays→tables) |
+| E01-S00 | [`00-base-schema-traversal.md`](01-relational-model/00-base-schema-traversal.md) | E00-S00 | — | Logical table/column scopes from JSON schema (arrays→tables, object inlining, scalar columns) |
 | E01-S01 | [`01-reference-and-constraints.md`](01-relational-model/01-reference-and-constraints.md) | E01-S00 | — | FK bindings (`..._DocumentId`/`..._DescriptorId`) + identity/uniqueness constraints |
 | E01-S02 | [`02-naming-and-overrides.md`](01-relational-model/02-naming-and-overrides.md) | E01-S00 | E01-S01 | Deterministic naming + `relational.nameOverrides` parsing + collision/length rules |
 | E01-S03 | [`03-ext-mapping.md`](01-relational-model/03-ext-mapping.md) | E01-S00, E01-S02 | E01-S01 | `_ext` model derivation (extension schemas/tables aligned to base keys) |
@@ -130,6 +130,7 @@ Epic: `01-relational-model/EPIC.md`
 | E01-S05 | [`05-relational-model-manifest.md`](01-relational-model/05-relational-model-manifest.md) | E01-S00–E01-S04, E01-S07 | — | `relational-model.manifest.json` emitter (stable ordering) |
 | E01-S06 | [`06-descriptor-resource-mapping.md`](01-relational-model/06-descriptor-resource-mapping.md) | E01-S00 | E01-S01 | Descriptor resource mapping to `dms.Descriptor` (no per-descriptor tables) |
 | E01-S07 | [`07-index-and-trigger-inventory.md`](01-relational-model/07-index-and-trigger-inventory.md) | E01-S00–E01-S04, E01-S06 | — | Derived index + trigger inventories (DDL intent; shared by manifest + DDL) |
+| E01-S08 | [`08-derived-relational-model-set-builder.md`](01-relational-model/08-derived-relational-model-set-builder.md) | E00-S00 | E01-S00–E01-S07 | Set-level orchestration: build `DerivedRelationalModelSet` from the effective schema set |
 
 ### E02 — Deterministic DDL Emission (PostgreSQL + SQL Server)
 

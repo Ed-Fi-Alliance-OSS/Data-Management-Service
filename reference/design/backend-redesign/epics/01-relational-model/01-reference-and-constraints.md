@@ -19,6 +19,14 @@ Key rules:
 - Root natural key unique constraint is derived from `identityJsonPaths`, using propagated identity columns for identity components sourced from references.
 - Child uniqueness constraints are derived from `arrayUniquenessConstraints`.
 
+## Integration (ordered passes)
+
+- Per-resource: derive reference/descriptor columns and constraints for a single resource using its `documentPathsMapping`, `identityJsonPaths`, and `arrayUniquenessConstraints`.
+- Set-level (`DMS-1033`): run as a whole-schema pass after base tables/columns (and after extension tables exist, if extension sites participate). This pass is allowed to scan/consult other resources/projects to:
+  - validate descriptor/document-reference targets exist in the effective schema set,
+  - determine target identity projection contracts (including abstract targets),
+  - and infer descriptor identity parts inside reference objects when needed.
+
 ## Acceptance Criteria
 
 - For each reference object in `documentPathsMapping.referenceJsonPaths`, the model creates:
@@ -48,3 +56,4 @@ Key rules:
    2. identity-component classification,
    3. descriptor suppression/reconstitution inputs,
    4. fail-fast on unknown mapping paths.
+5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass over all resources.

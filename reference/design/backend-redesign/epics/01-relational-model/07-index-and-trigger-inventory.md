@@ -18,6 +18,12 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
 - emitted into `relational-model.manifest.json`, and
 - consumed by DDL emission so indexes/triggers cannot drift between manifest vs SQL output.
 
+## Integration (ordered passes)
+
+- Set-level (`DMS-1033`): implemented as a whole-schema pass over the complete derived table/constraint inventory. This pass may consult cross-resource structure (e.g., the full FK graph) to:
+  - apply the FK index policy deterministically, and
+  - determine any dialect-conditional trigger-based propagation fallbacks (SQL Server “multiple cascade paths” constraints).
+
 ## Scope (What This Story Is Talking About)
 
 This story derives inventories for **schema-derived project objects**, i.e., objects that come from the effective `ApiSchema.json` set:
@@ -114,3 +120,4 @@ Out of scope for this story:
    - (dialect-conditional) propagation fallback triggers.
 3. Ensure both the DDL emitter and the manifest emitter consume the same derived inventories.
 4. Add unit tests for ordering, suppression, and naming determinism.
+5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

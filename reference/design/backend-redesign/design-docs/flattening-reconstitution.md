@@ -51,7 +51,9 @@ The “full flattening metadata” design (see `reference/design/flattening-meta
 
 For Ed-Fi resource documents, DMS can derive a complete relational mapping *deterministically* because:
 
-1. **Shape and types** are in `jsonSchemaForInsert` (properties, arrays, item schemas, required-ness, string lengths, formats, numeric precision rules).
+1. **Shape and types** are in `jsonSchemaForInsert` (properties, arrays, item schemas, required-ness, string lengths,
+   formats, numeric precision rules). `jsonSchemaForInsert` is fully dereferenced/expanded (no `$ref`,
+   `oneOf`/`anyOf`/`allOf`, or `enum`).
 2. **References vs scalars** are in `documentPathsMapping`:
    - document reference identities and their JSON paths (`referenceJsonPaths`)
    - descriptor paths (`path`)
@@ -188,7 +190,8 @@ Important note on `additionalProperties`:
 
 Note: C# types referenced below are defined in [7.3 Relational resource model](#73-relational-resource-model)
 
-1. **Resolve `$ref`** in the JSON schema into an in-memory schema graph (or a resolver that can answer “what is the schema at path X?”).
+1. Validate `jsonSchemaForInsert` is fully dereferenced and expanded (no `$ref`, `oneOf`/`anyOf`/`allOf`, or `enum`).
+   If any appear, treat them as invalid schema input.
 2. Walk the schema tree starting at `$`:
    - Each **array** node creates a **child table** with:
      - parent key columns
@@ -804,14 +807,19 @@ These mappings are a determinism contract for both:
 - the runtime plan compiler (parameter types, casts, and view definitions).
 
 Rules:
-- `ScalarKind.String` requires `maxLength` in `jsonSchemaForInsert`; missing `maxLength` is a schema compilation error.
-  - Descriptor URI strings are not stored as strings; they are stored as `..._DescriptorId` FKs, so this rule applies to scalar columns only.
+- A JSON-schema `type: "string"` may omit `maxLength` **only** for the MetaEd-valid omission cases below; any other missing `maxLength` is a schema compilation error.
+- Distinguish JSON-schema `"string"` from `ScalarKind.String`: only non-descriptor, non-formatted string scalars with `maxLength` map to `ScalarKind.String`.
+  - Descriptor URI strings are still JSON-schema strings but are never stored as strings; they are stored as `..._DescriptorId` FKs.
+  - Allowed omission cases (canonical JSON path examples):
+    - Format-based date/time strings: `type: "string", format: "date" | "date-time" | "time"` map to `ScalarKind.Date/DateTime/Time` (e.g., `$.birthDate`, `$.lastModifiedDateTime`, `$.sessionBeginTime`).
+    - MetaEd `duration`/`enumeration` properties: emitted as plain `type: "string"` with no `format`/`maxLength`, allowed to map to `ScalarKind.String` with `MaxLength = null` (e.g., `$.eventDuration`, `$.deliveryMethodType`).
+    - Descriptor URI strings, including descriptor collections and descriptor identity parts inside scalar references, are not stored as strings (e.g., `$.gradeLevelDescriptor`, `$.programDescriptors[*]`, `$.courseOfferingReference.termDescriptor`).
 - `ScalarKind.Decimal` requires a matching entry in `decimalPropertyValidationInfos` (`totalDigits`, `decimalPlaces`); missing info is a schema compilation error.
 - `ScalarKind.DateTime` uses SQL Server `datetime2(7)` (no timezone) to align with Ed-Fi ODS SQL Server conventions; any incoming offsets are normalized to a UTC instant at write time.
 
 | `ScalarKind` | ApiSchema JSON schema source | PostgreSQL type | SQL Server type |
 | --- | --- | --- | --- |
-| `String` | `type: "string"` (no `format`) | `varchar(n)` | `nvarchar(n)` |
+| `String` | `type: "string"` (no `format`, `maxLength` required for scalar columns) | `varchar(n)` | `nvarchar(n)` |
 | `Int32` | `type: "integer"` | `integer` | `int` |
 | `Int64` | (not typical in Ed-Fi, reserved) | `bigint` | `bigint` |
 | `Decimal` | `type: "number"` + `decimalPropertyValidationInfos` | `numeric(p,s)` | `decimal(p,s)` |

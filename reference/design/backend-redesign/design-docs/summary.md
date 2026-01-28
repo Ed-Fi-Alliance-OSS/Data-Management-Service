@@ -123,7 +123,9 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
 
 `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` describes how DMS derives a full relational mapping from `ApiSchema.json` at startup and compiles it into read/write plans:
 
-- Inputs: `jsonSchemaForInsert`, `documentPathsMapping`, `identityJsonPaths`, `arrayUniquenessConstraints`, `abstractResources`, and optional `resourceSchema.relational` naming overrides.
+- Inputs: `jsonSchemaForInsert` (fully dereferenced/expanded; no `$ref`, `oneOf`/`anyOf`/`allOf`, `enum`),
+  `documentPathsMapping`, `identityJsonPaths`, `arrayUniquenessConstraints`, `abstractResources`, and optional
+  `resourceSchema.relational` naming overrides.
 - Optional `resourceSchema.relational` block provides deterministic name overrides without enumerating full flattening metadata:
   - `rootTableNameOverride`
   - `nameOverrides` keyed by restricted JSONPaths (`$.x.y` for column base names, `$.arr[*]` for collection base names).

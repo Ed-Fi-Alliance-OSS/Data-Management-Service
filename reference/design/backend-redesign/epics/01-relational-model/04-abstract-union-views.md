@@ -18,6 +18,10 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
 - Choose canonical SQL types for union columns and apply explicit casts per dialect.
 - Ensure deterministic `UNION ALL` arm ordering and select-list ordering.
 
+## Integration (ordered passes)
+
+- Set-level (`DMS-1033`): implemented as a whole-schema pass that scans the effective schema set to discover abstract resources, their participating concrete members, and the required identity field contracts. The pass produces abstract identity-table (and optional union-view) models that other passes can reference when binding polymorphic document references.
+
 ## Acceptance Criteria
 
 - For each abstract resource, the derived model includes a deterministic identity-table model:
@@ -48,3 +52,4 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
    2. rename mapping correctness,
    3. identity-table shape and naming,
    4. fail-fast behavior when identity fields are missing.
+5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

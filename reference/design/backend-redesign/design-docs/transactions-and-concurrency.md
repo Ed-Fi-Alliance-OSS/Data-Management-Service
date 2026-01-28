@@ -142,7 +142,8 @@ Deep dive on derived mapping and the minimal `ApiSchema.json` additions: [flatte
 
 ### Existing ApiSchema inputs (already present)
 
-- `jsonSchemaForInsert`: authoritative shape, types, formats, maxLength, required
+- `jsonSchemaForInsert`: authoritative shape, types, formats, maxLength, required (fully dereferenced/expanded;
+  no `$ref`, `oneOf`/`anyOf`/`allOf`, `enum`)
 - `identityJsonPaths`: natural key extraction and uniqueness
 - `documentPathsMapping`: identifies references vs scalars vs descriptor paths, plus reference identity mapping
 - `decimalPropertyValidationInfos`: precision/scale for `decimal`
