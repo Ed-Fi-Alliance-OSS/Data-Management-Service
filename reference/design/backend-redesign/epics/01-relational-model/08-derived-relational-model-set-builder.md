@@ -61,7 +61,7 @@ This list is intentionally “high level”; exact pass boundaries can be adjust
 - Fail fast when project-schema normalization would create ambiguous physical schemas:
   - two projects normalize to the same physical schema name (per `data-model.md`), or
   - two projects collide on `ProjectEndpointName` after normalization/validation rules defined in E00.
-- All concrete resources in the effective schema set contribute a `ConcreteResourceModel`, with `ConcreteResourcesInNameOrder` sorted ordinal by `(project_name, resource_name)` (per `compiled-mapping-set.md`).
+- All concrete resources in the effective schema set that are **not** `isResourceExtension: true` contribute a `ConcreteResourceModel` (including descriptor resources), with `ConcreteResourcesInNameOrder` sorted ordinal by `(project_name, resource_name)` (per `compiled-mapping-set.md`). Resource-extension schemas (`isResourceExtension: true`) are excluded because they are mapped as `_ext` extension tables attached to their owning base resource per `extensions.md`.
 - `_ext` project keys discovered by traversal must resolve to a configured project:
   - first match on `ProjectEndpointName` (case-insensitive),
   - fallback match on `ProjectName` (case-insensitive),
