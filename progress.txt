@@ -62,3 +62,7 @@
   - Decisions: added endpoint-name match, project-name fallback, and endpoint-precedence test fixtures asserting resolved ProjectEndpointName.
   - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ExtensionProjectKeyResolutionTests.cs; tasks.json.
   - Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj.
+- Task: Identifier shortening tests for Pgsql/Mssql dialect rules (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: added NUnit fixtures covering at/over limit behavior, deterministic shortening, and multibyte byte-vs-char length handling.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SqlDialectRulesTests.cs; tasks.json.
+  - Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj.
