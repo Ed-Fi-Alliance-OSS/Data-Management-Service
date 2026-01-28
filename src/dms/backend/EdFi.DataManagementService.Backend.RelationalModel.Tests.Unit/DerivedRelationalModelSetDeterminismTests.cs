@@ -32,17 +32,20 @@ public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
         var orderedExtensionSites = new ExtensionSiteCapturePass();
         var unorderedExtensionSites = new ExtensionSiteCapturePass();
 
-        var orderedBuilder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new BaseTraversalRelationalModelSetPass(), orderedExtensionSites }
-        );
+        IRelationalModelSetPass[] orderedPasses =
+        [
+            .. RelationalModelSetPasses.CreateDefault(),
+            orderedExtensionSites,
+        ];
+        IRelationalModelSetPass[] unorderedPasses =
+        [
+            .. RelationalModelSetPasses.CreateDefault(),
+            unorderedExtensionSites,
+        ];
 
-        var unorderedBuilder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[]
-            {
-                new BaseTraversalRelationalModelSetPass(),
-                unorderedExtensionSites,
-            }
-        );
+        var orderedBuilder = new DerivedRelationalModelSetBuilder(orderedPasses);
+
+        var unorderedBuilder = new DerivedRelationalModelSetBuilder(unorderedPasses);
 
         var orderedModelSet = orderedBuilder.Build(
             orderedEffectiveSchemaSet,
