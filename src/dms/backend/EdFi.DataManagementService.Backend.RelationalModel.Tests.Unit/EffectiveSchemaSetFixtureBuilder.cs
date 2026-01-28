@@ -1,0 +1,311 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.RelationalModel;
+using NUnit.Framework;
+
+namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
+
+internal static class EffectiveSchemaSetFixtureBuilder
+{
+    private const string DefaultApiSchemaFormatVersion = "1.0.0";
+    private const string DefaultRelationalMappingVersion = "1.0.0";
+    private const string DefaultEffectiveSchemaHash = "deadbeef";
+    private static readonly byte[] DefaultResourceKeySeedHash = { 0x01 };
+
+    public static EffectiveSchemaSet CreateHandAuthoredEffectiveSchemaSet(
+        bool reverseProjectOrder = false,
+        bool reverseResourceOrder = false
+    )
+    {
+        var coreProjectSchema = LoadProjectSchema("hand-authored-core-api-schema.json", reverseResourceOrder);
+        var extensionProjectSchema = LoadProjectSchema(
+            "hand-authored-extension-api-schema.json",
+            reverseResourceOrder
+        );
+
+        var coreProject = CreateEffectiveProjectSchema(coreProjectSchema, false);
+        var extensionProject = CreateEffectiveProjectSchema(extensionProjectSchema, true);
+
+        EffectiveProjectSchema[] projects = reverseProjectOrder
+            ? [extensionProject, coreProject]
+            : [coreProject, extensionProject];
+
+        return CreateEffectiveSchemaSet(projects);
+    }
+
+    public static EffectiveSchemaSet CreateEffectiveSchemaSet(IReadOnlyList<EffectiveProjectSchema> projects)
+    {
+        var schemaComponents = projects
+            .OrderBy(project => project.ProjectEndpointName, StringComparer.Ordinal)
+            .Select(project => new SchemaComponentInfo(
+                project.ProjectEndpointName,
+                project.ProjectName,
+                project.ProjectVersion,
+                project.IsExtensionProject
+            ))
+            .ToArray();
+
+        var resourceKeys = BuildResourceKeyEntries(projects);
+
+        var effectiveSchemaInfo = new EffectiveSchemaInfo(
+            DefaultApiSchemaFormatVersion,
+            DefaultRelationalMappingVersion,
+            DefaultEffectiveSchemaHash,
+            resourceKeys.Count,
+            DefaultResourceKeySeedHash,
+            schemaComponents,
+            resourceKeys
+        );
+
+        return new EffectiveSchemaSet(effectiveSchemaInfo, projects);
+    }
+
+    public static EffectiveProjectSchema CreateEffectiveProjectSchema(
+        JsonObject projectSchema,
+        bool isExtensionProject
+    )
+    {
+        ArgumentNullException.ThrowIfNull(projectSchema);
+
+        var detachedSchema = projectSchema.DeepClone();
+
+        if (detachedSchema is not JsonObject detachedObject)
+        {
+            throw new InvalidOperationException("ProjectSchema must be an object.");
+        }
+
+        var projectName = RequireString(detachedObject, "projectName");
+        var projectEndpointName = RequireString(detachedObject, "projectEndpointName");
+        var projectVersion = RequireString(detachedObject, "projectVersion");
+
+        return new EffectiveProjectSchema(
+            projectEndpointName,
+            projectName,
+            projectVersion,
+            isExtensionProject,
+            detachedObject
+        );
+    }
+
+    private static IReadOnlyList<ResourceKeyEntry> BuildResourceKeyEntries(
+        IReadOnlyList<EffectiveProjectSchema> projects
+    )
+    {
+        List<ResourceKeySeed> seeds = [];
+
+        foreach (var project in projects)
+        {
+            var projectSchema =
+                project.ProjectSchema
+                ?? throw new InvalidOperationException("ProjectSchema must be provided.");
+
+            AddResourceKeySeeds(
+                seeds,
+                RequireObject(projectSchema["resourceSchemas"], "projectSchema.resourceSchemas"),
+                project.ProjectName,
+                project.ProjectVersion,
+                false,
+                "projectSchema.resourceSchemas"
+            );
+
+            if (projectSchema["abstractResources"] is JsonObject abstractResources)
+            {
+                AddResourceKeySeeds(
+                    seeds,
+                    abstractResources,
+                    project.ProjectName,
+                    project.ProjectVersion,
+                    true,
+                    "projectSchema.abstractResources"
+                );
+            }
+        }
+
+        var orderedSeeds = seeds
+            .OrderBy(seed => seed.Resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(seed => seed.Resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        List<ResourceKeyEntry> entries = new(orderedSeeds.Length);
+        short nextId = 1;
+
+        foreach (var seed in orderedSeeds)
+        {
+            entries.Add(
+                new ResourceKeyEntry(nextId, seed.Resource, seed.ResourceVersion, seed.IsAbstractResource)
+            );
+            nextId++;
+        }
+
+        return entries;
+    }
+
+    private static void AddResourceKeySeeds(
+        ICollection<ResourceKeySeed> seeds,
+        JsonObject resourceSchemas,
+        string projectName,
+        string projectVersion,
+        bool isAbstractResource,
+        string resourceSchemasPath
+    )
+    {
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+
+            seeds.Add(
+                new ResourceKeySeed(
+                    new QualifiedResourceName(projectName, resourceName),
+                    projectVersion,
+                    isAbstractResource
+                )
+            );
+        }
+    }
+
+    private static JsonObject LoadProjectSchema(string fileName, bool reverseResourceOrder)
+    {
+        var path = Path.Combine(
+            TestContext.CurrentContext.TestDirectory,
+            "Fixtures",
+            "set-builder",
+            fileName
+        );
+
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException($"Fixture not found: {path}", path);
+        }
+
+        var root = JsonNode.Parse(File.ReadAllText(path));
+
+        if (root is not JsonObject rootObject)
+        {
+            throw new InvalidOperationException($"Fixture {fileName} parsed null or non-object.");
+        }
+
+        var projectSchema = RequireObject(rootObject["projectSchema"], "projectSchema");
+
+        return reverseResourceOrder ? ReverseResourceSchemas(projectSchema) : projectSchema;
+    }
+
+    private static JsonObject ReverseResourceSchemas(JsonObject projectSchema)
+    {
+        var resourceSchemas = RequireObject(
+            projectSchema["resourceSchemas"],
+            "projectSchema.resourceSchemas"
+        );
+
+        JsonObject reordered = new();
+
+        foreach (
+            var resource in resourceSchemas.OrderByDescending(entry => entry.Key, StringComparer.Ordinal)
+        )
+        {
+            if (resource.Value is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema.resourceSchemas entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            reordered[resource.Key] = resource.Value.DeepClone();
+        }
+
+        projectSchema["resourceSchemas"] = reordered;
+
+        return projectSchema;
+    }
+
+    private static string GetResourceName(string resourceKey, JsonObject resourceSchema)
+    {
+        if (resourceSchema.TryGetPropertyValue("resourceName", out var resourceNameNode))
+        {
+            return resourceNameNode switch
+            {
+                JsonValue jsonValue => RequireNonEmpty(jsonValue.GetValue<string>(), "resourceName"),
+                null => throw new InvalidOperationException(
+                    "Expected resourceName to be present, invalid ApiSchema."
+                ),
+                _ => throw new InvalidOperationException(
+                    "Expected resourceName to be a string, invalid ApiSchema."
+                ),
+            };
+        }
+
+        return RequireNonEmpty(resourceKey, "resourceName");
+    }
+
+    private static JsonObject RequireObject(JsonNode? node, string propertyName)
+    {
+        return node switch
+        {
+            JsonObject jsonObject => jsonObject,
+            null => throw new InvalidOperationException(
+                $"Expected {propertyName} to be present, invalid ApiSchema."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be an object, invalid ApiSchema."
+            ),
+        };
+    }
+
+    private static string RequireString(JsonObject node, string propertyName)
+    {
+        var value = node[propertyName] switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<string>(),
+            null => throw new InvalidOperationException(
+                $"Expected {propertyName} to be present, invalid ApiSchema."
+            ),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be a string, invalid ApiSchema."
+            ),
+        };
+
+        return RequireNonEmpty(value, propertyName);
+    }
+
+    private static string RequireNonEmpty(string? value, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new InvalidOperationException(
+                $"Expected {propertyName} to be non-empty, invalid ApiSchema."
+            );
+        }
+
+        return value;
+    }
+
+    private sealed record ResourceKeySeed(
+        QualifiedResourceName Resource,
+        string ResourceVersion,
+        bool IsAbstractResource
+    );
+}

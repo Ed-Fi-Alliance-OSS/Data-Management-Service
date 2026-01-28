@@ -33,5 +33,11 @@
         <Content Include="Fixtures\relational-model-fixture.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-core-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-extension-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 </Project>
