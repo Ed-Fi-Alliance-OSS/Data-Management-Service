@@ -37,11 +37,6 @@ Data-Management-Service/
 - `src/dms/backend/EdFi.DataManagementService.Backend.Postgresql/`: relational backend implementation plus schema deploy code under `Deploy/`
 - Tests: `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/` and `src/dms/backend/*Tests*/`.
 
-## General Guidelines
-
-- Make only high confidence suggestions when reviewing code changes.
-- Never change NuGet.config files unless explicitly asked to.
-
 ### Code Quality
 
 - **Required**: Obey the `.editorconfig` file settings at all times. The project uses:
