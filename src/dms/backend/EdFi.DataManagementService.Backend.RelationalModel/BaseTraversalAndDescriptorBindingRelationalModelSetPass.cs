@@ -8,23 +8,24 @@ using System.Text.Json.Nodes;
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Executes the base schema traversal for each concrete, non-extension resource in the effective schema set.
+/// Executes base schema traversal and descriptor binding for each concrete, non-extension resource in the
+/// effective schema set.
 /// </summary>
-public sealed class BaseTraversalRelationalModelSetPass : IRelationalModelSetPass
+public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IRelationalModelSetPass
 {
     private readonly RelationalModelBuilderPipeline _pipeline;
 
     /// <summary>
     /// Creates a new base traversal pass using the canonical pipeline steps.
     /// </summary>
-    public BaseTraversalRelationalModelSetPass()
+    public BaseTraversalAndDescriptorBindingRelationalModelSetPass()
         : this(CreateDefaultPipeline()) { }
 
     /// <summary>
     /// Creates a new base traversal pass using the supplied pipeline.
     /// </summary>
     /// <param name="pipeline">The per-resource pipeline to execute.</param>
-    public BaseTraversalRelationalModelSetPass(RelationalModelBuilderPipeline pipeline)
+    public BaseTraversalAndDescriptorBindingRelationalModelSetPass(RelationalModelBuilderPipeline pipeline)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
 
@@ -32,12 +33,12 @@ public sealed class BaseTraversalRelationalModelSetPass : IRelationalModelSetPas
     }
 
     /// <summary>
-    /// The explicit order for the base traversal pass.
+    /// The explicit order for the base traversal + descriptor binding pass.
     /// </summary>
     public int Order { get; } = 0;
 
     /// <summary>
-    /// Executes the base traversal across all concrete, non-extension resources.
+    /// Executes the base traversal + descriptor binding across all concrete, non-extension resources.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>
     public void Execute(RelationalModelSetBuilderContext context)
@@ -140,7 +141,7 @@ public sealed class BaseTraversalRelationalModelSetPass : IRelationalModelSetPas
             new ValidateJsonSchemaStep(),
             new DiscoverExtensionSitesStep(),
             new DeriveTableScopesAndKeysStep(),
-            new DeriveColumnsAndDescriptorEdgesStep(),
+            new DeriveColumnsAndBindDescriptorEdgesStep(),
             new CanonicalizeOrderingStep(),
         ];
 

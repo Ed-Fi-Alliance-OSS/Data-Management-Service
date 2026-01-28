@@ -38,7 +38,7 @@ public class Given_A_Complete_Relational_Model_Pipeline
                 new ValidateJsonSchemaStep(),
                 new DiscoverExtensionSitesStep(),
                 new DeriveTableScopesAndKeysStep(),
-                new DeriveColumnsAndDescriptorEdgesStep(),
+                new DeriveColumnsAndBindDescriptorEdgesStep(),
                 new CanonicalizeOrderingStep(),
             }
         );

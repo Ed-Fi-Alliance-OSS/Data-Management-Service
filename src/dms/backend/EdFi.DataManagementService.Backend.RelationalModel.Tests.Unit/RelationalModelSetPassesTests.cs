@@ -26,7 +26,7 @@ public class Given_Default_RelationalModelSet_Passes
     public void It_should_begin_with_base_traversal()
     {
         _firstPassTypes.Should().NotBeEmpty();
-        _firstPassTypes[0].Should().Be(typeof(BaseTraversalRelationalModelSetPass));
+        _firstPassTypes[0].Should().Be(typeof(BaseTraversalAndDescriptorBindingRelationalModelSetPass));
     }
 
     [Test]

@@ -36,7 +36,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// optional ancestor object.
 /// </para>
 /// </summary>
-public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilderStep
+public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName _dmsSchemaName = new("dms");

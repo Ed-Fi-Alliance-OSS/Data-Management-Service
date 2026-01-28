@@ -292,7 +292,7 @@ internal static class RelationalModelManifestEmitterTestContext
         var discoverExtensions = new DiscoverExtensionSitesStep();
         discoverExtensions.Execute(context);
 
-        var deriveColumns = new DeriveColumnsAndDescriptorEdgesStep();
+        var deriveColumns = new DeriveColumnsAndBindDescriptorEdgesStep();
         deriveColumns.Execute(context);
 
         var canonicalize = new CanonicalizeOrderingStep();
