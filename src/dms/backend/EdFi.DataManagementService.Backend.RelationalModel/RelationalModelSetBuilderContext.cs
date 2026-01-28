@@ -671,6 +671,7 @@ public sealed class RelationalModelSetBuilderContext
 
         if (_extensionProjectsByKey.TryGetValue(projectKey, out var cachedProject))
         {
+            EnsureExtensionProject(projectKey, cachedProject, extensionSite, resource);
             return cachedProject;
         }
 
@@ -691,7 +692,7 @@ public sealed class RelationalModelSetBuilderContext
 
         if (endpointMatches.Length == 1)
         {
-            return CacheExtensionProjectKey(projectKey, endpointMatches[0]);
+            return CacheExtensionProjectKey(projectKey, endpointMatches[0], extensionSite, resource);
         }
 
         var projectNameMatches = ProjectSchemasInEndpointOrder
@@ -711,7 +712,7 @@ public sealed class RelationalModelSetBuilderContext
 
         if (projectNameMatches.Length == 1)
         {
-            return CacheExtensionProjectKey(projectKey, projectNameMatches[0]);
+            return CacheExtensionProjectKey(projectKey, projectNameMatches[0], extensionSite, resource);
         }
 
         throw new InvalidOperationException(
@@ -720,10 +721,34 @@ public sealed class RelationalModelSetBuilderContext
         );
     }
 
-    private ProjectSchemaInfo CacheExtensionProjectKey(string projectKey, ProjectSchemaInfo project)
+    private ProjectSchemaInfo CacheExtensionProjectKey(
+        string projectKey,
+        ProjectSchemaInfo project,
+        ExtensionSite? extensionSite,
+        QualifiedResourceName? resource
+    )
     {
+        EnsureExtensionProject(projectKey, project, extensionSite, resource);
         _extensionProjectsByKey[projectKey] = project;
         return project;
+    }
+
+    private static void EnsureExtensionProject(
+        string projectKey,
+        ProjectSchemaInfo project,
+        ExtensionSite? extensionSite,
+        QualifiedResourceName? resource
+    )
+    {
+        if (project.IsExtensionProject)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Extension project key '{projectKey}'{FormatExtensionSiteContext(extensionSite, resource)} "
+                + $"resolves to non-extension project '{project.ProjectEndpointName}' ({project.ProjectName})."
+        );
     }
 
     private static string FormatExtensionSiteContext(

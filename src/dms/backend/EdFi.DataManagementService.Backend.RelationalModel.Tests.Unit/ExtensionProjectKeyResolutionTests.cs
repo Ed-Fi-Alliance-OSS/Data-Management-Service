@@ -165,6 +165,65 @@ public class Given_An_Extension_Project_Key_Matching_Endpoint_And_Project_Names
 }
 
 [TestFixture]
+public class Given_An_Extension_Project_Key_Matching_A_Non_Extension_Project
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "core",
+                "Core",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "sample-ext",
+                "Sample",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("schoolExtensions", "SchoolExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Core", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("Sample", "SchoolExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("core");
+
+        try
+        {
+            context.ResolveExtensionProjectKey(
+                "core",
+                extensionSite,
+                new QualifiedResourceName("Core", "School")
+            );
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_when_the_key_resolves_to_a_non_extension_project()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("core");
+        _exception.Message.Should().Contain("resource 'Core:School'");
+        _exception.Message.Should().Contain("non-extension project 'core' (Core)");
+    }
+}
+
+[TestFixture]
 public class Given_An_EffectiveSchemaSet_With_An_Unknown_Extension_Project_Key
 {
     private Exception? _exception;
