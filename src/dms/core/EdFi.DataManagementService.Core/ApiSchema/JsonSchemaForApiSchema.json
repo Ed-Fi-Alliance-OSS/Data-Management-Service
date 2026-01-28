@@ -372,6 +372,24 @@
                             "items": {
                                 "type": "string"
                             }
+                        },
+                        "relational": {
+                            "type": "object",
+                            "properties": {
+                                "rootTableNameOverride": {
+                                    "type": "string"
+                                },
+                                "nameOverrides": {
+                                    "type": "object",
+                                    "patternProperties": {
+                                        "^\\$\\..*$": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            },
+                            "additionalProperties": false
                         }
                     },
                     "required": [
