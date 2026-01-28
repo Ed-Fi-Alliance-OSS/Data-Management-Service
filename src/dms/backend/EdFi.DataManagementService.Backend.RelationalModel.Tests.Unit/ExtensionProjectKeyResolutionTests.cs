@@ -10,6 +10,161 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
 [TestFixture]
+public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name
+{
+    private ProjectSchemaInfo _project = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "sample-ext",
+                "Sample",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("schoolExtensions", "SchoolExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("Sample", "SchoolExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("SAMPLE-EXT");
+
+        _project = context.ResolveExtensionProjectKey(
+            "SAMPLE-EXT",
+            extensionSite,
+            new QualifiedResourceName("Ed-Fi", "School")
+        );
+    }
+
+    [Test]
+    public void It_should_resolve_to_the_matching_endpoint_name()
+    {
+        _project.ProjectEndpointName.Should().Be("sample-ext");
+    }
+}
+
+[TestFixture]
+public class Given_An_Extension_Project_Key_Matching_Project_Name
+{
+    private ProjectSchemaInfo _project = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "sample-ext",
+                "Sample",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("schoolExtensions", "SchoolExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("Sample", "SchoolExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("Sample");
+
+        _project = context.ResolveExtensionProjectKey(
+            "Sample",
+            extensionSite,
+            new QualifiedResourceName("Ed-Fi", "School")
+        );
+    }
+
+    [Test]
+    public void It_should_resolve_to_the_matching_project_name_when_no_endpoint_match_exists()
+    {
+        _project.ProjectEndpointName.Should().Be("sample-ext");
+    }
+}
+
+[TestFixture]
+public class Given_An_Extension_Project_Key_Matching_Endpoint_And_Project_Names
+{
+    private ProjectSchemaInfo _project = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "alpha",
+                "AlphaOne",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("alphaExtensions", "AlphaExtension", true))
+            ),
+            new EffectiveProjectSchema(
+                "beta",
+                "Alpha",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("betaExtensions", "BetaExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("AlphaOne", "AlphaExtension"), "1.0.0", false),
+            new ResourceKeyEntry(3, new QualifiedResourceName("Alpha", "BetaExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("ALPHA");
+
+        _project = context.ResolveExtensionProjectKey(
+            "ALPHA",
+            extensionSite,
+            new QualifiedResourceName("Ed-Fi", "School")
+        );
+    }
+
+    [Test]
+    public void It_should_prefer_endpoint_name_matches_over_project_name_fallbacks()
+    {
+        _project.ProjectEndpointName.Should().Be("alpha");
+    }
+}
+
+[TestFixture]
 public class Given_An_EffectiveSchemaSet_With_An_Unknown_Extension_Project_Key
 {
     private Exception? _exception;
@@ -151,6 +306,15 @@ public class Given_An_EffectiveSchemaSet_With_An_Ambiguous_Extension_Project_Key
 
 internal static class ExtensionProjectKeyFixture
 {
+    public static ExtensionSite CreateExtensionSite(params string[] projectKeys)
+    {
+        return new ExtensionSite(
+            JsonPathExpressionCompiler.Compile("$"),
+            JsonPathExpressionCompiler.Compile("$._ext"),
+            projectKeys
+        );
+    }
+
     public static RelationalModelSetBuilderContext CreateContext(
         IReadOnlyList<EffectiveProjectSchema> projects,
         IReadOnlyList<ResourceKeyEntry> resourceKeys
