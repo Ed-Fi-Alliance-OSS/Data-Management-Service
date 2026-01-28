@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Reflection;
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using FluentAssertions;
 using NUnit.Framework;
@@ -17,29 +18,35 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.ApiSchema;
 [TestFixture]
 public class RelationalMetadataIntegrationTests
 {
-    [Test]
-    public void Should_Find_Resources_With_Relational_Metadata_In_DataStandard52()
-    {
-        // Arrange - Load the actual DataStandard52 ApiSchema assembly
-        var assembly = Assembly.Load("EdFi.DataStandard52.ApiSchema");
-        assembly.Should().NotBeNull("ApiSchema assembly should be loadable");
+    private readonly string _packageId = "EdFi.DataStandard52.ApiSchema";
+    private Assembly _assembly = null!;
+    private JsonNode _apiSchemaNode = null!;
 
-        // Act - Get the embedded resource stream
+    [OneTimeSetUp]
+    public void OneTimeSetUp()
+    {
+        _assembly = Assembly.Load(_packageId);
+        _assembly.Should().NotBeNull("ApiSchema assembly should be loadable");
+
         var resourceName = Array.Find(
-            assembly.GetManifestResourceNames(),
+            _assembly.GetManifestResourceNames(),
             name => name.EndsWith("ApiSchema.json")
         );
 
         resourceName.Should().NotBeNull("ApiSchema.json should exist as embedded resource");
 
-        using var stream = assembly.GetManifestResourceStream(resourceName!);
+        using var stream = _assembly.GetManifestResourceStream(resourceName!);
         using var reader = new StreamReader(stream!);
         string jsonContent = reader.ReadToEnd();
+        _apiSchemaNode = JsonNode.Parse(jsonContent)!;
+        _apiSchemaNode.Should().NotBeNull();
+    }
 
-        var apiSchemaNode = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
-        apiSchemaNode.Should().NotBeNull();
-
-        var resourceSchemas = apiSchemaNode!["projectSchema"]?["resourceSchemas"]?.AsObject();
+    [Test]
+    public void Should_Find_Resources_With_Relational_Metadata_In_DataStandard52()
+    {
+        // Arrange
+        var resourceSchemas = _apiSchemaNode["projectSchema"]?["resourceSchemas"]?.AsObject();
         resourceSchemas.Should().NotBeNull();
 
         // Assert - Find resources with relational metadata
@@ -77,17 +84,7 @@ public class RelationalMetadataIntegrationTests
     public void Should_Properly_Deserialize_RootTableNameOverride_When_Present()
     {
         // Arrange
-        var assembly = Assembly.Load("EdFi.DataStandard52.ApiSchema");
-        var resourceName = Array.Find(
-            assembly.GetManifestResourceNames(),
-            name => name.EndsWith("ApiSchema.json")
-        );
-
-        using var stream = assembly.GetManifestResourceStream(resourceName!);
-        using var reader = new StreamReader(stream!);
-        string jsonContent = reader.ReadToEnd();
-        var apiSchemaNode = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
-        var resourceSchemas = apiSchemaNode!["projectSchema"]?["resourceSchemas"]?.AsObject();
+        var resourceSchemas = _apiSchemaNode["projectSchema"]?["resourceSchemas"]?.AsObject();
 
         // Act - Find a resource with rootTableNameOverride
         ResourceSchema? resourceWithOverride = null;
@@ -123,17 +120,7 @@ public class RelationalMetadataIntegrationTests
     public void Should_Properly_Deserialize_NameOverrides_When_Present()
     {
         // Arrange
-        var assembly = Assembly.Load("EdFi.DataStandard52.ApiSchema");
-        var resourceName = Array.Find(
-            assembly.GetManifestResourceNames(),
-            name => name.EndsWith("ApiSchema.json")
-        );
-
-        using var stream = assembly.GetManifestResourceStream(resourceName!);
-        using var reader = new StreamReader(stream!);
-        string jsonContent = reader.ReadToEnd();
-        var apiSchemaNode = System.Text.Json.Nodes.JsonNode.Parse(jsonContent);
-        var resourceSchemas = apiSchemaNode!["projectSchema"]?["resourceSchemas"]?.AsObject();
+        var resourceSchemas = _apiSchemaNode["projectSchema"]?["resourceSchemas"]?.AsObject();
 
         // Act - Find a resource with nameOverrides
         ResourceSchema? resourceWithOverrides = null;
