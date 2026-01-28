@@ -11,6 +11,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
@@ -211,32 +212,5 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         throw new DirectoryNotFoundException(
             "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
         );
-    }
-
-    private static JsonObject RequireObject(JsonNode? node, string propertyName)
-    {
-        return node switch
-        {
-            JsonObject jsonObject => jsonObject,
-            null => throw new InvalidOperationException($"Expected {propertyName} to be present."),
-            _ => throw new InvalidOperationException($"Expected {propertyName} to be an object."),
-        };
-    }
-
-    private static string RequireString(JsonObject node, string propertyName)
-    {
-        var value = node[propertyName] switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<string>(),
-            null => throw new InvalidOperationException($"Expected {propertyName} to be present."),
-            _ => throw new InvalidOperationException($"Expected {propertyName} to be a string."),
-        };
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw new InvalidOperationException($"Expected {propertyName} to be non-empty.");
-        }
-
-        return value;
     }
 }
