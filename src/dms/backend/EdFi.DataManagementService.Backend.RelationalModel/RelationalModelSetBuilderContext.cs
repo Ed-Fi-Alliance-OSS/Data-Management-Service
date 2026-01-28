@@ -294,6 +294,8 @@ public sealed class RelationalModelSetBuilderContext
     /// </summary>
     public DerivedRelationalModelSet BuildResult()
     {
+        ValidateDerivedInventories();
+
         var orderedConcreteResources = ConcreteResourcesInNameOrder
             .OrderBy(resource => resource.ResourceKey.Resource.ProjectName, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceKey.Resource.ResourceName, StringComparer.Ordinal)
@@ -331,6 +333,102 @@ public sealed class RelationalModelSetBuilderContext
             orderedIndexes,
             orderedTriggers
         );
+    }
+
+    private void ValidateDerivedInventories()
+    {
+        ValidateNoNullEntries(ConcreteResourcesInNameOrder, nameof(ConcreteResourcesInNameOrder));
+        ValidateNoNullEntries(AbstractIdentityTablesInNameOrder, nameof(AbstractIdentityTablesInNameOrder));
+        ValidateNoNullEntries(AbstractUnionViewsInNameOrder, nameof(AbstractUnionViewsInNameOrder));
+        ValidateNoNullEntries(IndexesInCreateOrder, nameof(IndexesInCreateOrder));
+        ValidateNoNullEntries(TriggersInCreateOrder, nameof(TriggersInCreateOrder));
+        ValidateConcreteResourceUniqueness();
+        ValidateIndexNameUniqueness();
+        ValidateTriggerNameUniqueness();
+    }
+
+    private void ValidateConcreteResourceUniqueness()
+    {
+        var duplicateResources = ConcreteResourcesInNameOrder
+            .GroupBy(resource => resource.ResourceKey.Resource)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
+            .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicateResources.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Duplicate concrete resources detected for: "
+                    + string.Join(", ", duplicateResources.Select(FormatResource))
+            );
+        }
+    }
+
+    private void ValidateIndexNameUniqueness()
+    {
+        var duplicateIndexKeys = IndexesInCreateOrder
+            .GroupBy(index => new TableNamedObjectKey(
+                index.Table.Schema.Value,
+                index.Table.Name,
+                index.Name.Value
+            ))
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(key => key.Schema, StringComparer.Ordinal)
+            .ThenBy(key => key.Table, StringComparer.Ordinal)
+            .ThenBy(key => key.Name, StringComparer.Ordinal)
+            .Select(key => key.Format())
+            .ToArray();
+
+        if (duplicateIndexKeys.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Duplicate index names detected for: " + string.Join(", ", duplicateIndexKeys)
+            );
+        }
+    }
+
+    private void ValidateTriggerNameUniqueness()
+    {
+        var duplicateTriggerKeys = TriggersInCreateOrder
+            .GroupBy(trigger => new TableNamedObjectKey(
+                trigger.Table.Schema.Value,
+                trigger.Table.Name,
+                trigger.Name.Value
+            ))
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .OrderBy(key => key.Schema, StringComparer.Ordinal)
+            .ThenBy(key => key.Table, StringComparer.Ordinal)
+            .ThenBy(key => key.Name, StringComparer.Ordinal)
+            .Select(key => key.Format())
+            .ToArray();
+
+        if (duplicateTriggerKeys.Length > 0)
+        {
+            throw new InvalidOperationException(
+                "Duplicate trigger names detected for: " + string.Join(", ", duplicateTriggerKeys)
+            );
+        }
+    }
+
+    private static void ValidateNoNullEntries<T>(IEnumerable<T> entries, string listName)
+        where T : class
+    {
+        if (entries.Any(entry => entry is null))
+        {
+            throw new InvalidOperationException($"{listName} must not contain null entries.");
+        }
+    }
+
+    private readonly record struct TableNamedObjectKey(string Schema, string Table, string Name)
+    {
+        public string Format()
+        {
+            return $"{Schema}.{Table}:{Name}";
+        }
     }
 
     private static IReadOnlyList<EffectiveProjectSchema> NormalizeProjectsInEndpointOrder(
