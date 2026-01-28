@@ -26,9 +26,7 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_Unordered_Inputs
                 reverseResourceOrder: true
             );
 
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new BaseTraversalRelationalModelSetPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
 
         _orderedResult = builder.Build(orderedEffectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
         _unorderedResult = builder.Build(

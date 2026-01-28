@@ -66,9 +66,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             new[] { coreProject, extensionProject }
         );
 
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new BaseTraversalRelationalModelSetPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
         var derivedSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
         var manifest = BuildDerivedSetManifest(derivedSet);
 
