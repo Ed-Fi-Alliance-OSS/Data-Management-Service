@@ -863,10 +863,19 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             }
         }
 
+        /// <summary>
+        /// Gets the immutable table definition being built (schema/name, key columns, and JSON scope).
+        /// </summary>
         public DbTableModel Definition { get; }
 
+        /// <summary>
+        /// Gets the mutable column inventory for the table.
+        /// </summary>
         public List<DbColumnModel> Columns { get; }
 
+        /// <summary>
+        /// Gets the mutable constraint inventory for the table.
+        /// </summary>
         public List<TableConstraint> Constraints { get; }
 
         /// <summary>

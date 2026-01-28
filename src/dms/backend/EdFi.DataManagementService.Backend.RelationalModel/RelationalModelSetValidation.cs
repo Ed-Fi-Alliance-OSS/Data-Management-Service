@@ -8,13 +8,26 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Validates effective schema set invariants required for deterministic relational model derivation.
+/// </summary>
 internal static class RelationalModelSetValidation
 {
+    /// <summary>
+    /// Represents an index of effective schema resources used for cross-validation.
+    /// </summary>
+    /// <param name="Resources">All qualified resource names in the effective schema set.</param>
+    /// <param name="IsAbstractByResource">Maps each resource to whether it is abstract.</param>
     internal sealed record EffectiveSchemaResourceIndex(
         IReadOnlySet<QualifiedResourceName> Resources,
         IReadOnlyDictionary<QualifiedResourceName, bool> IsAbstractByResource
     );
 
+    /// <summary>
+    /// Builds a resource index from the supplied effective schema set.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The normalized effective schema set.</param>
+    /// <returns>The resource index for cross-validation.</returns>
     internal static EffectiveSchemaResourceIndex BuildEffectiveSchemaResourceIndex(
         EffectiveSchemaSet effectiveSchemaSet
     )
@@ -76,6 +89,11 @@ internal static class RelationalModelSetValidation
         return new EffectiveSchemaResourceIndex(resources, isAbstractByResource);
     }
 
+    /// <summary>
+    /// Validates the effective schema metadata and resource key seed against the loaded schema payload.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The normalized effective schema set.</param>
+    /// <param name="effectiveResources">The resource index derived from the schema payload.</param>
     internal static void ValidateEffectiveSchemaInfo(
         EffectiveSchemaSet effectiveSchemaSet,
         EffectiveSchemaResourceIndex effectiveResources
@@ -196,6 +214,10 @@ internal static class RelationalModelSetValidation
         );
     }
 
+    /// <summary>
+    /// Validates that <see cref="EffectiveSchemaInfo.SchemaComponentsInEndpointOrder"/> is complete, unique,
+    /// and sorted, and that it matches <see cref="EffectiveSchemaSet.ProjectsInEndpointOrder"/>.
+    /// </summary>
     private static void ValidateSchemaComponentsInEndpointOrder(EffectiveSchemaSet effectiveSchemaSet)
     {
         if (effectiveSchemaSet.EffectiveSchema.SchemaComponentsInEndpointOrder is null)
@@ -307,6 +329,11 @@ internal static class RelationalModelSetValidation
         throw new InvalidOperationException(string.Join(" ", messageParts));
     }
 
+    /// <summary>
+    /// Validates that <c>documentPathsMapping</c> reference targets resolve to known resources in the effective schema set.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The normalized effective schema set.</param>
+    /// <param name="effectiveResources">All resources in the effective schema set.</param>
     internal static void ValidateDocumentPathsMappingTargets(
         EffectiveSchemaSet effectiveSchemaSet,
         IReadOnlySet<QualifiedResourceName> effectiveResources
@@ -360,6 +387,13 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Validates <c>documentPathsMapping</c> reference targets for all resources contained in a schema object.
+    /// </summary>
+    /// <param name="projectName">The owning project name.</param>
+    /// <param name="resourceSchemas">The <c>resourceSchemas</c> or <c>abstractResources</c> object.</param>
+    /// <param name="effectiveResources">All resources in the effective schema set.</param>
+    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
     private static void ValidateDocumentPathsMappingTargetsForResourceSchemas(
         string projectName,
         JsonObject resourceSchemas,
@@ -378,6 +412,14 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Validates that each reference entry in <c>documentPathsMapping</c> points to a resource that exists
+    /// in the effective schema set.
+    /// </summary>
+    /// <param name="projectName">The owning project name.</param>
+    /// <param name="resourceName">The owning resource name.</param>
+    /// <param name="resourceSchema">The resource schema payload.</param>
+    /// <param name="effectiveResources">All resources in the effective schema set.</param>
     private static void ValidateDocumentPathsMappingTargetsForResource(
         string projectName,
         string resourceName,
@@ -435,6 +477,12 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Formats a <c>documentPathsMapping</c> entry label for use in error messages.
+    /// </summary>
+    /// <param name="mappingKey">The mapping entry key.</param>
+    /// <param name="mappingObject">The mapping object.</param>
+    /// <returns>A formatted entry label.</returns>
     private static string FormatDocumentPathsMappingLabel(string mappingKey, JsonObject mappingObject)
     {
         if (string.IsNullOrWhiteSpace(mappingKey))
@@ -452,6 +500,12 @@ internal static class RelationalModelSetValidation
         return $"entry '{mappingKey}' (path '{path}')";
     }
 
+    /// <summary>
+    /// Orders resource schema entries deterministically by resource name and schema key.
+    /// </summary>
+    /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
+    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
+    /// <returns>The ordered resource schema entries.</returns>
     private static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
         JsonObject resourceSchemas,
         string resourceSchemasPath
@@ -493,12 +547,25 @@ internal static class RelationalModelSetValidation
             .ToArray();
     }
 
+    /// <summary>
+    /// Captures the normalized inputs for a single resource schema entry within a project schema.
+    /// </summary>
     private sealed record ResourceSchemaEntry(
         string ResourceKey,
         string ResourceName,
         JsonObject ResourceSchema
     );
 
+    /// <summary>
+    /// Adds resource entries from a schema object to the effective resource index, validating that a resource
+    /// is not defined as both abstract and concrete.
+    /// </summary>
+    /// <param name="resources">The set of resources to populate.</param>
+    /// <param name="isAbstractByResource">The abstractness map to populate.</param>
+    /// <param name="resourceSchemas">The <c>resourceSchemas</c> or <c>abstractResources</c> object.</param>
+    /// <param name="projectName">The owning project name.</param>
+    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
+    /// <param name="isAbstract">Whether the entries are abstract.</param>
     private static void AddResourceEntries(
         HashSet<QualifiedResourceName> resources,
         Dictionary<QualifiedResourceName, bool> isAbstractByResource,
@@ -564,6 +631,11 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Validates that each resource key entry's abstractness matches the effective schema payload.
+    /// </summary>
+    /// <param name="resourceKeys">The resource key entries to validate.</param>
+    /// <param name="isAbstractByResource">The expected abstractness map keyed by resource.</param>
     private static void ValidateResourceKeyAbstractness(
         IReadOnlyList<ResourceKeyEntry> resourceKeys,
         IReadOnlyDictionary<QualifiedResourceName, bool> isAbstractByResource

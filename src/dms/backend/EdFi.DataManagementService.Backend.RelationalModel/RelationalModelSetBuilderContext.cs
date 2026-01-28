@@ -345,6 +345,9 @@ public sealed class RelationalModelSetBuilderContext
         );
     }
 
+    /// <summary>
+    /// Validates derived inventories prior to constructing the immutable model set payload.
+    /// </summary>
     private void ValidateDerivedInventories()
     {
         ValidateNoNullEntries(ConcreteResourcesInNameOrder, nameof(ConcreteResourcesInNameOrder));
@@ -357,6 +360,14 @@ public sealed class RelationalModelSetBuilderContext
         ValidateTriggerNameUniqueness();
     }
 
+    /// <summary>
+    /// Detects dialect-shortening collisions across derived identifiers (tables, columns, constraints, indexes, triggers).
+    /// </summary>
+    /// <param name="orderedConcreteResources">Concrete resources in canonical order.</param>
+    /// <param name="orderedAbstractIdentityTables">Abstract identity tables in canonical order.</param>
+    /// <param name="orderedAbstractUnionViews">Abstract union views in canonical order.</param>
+    /// <param name="canonicalIndexes">Index inventory in canonical order.</param>
+    /// <param name="canonicalTriggers">Trigger inventory in canonical order.</param>
     private void ValidateIdentifierShorteningCollisions(
         IReadOnlyList<ConcreteResourceModel> orderedConcreteResources,
         IReadOnlyList<AbstractIdentityTableInfo> orderedAbstractIdentityTables,
@@ -475,6 +486,9 @@ public sealed class RelationalModelSetBuilderContext
         detector.ThrowIfCollisions();
     }
 
+    /// <summary>
+    /// Ensures that each qualified resource contributes at most one concrete resource model.
+    /// </summary>
     private void ValidateConcreteResourceUniqueness()
     {
         var duplicateResources = ConcreteResourcesInNameOrder
@@ -494,6 +508,9 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Ensures that derived index names are unique within a table and schema.
+    /// </summary>
     private void ValidateIndexNameUniqueness()
     {
         var duplicateIndexKeys = IndexInventory
@@ -518,6 +535,9 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Ensures that derived trigger names are unique within a table and schema.
+    /// </summary>
     private void ValidateTriggerNameUniqueness()
     {
         var duplicateTriggerKeys = TriggerInventory
@@ -542,6 +562,12 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Validates that a derived inventory list does not contain null entries.
+    /// </summary>
+    /// <typeparam name="T">The inventory entry type.</typeparam>
+    /// <param name="entries">The entries to check.</param>
+    /// <param name="listName">The inventory label used for diagnostics.</param>
     private static void ValidateNoNullEntries<T>(IEnumerable<T> entries, string listName)
         where T : class
     {
@@ -551,14 +577,26 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Represents a fully-qualified named object key used when checking name uniqueness.
+    /// </summary>
     private readonly record struct TableNamedObjectKey(string Schema, string Table, string Name)
     {
+        /// <summary>
+        /// Formats the key for diagnostics.
+        /// </summary>
+        /// <returns>A formatted key string.</returns>
         public string Format()
         {
             return $"{Schema}.{Table}:{Name}";
         }
     }
 
+    /// <summary>
+    /// Extracts the physical name from a <see cref="TableConstraint"/> instance.
+    /// </summary>
+    /// <param name="constraint">The constraint to inspect.</param>
+    /// <returns>The physical constraint name.</returns>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch
@@ -571,27 +609,50 @@ public sealed class RelationalModelSetBuilderContext
         };
     }
 
+    /// <summary>
+    /// Formats a table name for diagnostics.
+    /// </summary>
+    /// <param name="table">The table name.</param>
+    /// <returns>A formatted table label.</returns>
     private static string FormatTable(DbTableName table)
     {
         return $"{table.Schema.Value}.{table.Name}";
     }
 
+    /// <summary>
+    /// Formats a fully-qualified column name for diagnostics.
+    /// </summary>
+    /// <param name="table">The owning table.</param>
+    /// <param name="column">The column name.</param>
+    /// <returns>A formatted column label.</returns>
     private static string FormatColumn(DbTableName table, DbColumnName column)
     {
         return $"{FormatTable(table)}.{column.Value}";
     }
 
+    /// <summary>
+    /// Detects collisions introduced by deterministic identifier shortening.
+    /// </summary>
     private sealed class IdentifierCollisionDetector
     {
         private readonly ISqlDialectRules _dialectRules;
         private readonly Dictionary<IdentifierScope, Dictionary<string, List<IdentifierSource>>> _sources =
             new();
 
+        /// <summary>
+        /// Creates a new collision detector for the specified dialect rules.
+        /// </summary>
+        /// <param name="dialectRules">The dialect rules used to shorten identifiers.</param>
         public IdentifierCollisionDetector(ISqlDialectRules dialectRules)
         {
             _dialectRules = dialectRules ?? throw new ArgumentNullException(nameof(dialectRules));
         }
 
+        /// <summary>
+        /// Registers a table identifier for collision detection.
+        /// </summary>
+        /// <param name="table">The table name.</param>
+        /// <param name="description">A human-readable description for diagnostics.</param>
         public void RegisterTable(DbTableName table, string description)
         {
             Register(
@@ -601,6 +662,12 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        /// <summary>
+        /// Registers a column identifier for collision detection.
+        /// </summary>
+        /// <param name="table">The owning table.</param>
+        /// <param name="column">The column name.</param>
+        /// <param name="description">A human-readable description for diagnostics.</param>
         public void RegisterColumn(DbTableName table, DbColumnName column, string description)
         {
             Register(
@@ -610,6 +677,12 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        /// <summary>
+        /// Registers a constraint identifier for collision detection.
+        /// </summary>
+        /// <param name="table">The table hosting the constraint.</param>
+        /// <param name="constraintName">The constraint name.</param>
+        /// <param name="description">A human-readable description for diagnostics.</param>
         public void RegisterConstraint(DbTableName table, string constraintName, string description)
         {
             Register(
@@ -619,6 +692,12 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        /// <summary>
+        /// Registers an index identifier for collision detection.
+        /// </summary>
+        /// <param name="table">The table hosting the index.</param>
+        /// <param name="indexName">The index name.</param>
+        /// <param name="description">A human-readable description for diagnostics.</param>
         public void RegisterIndex(DbTableName table, DbIndexName indexName, string description)
         {
             Register(
@@ -628,6 +707,12 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        /// <summary>
+        /// Registers a trigger identifier for collision detection.
+        /// </summary>
+        /// <param name="table">The table hosting the trigger.</param>
+        /// <param name="triggerName">The trigger name.</param>
+        /// <param name="description">A human-readable description for diagnostics.</param>
         public void RegisterTrigger(DbTableName table, DbTriggerName triggerName, string description)
         {
             Register(
@@ -637,6 +722,9 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        /// <summary>
+        /// Throws when any shortened identifier maps to multiple distinct original identifiers.
+        /// </summary>
         public void ThrowIfCollisions()
         {
             List<IdentifierCollision> collisions = [];
@@ -679,6 +767,9 @@ public sealed class RelationalModelSetBuilderContext
             );
         }
 
+        /// <summary>
+        /// Registers a single identifier in the detector, tracking both the original and shortened forms.
+        /// </summary>
         private void Register(IdentifierScope scope, string originalName, IdentifierSource source)
         {
             var shortenedName = _dialectRules.ShortenIdentifier(originalName);
@@ -698,6 +789,9 @@ public sealed class RelationalModelSetBuilderContext
             sources.Add(source);
         }
 
+        /// <summary>
+        /// Classifies the namespace in which an identifier must be unique.
+        /// </summary>
         private enum IdentifierScopeKind
         {
             Table,
@@ -707,26 +801,43 @@ public sealed class RelationalModelSetBuilderContext
             Trigger,
         }
 
+        /// <summary>
+        /// Identifies the scope (schema and optional table) in which collisions are evaluated.
+        /// </summary>
         private readonly record struct IdentifierScope(
             IdentifierScopeKind Kind,
             string Schema,
             string Table = ""
         );
 
+        /// <summary>
+        /// Represents an identifier occurrence and its human-readable description.
+        /// </summary>
         private readonly record struct IdentifierSource(string Name, string Description)
         {
+            /// <summary>
+            /// Formats the identifier source for diagnostics.
+            /// </summary>
+            /// <returns>A formatted label.</returns>
             public string Format()
             {
                 return Description;
             }
         }
 
+        /// <summary>
+        /// Represents a collision where multiple original identifiers shorten to the same value.
+        /// </summary>
         private sealed record IdentifierCollision(
             IdentifierScope Scope,
             string ShortenedName,
             IReadOnlyList<IdentifierSource> Sources
         )
         {
+            /// <summary>
+            /// Formats the collision for diagnostics.
+            /// </summary>
+            /// <returns>A formatted collision message.</returns>
             public string Format()
             {
                 var category = Scope.Kind switch
@@ -752,6 +863,11 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Validates and returns the project list ordered by <c>ProjectEndpointName</c> ordinal.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The effective schema set containing configured projects.</param>
+    /// <returns>Projects ordered by endpoint name.</returns>
     private static IReadOnlyList<EffectiveProjectSchema> NormalizeProjectsInEndpointOrder(
         EffectiveSchemaSet effectiveSchemaSet
     )
@@ -782,6 +898,11 @@ public sealed class RelationalModelSetBuilderContext
         return orderedProjects;
     }
 
+    /// <summary>
+    /// Builds project schema contexts and validates physical schema name uniqueness after normalization.
+    /// </summary>
+    /// <param name="projectsInEndpointOrder">Projects in endpoint order.</param>
+    /// <returns>The project contexts and their associated schema info objects.</returns>
     private static (
         IReadOnlyList<ProjectSchemaContext> ProjectSchemas,
         IReadOnlyList<ProjectSchemaInfo> ProjectSchemaInfos
@@ -836,6 +957,11 @@ public sealed class RelationalModelSetBuilderContext
         return (projectSchemas.ToArray(), projectSchemaInfos.ToArray());
     }
 
+    /// <summary>
+    /// Enumerates and orders all concrete resource schemas across all projects by (project name, resource name).
+    /// </summary>
+    /// <param name="projectsInEndpointOrder">Projects in endpoint order.</param>
+    /// <returns>Concrete resource schema entries in canonical name order.</returns>
     private static IReadOnlyList<ConcreteResourceSchemaContext> BuildConcreteResourceSchemasInNameOrder(
         IReadOnlyList<ProjectSchemaContext> projectsInEndpointOrder
     )
@@ -894,6 +1020,11 @@ public sealed class RelationalModelSetBuilderContext
         return orderedResources;
     }
 
+    /// <summary>
+    /// Builds descriptor path maps for all resources and splits them into base vs <c>_ext</c>-scoped paths.
+    /// </summary>
+    /// <param name="projectsInEndpointOrder">Projects in endpoint order.</param>
+    /// <returns>Descriptor path maps for base and extension scopes.</returns>
     private static (
         IReadOnlyDictionary<
             QualifiedResourceName,
@@ -956,6 +1087,11 @@ public sealed class RelationalModelSetBuilderContext
         return (baseDescriptorPathsByResource, extensionDescriptorPathsByResource);
     }
 
+    /// <summary>
+    /// Validates that every extension project key referenced by the resource's extension sites resolves to a configured extension project.
+    /// </summary>
+    /// <param name="resource">The owning resource.</param>
+    /// <param name="extensionSites">The extension sites to validate.</param>
     private void ValidateExtensionProjectKeys(
         QualifiedResourceName resource,
         IReadOnlyList<ExtensionSite> extensionSites
@@ -977,6 +1113,13 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Resolves an <c>_ext</c> project key to a configured project schema using endpoint-name and project-name matching rules.
+    /// </summary>
+    /// <param name="projectKey">The extension project key.</param>
+    /// <param name="extensionSite">The declaring extension site (for diagnostics).</param>
+    /// <param name="resource">The owning resource (for diagnostics).</param>
+    /// <returns>The resolved project schema info.</returns>
     private ProjectSchemaInfo ResolveExtensionProjectKeyInternal(
         string projectKey,
         ExtensionSite? extensionSite,
@@ -1042,6 +1185,14 @@ public sealed class RelationalModelSetBuilderContext
         );
     }
 
+    /// <summary>
+    /// Caches the resolved extension project key mapping after validating it targets an extension project.
+    /// </summary>
+    /// <param name="projectKey">The extension project key.</param>
+    /// <param name="project">The resolved project schema info.</param>
+    /// <param name="extensionSite">The declaring extension site (for diagnostics).</param>
+    /// <param name="resource">The owning resource (for diagnostics).</param>
+    /// <returns>The resolved project schema info.</returns>
     private ProjectSchemaInfo CacheExtensionProjectKey(
         string projectKey,
         ProjectSchemaInfo project,
@@ -1054,6 +1205,13 @@ public sealed class RelationalModelSetBuilderContext
         return project;
     }
 
+    /// <summary>
+    /// Validates that a resolved project is an extension project for use with <c>_ext</c> mapping.
+    /// </summary>
+    /// <param name="projectKey">The extension project key.</param>
+    /// <param name="project">The resolved project schema info.</param>
+    /// <param name="extensionSite">The declaring extension site (for diagnostics).</param>
+    /// <param name="resource">The owning resource (for diagnostics).</param>
     private static void EnsureExtensionProject(
         string projectKey,
         ProjectSchemaInfo project,
@@ -1072,6 +1230,12 @@ public sealed class RelationalModelSetBuilderContext
         );
     }
 
+    /// <summary>
+    /// Formats resource and extension-site context information for error messages.
+    /// </summary>
+    /// <param name="extensionSite">The extension site (optional).</param>
+    /// <param name="resource">The owning resource (optional).</param>
+    /// <returns>A formatted context string starting with a leading space, or an empty string.</returns>
     private static string FormatExtensionSiteContext(
         ExtensionSite? extensionSite,
         QualifiedResourceName? resource
@@ -1098,6 +1262,11 @@ public sealed class RelationalModelSetBuilderContext
         return " (" + string.Join(", ", contextParts) + ")";
     }
 
+    /// <summary>
+    /// Formats a list of candidate projects for diagnostics.
+    /// </summary>
+    /// <param name="candidates">The candidate projects.</param>
+    /// <returns>A formatted candidate list.</returns>
     private static string FormatProjectCandidates(IReadOnlyList<ProjectSchemaInfo> candidates)
     {
         return string.Join(
@@ -1106,6 +1275,11 @@ public sealed class RelationalModelSetBuilderContext
         );
     }
 
+    /// <summary>
+    /// Determines whether a JSONPath expression occurs under an <c>_ext</c> subtree.
+    /// </summary>
+    /// <param name="path">The JSONPath to inspect.</param>
+    /// <returns><see langword="true"/> when the path includes an <c>_ext</c> property segment.</returns>
     private static bool IsExtensionScoped(JsonPathExpression path)
     {
         return path.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" });

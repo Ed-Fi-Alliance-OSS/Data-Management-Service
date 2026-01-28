@@ -7,8 +7,17 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Provides helper methods for reading normalized ApiSchema JSON nodes with consistent validation errors.
+/// </summary>
 internal static class RelationalModelSetSchemaHelpers
 {
+    /// <summary>
+    /// Requires that the supplied node is a non-null <see cref="JsonObject"/>.
+    /// </summary>
+    /// <param name="node">The node to validate.</param>
+    /// <param name="propertyName">The JSON property label used for diagnostics.</param>
+    /// <returns>The validated <see cref="JsonObject"/>.</returns>
     internal static JsonObject RequireObject(JsonNode? node, string propertyName)
     {
         return node switch
@@ -23,6 +32,12 @@ internal static class RelationalModelSetSchemaHelpers
         };
     }
 
+    /// <summary>
+    /// Requires that the specified property is present on the supplied object and contains a non-empty string value.
+    /// </summary>
+    /// <param name="node">The object to read.</param>
+    /// <param name="propertyName">The property name.</param>
+    /// <returns>The validated string value.</returns>
     internal static string RequireString(JsonObject node, string propertyName)
     {
         var value = node[propertyName] switch
@@ -46,6 +61,13 @@ internal static class RelationalModelSetSchemaHelpers
         return value;
     }
 
+    /// <summary>
+    /// Attempts to read an optional string property, returning <see langword="null"/> when the property
+    /// is absent or explicitly null.
+    /// </summary>
+    /// <param name="node">The object to read.</param>
+    /// <param name="propertyName">The property name.</param>
+    /// <returns>The validated string value, or <see langword="null"/>.</returns>
     internal static string? TryGetOptionalString(JsonObject node, string propertyName)
     {
         if (!node.TryGetPropertyValue(propertyName, out var value))
@@ -77,6 +99,13 @@ internal static class RelationalModelSetSchemaHelpers
         return text;
     }
 
+    /// <summary>
+    /// Determines the resource name for a schema entry, using <c>resourceName</c> when present and
+    /// falling back to the schema entry key.
+    /// </summary>
+    /// <param name="resourceKey">The resource schema entry key.</param>
+    /// <param name="resourceSchema">The resource schema object.</param>
+    /// <returns>The resolved resource name.</returns>
     internal static string GetResourceName(string resourceKey, JsonObject resourceSchema)
     {
         if (resourceSchema.TryGetPropertyValue("resourceName", out var resourceNameNode))
@@ -96,6 +125,12 @@ internal static class RelationalModelSetSchemaHelpers
         return RequireNonEmpty(resourceKey, "resourceName");
     }
 
+    /// <summary>
+    /// Requires that a value is a non-null, non-whitespace string.
+    /// </summary>
+    /// <param name="value">The value to validate.</param>
+    /// <param name="propertyName">The label used for diagnostics.</param>
+    /// <returns>The validated string.</returns>
     internal static string RequireNonEmpty(string? value, string propertyName)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -106,6 +141,11 @@ internal static class RelationalModelSetSchemaHelpers
         return value;
     }
 
+    /// <summary>
+    /// Formats a qualified resource name for diagnostics.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <returns>A formatted label.</returns>
     internal static string FormatResource(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}:{resource.ResourceName}";

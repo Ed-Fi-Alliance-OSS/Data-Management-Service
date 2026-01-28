@@ -66,6 +66,11 @@ public sealed class DerivedRelationalModelSetBuilder
         return context.BuildResult();
     }
 
+    /// <summary>
+    /// Validates pass order uniqueness and returns the pass list sorted by <see cref="IRelationalModelSetPass.Order"/>.
+    /// </summary>
+    /// <param name="passes">The unordered pass list.</param>
+    /// <returns>A deterministically ordered pass list.</returns>
     private static IReadOnlyList<IRelationalModelSetPass> OrderPasses(
         IReadOnlyList<IRelationalModelSetPass> passes
     )
@@ -106,5 +111,8 @@ public sealed class DerivedRelationalModelSetBuilder
         return orderedPasses;
     }
 
+    /// <summary>
+    /// Materialized pass metadata used for deterministic ordering and diagnostics.
+    /// </summary>
     private sealed record PassEntry(IRelationalModelSetPass Pass, int Order, string TypeName);
 }
