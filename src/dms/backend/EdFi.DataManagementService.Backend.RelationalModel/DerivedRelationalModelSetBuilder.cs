@@ -831,35 +831,12 @@ public sealed class RelationalModelSetBuilderContext
         string resourceSchemasPath
     )
     {
-        foreach (var resourceSchemaEntry in resourceSchemas)
+        foreach (var resourceSchemaEntry in OrderResourceSchemas(resourceSchemas, resourceSchemasPath))
         {
-            if (resourceSchemaEntry.Value is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
-                );
-            }
-
-            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
-            {
-                throw new InvalidOperationException(
-                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
-                );
-            }
-
-            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
-
             ValidateDocumentPathsMappingTargetsForResource(
                 projectName,
-                resourceName,
-                resourceSchema,
+                resourceSchemaEntry.ResourceName,
+                resourceSchemaEntry.ResourceSchema,
                 effectiveResources
             );
         }
@@ -877,7 +854,7 @@ public sealed class RelationalModelSetBuilderContext
             return;
         }
 
-        foreach (var mapping in documentPathsMapping)
+        foreach (var mapping in documentPathsMapping.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
             if (mapping.Value is null)
             {
@@ -938,6 +915,53 @@ public sealed class RelationalModelSetBuilderContext
 
         return $"entry '{mappingKey}' (path '{path}')";
     }
+
+    private static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
+        JsonObject resourceSchemas,
+        string resourceSchemasPath
+    )
+    {
+        List<ResourceSchemaEntry> entries = new(resourceSchemas.Count);
+
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+
+            entries.Add(new ResourceSchemaEntry(resourceSchemaEntry.Key, resourceName, resourceSchema));
+        }
+
+        return entries
+            .OrderBy(entry => entry.ResourceName, StringComparer.Ordinal)
+            .ThenBy(entry => entry.ResourceKey, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private sealed record ResourceSchemaEntry(
+        string ResourceKey,
+        string ResourceName,
+        JsonObject ResourceSchema
+    );
 
     private static void AddResourceEntries(
         HashSet<QualifiedResourceName> resources,
