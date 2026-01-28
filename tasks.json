@@ -13,7 +13,7 @@
     "steps-to-verify": [
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
