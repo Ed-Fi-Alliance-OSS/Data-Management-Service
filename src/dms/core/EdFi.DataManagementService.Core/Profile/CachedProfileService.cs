@@ -18,19 +18,23 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// An empty instance (no profiles) is cached to distinguish "no profiles assigned"
 /// from "not yet cached".
 /// </summary>
-internal sealed record CachedApplicationProfiles(HashSet<long> ProfileIds)
+internal sealed record CachedApplicationProfiles(IReadOnlyDictionary<long, string> ProfilesById)
 {
     /// <summary>
     /// Represents an application with no profiles assigned.
     /// </summary>
-    public static CachedApplicationProfiles Empty { get; } = new(new HashSet<long>());
+    public static CachedApplicationProfiles Empty { get; } = new(new Dictionary<long, string>());
 
     /// <summary>
     /// Returns true if no profiles are assigned to this application.
     /// </summary>
-    public bool IsEmpty => ProfileIds.Count == 0;
+    public bool IsEmpty => ProfilesById.Count == 0;
 
-    public bool Contains(long profileId) => ProfileIds.Contains(profileId);
+    public bool Contains(long profileId) => ProfilesById.ContainsKey(profileId);
+
+    public IEnumerable<long> AssignedProfileIds => ProfilesById.Keys;
+
+    public IEnumerable<string> AssignedProfileNames => ProfilesById.Values;
 }
 
 /// <summary>
@@ -190,15 +194,33 @@ internal class CachedProfileService(
                         return CachedApplicationProfiles.Empty;
                     }
 
-                    var assignedProfileIds = new HashSet<long>(appInfo.ProfileIds);
+                    // Fetch profile store to get names for the IDs
+                    CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
+
+                    var profilesById = new Dictionary<long, string>();
+                    foreach (long profileId in appInfo.ProfileIds)
+                    {
+                        if (profileStore.NameById.TryGetValue(profileId, out string? profileName))
+                        {
+                            profilesById[profileId] = profileName;
+                        }
+                        else
+                        {
+                            logger.LogWarning(
+                                "Profile ID {ProfileId} not found in profile store for application {ApplicationId}",
+                                profileId,
+                                applicationId
+                            );
+                        }
+                    }
 
                     logger.LogDebug(
                         "Cached {Count} profile assignments for application. ApplicationId: {ApplicationId}",
-                        assignedProfileIds.Count,
+                        profilesById.Count,
                         applicationId
                     );
 
-                    return new CachedApplicationProfiles(assignedProfileIds);
+                    return new CachedApplicationProfiles(profilesById);
                 },
                 new HybridCacheEntryOptions
                 {
@@ -244,18 +266,15 @@ internal class CachedProfileService(
         CachedProfileStore profileStore
     )
     {
-        // Check if the profile is assigned to this application using profile IDs
+        // Check if the profile is assigned to this application
         if (
-            !TryGetProfileId(profileStore, parsedHeader.ProfileName, out long profileId)
-            || !cachedProfiles.Contains(profileId)
+            !cachedProfiles.AssignedProfileNames.Contains(
+                parsedHeader.ProfileName,
+                StringComparer.OrdinalIgnoreCase
+            )
         )
         {
-            string availableProfiles = BuildAvailableProfiles(
-                cachedProfiles,
-                profileStore,
-                resourceName,
-                method
-            );
+            string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
 
             return ProfileResolutionResult.Failure(
                 new ProfileResolutionError(
@@ -356,8 +375,8 @@ internal class CachedProfileService(
     )
     {
         var applicableProfiles = cachedProfiles
-            .ProfileIds.Select(profileId =>
-                profileStore.TryGetById(profileId, out ProfileDefinition? definition) ? definition : null
+            .AssignedProfileNames.Select(profileName =>
+                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
             )
             .Where(definition => definition is not null)
             .Select(definition => new
@@ -405,7 +424,7 @@ internal class CachedProfileService(
         }
 
         // Multiple profiles cover this resource - client must specify which one
-        string availableProfiles = BuildAvailableProfiles(cachedProfiles, profileStore, resourceName, method);
+        string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
 
         return ProfileResolutionResult.Failure(
             new ProfileResolutionError(
@@ -430,7 +449,6 @@ internal class CachedProfileService(
 
     private static string BuildAvailableProfiles(
         CachedApplicationProfiles cachedProfiles,
-        CachedProfileStore profileStore,
         string resourceName,
         RequestMethod method
     )
@@ -439,36 +457,10 @@ internal class CachedProfileService(
 
         return string.Join(
             ", ",
-            cachedProfiles
-                .ProfileIds.Select(profileId =>
-                    profileStore.NameById.TryGetValue(profileId, out string? name) ? name : null
-                )
-                .Where(name => name is not null)
-                .Select(name =>
-                    $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name!, usageType)}'"
-                )
+            cachedProfiles.AssignedProfileNames.Select(name =>
+                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, usageType)}'"
+            )
         );
-    }
-
-    private static bool TryGetProfileId(
-        CachedProfileStore profileStore,
-        string profileName,
-        out long profileId
-    )
-    {
-        long? matchedProfileId = profileStore
-            .NameById.Where(entry => entry.Value.Equals(profileName, StringComparison.OrdinalIgnoreCase))
-            .Select(entry => (long?)entry.Key)
-            .FirstOrDefault();
-
-        if (matchedProfileId.HasValue)
-        {
-            profileId = matchedProfileId.Value;
-            return true;
-        }
-
-        profileId = default;
-        return false;
     }
 
     private static ProfileResolutionResult? ValidateUsageType(
