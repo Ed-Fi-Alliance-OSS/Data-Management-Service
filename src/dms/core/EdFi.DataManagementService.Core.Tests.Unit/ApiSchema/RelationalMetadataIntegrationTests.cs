@@ -64,12 +64,8 @@ public class RelationalMetadataIntegrationTests
             }
         }
 
-        // Assert - We should find at least some resources with relational metadata
-        resourcesWithRelational
-            .Should()
-            .NotBeEmpty(
-                "ApiSchema v1.0.322 should contain resources with relational metadata from MetaEd-js PR #438"
-            );
+        // Assert
+        resourcesWithRelational.Should().Contain("assessmentAdministrationParticipations");
 
         TestContext.WriteLine(
             $"\n✓ Found {resourcesWithRelational.Count} resources with relational metadata"
