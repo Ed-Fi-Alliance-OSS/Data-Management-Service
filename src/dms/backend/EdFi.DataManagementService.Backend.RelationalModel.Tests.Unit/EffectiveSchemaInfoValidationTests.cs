@@ -161,6 +161,43 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeys
     }
 }
 
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Extra_ResourceKeys
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var resourceKeys = new[]
+        {
+            EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School"),
+            EffectiveSchemaFixture.CreateResourceKey(2, "Ed-Fi", "Student"),
+        };
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
+
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_extra_resource_keys()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Resource keys reference unknown resources");
+        _exception.Message.Should().Contain("Ed-Fi:Student");
+    }
+}
+
 internal static class EffectiveSchemaFixture
 {
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(
