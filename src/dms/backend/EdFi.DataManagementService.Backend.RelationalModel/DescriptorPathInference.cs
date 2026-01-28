@@ -12,6 +12,12 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </summary>
 internal static class DescriptorPathInference
 {
+    private sealed record ResourceSchemaEntry(
+        string ResourceKey,
+        string ResourceName,
+        JsonObject ResourceSchema
+    );
+
     /// <summary>
     /// Provides project-level inputs required for descriptor path inference.
     /// </summary>
@@ -38,7 +44,11 @@ internal static class DescriptorPathInference
             new();
         Dictionary<QualifiedResourceName, List<ReferenceJsonPathInfo>> referenceJsonPathsByResource = new();
 
-        foreach (var project in projects)
+        var orderedProjects = projects
+            .OrderBy(project => project?.ProjectName, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var project in orderedProjects)
         {
             if (project is null)
             {
@@ -101,12 +111,22 @@ internal static class DescriptorPathInference
         {
             updated = false;
 
-            foreach (var resourceEntry in referenceJsonPathsByResource)
-            {
-                var resourceKey = resourceEntry.Key;
-                var descriptorPaths = descriptorPathsByResource[resourceKey];
+            var orderedResources = referenceJsonPathsByResource
+                .Keys.OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
+                .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
+                .ToArray();
 
-                foreach (var referenceInfo in resourceEntry.Value)
+            foreach (var resourceKey in orderedResources)
+            {
+                var descriptorPaths = descriptorPathsByResource[resourceKey];
+                var orderedReferenceInfos = referenceJsonPathsByResource[resourceKey]
+                    .OrderBy(info => info.ReferencedResource.ProjectName, StringComparer.Ordinal)
+                    .ThenBy(info => info.ReferencedResource.ResourceName, StringComparer.Ordinal)
+                    .ThenBy(info => info.IdentityPath.Canonical, StringComparer.Ordinal)
+                    .ThenBy(info => info.ReferencePath.Canonical, StringComparer.Ordinal)
+                    .ToArray();
+
+                foreach (var referenceInfo in orderedReferenceInfos)
                 {
                     if (
                         !descriptorPathsByResource.TryGetValue(
@@ -160,37 +180,27 @@ internal static class DescriptorPathInference
         string resourceSchemasPath
     )
     {
-        foreach (var resourceSchemaEntry in resourceSchemas)
+        foreach (var resourceSchemaEntry in OrderResourceSchemas(resourceSchemas, resourceSchemasPath))
         {
-            if (resourceSchemaEntry.Value is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
-                );
-            }
-
-            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
-            var qualifiedResourceName = new QualifiedResourceName(projectName, resourceName);
+            var qualifiedResourceName = new QualifiedResourceName(
+                projectName,
+                resourceSchemaEntry.ResourceName
+            );
 
             if (descriptorPathsByResource.ContainsKey(qualifiedResourceName))
             {
                 throw new InvalidOperationException(
-                    $"Descriptor paths for resource '{resourceName}' are already defined."
+                    $"Descriptor paths for resource '{resourceSchemaEntry.ResourceName}' are already defined."
                 );
             }
 
             descriptorPathsByResource[qualifiedResourceName] = ExtractDescriptorPathsForResource(
-                resourceSchema,
+                resourceSchemaEntry.ResourceSchema,
                 projectName
             );
-            referenceJsonPathsByResource[qualifiedResourceName] = ExtractReferenceJsonPaths(resourceSchema);
+            referenceJsonPathsByResource[qualifiedResourceName] = ExtractReferenceJsonPaths(
+                resourceSchemaEntry.ResourceSchema
+            );
         }
     }
 
@@ -225,7 +235,7 @@ internal static class DescriptorPathInference
 
         Dictionary<string, DescriptorPathInfo> descriptorPathsByJsonPath = new(StringComparer.Ordinal);
 
-        foreach (var mapping in documentPathsMapping)
+        foreach (var mapping in OrderDocumentPathsMappingEntries(documentPathsMapping))
         {
             if (mapping.Value is null)
             {
@@ -368,7 +378,7 @@ internal static class DescriptorPathInference
 
         List<ReferenceJsonPathInfo> referenceJsonPaths = new();
 
-        foreach (var mapping in documentPathsMapping)
+        foreach (var mapping in OrderDocumentPathsMappingEntries(documentPathsMapping))
         {
             if (mapping.Value is null)
             {
@@ -447,6 +457,47 @@ internal static class DescriptorPathInference
         }
 
         return referenceJsonPaths;
+    }
+
+    private static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
+        JsonObject resourceSchemas,
+        string resourceSchemasPath
+    )
+    {
+        List<ResourceSchemaEntry> entries = new(resourceSchemas.Count);
+
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+
+            entries.Add(new ResourceSchemaEntry(resourceSchemaEntry.Key, resourceName, resourceSchema));
+        }
+
+        return entries
+            .OrderBy(entry => entry.ResourceName, StringComparer.Ordinal)
+            .ThenBy(entry => entry.ResourceKey, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static IReadOnlyList<KeyValuePair<string, JsonNode?>> OrderDocumentPathsMappingEntries(
+        JsonObject documentPathsMapping
+    )
+    {
+        return documentPathsMapping.OrderBy(entry => entry.Key, StringComparer.Ordinal).ToArray();
     }
 
     private static JsonObject RequireObject(JsonNode? node, string propertyName)

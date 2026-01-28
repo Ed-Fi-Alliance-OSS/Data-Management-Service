@@ -170,3 +170,123 @@ public class Given_An_EffectiveSchemaSet_With_An_AbstractResource_Missing_Docume
         _exception.Message.Should().Contain("Ed-Fi:School");
     }
 }
+
+[TestFixture]
+public class Given_Reordered_Resources_And_DocumentPathsMapping
+{
+    private Exception? _orderedException;
+    private Exception? _reorderedException;
+
+    [SetUp]
+    public void Setup()
+    {
+        _orderedException = CaptureBuildException(reverseResourceOrder: false, reverseMappingOrder: false);
+        _reorderedException = CaptureBuildException(reverseResourceOrder: true, reverseMappingOrder: true);
+    }
+
+    [Test]
+    public void It_should_report_missing_targets_in_canonical_order()
+    {
+        _orderedException.Should().BeOfType<InvalidOperationException>();
+        _reorderedException.Should().BeOfType<InvalidOperationException>();
+        _orderedException!.Message.Should().Be(_reorderedException!.Message);
+        _orderedException.Message.Should().Contain("Alpha");
+        _orderedException.Message.Should().Contain("AlphaMissing");
+    }
+
+    private static Exception CaptureBuildException(bool reverseResourceOrder, bool reverseMappingOrder)
+    {
+        var projectSchema = CreateProjectSchema(reverseResourceOrder, reverseMappingOrder);
+        var resourceKeys = new[]
+        {
+            EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "Alpha"),
+            EffectiveSchemaFixture.CreateResourceKey(2, "Ed-Fi", "Beta"),
+        };
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
+
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            return ex;
+        }
+
+        throw new InvalidOperationException("Expected builder to fail due to missing targets.");
+    }
+
+    private static JsonObject CreateProjectSchema(bool reverseResourceOrder, bool reverseMappingOrder)
+    {
+        var resourceEntries = reverseResourceOrder
+            ? new[] { ("betas", "Beta"), ("alphas", "Alpha") }
+            : new[] { ("alphas", "Alpha"), ("betas", "Beta") };
+
+        JsonObject resourceSchemas = new();
+
+        foreach (var entry in resourceEntries)
+        {
+            resourceSchemas[entry.Item1] = new JsonObject
+            {
+                ["resourceName"] = entry.Item2,
+                ["isResourceExtension"] = false,
+            };
+        }
+
+        var alphaSchema = (JsonObject)resourceSchemas["alphas"]!;
+        alphaSchema["documentPathsMapping"] = CreateAlphaMappings(reverseMappingOrder);
+
+        var betaSchema = (JsonObject)resourceSchemas["betas"]!;
+        betaSchema["documentPathsMapping"] = new JsonObject
+        {
+            ["Beta"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "BetaMissing",
+                ["path"] = "$.betaReference",
+            },
+        };
+
+        return new JsonObject { ["resourceSchemas"] = resourceSchemas };
+    }
+
+    private static JsonObject CreateAlphaMappings(bool reverseMappingOrder)
+    {
+        var alphaMapping = new JsonObject
+        {
+            ["isReference"] = true,
+            ["isDescriptor"] = false,
+            ["projectName"] = "Ed-Fi",
+            ["resourceName"] = "AlphaMissing",
+            ["path"] = "$.alphaReference",
+        };
+
+        var zebraMapping = new JsonObject
+        {
+            ["isReference"] = true,
+            ["isDescriptor"] = false,
+            ["projectName"] = "Ed-Fi",
+            ["resourceName"] = "ZebraMissing",
+            ["path"] = "$.zebraReference",
+        };
+
+        JsonObject documentPathsMapping = new();
+
+        if (reverseMappingOrder)
+        {
+            documentPathsMapping["Zebra"] = zebraMapping;
+            documentPathsMapping["Alpha"] = alphaMapping;
+        }
+        else
+        {
+            documentPathsMapping["Alpha"] = alphaMapping;
+            documentPathsMapping["Zebra"] = zebraMapping;
+        }
+
+        return documentPathsMapping;
+    }
+}
