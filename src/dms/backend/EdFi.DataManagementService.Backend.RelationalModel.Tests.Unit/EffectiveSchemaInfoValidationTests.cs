@@ -198,24 +198,104 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_ResourceKeys
     }
 }
 
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Missing_SchemaComponents
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
+            projectSchema,
+            resourceKeys,
+            schemaComponentsOverride: Array.Empty<SchemaComponentInfo>()
+        );
+
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_missing_schema_components()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("SchemaComponentsInEndpointOrder");
+        _exception.Message.Should().Contain("ed-fi");
+    }
+}
+
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
+        var extraComponents = new[]
+        {
+            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+            new SchemaComponentInfo("tpdm", "TPDM", "1.0.0", true),
+        };
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
+            projectSchema,
+            resourceKeys,
+            schemaComponentsOverride: extraComponents
+        );
+
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_extra_schema_components()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("SchemaComponentsInEndpointOrder");
+        _exception.Message.Should().Contain("tpdm");
+    }
+}
+
 internal static class EffectiveSchemaFixture
 {
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(
         JsonObject projectSchema,
         IReadOnlyList<ResourceKeyEntry> resourceKeys,
-        int? resourceKeyCountOverride = null
+        int? resourceKeyCountOverride = null,
+        IReadOnlyList<SchemaComponentInfo>? schemaComponentsOverride = null
     )
     {
+        var schemaComponents =
+            schemaComponentsOverride ?? new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
             EffectiveSchemaHash: "deadbeef",
             ResourceKeyCount: resourceKeyCountOverride ?? resourceKeys.Count,
             ResourceKeySeedHash: new byte[] { 0x01 },
-            SchemaComponentsInEndpointOrder: new[]
-            {
-                new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
-            },
+            SchemaComponentsInEndpointOrder: schemaComponents,
             ResourceKeysInIdOrder: resourceKeys
         );
 
