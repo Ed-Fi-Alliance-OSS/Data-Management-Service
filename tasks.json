@@ -88,5 +88,53 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Tests",
+    "description": "Add a pragmatic determinism test for DMS-1033 that compares full derived outputs across input ordering variations: build a `DerivedRelationalModelSet` from the hand-authored multi-project fixture in both normal and reversed project/resource order, then serialize a deterministic manifest that includes per-resource relational inventory (tables + columns + descriptor edge sources) and discovered `_ext` site metadata. Acceptance: manifests must be byte-for-byte identical, catching any nondeterminism beyond list ordering (e.g., dictionary iteration).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add happy-path unit tests for `_ext` project-key resolution in `RelationalModelSetBuilderContext`: (1) key matches `ProjectEndpointName` case-insensitively and resolves to that project; (2) when no endpoint-name match exists, key matches `ProjectName` case-insensitively and resolves to that project; (3) endpoint-name match takes precedence over project-name fallback when both would match. Acceptance: tests assert the resolved `ProjectSchemaInfo.ProjectEndpointName` is the expected project and no exceptions are thrown.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add a unit test for `EffectiveSchemaInfo` validation that fails fast when `ResourceKeysInIdOrder` contains an entry for a resource not present in the `EffectiveSchemaSet` (\"extra resource keys\"). Acceptance: `DerivedRelationalModelSetBuilder.Build(...)` throws an `InvalidOperationException` whose message contains `Resource keys reference unknown resources` and includes the offending `(ProjectName, ResourceName)` pair.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add unit tests for deterministic pass ordering/execution in `DerivedRelationalModelSetBuilder`: provide an intentionally unsorted pass list and assert execution order is sorted by `(Order asc, pass type full name ordinal)`. Also assert duplicate ordering keys (same `Order` + same pass type) throw a clear error. Acceptance: tests prove stable ordering independent of registration/list order and prevent silent duplicate pass registration.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add unit tests for identifier shortening in `PgsqlDialectRules` and `MssqlDialectRules`: (1) identifiers at/below the dialect limit are unchanged; (2) over-limit identifiers are shortened deterministically (same input -> same output) and produce results within the limit; (3) PostgreSQL shortening measures UTF-8 byte length (include a multibyte input case) while SQL Server uses character count. Acceptance: tests validate length enforcement and multibyte handling without requiring any database or SQL emission.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add a unit test proving `documentPathsMapping` target validation applies to `abstractResources` as well as `resourceSchemas`: create an `abstractResources` schema containing a `documentPathsMapping` entry whose `(projectName, resourceName)` target is missing from the effective schema set. Acceptance: `DerivedRelationalModelSetBuilder.Build(...)` throws an `InvalidOperationException` mentioning `documentPathsMapping`, the source abstract resource, and the missing target resource (and includes the mapping key/path when available).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
