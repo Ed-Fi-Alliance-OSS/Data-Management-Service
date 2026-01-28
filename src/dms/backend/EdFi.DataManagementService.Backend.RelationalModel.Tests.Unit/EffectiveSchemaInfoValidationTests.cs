@@ -199,6 +199,53 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_ResourceKeys
 }
 
 [TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Mismatched_Abstract_Resource_Flags
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        EffectiveSchemaFixture.AddAbstractResources(
+            projectSchema,
+            ("educationOrganizations", "EducationOrganization")
+        );
+
+        var resourceKeys = new[]
+        {
+            EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School"),
+            EffectiveSchemaFixture.CreateResourceKey(
+                2,
+                "Ed-Fi",
+                "EducationOrganization",
+                isAbstractResource: false
+            ),
+        };
+
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_with_an_abstract_resource_mismatch()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("IsAbstractResource");
+        _exception.Message.Should().Contain("Ed-Fi:EducationOrganization");
+    }
+}
+
+[TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Missing_SchemaComponents
 {
     private Exception? _exception;
@@ -413,13 +460,18 @@ internal static class EffectiveSchemaFixture
         return new EffectiveSchemaSet(effectiveSchemaInfo, new[] { project });
     }
 
-    public static ResourceKeyEntry CreateResourceKey(short keyId, string projectName, string resourceName)
+    public static ResourceKeyEntry CreateResourceKey(
+        short keyId,
+        string projectName,
+        string resourceName,
+        bool isAbstractResource = false
+    )
     {
         return new ResourceKeyEntry(
             keyId,
             new QualifiedResourceName(projectName, resourceName),
             "1.0.0",
-            false
+            isAbstractResource
         );
     }
 

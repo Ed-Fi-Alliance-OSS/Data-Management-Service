@@ -84,7 +84,7 @@ public sealed class RelationalModelSetBuilderContext
         RelationalModelSetValidation.ValidateEffectiveSchemaInfo(effectiveSchemaSet, effectiveResources);
         RelationalModelSetValidation.ValidateDocumentPathsMappingTargets(
             effectiveSchemaSet,
-            effectiveResources
+            effectiveResources.Resources
         );
         _resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
             entry => entry.Resource
