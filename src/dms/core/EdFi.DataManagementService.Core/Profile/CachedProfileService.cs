@@ -3,8 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Logging;
@@ -16,25 +18,74 @@ namespace EdFi.DataManagementService.Core.Profile;
 /// An empty instance (no profiles) is cached to distinguish "no profiles assigned"
 /// from "not yet cached".
 /// </summary>
-internal record CachedApplicationProfiles(
-    IReadOnlyDictionary<string, ProfileDefinition> ProfilesByName,
-    IReadOnlyList<string> AssignedProfileNames
-)
+internal sealed record CachedApplicationProfiles(IReadOnlyDictionary<long, string> ProfilesById)
 {
     /// <summary>
     /// Represents an application with no profiles assigned.
     /// </summary>
-    public static CachedApplicationProfiles Empty { get; } =
-        new(new Dictionary<string, ProfileDefinition>(), Array.Empty<string>());
+    public static CachedApplicationProfiles Empty { get; } = new(new Dictionary<long, string>());
 
     /// <summary>
     /// Returns true if no profiles are assigned to this application.
     /// </summary>
-    public bool IsEmpty => AssignedProfileNames.Count == 0;
-};
+    public bool IsEmpty => ProfilesById.Count == 0;
+
+    public bool Contains(long profileId) => ProfilesById.ContainsKey(profileId);
+
+    public IEnumerable<long> AssignedProfileIds => ProfilesById.Keys;
+
+    public IEnumerable<string> AssignedProfileNames => ProfilesById.Values;
+}
 
 /// <summary>
-/// Profile service with caching and stampede protection
+/// Cached profile store containing all profiles for a tenant.
+/// Provides O(1) lookup by profile name and by id-to-name mapping.
+/// </summary>
+internal sealed record CachedProfileStore(
+    IReadOnlyDictionary<string, ProfileDefinition> DefinitionsByName,
+    IReadOnlyDictionary<long, string> NameById
+)
+{
+    public IEnumerable<string> ProfileNames => DefinitionsByName.Keys;
+
+    public bool TryGetByName(string name, out ProfileDefinition? definition)
+    {
+        if (DefinitionsByName.TryGetValue(name, out definition))
+        {
+            return true;
+        }
+
+        ProfileDefinition? matchedDefinition = DefinitionsByName
+            .Where(entry => entry.Key.Equals(name, StringComparison.OrdinalIgnoreCase))
+            .Select(entry => entry.Value)
+            .FirstOrDefault();
+
+        if (matchedDefinition is not null)
+        {
+            definition = matchedDefinition;
+            return true;
+        }
+
+        definition = null;
+        return false;
+    }
+
+    public bool TryGetById(long id, out ProfileDefinition? definition)
+    {
+        if (NameById.TryGetValue(id, out string? name))
+        {
+            return DefinitionsByName.TryGetValue(name, out definition);
+        }
+
+        definition = null;
+        return false;
+    }
+}
+
+/// <summary>
+/// Profile service with caching and stampede protection.
+/// Provides profile resolution for requests, catalog-level access to profiles,
+/// and cached profile-filtered OpenAPI specifications.
 /// </summary>
 internal class CachedProfileService(
     IProfileCmsProvider profileCmsProvider,
@@ -43,13 +94,29 @@ internal class CachedProfileService(
     ILogger<CachedProfileService> logger
 ) : IProfileService
 {
-    private const string CacheKeyPrefix = "ApplicationProfiles";
+    private const string ApplicationProfilesCacheKeyPrefix = "ApplicationProfiles";
+    private const string ProfileCatalogCacheKeyPrefix = "ProfileCatalog";
+    private const string ProfileOpenApiCacheKeyPrefix = "ProfileOpenApi";
+    private readonly ProfileOpenApiSpecificationFilter profileFilter = new(logger);
 
-    private static string GetCacheKey(string? tenantId, long applicationId)
+    private static string GetApplicationCacheKey(string? tenantId, long applicationId)
     {
         return string.IsNullOrEmpty(tenantId)
-            ? $"{CacheKeyPrefix}:{applicationId}"
-            : $"{CacheKeyPrefix}:{tenantId}:{applicationId}";
+            ? $"{ApplicationProfilesCacheKeyPrefix}:{applicationId}"
+            : $"{ApplicationProfilesCacheKeyPrefix}:{tenantId}:{applicationId}";
+    }
+
+    private static string GetCatalogCacheKey(string? tenantId) =>
+        string.IsNullOrEmpty(tenantId)
+            ? ProfileCatalogCacheKeyPrefix
+            : $"{ProfileCatalogCacheKeyPrefix}:{tenantId}";
+
+    private static string GetOpenApiCacheKey(string? tenantId, string profileName, Guid apiSchemaReloadId)
+    {
+        string normalizedProfileName = profileName.ToLowerInvariant();
+        return string.IsNullOrEmpty(tenantId)
+            ? $"{ProfileOpenApiCacheKeyPrefix}:{normalizedProfileName}:{apiSchemaReloadId}"
+            : $"{ProfileOpenApiCacheKeyPrefix}:{tenantId}:{normalizedProfileName}:{apiSchemaReloadId}";
     }
 
     /// <inheritdoc />
@@ -80,15 +147,17 @@ internal class CachedProfileService(
             return ProfileResolutionResult.NoProfileApplies();
         }
 
+        CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
+
         // Profiles are assigned to this application
         if (parsedHeader != null)
         {
             // Explicit profile header provided - validate and resolve
-            return ValidateExplicitProfile(parsedHeader, method, resourceName, cachedProfiles);
+            return ValidateExplicitProfile(parsedHeader, method, resourceName, cachedProfiles, profileStore);
         }
 
         // No header provided - check for implicit profile selection
-        return HandleImplicitProfileSelection(method, resourceName, cachedProfiles);
+        return HandleImplicitProfileSelection(method, resourceName, cachedProfiles, profileStore);
     }
 
     /// <inheritdoc />
@@ -97,7 +166,7 @@ internal class CachedProfileService(
         string? tenantId
     )
     {
-        string cacheKey = GetCacheKey(tenantId, applicationId);
+        string cacheKey = GetApplicationCacheKey(tenantId, applicationId);
 
         // HybridCache.GetOrCreateAsync returns the cached value or the result of the factory.
         // We always return a non-null value from the factory, but use null-coalescing for safety.
@@ -125,66 +194,33 @@ internal class CachedProfileService(
                         return CachedApplicationProfiles.Empty;
                     }
 
-                    // Fetch all profile definitions in parallel
-                    var fetchTasks = appInfo.ProfileIds.Select(async profileId =>
+                    // Fetch profile store to get names for the IDs
+                    CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
+
+                    var profilesById = new Dictionary<long, string>();
+                    foreach (long profileId in appInfo.ProfileIds)
                     {
-                        CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
-                            profileId,
-                            tenantId
-                        );
-                        return (ProfileId: profileId, Response: profileResponse);
-                    });
-
-                    var fetchResults = await Task.WhenAll(fetchTasks);
-
-                    // Process results
-                    // Note: We use lowercase keys for the dictionary to ensure case-insensitivity
-                    // survives HybridCache serialization/deserialization (which loses dictionary comparers).
-                    var profilesByName = new Dictionary<string, ProfileDefinition>();
-                    var assignedProfileNames = new List<string>();
-
-                    foreach (var (profileId, profileResponse) in fetchResults)
-                    {
-                        if (profileResponse == null)
+                        if (profileStore.NameById.TryGetValue(profileId, out string? profileName))
+                        {
+                            profilesById[profileId] = profileName;
+                        }
+                        else
                         {
                             logger.LogWarning(
-                                "Profile not found during cache population. ProfileId: {ProfileId}, ApplicationId: {ApplicationId}",
+                                "Profile ID {ProfileId} not found in profile store for application {ApplicationId}",
                                 profileId,
                                 applicationId
                             );
-                            continue;
                         }
-
-                        ProfileDefinitionParseResult parseResult = ProfileDefinitionParser.Parse(
-                            profileResponse.Definition
-                        );
-
-                        if (!parseResult.IsSuccess || parseResult.Definition == null)
-                        {
-                            logger.LogWarning(
-                                "Failed to parse profile definition. ProfileId: {ProfileId}, Error: {Error}",
-                                profileId,
-                                LoggingSanitizer.SanitizeForLogging(
-                                    parseResult.ErrorMessage ?? "Unknown error"
-                                )
-                            );
-                            continue;
-                        }
-
-                        // Store with lowercase key for case-insensitive lookup after deserialization
-                        profilesByName[parseResult.Definition.ProfileName.ToLowerInvariant()] =
-                            parseResult.Definition;
-                        // Keep original case for error messages and content type building
-                        assignedProfileNames.Add(parseResult.Definition.ProfileName);
                     }
 
                     logger.LogDebug(
-                        "Cached {Count} profiles for application. ApplicationId: {ApplicationId}",
-                        profilesByName.Count,
+                        "Cached {Count} profile assignments for application. ApplicationId: {ApplicationId}",
+                        profilesById.Count,
                         applicationId
                     );
 
-                    return new CachedApplicationProfiles(profilesByName, assignedProfileNames);
+                    return new CachedApplicationProfiles(profilesById);
                 },
                 new HybridCacheEntryOptions
                 {
@@ -226,25 +262,19 @@ internal class CachedProfileService(
         ParsedProfileHeader parsedHeader,
         RequestMethod method,
         string resourceName,
-        CachedApplicationProfiles cachedProfiles
+        CachedApplicationProfiles cachedProfiles,
+        CachedProfileStore profileStore
     )
     {
         // Check if the profile is assigned to this application
-        // Use lowercase for lookup since dictionary keys are normalized to lowercase
         if (
-            !cachedProfiles.ProfilesByName.TryGetValue(
-                parsedHeader.ProfileName.ToLowerInvariant(),
-                out ProfileDefinition? profileDefinition
+            !cachedProfiles.AssignedProfileNames.Contains(
+                parsedHeader.ProfileName,
+                StringComparer.OrdinalIgnoreCase
             )
         )
         {
-            // Profile not assigned to this application
-            string availableProfiles = string.Join(
-                ", ",
-                cachedProfiles.AssignedProfileNames.Select(name =>
-                    $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, GetUsageTypeForMethod(method))}'"
-                )
-            );
+            string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
 
             return ProfileResolutionResult.Failure(
                 new ProfileResolutionError(
@@ -258,6 +288,14 @@ internal class CachedProfileService(
                     ]
                 )
             );
+        }
+
+        if (
+            !profileStore.TryGetByName(parsedHeader.ProfileName, out ProfileDefinition? profileDefinition)
+            || profileDefinition is null
+        )
+        {
+            return CreateProfileNotFoundError(parsedHeader.ProfileName, method);
         }
 
         // Validate resource name in header matches the requested resource
@@ -332,14 +370,23 @@ internal class CachedProfileService(
     private static ProfileResolutionResult HandleImplicitProfileSelection(
         RequestMethod method,
         string resourceName,
-        CachedApplicationProfiles cachedProfiles
+        CachedApplicationProfiles cachedProfiles,
+        CachedProfileStore profileStore
     )
     {
-        // Find profiles that cover the requested resource
         var applicableProfiles = cachedProfiles
-            .ProfilesByName.Values.Where(p =>
-                p.Resources.Any(r => r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase))
+            .AssignedProfileNames.Select(profileName =>
+                profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null
             )
+            .Where(definition => definition is not null)
+            .Select(definition => new
+            {
+                Definition = definition!,
+                ResourceProfile = definition!.Resources.FirstOrDefault(r =>
+                    r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
+                ),
+            })
+            .Where(x => x.ResourceProfile is not null)
             .ToList();
 
         if (applicableProfiles.Count == 0)
@@ -350,17 +397,13 @@ internal class CachedProfileService(
 
         if (applicableProfiles.Count == 1)
         {
-            // Exactly one profile covers this resource - auto-select it
-            ProfileDefinition profile = applicableProfiles[0];
-            ResourceProfile resourceProfile = profile.Resources.First(r =>
-                r.ResourceName.Equals(resourceName, StringComparison.OrdinalIgnoreCase)
-            );
+            var match = applicableProfiles[0];
 
             // Validate the resource has the appropriate content type
             ProfileResolutionResult? contentTypeValidation = ValidateResourceContentType(
-                resourceProfile,
+                match.ResourceProfile!,
                 method,
-                profile.ProfileName
+                match.Definition.ProfileName
             );
             if (contentTypeValidation != null)
             {
@@ -372,21 +415,16 @@ internal class CachedProfileService(
 
             return ProfileResolutionResult.Success(
                 new ProfileContext(
-                    ProfileName: profile.ProfileName,
+                    ProfileName: match.Definition.ProfileName,
                     ContentType: contentType,
-                    ResourceProfile: resourceProfile,
+                    ResourceProfile: match.ResourceProfile!,
                     WasExplicitlySpecified: false
                 )
             );
         }
 
         // Multiple profiles cover this resource - client must specify which one
-        string availableProfiles = string.Join(
-            ", ",
-            applicableProfiles.Select(p =>
-                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), p.ProfileName, GetUsageTypeForMethod(method))}'"
-            )
-        );
+        string availableProfiles = BuildAvailableProfiles(cachedProfiles, resourceName, method);
 
         return ProfileResolutionResult.Failure(
             new ProfileResolutionError(
@@ -408,6 +446,22 @@ internal class CachedProfileService(
     /// </summary>
     private static ProfileUsageType GetUsageTypeForMethod(RequestMethod method) =>
         method == RequestMethod.GET ? ProfileUsageType.Readable : ProfileUsageType.Writable;
+
+    private static string BuildAvailableProfiles(
+        CachedApplicationProfiles cachedProfiles,
+        string resourceName,
+        RequestMethod method
+    )
+    {
+        ProfileUsageType usageType = GetUsageTypeForMethod(method);
+
+        return string.Join(
+            ", ",
+            cachedProfiles.AssignedProfileNames.Select(name =>
+                $"'{ProfileHeaderParser.BuildProfileContentType(resourceName.ToLowerInvariant(), name, usageType)}'"
+            )
+        );
+    }
 
     private static ProfileResolutionResult? ValidateUsageType(
         ProfileUsageType usageType,
@@ -517,4 +571,197 @@ internal class CachedProfileService(
             )
         );
     }
+
+    #region Catalog Access Methods
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId)
+    {
+        CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
+        return profileStore.ProfileNames.ToList();
+    }
+
+    /// <inheritdoc />
+    public async Task<ProfileDefinition?> GetProfileDefinitionAsync(string profileName, string? tenantId)
+    {
+        CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
+        return profileStore.TryGetByName(profileName, out ProfileDefinition? definition) ? definition : null;
+    }
+
+    /// <summary>
+    /// Gets the full profile store for a tenant, using cache with stampede protection.
+    /// </summary>
+    private async Task<CachedProfileStore> GetOrFetchProfileStoreAsync(string? tenantId)
+    {
+        string cacheKey = GetCatalogCacheKey(tenantId);
+
+        // HybridCache.GetOrCreateAsync provides stampede protection:
+        // Only one concurrent caller executes the factory; others wait for the result
+        return await hybridCache.GetOrCreateAsync(
+                cacheKey,
+                async cancel =>
+                {
+                    logger.LogDebug(
+                        "Cache miss for profile catalog, fetching from CMS for tenant: {Tenant}",
+                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                    );
+
+                    IReadOnlyList<CmsProfileResponse> profiles = await profileCmsProvider.GetProfilesAsync(
+                        tenantId
+                    );
+
+                    if (profiles.Count == 0)
+                    {
+                        logger.LogDebug(
+                            "No profiles found for tenant: {Tenant}",
+                            LoggingSanitizer.SanitizeForLogging(tenantId)
+                        );
+                        return new CachedProfileStore(
+                            new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase),
+                            new Dictionary<long, string>()
+                        );
+                    }
+
+                    // Fetch all profile definitions in parallel
+                    var fetchTasks = profiles.Select(async profile =>
+                    {
+                        CmsProfileResponse? profileResponse = await profileCmsProvider.GetProfileAsync(
+                            profile.Id,
+                            tenantId
+                        );
+                        return (ProfileId: profile.Id, Response: profileResponse);
+                    });
+
+                    var fetchResults = await Task.WhenAll(fetchTasks);
+
+                    // Parse all profiles and build the store
+                    var profilesByName = new Dictionary<string, ProfileDefinition>(
+                        StringComparer.OrdinalIgnoreCase
+                    );
+                    var nameById = new Dictionary<long, string>();
+
+                    foreach (var (profileId, profileResponse) in fetchResults)
+                    {
+                        if (profileResponse is null)
+                        {
+                            logger.LogWarning(
+                                "Profile fetch returned null. ProfileId: {ProfileId}, Tenant: {Tenant}",
+                                profileId,
+                                LoggingSanitizer.SanitizeForLogging(tenantId)
+                            );
+                            continue;
+                        }
+
+                        ProfileDefinitionParseResult parseResult = ProfileDefinitionParser.Parse(
+                            profileResponse.Definition
+                        );
+
+                        if (!parseResult.IsSuccess || parseResult.Definition is null)
+                        {
+                            logger.LogWarning(
+                                "Failed to parse profile definition. ProfileId: {ProfileId}, Name: {Name}, Error: {Error}",
+                                profileResponse.Id,
+                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                LoggingSanitizer.SanitizeForLogging(
+                                    parseResult.ErrorMessage ?? "Unknown error"
+                                )
+                            );
+                            continue;
+                        }
+
+                        profilesByName[parseResult.Definition.ProfileName] = parseResult.Definition;
+                        nameById[profileResponse.Id] = parseResult.Definition.ProfileName;
+                    }
+
+                    logger.LogDebug(
+                        "Cached {Count} profiles for tenant: {Tenant}",
+                        profilesByName.Count,
+                        LoggingSanitizer.SanitizeForLogging(tenantId)
+                    );
+
+                    return new CachedProfileStore(profilesByName, nameById);
+                },
+                new HybridCacheEntryOptions
+                {
+                    Expiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+                    LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+                }
+            )
+            ?? new CachedProfileStore(
+                new Dictionary<string, ProfileDefinition>(StringComparer.OrdinalIgnoreCase),
+                new Dictionary<long, string>()
+            );
+    }
+
+    #endregion
+
+    #region Profile OpenAPI Methods
+
+    /// <inheritdoc />
+    public async Task<JsonNode?> GetProfileOpenApiSpecAsync(
+        string profileName,
+        string? tenantId,
+        Func<JsonNode> baseSpecificationProvider,
+        Guid apiSchemaReloadId
+    )
+    {
+        // First verify the profile exists in the catalog
+        CachedProfileStore profileStore = await GetOrFetchProfileStoreAsync(tenantId);
+
+        if (!profileStore.TryGetByName(profileName, out ProfileDefinition? profileDefinition))
+        {
+            logger.LogWarning(
+                "Profile not found in catalog. ProfileName: {ProfileName}, TenantId: {TenantId}",
+                LoggingSanitizer.SanitizeForLogging(profileName),
+                LoggingSanitizer.SanitizeForLogging(tenantId)
+            );
+            return null;
+        }
+
+        // Get or create the cached OpenAPI spec
+        // The cache key includes apiSchemaReloadId so specs are regenerated when the schema changes
+        string cacheKey = GetOpenApiCacheKey(tenantId, profileName, apiSchemaReloadId);
+
+        // Since we cache JsonNode as string (HybridCache serialization), we need to parse it back
+        string? cachedSpec = await hybridCache.GetOrCreateAsync(
+            cacheKey,
+            async cancel =>
+            {
+                logger.LogDebug(
+                    "Cache miss for profile OpenAPI spec, generating. ProfileName: {ProfileName}, TenantId: {TenantId}, SchemaReloadId: {ReloadId}",
+                    LoggingSanitizer.SanitizeForLogging(profileName),
+                    LoggingSanitizer.SanitizeForLogging(tenantId),
+                    apiSchemaReloadId
+                );
+
+                // Get the base OpenAPI spec with servers from the provider
+                JsonNode baseSpecification = baseSpecificationProvider();
+
+                // Apply profile filtering to the OpenAPI spec
+                JsonNode filteredSpecification = profileFilter.CreateProfileSpecification(
+                    baseSpecification,
+                    profileDefinition!
+                );
+
+                logger.LogDebug(
+                    "Cached profile OpenAPI spec. ProfileName: {ProfileName}, TenantId: {TenantId}",
+                    LoggingSanitizer.SanitizeForLogging(profileName),
+                    LoggingSanitizer.SanitizeForLogging(tenantId)
+                );
+
+                // Return as string for serialization
+                return filteredSpecification.ToJsonString();
+            },
+            new HybridCacheEntryOptions
+            {
+                Expiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+                LocalCacheExpiration = TimeSpan.FromSeconds(cacheSettings.ProfileCacheExpirationSeconds),
+            }
+        );
+
+        // Parse the cached string back to JsonNode
+        return cachedSpec is not null ? JsonNode.Parse(cachedSpec) : null;
+    }
+
+    #endregion
 }

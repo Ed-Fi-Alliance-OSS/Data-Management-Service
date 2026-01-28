@@ -40,4 +40,11 @@ public interface IProfileCmsProvider
     /// <param name="tenantId">Optional tenant ID for multi-tenant deployments</param>
     /// <returns>Profile response or null if not found</returns>
     Task<CmsProfileResponse?> GetProfileAsync(long profileId, string? tenantId);
+
+    /// <summary>
+    /// Gets the full profile catalog (id, name, definition)
+    /// </summary>
+    /// <param name="tenantId">Optional tenant ID for multi-tenant deployments</param>
+    /// <returns>List of profiles (empty when none)</returns>
+    Task<IReadOnlyList<CmsProfileResponse>> GetProfilesAsync(string? tenantId);
 }

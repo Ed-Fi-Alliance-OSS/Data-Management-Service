@@ -75,6 +75,111 @@ Feature: The Discovery API provides information about the application version, s
                           "name": "Discovery",
                           "endpointUri": "{BASE_URL}/metadata/specifications/discovery-spec.json",
                           "prefix": "Other"
+                      },
+                      {
+                          "name": "E2E-Test-School-IncludeOnly",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-IncludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-ExcludeOnly",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-ExcludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-IncludeAll",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-IncludeAll/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-GradeLevelFilter",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-GradeLevelFilter/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-GradeLevelExcludeFilter",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-GradeLevelExcludeFilter/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-IncludeOnly-Alt",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-IncludeOnly-Alt/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Extension-IncludeOnly",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Extension-IncludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Extension-ExcludeOnly",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Extension-ExcludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-IncludeOnly-NoExtensionRule",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-IncludeOnly-NoExtensionRule/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-ExcludeOnly-NoExtensionRule",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-ExcludeOnly-NoExtensionRule/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-IncludeOnly",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-IncludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-ExcludeOnly",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-ExcludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-GradeLevelFilter",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-GradeLevelFilter/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-ExcludeRequired",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-ExcludeRequired/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-ExcludeRequiredCollection",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-ExcludeRequiredCollection/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-IncludeOnlyMissingRequired",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-IncludeOnlyMissingRequired/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-IncludeAll",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-IncludeAll/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-RequiredCollectionWithRule",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-RequiredCollectionWithRule/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-AddressExcludeNameOfCounty",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-AddressExcludeNameOfCounty/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-School-Write-GradeLevelFilterPreserve",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Test-School-Write-GradeLevelFilterPreserve/resources-spec.json",
+                          "prefix": "Profiles"
+                      },
+                      {
+                          "name": "E2E-Test-Calendar-Write-IncludeOnly",
+                          "endpointUri": "http://localhost:8080/metadata/specifications/profiles/E2E-Test-Calendar-Write-IncludeOnly/resources-spec.json",
+                          "prefix": "Profiles"
                       }
                   ]
                   """

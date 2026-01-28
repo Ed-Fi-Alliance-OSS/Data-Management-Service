@@ -84,6 +84,10 @@ When a client's application has **multiple** profiles covering the resource:
 
 - Client **must** specify which profile to use via header
 - Request without profile header returns an error
+  
+**Note:** If the application has one or more profiles but none apply to the
+requested resource/verb, assignment enforcement is skipped; the request proceeds
+without forcing or blocking a profile choice.
 
 ---
 
@@ -187,10 +191,18 @@ With Profile Support:
 4. **Validate authorization**
    - Check if client's application has the profile assigned
    - Handle implicit profile selection
+   - Enforcement: compare chosen (or implicit) profile to the caller's allowed
+  profiles for the target resource/verb; auto-apply when exactly one applicable
+  profile exists; block with 403 if the chosen profile is not assigned or
+  selection is ambiguous
    - If the application has no assigned profiles, skip assignment enforcement
+   - If the application has assigned profiles but none apply to the requested
+  resource/verb, skip assignment enforcement (do not block on an unassigned
+  header in this edge case)
 
 5. **Store in RequestInfo**
    - Add `ProfileContext` to `RequestInfo` for downstream use
+   - Header parsing is evaluated per-request and is not cached
 
 ### 4.3 ProfileContext Data Structure
 
@@ -585,6 +597,7 @@ PUT. This mirrors ODS/API behavior where `SynchronizeTo` skips excluded
 non-key properties, leaving existing values in place.
 
 **Example:** A profile excludes `nameOfCounty` from addresses (a non-key field):
+
 - POST with full data: `nameOfCounty: "Travis"` is saved
 - PUT with different value: `nameOfCounty: "Harris"` is ignored
 - Result: `nameOfCounty: "Travis"` is preserved from existing document
@@ -599,6 +612,7 @@ exclude a key field results in a `DataPolicyException` because the signature
 
 **Key fields for collections** are defined by the `ArrayUniquenessConstraint`
 in the ApiSchema. For example, for addresses, the key fields are:
+
 - `addressTypeDescriptor`
 - `city`
 - `postalCode`
@@ -606,6 +620,7 @@ in the ApiSchema. For example, for addresses, the key fields are:
 - `streetNumberName`
 
 **Non-key fields** (which CAN be excluded and preserved) include:
+
 - `nameOfCounty`
 - `congressionalDistrict`
 - `latitude`
@@ -620,6 +635,7 @@ with existing items. Matching is performed using the collection's key fields
 collection, the filter's property is used as the matching key instead.
 
 **Merge Process:**
+
 1. Fetch existing document from database
 2. For each collection with excluded non-key properties:
    a. For each incoming item, find matching existing item by key fields
@@ -1193,7 +1209,14 @@ When a profile excludes required members of a child item type:
 ### 9.1 Cache Architecture
 
 DMS caches all profiles for an application in a single cache entry, keyed by
-`TenantId` and `ApplicationId`.
+`TenantId` and `ProfileName`.
+
+Lifecycle expectations:
+
+- Profile definitions are loaded once from CMS and cached with TTL.
+- Parsed profile-specific resource models are built from those definitions and
+cached alongside them with the same TTL.
+- Per-request header parsing remains uncached and is evaluated on every call.
 
 ```text
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -1236,8 +1259,10 @@ DMS caches all profiles for an application in a single cache entry, keyed by
                     │     └── Cache miss:                                     │
                     │         a. Call CMS: GET /v2/applications/{id}/profiles │
                     │         b. Parse all profile XMLs                       │
-                    │         c. Store in cache as Dictionary<Name, Parsed>   │
-                    │         d. Lookup requested profile by name             │
+                    │         c. Build and cache parsed profile definitions and resource models (same TTL) │
+                    │         d. Build/reset profile-specific API metadata/OpenAPI cache entries (pre-warm optional) │
+                    │         e. Store in cache as Dictionary<Name, Parsed>   │
+                    │         f. Lookup requested profile by name             │
                     │                                                         │
                     │  3. Return ProfileContext for pipeline                  │
                     └─────────────────────────────────────────────────────────┘
@@ -1442,3 +1467,368 @@ The generated OpenAPI document follows standard OpenAPI 3.0 format with:
 
 Profile OpenAPI documents should be cached with the same TTL as profile
 definitions (default 30 minutes) to avoid regeneration on every request.
+
+---
+
+## 13. OpenAPI Schema Transformation Rules
+
+### 13.1 Overview
+
+When generating profile-specific OpenAPI specifications, DMS applies a
+multi-step transformation pipeline to the base API schema. This section
+documents the detailed rules and logic for creating profile-filtered schemas.
+
+### 13.2 Transformation Pipeline
+
+The transformation follows a 7-step pipeline:
+
+1. **Filter Paths** - Remove paths for resources not covered by the profile and disallowed operations
+2. **Remove Unused Parameters** - Clean up component parameters no longer referenced
+3. **Remove Unused Schemas (First Pass)** - Clean up schemas not referenced by remaining paths
+4. **Create Profile Schemas** - Generate `_readable` and `_writable` schema variants
+5. **Remove Base Schemas** - Remove original schemas that now have suffixed versions
+6. **Remove Unused Schemas (Final Pass)** - Final cleanup after profile schema creation
+7. **Remove Unused Tags** - Clean up tags not referenced by remaining paths
+
+### 13.3 Schema Suffix Rules
+
+#### 13.3.1 Suffix Application
+
+- **GET operations**: Use `_readable` suffix for response schemas
+- **POST/PUT operations**: Use `_writable` suffix for request body schemas
+- **DELETE operations**: Part of Write profiles; filtered out from Read profiles
+
+#### 13.3.2 Double-Suffix Prevention
+
+**Critical Rule**: Never apply a suffix to a schema name that already ends with
+`_readable` or `_writable`. This prevents creating malformed schemas like
+`EdFi_School_readable_readable`.
+
+**Implementation**: Before adding a suffix, check:
+
+```
+if schemaName.endsWith("_readable") OR schemaName.endsWith("_writable")
+    skip suffix application
+```
+
+#### 13.3.3 Recursive Suffix Application
+
+When creating a suffixed schema (e.g., `EdFi_Student_readable`):
+
+1. Clone the base schema
+2. Apply property filtering (if root resource)
+3. Recursively create suffixed versions for all nested schema references
+4. Update all `$ref` values in the clone to point to suffixed versions
+5. **Important**: Do NOT apply property filtering to nested/referenced schemas
+
+### 13.4 Content Type Transformation
+
+#### 13.4.1 Format
+
+Profile-specific content types follow this pattern:
+
+```
+application/vnd.ed-fi.{resource}.{profile}.{usage}+json
+```
+
+Where:
+
+- `{resource}` = lowercase singular resource name (e.g., `student`)
+- `{profile}` = lowercase profile name (e.g., `exclude-birthdate`)
+- `{usage}` = `readable` or `writable`
+
+#### 13.4.2 Operation Updates
+
+**For GET operations (Response)**:
+
+- Original: `responses[*].content["application/json"]`
+- Becomes: `responses[*].content["application/vnd.ed-fi.student.profilename.readable+json"]`
+- Schema `$ref` updated to use `_readable` suffix
+
+**For POST/PUT operations (Request)**:
+
+- Original: `requestBody.content["application/json"]`
+- Becomes: `requestBody.content["application/vnd.ed-fi.student.profilename.writable+json"]`
+- Schema `$ref` updated to use `_writable` suffix
+
+### 13.5 Readable Schema Rules
+
+Readable schemas are used for GET response payloads and must include server-generated
+and identity fields while respecting profile filtering rules.
+
+#### 13.5.1 Always-Included Properties
+
+The following properties are **always included** in readable schemas regardless of
+profile filtering rules:
+
+- `id` - Server-generated surrogate key
+- `link` - Self-reference link
+- `_etag` - Concurrency token
+- `_lastModifiedDate` - Last modification timestamp
+- Properties ending with `Reference` - Resource references
+- Properties ending with `UniqueId` - Natural key identifiers
+
+#### 13.5.2 Property Filtering Rules
+
+After preserving required properties, apply `MemberSelection` rules:
+
+**IncludeOnly Mode**:
+
+- Remove any property NOT explicitly listed in the profile's property collection
+- Exception: Always-included properties (listed above) are retained
+
+**ExcludeOnly Mode**:
+
+- Remove only properties explicitly listed in the profile's property collection
+- Exception: Always-included properties cannot be excluded
+
+**IncludeAll Mode**:
+
+- Keep all properties (no filtering applied)
+
+#### 13.5.3 Additional Includes
+
+Beyond individual properties, readable schemas must include:
+
+- All properties specified in `Objects` collection (nested objects)
+- All properties specified in `Collections` collection (array properties)
+- `_ext` property if the profile has any `Extensions` rules
+
+#### 13.5.4 Required Array Updates
+
+After removing filtered properties:
+
+1. Locate the schema's `required` array
+2. Remove any property names that were filtered out
+3. Preserve the order of remaining required properties
+
+### 13.6 Writable Schema Rules
+
+Writable schemas are used for POST/PUT request payloads and must exclude
+server-generated fields while including natural identity properties.
+
+#### 13.6.1 Always-Excluded Properties
+
+The following properties are **always excluded** from writable schemas:
+
+- `id` - Server-generated surrogate key (not client-provided)
+- `_etag` - Server-managed concurrency token
+- `_lastModifiedDate` - Server-managed timestamp
+- `link` - Server-generated self-reference
+
+#### 13.6.2 Always-Included Properties
+
+The following properties are **always included** for identity purposes:
+
+- Properties ending with `Reference` - Required for referential integrity
+- Properties ending with `UniqueId` - Natural key identifiers
+
+#### 13.6.3 Property Filtering Rules
+
+After applying always-excluded/included rules, apply `MemberSelection` rules:
+
+**IncludeOnly Mode**:
+
+- Remove any property NOT explicitly listed in the profile's property collection
+- Exception: Always-included identity properties are retained
+
+**ExcludeOnly Mode**:
+
+- Remove only properties explicitly listed in the profile's property collection
+- Exception: Identity properties cannot be excluded
+
+**IncludeAll Mode**:
+
+- Include all properties (except always-excluded fields)
+
+#### 13.6.4 Additional Includes
+
+Same rules as readable schemas for Objects, Collections, and Extensions.
+
+#### 13.6.5 Required Array Updates
+
+Same process as readable schemas - update to reflect filtered properties.
+
+### 13.7 Nested Schema References
+
+When a schema contains references to other schemas (e.g., nested objects,
+collections, or inline arrays), all referenced schemas must also be created
+with matching suffixes.
+
+#### 13.7.1 Reference Discovery
+
+The transformation recursively discovers all `$ref` values:
+
+- Direct property references: `"$ref": "#/components/schemas/EdFi_Address"`
+- Array item references: `"items": { "$ref": "#/components/schemas/..." }`
+- Nested object references at any depth
+
+#### 13.7.2 Recursive Schema Creation
+
+For each discovered reference:
+
+1. Extract the schema name from the `$ref` path
+2. Skip if schema name already has a profile suffix
+3. Create a suffixed version of the referenced schema
+4. **Do NOT** apply property filtering (only applies to root resource schemas)
+5. Recursively process any nested references within that schema
+6. Update the `$ref` value to point to the suffixed version
+
+#### 13.7.3 Deduplication
+
+Track created schemas in a `HashSet<string>` to avoid recreating schemas
+that have already been processed.
+
+### 13.8 Schema Cleanup
+
+#### 13.8.1 Remove Base Schemas
+
+After creating all suffixed schemas, remove the original base schemas if they
+have suffixed versions:
+
+- If `EdFi_Student_readable` or `EdFi_Student_writable` exists
+- Remove `EdFi_Student` from the components/schemas collection
+
+This ensures clients only see the profile-specific schemas.
+
+#### 13.8.2 Remove Unreferenced Schemas
+
+Perform two passes of unreferenced schema removal:
+
+**Pass 1** (after path filtering):
+
+- Remove schemas not referenced by any remaining path operation
+- Keep transitively referenced schemas (e.g., schemas referenced by kept schemas)
+
+**Pass 2** (after profile schema creation):
+
+- Final cleanup to remove any schemas orphaned by the transformation process
+- Use graph traversal starting from path operations to identify kept schemas
+
+### 13.9 Path and Operation Filtering
+
+#### 13.9.1 Path Removal
+
+Remove entire paths (endpoints) if:
+
+- The resource is not included in the profile's resource collection
+- Example: If profile only covers `Student`, remove `/schools`, `/programs`, etc.
+
+#### 13.9.2 Operation Removal
+
+For paths that ARE included in the profile, remove individual operations based
+on content type support:
+
+**Remove GET operation if**:
+
+- Profile resource has no `ReadContentType` definition
+- Indicates the resource is write-only in this profile
+
+**Remove POST operation if**:
+
+- Profile resource has no `WriteContentType` definition
+- Indicates the resource is read-only in this profile
+
+**Remove PUT operation if**:
+
+- Profile resource has no `WriteContentType` definition
+- Same rule as POST - writable content type covers both
+
+**DELETE operations**:
+
+- Never removed based on profile rules
+- Profiles do not apply to DELETE operations
+
+### 13.10 Example Transformation
+
+#### 13.10.1 Base Schema (Before)
+
+```json
+{
+  "EdFi_Student": {
+    "type": "object",
+    "properties": {
+      "id": { "type": "string" },
+      "studentUniqueId": { "type": "string" },
+      "firstName": { "type": "string" },
+      "lastName": { "type": "string" },
+      "birthDate": { "type": "string", "format": "date" },
+      "_etag": { "type": "string" }
+    },
+    "required": ["studentUniqueId", "firstName", "lastName"]
+  }
+}
+```
+
+#### 13.10.2 Profile Definition
+
+```xml
+<Profile name="ExcludeBirthDate">
+  <Resource name="Student">
+    <ReadContentType memberSelection="ExcludeOnly">
+      <Property name="birthDate"/>
+    </ReadContentType>
+    <WriteContentType memberSelection="ExcludeOnly">
+      <Property name="birthDate"/>
+    </WriteContentType>
+  </Resource>
+</Profile>
+```
+
+#### 13.10.3 Readable Schema (After)
+
+```json
+{
+  "EdFi_Student_readable": {
+    "type": "object",
+    "properties": {
+      "id": { "type": "string" },
+      "studentUniqueId": { "type": "string" },
+      "firstName": { "type": "string" },
+      "lastName": { "type": "string" },
+      "_etag": { "type": "string" }
+      // birthDate removed (ExcludeOnly)
+      // id, _etag retained (always-included)
+    },
+    "required": ["studentUniqueId", "firstName", "lastName"]
+  }
+}
+```
+
+#### 13.10.4 Writable Schema (After)
+
+```json
+{
+  "EdFi_Student_writable": {
+    "type": "object",
+    "properties": {
+      "studentUniqueId": { "type": "string" },
+      "firstName": { "type": "string" },
+      "lastName": { "type": "string" }
+      // birthDate removed (ExcludeOnly)
+      // id, _etag excluded (always-excluded from writable)
+    },
+    "required": ["studentUniqueId", "firstName", "lastName"]
+  }
+}
+```
+
+### 13.11 OpenAPI Info Section
+
+The transformed OpenAPI document must update the `info` section:
+
+**Title**:
+
+```json
+{
+  "info": {
+    "title": "{ProfileName} Resources",
+    "description": "Profile-filtered API for {ProfileName}. Based on: {OriginalTitle}"
+  }
+}
+```
+
+**Servers Array**:
+
+- Preserve the `servers` array from the base specification
+- Update with appropriate base URLs for the deployment

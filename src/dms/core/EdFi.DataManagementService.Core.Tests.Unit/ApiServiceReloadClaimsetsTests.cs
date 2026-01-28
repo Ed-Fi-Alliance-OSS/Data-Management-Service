@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
@@ -97,7 +98,8 @@ public class Given_ClaimsetReloadIsEnabled_When_ReloadClaimsetsAsyncIsCalled
             serviceProvider,
             cachedClaimSetProvider, // Use as CachedClaimSetProvider
             fakeResourceDependencyGraphMLFactory,
-            fakeCompiledSchemaCache
+            fakeCompiledSchemaCache,
+            A.Fake<IProfileService>()
         );
     }
 
@@ -258,7 +260,8 @@ public class Given_ClaimsetReloadIsDisabled_When_ReloadClaimsetsAsyncIsCalled
             serviceProvider,
             cachedClaimSetProvider,
             fakeResourceDependencyGraphMLFactory,
-            fakeCompiledSchemaCache
+            fakeCompiledSchemaCache,
+            A.Fake<IProfileService>()
         );
     }
 

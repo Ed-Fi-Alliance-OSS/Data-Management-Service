@@ -165,7 +165,8 @@ public class InvalidResourceSchemasTests
                 serviceProvider,
                 A.Fake<CachedClaimSetProvider>(),
                 A.Fake<IResourceDependencyGraphMLFactory>(),
-                new CompiledSchemaCache()
+                new CompiledSchemaCache(),
+                A.Fake<IProfileService>()
             );
         }
 

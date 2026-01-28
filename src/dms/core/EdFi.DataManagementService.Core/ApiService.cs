@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.Middleware;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.OpenApi;
 using EdFi.DataManagementService.Core.Pipeline;
+using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Validation;
@@ -48,6 +49,7 @@ internal class ApiService : IApiService
     private readonly CachedClaimSetProvider _cachedClaimSetProvider;
     private readonly IResourceDependencyGraphMLFactory _resourceDependencyGraphMLFactory;
     private readonly ICompiledSchemaCache _compiledSchemaCache;
+    private readonly IProfileService _profileService;
 
     /// <summary>
     /// The pipeline steps to satisfy an upsert request
@@ -105,7 +107,8 @@ internal class ApiService : IApiService
         IServiceProvider serviceProvider,
         CachedClaimSetProvider cachedClaimSetProvider,
         IResourceDependencyGraphMLFactory resourceDependencyGraphMLFactory,
-        ICompiledSchemaCache compiledSchemaCache
+        ICompiledSchemaCache compiledSchemaCache,
+        IProfileService profileService
     )
     {
         _apiSchemaProvider = apiSchemaProvider;
@@ -124,6 +127,7 @@ internal class ApiService : IApiService
         _cachedClaimSetProvider = cachedClaimSetProvider;
         _resourceDependencyGraphMLFactory = resourceDependencyGraphMLFactory;
         _compiledSchemaCache = compiledSchemaCache;
+        _profileService = profileService;
 
         // Initialize VersionedLazy instances with schema version provider
         _upsertSteps = new VersionedLazy<PipelineProvider>(
@@ -797,5 +801,39 @@ internal class ApiService : IApiService
             var errorResponse = new JsonObject { ["error"] = $"Error retrieving claimsets: {ex.Message}" };
             return new FrontendResponse(StatusCode: 500, Body: errorResponse, Headers: []);
         }
+    }
+
+    /// <summary>
+    /// Gets all available profile names for a tenant.
+    /// </summary>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
+    /// <returns>List of profile names</returns>
+    public async Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId)
+    {
+        return await _profileService.GetProfileNamesAsync(tenantId);
+    }
+
+    /// <summary>
+    /// Gets the OpenAPI specification for a specific profile.
+    /// </summary>
+    /// <param name="profileName">The name of the profile</param>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
+    /// <param name="servers">The servers array for the OpenAPI spec</param>
+    /// <returns>The filtered OpenAPI specification, or null if profile not found</returns>
+    public async Task<JsonNode?> GetProfileOpenApiSpecificationAsync(
+        string profileName,
+        string? tenantId,
+        JsonArray servers
+    )
+    {
+        // Delegate to IProfileService which handles caching and filtering
+        // The cache key includes apiSchemaReloadId so specs are regenerated when the schema changes
+        // We pass a Func to delay the base spec retrieval until needed (cache miss)
+        return await _profileService.GetProfileOpenApiSpecAsync(
+            profileName,
+            tenantId,
+            () => GetResourceOpenApiSpecification(servers),
+            _apiSchemaProvider.ReloadId
+        );
     }
 }

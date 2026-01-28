@@ -94,4 +94,24 @@ public interface IApiService
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
     public Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null);
+
+    /// <summary>
+    /// Gets all available profile names for a tenant (cached).
+    /// </summary>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
+    /// <returns>List of profile names</returns>
+    public Task<IReadOnlyList<string>> GetProfileNamesAsync(string? tenantId);
+
+    /// <summary>
+    /// Gets the OpenAPI specification for a specific profile (cached).
+    /// </summary>
+    /// <param name="profileName">The name of the profile</param>
+    /// <param name="tenantId">Optional tenant identifier for multi-tenant deployments</param>
+    /// <param name="servers">The servers array for the OpenAPI spec</param>
+    /// <returns>The filtered OpenAPI specification, or null if profile not found</returns>
+    public Task<JsonNode?> GetProfileOpenApiSpecificationAsync(
+        string profileName,
+        string? tenantId,
+        JsonArray servers
+    );
 }

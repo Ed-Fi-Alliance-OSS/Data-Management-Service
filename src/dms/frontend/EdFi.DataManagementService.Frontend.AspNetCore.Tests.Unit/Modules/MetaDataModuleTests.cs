@@ -22,6 +22,205 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 public class MetadataModuleTests
 {
     [TestFixture]
+    public class When_Getting_Profiles_Endpoint
+    {
+        [Test]
+        public async Task It_returns_profile_names_list()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>(["StudentProfile", "SchoolProfile"]));
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/specifications");
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+
+            var profilesArray = jsonArray!
+                .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
+                .ToArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            jsonArray.Should().NotBeNull();
+            profilesArray.Should().HaveCount(2);
+            profilesArray[0]!["name"]!.GetValue<string>().Should().Be("StudentProfile");
+            profilesArray[1]!["name"]!.GetValue<string>().Should().Be("SchoolProfile");
+        }
+
+        [Test]
+        public async Task It_returns_empty_array_when_no_profiles()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() => apiService.GetProfileNamesAsync(A<string?>._))
+                .Returns(Task.FromResult<IReadOnlyList<string>>([]));
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/specifications");
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonArray = JsonNode.Parse(content) as JsonArray;
+
+            var profilesArray = jsonArray!
+                .Where(x => x!["prefix"]!.GetValue<string>() == "Profiles")
+                .ToArray();
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            jsonArray.Should().NotBeNull();
+            profilesArray!.Should().HaveCount(0);
+        }
+    }
+
+    [TestFixture]
+    public class When_Getting_Profile_OpenApi_Specification
+    {
+        [Test]
+        public async Task It_returns_OpenApi_spec_for_valid_profile()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "StudentProfile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .Returns(
+                    Task.FromResult<JsonNode?>(
+                        JsonNode.Parse(
+                            """
+                            {
+                              "openapi": "3.0.0",
+                              "info": { "title": "StudentProfile Resources" },
+                              "servers": [{ "url": "http://localhost/data" }]
+                            }
+                            """
+                        )
+                    )
+                );
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(
+                "/metadata/specifications/profiles/StudentProfile/resources-spec.json"
+            );
+            var content = await response.Content.ReadAsStringAsync();
+            var jsonContent = JsonNode.Parse(content);
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            jsonContent.Should().NotBeNull();
+            jsonContent!["openapi"]!.GetValue<string>().Should().Be("3.0.0");
+            jsonContent["info"]!["title"]!.GetValue<string>().Should().Be("StudentProfile Resources");
+        }
+
+        [Test]
+        public async Task It_returns_404_when_profile_not_found()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "NonExistentProfile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .Returns(Task.FromResult<JsonNode?>(null));
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync("/metadata/profiles/NonExistentProfile/resources-spec.json");
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+
+        [Test]
+        public async Task It_handles_case_insensitive_profile_names()
+        {
+            // Arrange
+            var apiService = A.Fake<IApiService>();
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(A<string>._, A<string?>._, A<JsonArray>._)
+                )
+                .Returns(Task.FromResult<JsonNode?>(JsonNode.Parse("""{"openapi": "3.0.0"}""")));
+
+            await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.ConfigureServices(collection =>
+                {
+                    TestMockHelper.AddEssentialMocks(collection);
+                    collection.AddTransient(x => apiService);
+                });
+            });
+            using var client = factory.CreateClient();
+
+            // Act
+            var response = await client.GetAsync(
+                "/metadata/specifications/profiles/studentprofile/resources-spec.json"
+            );
+
+            // Assert
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            A.CallTo(() =>
+                    apiService.GetProfileOpenApiSpecificationAsync(
+                        "studentprofile",
+                        A<string?>._,
+                        A<JsonArray>._
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+        }
+    }
+
+    [TestFixture]
     public class When_Getting_The_Base_Metadata_Endpoint
     {
         private JsonNode? _jsonContent;

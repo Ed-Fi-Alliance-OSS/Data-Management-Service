@@ -1,0 +1,68 @@
+# Profile Metadata endpoints quick check
+# Requires local DMS running (see eng/docker-compose start scripts)
+
+@configPort=8081
+@dmsPort=8080
+@sysAdminId=DmsConfigurationService
+@sysAdminSecret=s3creT@09
+
+### Step 1: Get a token from the config API
+# @name configTokenRequest
+POST http://localhost:{{configPort}}/connect/token
+Content-Type: application/x-www-form-urlencoded
+
+client_id={{sysAdminId}}
+&client_secret={{sysAdminSecret}}
+&grant_type=client_credentials
+&scope=edfi_admin_api/full_access
+
+###
+@configToken={{configTokenRequest.response.body.access_token}}
+@profileName=test-school-readfilter-demo
+
+### Step 2: Create a Profile for School resource with IncludeOnly filtering
+# This profile only allows: nameOfInstitution and webSite
+# Identity fields (schoolId, id) are ALWAYS included regardless of profile rules
+#
+# The profile XML definition structure:
+#
+#   <Profile name="test-school-readfilter-demo">
+#     <Resource name="School">
+#       <ReadContentType memberSelection="IncludeOnly">
+#         <Property name="nameOfInstitution" />
+#         <Property name="webSite" />
+#       </ReadContentType>
+#     </Resource>
+#   </Profile>
+#
+# @name createSchoolProfile
+POST http://localhost:{{configPort}}/v2/profiles/
+Content-Type: application/json
+Authorization: bearer {{configToken}}
+
+{
+  "name": "{{profileName}}",
+  "definition": "<Profile name=\"{{profileName}}\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeOnly\"><Property name=\"nameOfInstitution\" /><Property name=\"webSite\" /></ReadContentType></Resource></Profile>"
+}
+
+### The Location header contains the full URL to the profile (e.g., http://localhost:8081/v2/profiles/123)
+@schoolProfileLocation={{createSchoolProfile.response.headers.Location}}
+@schoolProfileName={{profileName}}
+
+### Step 3: Verify the profile was created (use the Location URL directly)
+# @name getSchoolProfile
+GET {{schoolProfileLocation}}
+Accept: application/json
+Authorization: bearer {{configToken}}
+
+### Optional: verify DMS discovery is reachable
+GET http://localhost:{{dmsPort}}/
+Accept: application/json
+
+### List available profiles (from DMS metadata)
+GET http://localhost:{{dmsPort}}/metadata/specifications/
+Accept: application/json
+
+### Get profile-filtered resource OpenAPI spec (readable)
+GET http://localhost:{{dmsPort}}/metadata/specifications/profiles/{{profileName}}/resources-spec.json
+Accept: application/json
