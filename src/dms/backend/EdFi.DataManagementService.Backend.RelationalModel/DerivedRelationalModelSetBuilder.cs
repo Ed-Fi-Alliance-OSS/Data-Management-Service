@@ -63,6 +63,12 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName,
         IReadOnlyDictionary<string, DescriptorPathInfo>
     > _extensionDescriptorPathsByResource;
+    private readonly IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> _resourceKeysByResource;
+    private readonly Dictionary<
+        QualifiedResourceName,
+        IReadOnlyList<ExtensionSite>
+    > _extensionSitesByResource = new();
+    private static readonly IReadOnlyList<ExtensionSite> EmptyExtensionSites = Array.Empty<ExtensionSite>();
     private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> EmptyDescriptorPaths =
         new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
 
@@ -88,6 +94,9 @@ public sealed class RelationalModelSetBuilderContext
         var effectiveResources = BuildEffectiveSchemaResourceIndex(effectiveSchemaSet);
         ValidateEffectiveSchemaInfo(effectiveSchemaSet, effectiveResources);
         ValidateDocumentPathsMappingTargets(effectiveSchemaSet, effectiveResources);
+        _resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
+            entry => entry.Resource
+        );
 
         var projectsInEndpointOrder = NormalizeProjectsInEndpointOrder(effectiveSchemaSet);
         var projectSchemaBundle = BuildProjectSchemaContexts(projectsInEndpointOrder);
@@ -218,6 +227,56 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         return combined;
+    }
+
+    /// <summary>
+    /// Resolves the effective schema resource key entry for the supplied resource.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <returns>The matching resource key entry.</returns>
+    public ResourceKeyEntry GetResourceKeyEntry(QualifiedResourceName resource)
+    {
+        if (_resourceKeysByResource.TryGetValue(resource, out var entry))
+        {
+            return entry;
+        }
+
+        throw new InvalidOperationException(
+            $"Resource key not found for resource '{FormatResource(resource)}'."
+        );
+    }
+
+    /// <summary>
+    /// Registers extension site metadata for the supplied resource.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <param name="extensionSites">The extension sites discovered for the resource.</param>
+    public void RegisterExtensionSitesForResource(
+        QualifiedResourceName resource,
+        IReadOnlyList<ExtensionSite> extensionSites
+    )
+    {
+        ArgumentNullException.ThrowIfNull(extensionSites);
+
+        if (_extensionSitesByResource.ContainsKey(resource))
+        {
+            throw new InvalidOperationException(
+                $"Extension sites already registered for resource '{FormatResource(resource)}'."
+            );
+        }
+
+        _extensionSitesByResource[resource] =
+            extensionSites.Count == 0 ? EmptyExtensionSites : extensionSites;
+    }
+
+    /// <summary>
+    /// Returns extension sites for the supplied resource.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <returns>The extension sites, or an empty list if none were registered.</returns>
+    public IReadOnlyList<ExtensionSite> GetExtensionSitesForResource(QualifiedResourceName resource)
+    {
+        return _extensionSitesByResource.TryGetValue(resource, out var sites) ? sites : EmptyExtensionSites;
     }
 
     /// <summary>
