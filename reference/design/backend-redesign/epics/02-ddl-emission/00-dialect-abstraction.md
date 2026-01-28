@@ -12,12 +12,15 @@ Introduce a shared dialect abstraction used by both:
 - DDL generation (`reference/design/backend-redesign/design-docs/ddl-generation.md`), and
 - compiled SQL plan emission (future; `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`)
 
-Responsibilities:
-- identifier quoting rules (always-quote)
-- identifier length limits + shortening
-- scalar type mapping defaults
-- idempotent DDL patterns (`IF NOT EXISTS`, catalog checks, `CREATE OR ALTER`, etc.)
-- stable SQL formatting/canonicalization rules
+Implementation note: split “dialect” into two layers so E01 and E02 cannot drift:
+
+- **Shared dialect rules** (reusable component, used by both E01 derivation and E02 emission):
+  - identifier length limits + shortening (truncate + hash),
+  - scalar type mapping defaults.
+- **SQL emission dialect + writer** (E02/E15 concern, composes over the shared rules):
+  - identifier quoting rules (always-quote),
+  - idempotent DDL patterns (`IF NOT EXISTS`, catalog checks, `CREATE OR ALTER`, etc.),
+  - stable SQL formatting/canonicalization rules.
 
 ## Acceptance Criteria
 
@@ -35,11 +38,14 @@ Responsibilities:
 
 ## Tasks
 
-1. Define `ISqlDialect` (or equivalent) capturing quoting, type mapping, and DDL capability differences.
-2. Implement `PgsqlDialect` and `MssqlDialect` with:
+1. Define a shared dialect-rules abstraction (e.g., `ISqlDialectRules`) capturing:
+   - identifier length limits + shortening (truncate + hash),
+   - scalar type mapping defaults.
+2. Define an emission-focused dialect abstraction (e.g., `ISqlDialect`) that composes over the shared rules and captures:
    - quoting,
-   - identifier shortening rules,
-   - type mapping helpers,
-   - existence-check templates.
-3. Implement a shared SQL writer/formatter that enforces canonicalization (`\n`, indentation, keyword casing).
-4. Add unit tests for quoting, type mapping, and deterministic output for a small sample model.
+   - DDL capability differences and existence-check templates.
+3. Implement PostgreSQL and SQL Server variants for both layers:
+   - `PgsqlDialectRules` / `MssqlDialectRules`,
+   - `PgsqlDialect` / `MssqlDialect`.
+4. Implement a shared SQL writer/formatter that enforces canonicalization (`\n`, indentation, keyword casing).
+5. Add unit tests for quoting, shortening/type defaults, and deterministic output for a small sample model.
