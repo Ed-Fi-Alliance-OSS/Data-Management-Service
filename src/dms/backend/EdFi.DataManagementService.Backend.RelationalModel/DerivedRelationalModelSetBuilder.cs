@@ -536,6 +536,8 @@ public sealed class RelationalModelSetBuilderContext
             throw new InvalidOperationException("EffectiveSchemaSet.EffectiveSchema must be provided.");
         }
 
+        ValidateSchemaComponentsInEndpointOrder(effectiveSchemaSet);
+
         if (effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder is null)
         {
             throw new InvalidOperationException(
@@ -637,6 +639,85 @@ public sealed class RelationalModelSetBuilderContext
 
             throw new InvalidOperationException(string.Join(" ", messageParts));
         }
+    }
+
+    private static void ValidateSchemaComponentsInEndpointOrder(EffectiveSchemaSet effectiveSchemaSet)
+    {
+        if (effectiveSchemaSet.EffectiveSchema.SchemaComponentsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaInfo.SchemaComponentsInEndpointOrder must be provided."
+            );
+        }
+
+        if (effectiveSchemaSet.ProjectsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaSet.ProjectsInEndpointOrder must be provided."
+            );
+        }
+
+        if (
+            effectiveSchemaSet.EffectiveSchema.SchemaComponentsInEndpointOrder.Any(component =>
+                component is null
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaInfo.SchemaComponentsInEndpointOrder must not contain null entries."
+            );
+        }
+
+        var schemaComponentEndpointNames = effectiveSchemaSet
+            .EffectiveSchema.SchemaComponentsInEndpointOrder.Select(component =>
+                RequireNonEmpty(
+                    component.ProjectEndpointName,
+                    "SchemaComponentsInEndpointOrder.ProjectEndpointName"
+                )
+            )
+            .ToArray();
+
+        var projectEndpointNames = effectiveSchemaSet
+            .ProjectsInEndpointOrder.Select(project =>
+                RequireNonEmpty(project.ProjectEndpointName, "ProjectEndpointName")
+            )
+            .ToArray();
+
+        var schemaComponentSet = new HashSet<string>(schemaComponentEndpointNames, StringComparer.Ordinal);
+        var projectSet = new HashSet<string>(projectEndpointNames, StringComparer.Ordinal);
+
+        var missing = projectSet
+            .Except(schemaComponentSet)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        var extra = schemaComponentSet
+            .Except(projectSet)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .ToArray();
+
+        if (missing.Length == 0 && extra.Length == 0)
+        {
+            return;
+        }
+
+        List<string> messageParts = new();
+
+        if (missing.Length > 0)
+        {
+            messageParts.Add(
+                "SchemaComponentsInEndpointOrder is missing projects: " + string.Join(", ", missing)
+            );
+        }
+
+        if (extra.Length > 0)
+        {
+            messageParts.Add(
+                "SchemaComponentsInEndpointOrder contains unknown projects: " + string.Join(", ", extra)
+            );
+        }
+
+        throw new InvalidOperationException(string.Join(" ", messageParts));
     }
 
     private static HashSet<QualifiedResourceName> BuildEffectiveSchemaResourceIndex(
