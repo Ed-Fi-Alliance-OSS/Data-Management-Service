@@ -144,7 +144,10 @@ public class Given_An_EffectiveSchemaSet_With_An_AbstractResource_Missing_Docume
             },
         };
 
-        var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "AbstractSchool") };
+        var resourceKeys = new[]
+        {
+            EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "AbstractSchool", isAbstractResource: true),
+        };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
 
         var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());

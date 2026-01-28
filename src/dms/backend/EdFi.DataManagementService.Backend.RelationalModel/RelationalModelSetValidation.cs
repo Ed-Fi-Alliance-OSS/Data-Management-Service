@@ -10,7 +10,12 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 internal static class RelationalModelSetValidation
 {
-    internal static HashSet<QualifiedResourceName> BuildEffectiveSchemaResourceIndex(
+    internal sealed record EffectiveSchemaResourceIndex(
+        IReadOnlySet<QualifiedResourceName> Resources,
+        IReadOnlyDictionary<QualifiedResourceName, bool> IsAbstractByResource
+    );
+
+    internal static EffectiveSchemaResourceIndex BuildEffectiveSchemaResourceIndex(
         EffectiveSchemaSet effectiveSchemaSet
     )
     {
@@ -22,6 +27,7 @@ internal static class RelationalModelSetValidation
         }
 
         HashSet<QualifiedResourceName> resources = new();
+        Dictionary<QualifiedResourceName, bool> isAbstractByResource = new();
 
         foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
         {
@@ -45,25 +51,34 @@ internal static class RelationalModelSetValidation
                 "projectSchema.resourceSchemas"
             );
 
-            AddResourceEntries(resources, resourceSchemas, projectName, "projectSchema.resourceSchemas");
+            AddResourceEntries(
+                resources,
+                isAbstractByResource,
+                resourceSchemas,
+                projectName,
+                "projectSchema.resourceSchemas",
+                isAbstract: false
+            );
 
             if (project.ProjectSchema["abstractResources"] is JsonObject abstractResources)
             {
                 AddResourceEntries(
                     resources,
+                    isAbstractByResource,
                     abstractResources,
                     projectName,
-                    "projectSchema.abstractResources"
+                    "projectSchema.abstractResources",
+                    isAbstract: true
                 );
             }
         }
 
-        return resources;
+        return new EffectiveSchemaResourceIndex(resources, isAbstractByResource);
     }
 
     internal static void ValidateEffectiveSchemaInfo(
         EffectiveSchemaSet effectiveSchemaSet,
-        IReadOnlySet<QualifiedResourceName> effectiveResources
+        EffectiveSchemaResourceIndex effectiveResources
     )
     {
         if (effectiveSchemaSet.EffectiveSchema is null)
@@ -141,13 +156,13 @@ internal static class RelationalModelSetValidation
         );
 
         var missingResources = effectiveResources
-            .Where(resource => !resourceKeysByResource.ContainsKey(resource))
+            .Resources.Where(resource => !resourceKeysByResource.ContainsKey(resource))
             .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
             .ToArray();
 
         var extraResources = resourceKeysByResource
-            .Where(entry => !effectiveResources.Contains(entry.Key))
+            .Where(entry => !effectiveResources.Resources.Contains(entry.Key))
             .Select(entry => entry.Key)
             .OrderBy(resource => resource.ProjectName, StringComparer.Ordinal)
             .ThenBy(resource => resource.ResourceName, StringComparer.Ordinal)
@@ -174,6 +189,11 @@ internal static class RelationalModelSetValidation
 
             throw new InvalidOperationException(string.Join(" ", messageParts));
         }
+
+        ValidateResourceKeyAbstractness(
+            effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder,
+            effectiveResources.IsAbstractByResource
+        );
     }
 
     private static void ValidateSchemaComponentsInEndpointOrder(EffectiveSchemaSet effectiveSchemaSet)
@@ -481,9 +501,11 @@ internal static class RelationalModelSetValidation
 
     private static void AddResourceEntries(
         HashSet<QualifiedResourceName> resources,
+        Dictionary<QualifiedResourceName, bool> isAbstractByResource,
         JsonObject resourceSchemas,
         string projectName,
-        string resourceSchemasPath
+        string resourceSchemasPath,
+        bool isAbstract
     )
     {
         foreach (var resourceSchemaEntry in resourceSchemas)
@@ -510,8 +532,66 @@ internal static class RelationalModelSetValidation
             }
 
             var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+            var resource = new QualifiedResourceName(projectName, resourceName);
 
-            resources.Add(new QualifiedResourceName(projectName, resourceName));
+            if (resources.Add(resource))
+            {
+                isAbstractByResource[resource] = isAbstract;
+                continue;
+            }
+
+            if (!isAbstractByResource.TryGetValue(resource, out var existingIsAbstract))
+            {
+                continue;
+            }
+
+            if (existingIsAbstract == isAbstract)
+            {
+                continue;
+            }
+
+            var existingLocation = existingIsAbstract
+                ? "projectSchema.abstractResources"
+                : "projectSchema.resourceSchemas";
+            var duplicateLocation = isAbstract
+                ? "projectSchema.abstractResources"
+                : "projectSchema.resourceSchemas";
+
+            throw new InvalidOperationException(
+                $"Resource '{FormatResource(resource)}' is defined in both {existingLocation} "
+                    + $"and {duplicateLocation}."
+            );
+        }
+    }
+
+    private static void ValidateResourceKeyAbstractness(
+        IReadOnlyList<ResourceKeyEntry> resourceKeys,
+        IReadOnlyDictionary<QualifiedResourceName, bool> isAbstractByResource
+    )
+    {
+        foreach (var entry in resourceKeys)
+        {
+            if (!isAbstractByResource.TryGetValue(entry.Resource, out var expectedIsAbstract))
+            {
+                throw new InvalidOperationException(
+                    $"Resource key entry for resource '{FormatResource(entry.Resource)}' "
+                        + "does not correspond to a resource in the effective schema set."
+                );
+            }
+
+            if (entry.IsAbstractResource == expectedIsAbstract)
+            {
+                continue;
+            }
+
+            var expectedLabel = expectedIsAbstract ? "abstract" : "concrete";
+            var actualLabel = entry.IsAbstractResource ? "abstract" : "concrete";
+
+            throw new InvalidOperationException(
+                $"Resource key entry for resource '{FormatResource(entry.Resource)}' has "
+                    + $"IsAbstractResource={entry.IsAbstractResource} ({actualLabel}) but expected "
+                    + $"IsAbstractResource={expectedIsAbstract} ({expectedLabel})."
+            );
         }
     }
 }
