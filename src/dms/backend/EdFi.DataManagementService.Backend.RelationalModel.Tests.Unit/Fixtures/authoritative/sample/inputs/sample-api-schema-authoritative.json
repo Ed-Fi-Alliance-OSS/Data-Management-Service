@@ -1,0 +1,75 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "resourceSchemas": {
+      "sections": {
+        "resourceName": "Section",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.sectionId"
+        ],
+        "documentPathsMapping": {
+          "School": {
+            "isReference": true,
+            "isDescriptor": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "School",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolTypeDescriptor",
+                "referenceJsonPath": "$.schoolReference.schoolTypeDescriptor"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "sectionId": {
+              "type": "integer"
+            },
+            "schoolReference": {
+              "type": "object",
+              "properties": {
+                "schoolTypeDescriptor": {
+                  "type": "string",
+                  "maxLength": 50
+                }
+              }
+            }
+          },
+          "required": [
+            "sectionId"
+          ]
+        }
+      },
+      "extensionDescriptors": {
+        "resourceName": "ExtensionDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.extensionDescriptorId"
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "extensionDescriptorId": {
+              "type": "integer"
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 50
+            }
+          },
+          "required": [
+            "extensionDescriptorId"
+          ]
+        }
+      }
+    }
+  }
+}

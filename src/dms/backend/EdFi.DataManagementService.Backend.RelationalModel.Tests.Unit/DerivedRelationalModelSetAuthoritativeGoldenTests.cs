@@ -16,7 +16,7 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
 [TestFixture]
-public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
+public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
 {
     private string _diffOutput = default!;
 
@@ -24,20 +24,51 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
     public void Setup()
     {
         var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
-        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
-        var inputPath = Path.Combine(fixtureRoot, "inputs", "ds-5.2-api-schema-authoritative.json");
-        var expectedPath = Path.Combine(fixtureRoot, "expected", "dms-929-relational-model.manifest.json");
+        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
+        var coreInputPath = Path.Combine(
+            fixtureRoot,
+            "ds-5.2",
+            "inputs",
+            "ds-5.2-api-schema-authoritative.json"
+        );
+        var extensionInputPath = Path.Combine(
+            fixtureRoot,
+            "sample",
+            "inputs",
+            "sample-api-schema-authoritative.json"
+        );
+        var expectedPath = Path.Combine(
+            fixtureRoot,
+            "sample",
+            "expected",
+            "dms-1033-derived-relational-model-set.json"
+        );
         var actualPath = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
             "authoritative",
-            "ds-5.2",
-            "dms-929-relational-model.manifest.json"
+            "sample",
+            "dms-1033-derived-relational-model-set.json"
         );
 
-        File.Exists(inputPath).Should().BeTrue($"fixture missing at {inputPath}");
+        File.Exists(coreInputPath).Should().BeTrue($"fixture missing at {coreInputPath}");
+        File.Exists(extensionInputPath).Should().BeTrue($"fixture missing at {extensionInputPath}");
 
-        var apiSchemaRoot = LoadApiSchemaRoot(inputPath);
-        var manifest = BuildProjectManifest(apiSchemaRoot);
+        var coreSchema = LoadProjectSchema(coreInputPath);
+        var extensionSchema = LoadProjectSchema(extensionInputPath);
+
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(coreSchema, false);
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionSchema,
+            true
+        );
+
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var derivedSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var manifest = BuildDerivedSetManifest(derivedSet);
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
@@ -64,62 +95,53 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         }
     }
 
-    private static JsonNode LoadApiSchemaRoot(string path)
+    private static JsonObject LoadProjectSchema(string path)
     {
         var root = JsonNode.Parse(File.ReadAllText(path));
 
-        return root ?? throw new InvalidOperationException($"ApiSchema parsed null: {path}");
-    }
-
-    private static string BuildProjectManifest(JsonNode apiSchemaRoot)
-    {
-        if (apiSchemaRoot is not JsonObject rootObject)
+        if (root is not JsonObject rootObject)
         {
-            throw new InvalidOperationException("ApiSchema root must be a JSON object.");
+            throw new InvalidOperationException($"ApiSchema parsed null or non-object: {path}");
         }
 
-        var projectSchema = RequireObject(rootObject["projectSchema"], "projectSchema");
-        var projectName = RequireString(projectSchema, "projectName");
-        var projectEndpointName = RequireString(projectSchema, "projectEndpointName");
-        var projectVersion = RequireString(projectSchema, "projectVersion");
-        var resourceSchemas = RequireObject(
-            projectSchema["resourceSchemas"],
-            "projectSchema.resourceSchemas"
-        );
+        return RequireObject(rootObject["projectSchema"], "projectSchema");
+    }
 
-        var resourceEndpointNames = resourceSchemas
-            .Select(entry => entry.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
-            .ToArray();
-
-        var pipeline = CreatePipeline();
+    private static string BuildDerivedSetManifest(DerivedRelationalModelSet modelSet)
+    {
         var buffer = new ArrayBufferWriter<byte>();
 
         using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
         {
             writer.WriteStartObject();
-            writer.WriteString("project_name", projectName);
-            writer.WriteString("project_endpoint_name", projectEndpointName);
-            writer.WriteString("project_version", projectVersion);
+            writer.WriteString("dialect", modelSet.Dialect.ToString());
+
+            writer.WritePropertyName("projects");
+            writer.WriteStartArray();
+
+            foreach (var project in modelSet.ProjectSchemasInEndpointOrder)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("project_endpoint_name", project.ProjectEndpointName);
+                writer.WriteString("project_name", project.ProjectName);
+                writer.WriteString("project_version", project.ProjectVersion);
+                writer.WriteBoolean("is_extension", project.IsExtensionProject);
+                writer.WriteString("physical_schema", project.PhysicalSchema.Value);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+
             writer.WritePropertyName("resources");
             writer.WriteStartArray();
 
-            foreach (var endpointName in resourceEndpointNames)
+            foreach (var resource in modelSet.ConcreteResourcesInNameOrder)
             {
-                var context = new RelationalModelBuilderContext
-                {
-                    ApiSchemaRoot = apiSchemaRoot,
-                    ResourceEndpointName = endpointName,
-                };
-
-                var buildResult = pipeline.Run(context);
-                var manifest = RelationalModelManifestEmitter.Emit(buildResult);
-
-                using var manifestDocument = JsonDocument.Parse(manifest);
                 writer.WriteStartObject();
-                writer.WriteString("resource_endpoint_name", endpointName);
-                writer.WritePropertyName("manifest");
-                manifestDocument.RootElement.WriteTo(writer);
+                writer.WriteString("project_name", resource.ResourceKey.Resource.ProjectName);
+                writer.WriteString("resource_name", resource.ResourceKey.Resource.ResourceName);
+                writer.WriteString("storage_kind", resource.StorageKind.ToString());
+                writer.WriteString("physical_schema", resource.RelationalModel.PhysicalSchema.Value);
                 writer.WriteEndObject();
             }
 
@@ -130,21 +152,6 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         var json = Encoding.UTF8.GetString(buffer.WrittenSpan);
 
         return json + "\n";
-    }
-
-    private static RelationalModelBuilderPipeline CreatePipeline()
-    {
-        return new RelationalModelBuilderPipeline(
-            new IRelationalModelBuilderStep[]
-            {
-                new ExtractInputsStep(),
-                new ValidateJsonSchemaStep(),
-                new DiscoverExtensionSitesStep(),
-                new DeriveTableScopesAndKeysStep(),
-                new DeriveColumnsAndBindDescriptorEdgesStep(),
-                new CanonicalizeOrderingStep(),
-            }
-        );
     }
 
     private static string RunGitDiff(string expectedPath, string actualPath)

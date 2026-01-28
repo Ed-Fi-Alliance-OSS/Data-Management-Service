@@ -36,7 +36,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// optional ancestor object.
 /// </para>
 /// </summary>
-public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilderStep
+public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBuilderStep
 {
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
@@ -863,10 +863,19 @@ public sealed class DeriveColumnsAndDescriptorEdgesStep : IRelationalModelBuilde
             }
         }
 
+        /// <summary>
+        /// Gets the immutable table definition being built (schema/name, key columns, and JSON scope).
+        /// </summary>
         public DbTableModel Definition { get; }
 
+        /// <summary>
+        /// Gets the mutable column inventory for the table.
+        /// </summary>
         public List<DbColumnModel> Columns { get; }
 
+        /// <summary>
+        /// Gets the mutable constraint inventory for the table.
+        /// </summary>
         public List<TableConstraint> Constraints { get; }
 
         /// <summary>
