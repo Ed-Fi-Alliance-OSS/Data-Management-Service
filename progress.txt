@@ -14,3 +14,7 @@
   - Decisions: added contract types for derived model set (project schema info, concrete/abstract inventories, index/trigger inventories) in Backend.External aligned to compiled-mapping-set.md.
   - Files: src/dms/backend/EdFi.DataManagementService.Backend.External/DerivedRelationalModelSetContracts.cs; tasks.json.
   - Notes: build warning persists for missing Features/SyntheticTests/DocumentValidation.feature.cs.
+- Task: DerivedRelationalModelSetBuilder pass orchestration + context (reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md)
+  - Decisions: added IRelationalModelSetPass with explicit Order; builder sorts passes by (Order, type name) and fails on duplicate ordering keys; context precomputes canonical project/resource order, validates physical-schema collisions, exposes canonical enumerators, and sorts concrete resources in BuildResult for deterministic output.
+  - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DerivedRelationalModelSetBuilder.cs; tasks.json.
+  - Notes: dotnet build + relational-model unit tests passed.
