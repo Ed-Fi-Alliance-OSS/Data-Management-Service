@@ -1,0 +1,88 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.schoolId",
+          "$.schoolTypeDescriptor"
+        ],
+        "documentPathsMapping": {
+          "SchoolTypeDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "projectName": "Ed-Fi",
+            "resourceName": "SchoolTypeDescriptor",
+            "path": "$.schoolTypeDescriptor"
+          },
+          "ExtensionDescriptor": {
+            "isReference": true,
+            "isDescriptor": true,
+            "projectName": "Sample",
+            "resourceName": "ExtensionDescriptor",
+            "path": "$._ext.sample.extensionDescriptor"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "schoolTypeDescriptor": {
+              "type": "string",
+              "maxLength": 50
+            },
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "extensionDescriptor": {
+                      "type": "string",
+                      "maxLength": 50
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "schoolId",
+            "schoolTypeDescriptor"
+          ]
+        }
+      },
+      "schoolTypeDescriptors": {
+        "resourceName": "SchoolTypeDescriptor",
+        "isDescriptor": true,
+        "isResourceExtension": false,
+        "identityJsonPaths": [
+          "$.schoolTypeDescriptorId"
+        ],
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolTypeDescriptorId": {
+              "type": "integer"
+            },
+            "codeValue": {
+              "type": "string",
+              "maxLength": 50
+            }
+          },
+          "required": [
+            "schoolTypeDescriptorId"
+          ]
+        }
+      }
+    }
+  }
+}
