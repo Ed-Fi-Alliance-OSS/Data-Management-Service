@@ -58,6 +58,7 @@ public static class DmsCoreServiceExtensions
             // Startup orchestration
             .AddSingleton<DmsStartupOrchestrator>()
             .AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>()
+            .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
             // Startup stub interfaces (no-op implementations for future work)
             .AddSingleton<IApiSchemaInputNormalizer, NoOpApiSchemaInputNormalizer>()
             .AddSingleton<IEffectiveSchemaHashProvider, NoOpEffectiveSchemaHashProvider>()

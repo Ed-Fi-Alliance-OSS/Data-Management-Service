@@ -20,6 +20,12 @@ internal class NoOpBackendMappingInitializer(ILogger<NoOpBackendMappingInitializ
     /// <inheritdoc />
     public Task InitializeAsync(CancellationToken cancellationToken)
     {
+        // TODO: DMS-977 - Replace this no-op with actual implementation:
+        //   - Load .mpack files for the configured dialect/version
+        //   - Perform runtime compilation of mapping sets if needed
+        //   - Validate database fingerprints (EffectiveSchemaHash)
+        //   - Cache ResourceKeyId maps
+
         _logger.LogDebug(
             "NoOpBackendMappingInitializer invoked - no action taken. "
                 + "Backend mapping initialization will be implemented in DMS-977."
