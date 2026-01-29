@@ -24,7 +24,7 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
 
     private ApiSchemaDocuments? _documents;
     private Guid _schemaId;
-    private bool _isInitialized;
+    private volatile bool _isInitialized;
 
     public EffectiveApiSchemaProvider(
         ILogger<EffectiveApiSchemaProvider> logger,
