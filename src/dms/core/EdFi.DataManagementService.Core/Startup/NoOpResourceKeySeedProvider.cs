@@ -13,11 +13,9 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Returns empty lists. This is a placeholder for future implementation
 /// of resource key seed derivation as defined in DMS-926.
 /// </summary>
-internal class NoOpResourceKeySeedProvider(ILogger<NoOpResourceKeySeedProvider> logger)
+internal class NoOpResourceKeySeedProvider(ILogger<NoOpResourceKeySeedProvider> _logger)
     : IResourceKeySeedProvider
 {
-    private readonly ILogger _logger = logger;
-
     /// <inheritdoc />
     public IReadOnlyList<ResourceKeySeed> GetSeeds(ApiSchemaDocumentNodes nodes)
     {

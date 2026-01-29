@@ -12,11 +12,9 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Does nothing. This is a placeholder for future implementation
 /// of backend mapping initialization as defined in DMS-977.
 /// </summary>
-internal class NoOpBackendMappingInitializer(ILogger<NoOpBackendMappingInitializer> logger)
+internal class NoOpBackendMappingInitializer(ILogger<NoOpBackendMappingInitializer> _logger)
     : IBackendMappingInitializer
 {
-    private readonly ILogger _logger = logger;
-
     /// <inheritdoc />
     public Task InitializeAsync(CancellationToken cancellationToken)
     {

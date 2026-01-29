@@ -13,11 +13,9 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Returns the input unchanged. This is a placeholder for future implementation
 /// of deterministic schema normalization as defined in DMS-923.
 /// </summary>
-internal class NoOpApiSchemaInputNormalizer(ILogger<NoOpApiSchemaInputNormalizer> logger)
+internal class NoOpApiSchemaInputNormalizer(ILogger<NoOpApiSchemaInputNormalizer> _logger)
     : IApiSchemaInputNormalizer
 {
-    private readonly ILogger _logger = logger;
-
     /// <inheritdoc />
     public ApiSchemaDocumentNodes Normalize(ApiSchemaDocumentNodes nodes)
     {

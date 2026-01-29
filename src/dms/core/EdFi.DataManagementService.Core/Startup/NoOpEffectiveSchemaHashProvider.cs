@@ -13,11 +13,9 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Returns an empty string. This is a placeholder for future implementation
 /// of deterministic schema hashing as defined in DMS-925.
 /// </summary>
-internal class NoOpEffectiveSchemaHashProvider(ILogger<NoOpEffectiveSchemaHashProvider> logger)
+internal class NoOpEffectiveSchemaHashProvider(ILogger<NoOpEffectiveSchemaHashProvider> _logger)
     : IEffectiveSchemaHashProvider
 {
-    private readonly ILogger _logger = logger;
-
     /// <inheritdoc />
     public string ComputeHash(ApiSchemaDocumentNodes nodes)
     {
