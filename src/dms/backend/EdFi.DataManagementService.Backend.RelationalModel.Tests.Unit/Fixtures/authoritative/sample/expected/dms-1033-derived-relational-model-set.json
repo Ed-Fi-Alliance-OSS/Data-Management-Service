@@ -11,7 +11,7 @@
     {
       "project_endpoint_name": "sample",
       "project_name": "Sample",
-      "project_version": "1.0.0",
+      "project_version": "1.1.0",
       "is_extension": true,
       "physical_schema": "sample"
     }
@@ -2113,13 +2113,43 @@
     },
     {
       "project_name": "Sample",
-      "resource_name": "ExtensionDescriptor",
+      "resource_name": "ArtMediumDescriptor",
       "storage_kind": "SharedDescriptorTable",
       "physical_schema": "sample"
     },
     {
       "project_name": "Sample",
-      "resource_name": "Section",
+      "resource_name": "Bus",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "BusRoute",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "FavoriteBookCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "MembershipTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "StudentArtProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "StudentGraduationPlanAssociation",
       "storage_kind": "RelationalTables",
       "physical_schema": "sample"
     }

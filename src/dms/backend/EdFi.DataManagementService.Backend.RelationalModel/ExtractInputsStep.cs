@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -289,48 +290,221 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         JsonObject resourceSchema
     )
     {
-        if (resourceSchema["decimalPropertyValidationInfos"] is not JsonArray decimalInfos)
-        {
-            return new Dictionary<string, DecimalPropertyValidationInfo>(StringComparer.Ordinal);
-        }
-
         Dictionary<string, DecimalPropertyValidationInfo> decimalInfosByPath = new(StringComparer.Ordinal);
 
-        foreach (var decimalInfo in decimalInfos)
+        if (resourceSchema["decimalPropertyValidationInfos"] is JsonArray decimalInfos)
         {
-            if (decimalInfo is null)
+            foreach (var decimalInfo in decimalInfos)
             {
-                throw new InvalidOperationException(
-                    "Expected decimalPropertyValidationInfos to not contain null entries, invalid ApiSchema."
-                );
-            }
+                if (decimalInfo is null)
+                {
+                    throw new InvalidOperationException(
+                        "Expected decimalPropertyValidationInfos to not contain null entries, invalid ApiSchema."
+                    );
+                }
 
-            if (decimalInfo is not JsonObject decimalInfoObject)
-            {
-                throw new InvalidOperationException(
-                    "Expected decimalPropertyValidationInfos entries to be objects, invalid ApiSchema."
-                );
-            }
+                if (decimalInfo is not JsonObject decimalInfoObject)
+                {
+                    throw new InvalidOperationException(
+                        "Expected decimalPropertyValidationInfos entries to be objects, invalid ApiSchema."
+                    );
+                }
 
-            var decimalPath = RequireString(decimalInfoObject, "path");
-            var totalDigits = decimalInfoObject["totalDigits"]?.GetValue<short?>();
-            var decimalPlaces = decimalInfoObject["decimalPlaces"]?.GetValue<short?>();
-            var decimalJsonPath = JsonPathExpressionCompiler.Compile(decimalPath);
+                var decimalPath = RequireString(decimalInfoObject, "path");
+                var totalDigits = decimalInfoObject["totalDigits"]?.GetValue<short?>();
+                var decimalPlaces = decimalInfoObject["decimalPlaces"]?.GetValue<short?>();
+                var decimalJsonPath = JsonPathExpressionCompiler.Compile(decimalPath);
 
-            if (
-                !decimalInfosByPath.TryAdd(
-                    decimalJsonPath.Canonical,
-                    new DecimalPropertyValidationInfo(decimalJsonPath, totalDigits, decimalPlaces)
+                if (
+                    !decimalInfosByPath.TryAdd(
+                        decimalJsonPath.Canonical,
+                        new DecimalPropertyValidationInfo(decimalJsonPath, totalDigits, decimalPlaces)
+                    )
                 )
-            )
-            {
-                throw new InvalidOperationException(
-                    $"Decimal validation info for '{decimalJsonPath.Canonical}' is already defined."
-                );
+                {
+                    throw new InvalidOperationException(
+                        $"Decimal validation info for '{decimalJsonPath.Canonical}' is already defined."
+                    );
+                }
             }
+        }
+
+        if (
+            resourceSchema["flatteningMetadata"] is JsonObject flatteningMetadata
+            && flatteningMetadata["table"] is JsonObject table
+        )
+        {
+            CollectDecimalPropertyValidationInfosFromFlatteningMetadata(table, decimalInfosByPath);
         }
 
         return decimalInfosByPath;
+    }
+
+    private static void CollectDecimalPropertyValidationInfosFromFlatteningMetadata(
+        JsonObject tableNode,
+        Dictionary<string, DecimalPropertyValidationInfo> decimalInfosByPath
+    )
+    {
+        if (tableNode["columns"] is JsonArray columns)
+        {
+            foreach (var column in columns)
+            {
+                if (column is null)
+                {
+                    throw new InvalidOperationException(
+                        "Expected flatteningMetadata.table.columns to not contain null entries."
+                    );
+                }
+
+                if (column is not JsonObject columnObject)
+                {
+                    throw new InvalidOperationException(
+                        "Expected flatteningMetadata.table.columns entries to be objects."
+                    );
+                }
+
+                if (
+                    !columnObject.TryGetPropertyValue("columnType", out var columnTypeNode)
+                    || columnTypeNode is null
+                )
+                {
+                    continue;
+                }
+
+                if (columnTypeNode is not JsonValue columnTypeValue)
+                {
+                    throw new InvalidOperationException(
+                        "Expected flatteningMetadata.table.columns.columnType to be a string."
+                    );
+                }
+
+                var columnType = columnTypeValue.GetValue<string>();
+
+                if (
+                    !columnObject.TryGetPropertyValue("jsonPath", out var jsonPathNode)
+                    || jsonPathNode is null
+                )
+                {
+                    continue;
+                }
+
+                if (jsonPathNode is not JsonValue jsonPathValue)
+                {
+                    throw new InvalidOperationException(
+                        "Expected flatteningMetadata.table.columns.jsonPath to be a string."
+                    );
+                }
+
+                var jsonPath = jsonPathValue.GetValue<string>();
+                var defaultPrecision = columnType switch
+                {
+                    "currency" => (Precision: (short)19, Scale: (short)4),
+                    "percent" => (Precision: (short)5, Scale: (short)4),
+                    _ => default((short Precision, short Scale)?),
+                };
+
+                if (defaultPrecision is not null)
+                {
+                    AddDecimalInfoIfMissing(
+                        decimalInfosByPath,
+                        jsonPath,
+                        defaultPrecision.Value.Precision,
+                        defaultPrecision.Value.Scale
+                    );
+                }
+                else if (string.Equals(columnType, "decimal", StringComparison.Ordinal))
+                {
+                    var precision = ReadOptionalShort(
+                        columnObject,
+                        "precision",
+                        "flatteningMetadata.table.columns"
+                    );
+                    var scale = ReadOptionalShort(columnObject, "scale", "flatteningMetadata.table.columns");
+
+                    if (precision is not null && scale is not null)
+                    {
+                        AddDecimalInfoIfMissing(decimalInfosByPath, jsonPath, precision.Value, scale.Value);
+                    }
+                }
+            }
+        }
+
+        if (tableNode["childTables"] is not JsonArray childTables)
+        {
+            return;
+        }
+
+        foreach (var childTable in childTables)
+        {
+            if (childTable is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected flatteningMetadata.table.childTables to not contain null entries."
+                );
+            }
+
+            if (childTable is not JsonObject childTableObject)
+            {
+                throw new InvalidOperationException(
+                    "Expected flatteningMetadata.table.childTables entries to be objects."
+                );
+            }
+
+            CollectDecimalPropertyValidationInfosFromFlatteningMetadata(childTableObject, decimalInfosByPath);
+        }
+    }
+
+    private static void AddDecimalInfoIfMissing(
+        Dictionary<string, DecimalPropertyValidationInfo> decimalInfosByPath,
+        string jsonPath,
+        short totalDigits,
+        short decimalPlaces
+    )
+    {
+        var compiledPath = JsonPathExpressionCompiler.Compile(jsonPath);
+
+        if (decimalInfosByPath.ContainsKey(compiledPath.Canonical))
+        {
+            return;
+        }
+
+        decimalInfosByPath[compiledPath.Canonical] = new DecimalPropertyValidationInfo(
+            compiledPath,
+            totalDigits,
+            decimalPlaces
+        );
+    }
+
+    private static short? ReadOptionalShort(JsonObject node, string propertyName, string path)
+    {
+        if (!node.TryGetPropertyValue(propertyName, out var nodeValue) || nodeValue is null)
+        {
+            return null;
+        }
+
+        if (nodeValue is not JsonValue jsonValue)
+        {
+            throw new InvalidOperationException($"Expected {path}.{propertyName} to be a number.");
+        }
+
+        if (jsonValue.TryGetValue<short>(out var shortValue))
+        {
+            return shortValue;
+        }
+
+        if (jsonValue.TryGetValue<int>(out var intValue))
+        {
+            return checked((short)intValue);
+        }
+
+        var rawValue = jsonValue.GetValue<string>();
+
+        if (short.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsedValue))
+        {
+            return parsedValue;
+        }
+
+        throw new InvalidOperationException($"Expected {path}.{propertyName} to be a numeric string.");
     }
 
     /// <summary>
