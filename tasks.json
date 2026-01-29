@@ -66,31 +66,6 @@
     "completed": true
   },
   {
-    "category": "Validation",
-    "description": "Validate `ResourceKeyEntry.IsAbstractResource` consistency with the effective schema payload. When indexing effective resources, record whether each resource originates from `projectSchema.abstractResources` vs `projectSchema.resourceSchemas`, and fail fast when a `ResourceKeyEntry` marks a resource abstract/non-abstract incorrectly. Acceptance: a mismatched `IsAbstractResource` flag produces an actionable error identifying the resource and expected/actual abstract-ness; add a unit test that injects a mismatched resource key entry and asserts the failure message.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Determinism",
-    "description": "Strengthen collision safety for identifier shortening. Add explicit post-shortening collision detection over the full derived inventory (tables/columns/constraints/indexes/triggers) so collisions fail fast with actionable diagnostics. Acceptance: a unit test that forces two distinct identifiers to shorten to the same physical name results in a deterministic fail-fast error that lists both sources and the collided identifier; no existing identifier-shortening tests regress.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Contracts",
-    "description": "Clarify index/trigger ordering semantics in `DerivedRelationalModelSet`. `RelationalModelSetBuilderContext.BuildResult()` currently re-sorts `IndexesInCreateOrder` and `TriggersInCreateOrder` into canonical deterministic order (schema/table/name) before returning the final model set. Keep this behavior, but update XML docs (contracts + builder context) to state these inventories are canonical-ordered and passes must not rely on insertion order; rename internal locals/fields to avoid implying dependency-based \"create order\". Acceptance: no functional change; `dotnet build` succeeds; relational-model unit tests remain green; docs/comments clearly describe the ordering contract for indexes/triggers.",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
     "category": "Determinism",
     "description": "Tighten set-level pass ordering rules to avoid refactor-driven behavior changes. Today `DerivedRelationalModelSetBuilder` allows multiple passes to share the same `IRelationalModelSetPass.Order` and breaks ties by `pass.GetType().FullName`, which is deterministic but brittle under renames/namespace moves. Change the ordering contract so pass sequencing is fully intentional: (1) fail fast when two different passes share the same `Order` value (require unique order numbers), and (2) stop using type name as an implicit tie-breaker for execution order. Update unit tests to reflect the new contract (e.g., `Given_An_Unordered_Pass_List` should still be ordered by numeric order; a new test should assert duplicate order values fail fast). Update XML docs on `IRelationalModelSetPass.Order` to state uniqueness is required and ordering must not depend on type names. Acceptance: duplicate order values throw an actionable `InvalidOperationException`; ordering behavior remains stable across refactors; `dotnet build` and relational-model unit tests remain green after updates.",
     "steps-to-verify": [
