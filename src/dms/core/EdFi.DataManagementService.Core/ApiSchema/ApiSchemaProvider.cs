@@ -20,12 +20,8 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 public record ApiSchemaLoadResult(ApiSchemaDocumentNodes? Nodes, List<ApiSchemaFailure> Failures);
 
 /// <summary>
-/// Status of API schema operations with success indicator and any failures
-/// </summary>
-public record ApiSchemaLoadStatus(bool Success, List<ApiSchemaFailure> Failures);
-
-/// <summary>
-/// Loads and parses ApiSchemas from files and uploads.
+/// Loads and parses ApiSchemas from files or assemblies.
+/// Schema loading occurs once at startup; runtime reload is not supported.
 /// </summary>
 internal class ApiSchemaProvider(
     ILogger<ApiSchemaProvider> _logger,
@@ -36,11 +32,11 @@ internal class ApiSchemaProvider(
     // Cached API schema nodes loaded from files or assemblies
     private ApiSchemaDocumentNodes? _apiSchemaNodes;
 
-    // Unique identifier for the current reload instance
+    // Unique identifier for the loaded schema (stable for process lifetime)
     private Guid _reloadId = Guid.NewGuid();
 
-    // Lock object to ensure thread-safe access during schema reloads
-    private readonly object _reloadLock = new();
+    // Lock object to ensure thread-safe access during schema loading
+    private readonly object _loadLock = new();
 
     // Validation state
     private bool _isSchemaValid = true;
@@ -466,47 +462,11 @@ internal class ApiSchemaProvider(
     }
 
     /// <summary>
-    /// Validates the schema and updates validation state for initial load only
-    /// </summary>
-    private ApiSchemaLoadStatus ValidateSchemaForInitialLoad(ApiSchemaDocumentNodes schemaNodes)
-    {
-        _apiSchemaFailures = ValidateAllSchemas(schemaNodes);
-        _isSchemaValid = _apiSchemaFailures.Count == 0;
-        return new(_isSchemaValid, _apiSchemaFailures);
-    }
-
-    /// <summary>
-    /// Attempts to update the schema after validation. Used for reload and upload scenarios.
-    /// Will not update if validation fails, keeping the existing schema intact.
-    /// </summary>
-    private ApiSchemaLoadStatus TryUpdateSchema(ApiSchemaDocumentNodes newSchemaNodes)
-    {
-        List<ApiSchemaFailure> failures = ValidateAllSchemas(newSchemaNodes);
-
-        if (failures.Count > 0)
-        {
-            return new(false, failures);
-        }
-
-        // Validation passed - update the schema
-        _apiSchemaNodes = newSchemaNodes;
-        _reloadId = Guid.NewGuid();
-
-        // Clear any previous validation failures since we now have a valid schema
-        _apiSchemaFailures = [];
-        _isSchemaValid = true;
-
-        _logger.LogInformation("Schema updated successfully. New reload ID: {ReloadId}", _reloadId);
-
-        return new(true, []);
-    }
-
-    /// <summary>
     /// Returns core and extension ApiSchema JsonNodes
     /// </summary>
     public ApiSchemaDocumentNodes GetApiSchemaNodes()
     {
-        lock (_reloadLock)
+        lock (_loadLock)
         {
             if (_apiSchemaNodes == null)
             {
@@ -520,8 +480,6 @@ internal class ApiSchemaProvider(
                     _apiSchemaFailures = loadFailures;
                     _isSchemaValid = false;
 
-                    // For initial load, we still throw an exception to maintain backward compatibility
-                    // The failures are available via ApiSchemaFailures property
                     throw new InvalidOperationException(
                         "API schema loading failed. Check ApiSchemaFailures for details."
                     );
@@ -538,12 +496,12 @@ internal class ApiSchemaProvider(
                     throw new InvalidOperationException(failure.Message);
                 }
 
-                var validationResult = ValidateSchemaForInitialLoad(schemaNodes);
-                var validationSuccess = validationResult.Success;
+                // Validate schemas
+                _apiSchemaFailures = ValidateAllSchemas(schemaNodes);
+                _isSchemaValid = _apiSchemaFailures.Count == 0;
 
-                if (!validationSuccess)
+                if (!_isSchemaValid)
                 {
-                    // Validation failures are already stored in _apiSchemaFailures by ValidateSchemaForInitialLoad
                     throw new InvalidOperationException(
                         "API schema validation failed. Cannot proceed with invalid schema."
                     );
@@ -557,13 +515,13 @@ internal class ApiSchemaProvider(
     }
 
     /// <summary>
-    /// Gets the current reload identifier
+    /// Gets the unique identifier for the loaded schema
     /// </summary>
     public Guid ReloadId
     {
         get
         {
-            lock (_reloadLock)
+            lock (_loadLock)
             {
                 return _reloadId;
             }
@@ -577,7 +535,7 @@ internal class ApiSchemaProvider(
     {
         get
         {
-            lock (_reloadLock)
+            lock (_loadLock)
             {
                 return _isSchemaValid;
             }
@@ -591,84 +549,9 @@ internal class ApiSchemaProvider(
     {
         get
         {
-            lock (_reloadLock)
+            lock (_loadLock)
             {
                 return _apiSchemaFailures;
-            }
-        }
-    }
-
-    /// <summary>
-    /// Reloads the API schema from the configured source
-    /// </summary>
-    public Task<ApiSchemaLoadStatus> ReloadApiSchemaAsync()
-    {
-        lock (_reloadLock)
-        {
-            _logger.LogInformation("Reloading API schema from configured source...");
-
-            var loadResult = LoadSchemaFromSource();
-            var newSchemaNodes = loadResult.Nodes;
-            var loadFailures = loadResult.Failures;
-
-            if (loadFailures.Count > 0)
-            {
-                return Task.FromResult(new ApiSchemaLoadStatus(false, loadFailures));
-            }
-
-            if (newSchemaNodes == null)
-            {
-                ApiSchemaFailure failure = new(
-                    "Configuration",
-                    "Schema loading returned null without failures"
-                );
-                return Task.FromResult(new ApiSchemaLoadStatus(false, [failure]));
-            }
-
-            return Task.FromResult(TryUpdateSchema(newSchemaNodes));
-        }
-    }
-
-    /// <summary>
-    /// Loads API schemas from the provided JSON nodes
-    /// </summary>
-    public Task<ApiSchemaLoadStatus> LoadApiSchemaFromAsync(JsonNode coreSchema, JsonNode[] extensionSchemas)
-    {
-        lock (_reloadLock)
-        {
-            _logger.LogInformation("Uploading and reloading API schemas from memory...");
-
-            try
-            {
-                // Validate core schema structure
-                var isExtension = coreSchema.SelectNodeFromPath(
-                    "$.projectSchema.isExtensionProject",
-                    _logger
-                );
-                if (isExtension != null && isExtension.GetValue<bool>())
-                {
-                    ApiSchemaFailure failure = new(
-                        "Configuration",
-                        "Core schema is marked as extension project"
-                    );
-                    _logger.LogError(failure.Message);
-                    return Task.FromResult(new ApiSchemaLoadStatus(false, [failure]));
-                }
-
-                // Create new schema nodes and attempt to update
-                var newSchemaNodes = new ApiSchemaDocumentNodes(coreSchema, extensionSchemas);
-                return Task.FromResult(TryUpdateSchema(newSchemaNodes));
-            }
-            catch (Exception ex)
-            {
-                ApiSchemaFailure failure = new(
-                    "ParseError",
-                    "Failed to process uploaded API schemas",
-                    null,
-                    ex
-                );
-                _logger.LogError(ex, failure.Message);
-                return Task.FromResult(new ApiSchemaLoadStatus(false, [failure]));
             }
         }
     }

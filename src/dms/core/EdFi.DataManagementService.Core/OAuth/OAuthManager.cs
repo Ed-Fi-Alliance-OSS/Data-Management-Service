@@ -48,9 +48,9 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
         upstreamRequest.Headers.Add("Authorization", authHeaderString);
 
         // Use FormUrlEncodedContent for proper URL encoding of user-provided values
-        upstreamRequest.Content = new FormUrlEncodedContent(
-            [new KeyValuePair<string, string>("grant_type", grantType)]
-        );
+        upstreamRequest.Content = new FormUrlEncodedContent([
+            new KeyValuePair<string, string>("grant_type", grantType),
+        ]);
 
         // In case of 5xx Error, pass 503 Service unavailable to client, otherwise forward response directly to client.
         try

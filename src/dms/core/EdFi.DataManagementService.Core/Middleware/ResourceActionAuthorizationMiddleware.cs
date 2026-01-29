@@ -176,7 +176,9 @@ internal class ResourceActionAuthorizationMiddleware(IClaimSetProvider _claimSet
     /// </summary>
     private string BuildResourceClaimUri(RequestInfo requestInfo)
     {
-        string resourceClaimUri = requestInfo.PathComponents.ProjectEndpointName.GetResourceClaimUri(requestInfo.ResourceSchema.ResourceName);
+        string resourceClaimUri = requestInfo.PathComponents.ProjectEndpointName.GetResourceClaimUri(
+            requestInfo.ResourceSchema.ResourceName
+        );
 
         _logger.LogDebug("resourceClaimUri: {ResourceClaimUri}", resourceClaimUri);
         return resourceClaimUri;

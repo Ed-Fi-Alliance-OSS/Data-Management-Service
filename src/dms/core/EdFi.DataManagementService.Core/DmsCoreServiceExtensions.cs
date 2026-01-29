@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.ResourceLoadOrder;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.AuthorizationFilters;
 using EdFi.DataManagementService.Core.Security.AuthorizationValidation;
+using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -44,13 +45,28 @@ public static class DmsCoreServiceExtensions
     )
     {
         services
+            // API Schema services
             .AddSingleton<IApiSchemaValidator, ApiSchemaValidator>()
             .AddSingleton<ApiSchemaProvider>()
             .AddSingleton<IApiSchemaProvider>(provider => provider.GetRequiredService<ApiSchemaProvider>())
-            .AddSingleton<IUploadApiSchemaService, UploadApiSchemaService>()
+            .AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>()
+            // Effective schema provider (initialized at startup)
+            .AddSingleton<EffectiveApiSchemaProvider>()
+            .AddSingleton<IEffectiveApiSchemaProvider>(provider =>
+                provider.GetRequiredService<EffectiveApiSchemaProvider>()
+            )
+            // Startup orchestration
+            .AddSingleton<DmsStartupOrchestrator>()
+            .AddSingleton<IDmsStartupTask, LoadAndBuildEffectiveSchemaTask>()
+            .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
+            // Startup stub interfaces (no-op implementations for future work)
+            .AddSingleton<IApiSchemaInputNormalizer, NoOpApiSchemaInputNormalizer>()
+            .AddSingleton<IEffectiveSchemaHashProvider, NoOpEffectiveSchemaHashProvider>()
+            .AddSingleton<IResourceKeySeedProvider, NoOpResourceKeySeedProvider>()
+            .AddSingleton<IBackendMappingInitializer, NoOpBackendMappingInitializer>()
+            // Core services
             .AddSingleton<IApiService, ApiService>()
             .AddSingleton<IDataModelInfoProvider, DataModelInfoProvider>()
-            .AddSingleton<ICompiledSchemaCache, CompiledSchemaCache>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
             .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()

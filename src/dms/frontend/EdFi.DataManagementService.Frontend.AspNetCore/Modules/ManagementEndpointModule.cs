@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Interface;
-using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
@@ -22,23 +21,6 @@ public class ManagementEndpointModule(IOptions<AppSettings> options) : IEndpoint
         bool multiTenancy = options.Value.MultiTenancy;
 
         var managementEndpoints = endpoints.MapGroup("/management");
-
-        // Reload ApiSchema endpoint (not tenant-aware)
-        managementEndpoints
-            .MapPost("/reload-api-schema", ReloadApiSchema)
-            .WithName("ReloadApiSchema")
-            .WithSummary("Reloads the ApiSchema from the configured source");
-
-        // Upload ApiSchema endpoint (not tenant-aware)
-        managementEndpoints
-            .MapPost("/upload-api-schema", UploadApiSchema)
-            .WithName("UploadApiSchema")
-            .WithSummary("Uploads ApiSchema from request body")
-            .Accepts<UploadSchemaRequest>("application/json")
-            .Produces<UploadSchemaResponse>(200)
-            .Produces(400)
-            .Produces(404)
-            .Produces(500);
 
         // Claimset endpoints - tenant-aware in multi-tenant deployments
         if (multiTenancy)
@@ -78,44 +60,6 @@ public class ManagementEndpointModule(IOptions<AppSettings> options) : IEndpoint
                 .WithName("ViewClaimsets")
                 .WithSummary("Views the current Claimsets configuration");
         }
-    }
-
-    internal static async Task<IResult> ReloadApiSchema(
-        IApiService apiService,
-        ILogger<ManagementEndpointModule> logger
-    )
-    {
-        logger.LogInformation("Schema reload requested via management endpoint");
-
-        var response = await apiService.ReloadApiSchemaAsync();
-
-        return response.StatusCode switch
-        {
-            200 => Results.Ok(response.Body),
-            404 => Results.NotFound(),
-            500 => Results.Json(response.Body, statusCode: 500),
-            _ => Results.StatusCode(response.StatusCode),
-        };
-    }
-
-    internal static async Task<IResult> UploadApiSchema(
-        UploadSchemaRequest request,
-        IApiService apiService,
-        ILogger<ManagementEndpointModule> logger
-    )
-    {
-        logger.LogInformation("Schema upload requested via management endpoint");
-
-        var response = await apiService.UploadApiSchemaAsync(request);
-
-        return response.StatusCode switch
-        {
-            200 => Results.Json(response.Body, statusCode: 200),
-            400 => Results.Json(response.Body, statusCode: 400),
-            404 => Results.NotFound(),
-            500 => Results.Json(response.Body, statusCode: 500),
-            _ => Results.StatusCode(response.StatusCode),
-        };
     }
 
     /// <summary>

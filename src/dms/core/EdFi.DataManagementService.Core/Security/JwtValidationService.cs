@@ -124,21 +124,24 @@ internal class JwtValidationService(
         string[] namespacePrefixes =
             claims
                 .Find(c => c.Type == "namespacePrefixes")
-                ?.Value.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? [];
+                ?.Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            ?? [];
 
         List<EducationOrganizationId> educationOrganizationIds =
             claims
                 .Find(c => c.Type == "educationOrganizationIds")
                 ?.Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
                 .Select(id => new EducationOrganizationId(long.Parse(id)))
-                .ToList() ?? [];
+                .ToList()
+            ?? [];
 
         List<DmsInstanceId> dmsInstanceIds =
             claims
                 .Find(c => c.Type == "dmsInstanceIds")
                 ?.Value.Split(',', StringSplitOptions.RemoveEmptyEntries)
                 .Select(id => new DmsInstanceId(long.Parse(id)))
-                .ToList() ?? [];
+                .ToList()
+            ?? [];
 
         return new ClientAuthorizations(
             TokenId: tokenId,
