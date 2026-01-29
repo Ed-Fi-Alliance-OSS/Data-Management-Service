@@ -279,6 +279,7 @@ async Task InitializeApiSchemas(WebApplication app)
     try
     {
         var orchestrator = app.Services.GetRequiredService<DmsStartupOrchestrator>();
+        // Intentionally not cancellable - initialization must complete or fail entirely
         await orchestrator.RunAllAsync(CancellationToken.None);
         app.Logger.LogInformation("API schema initialization completed successfully");
     }
