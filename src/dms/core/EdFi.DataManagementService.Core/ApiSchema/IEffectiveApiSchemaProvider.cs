@@ -27,4 +27,12 @@ internal interface IEffectiveApiSchemaProvider
     /// Gets whether the effective schema has been initialized.
     /// </summary>
     bool IsInitialized { get; }
+
+    /// <summary>
+    /// Initializes the effective schema from the provided schema nodes.
+    /// This should be called once during application startup.
+    /// </summary>
+    /// <param name="apiSchemaNodes">The normalized schema nodes from the schema provider.</param>
+    /// <exception cref="InvalidOperationException">Thrown if already initialized.</exception>
+    void Initialize(ApiSchemaDocumentNodes apiSchemaNodes);
 }

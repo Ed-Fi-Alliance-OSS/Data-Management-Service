@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// </summary>
 internal class LoadAndBuildEffectiveSchemaTask(
     IApiSchemaProvider apiSchemaProvider,
-    EffectiveApiSchemaProvider effectiveApiSchemaProvider,
+    IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
     IApiSchemaInputNormalizer inputNormalizer,
     IEffectiveSchemaHashProvider hashProvider,
     IResourceKeySeedProvider seedProvider,
@@ -24,7 +24,7 @@ internal class LoadAndBuildEffectiveSchemaTask(
 ) : IDmsStartupTask
 {
     private readonly IApiSchemaProvider _apiSchemaProvider = apiSchemaProvider;
-    private readonly EffectiveApiSchemaProvider _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
+    private readonly IEffectiveApiSchemaProvider _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
     private readonly IApiSchemaInputNormalizer _inputNormalizer = inputNormalizer;
     private readonly IEffectiveSchemaHashProvider _hashProvider = hashProvider;
     private readonly IResourceKeySeedProvider _seedProvider = seedProvider;
