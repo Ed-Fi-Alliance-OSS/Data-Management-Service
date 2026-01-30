@@ -150,4 +150,62 @@ internal static class RelationalModelSetSchemaHelpers
     {
         return $"{resource.ProjectName}:{resource.ResourceName}";
     }
+
+    /// <summary>
+    /// Orders resource schema entries deterministically by resource name and schema key.
+    /// </summary>
+    /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
+    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
+    /// <param name="requireNonEmptyKey">Whether entry keys must be non-empty.</param>
+    /// <returns>The ordered resource schema entries.</returns>
+    internal static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
+        JsonObject resourceSchemas,
+        string resourceSchemasPath,
+        bool requireNonEmptyKey = false
+    )
+    {
+        List<ResourceSchemaEntry> entries = new(resourceSchemas.Count);
+
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (requireNonEmptyKey && string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+
+            entries.Add(new ResourceSchemaEntry(resourceSchemaEntry.Key, resourceName, resourceSchema));
+        }
+
+        return entries
+            .OrderBy(entry => entry.ResourceName, StringComparer.Ordinal)
+            .ThenBy(entry => entry.ResourceKey, StringComparer.Ordinal)
+            .ToArray();
+    }
 }
+
+/// <summary>
+/// Captures the normalized inputs for a single resource schema entry within a project schema.
+/// </summary>
+internal sealed record ResourceSchemaEntry(
+    string ResourceKey,
+    string ResourceName,
+    JsonObject ResourceSchema
+);

@@ -401,7 +401,13 @@ internal static class RelationalModelSetValidation
         string resourceSchemasPath
     )
     {
-        foreach (var resourceSchemaEntry in OrderResourceSchemas(resourceSchemas, resourceSchemasPath))
+        foreach (
+            var resourceSchemaEntry in OrderResourceSchemas(
+                resourceSchemas,
+                resourceSchemasPath,
+                requireNonEmptyKey: true
+            )
+        )
         {
             ValidateDocumentPathsMappingTargetsForResource(
                 projectName,
@@ -499,62 +505,6 @@ internal static class RelationalModelSetValidation
 
         return $"entry '{mappingKey}' (path '{path}')";
     }
-
-    /// <summary>
-    /// Orders resource schema entries deterministically by resource name and schema key.
-    /// </summary>
-    /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
-    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
-    /// <returns>The ordered resource schema entries.</returns>
-    private static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
-        JsonObject resourceSchemas,
-        string resourceSchemasPath
-    )
-    {
-        List<ResourceSchemaEntry> entries = new(resourceSchemas.Count);
-
-        foreach (var resourceSchemaEntry in resourceSchemas)
-        {
-            if (resourceSchemaEntry.Value is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
-                );
-            }
-
-            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
-            {
-                throw new InvalidOperationException(
-                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
-                );
-            }
-
-            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
-
-            entries.Add(new ResourceSchemaEntry(resourceSchemaEntry.Key, resourceName, resourceSchema));
-        }
-
-        return entries
-            .OrderBy(entry => entry.ResourceName, StringComparer.Ordinal)
-            .ThenBy(entry => entry.ResourceKey, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    /// <summary>
-    /// Captures the normalized inputs for a single resource schema entry within a project schema.
-    /// </summary>
-    private sealed record ResourceSchemaEntry(
-        string ResourceKey,
-        string ResourceName,
-        JsonObject ResourceSchema
-    );
 
     /// <summary>
     /// Adds resource entries from a schema object to the effective resource index, validating that a resource

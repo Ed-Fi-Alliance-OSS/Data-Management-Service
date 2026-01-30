@@ -14,15 +14,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 internal static class DescriptorPathInference
 {
     /// <summary>
-    /// Captures the normalized inputs for a single resource schema entry within a project schema.
-    /// </summary>
-    private sealed record ResourceSchemaEntry(
-        string ResourceKey,
-        string ResourceName,
-        JsonObject ResourceSchema
-    );
-
-    /// <summary>
     /// Provides project-level inputs required for descriptor path inference.
     /// </summary>
     /// <param name="ProjectName">The project name used for qualified resource names.</param>
@@ -484,46 +475,6 @@ internal static class DescriptorPathInference
         }
 
         return referenceJsonPaths;
-    }
-
-    /// <summary>
-    /// Orders resource schema entries deterministically by resource name and schema key.
-    /// </summary>
-    /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
-    /// <param name="resourceSchemasPath">The JSON label used for diagnostics.</param>
-    /// <returns>The ordered resource schema entries.</returns>
-    private static IReadOnlyList<ResourceSchemaEntry> OrderResourceSchemas(
-        JsonObject resourceSchemas,
-        string resourceSchemasPath
-    )
-    {
-        List<ResourceSchemaEntry> entries = new(resourceSchemas.Count);
-
-        foreach (var resourceSchemaEntry in resourceSchemas)
-        {
-            if (resourceSchemaEntry.Value is null)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be non-null, invalid ApiSchema."
-                );
-            }
-
-            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
-            {
-                throw new InvalidOperationException(
-                    $"Expected {resourceSchemasPath} entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
-
-            entries.Add(new ResourceSchemaEntry(resourceSchemaEntry.Key, resourceName, resourceSchema));
-        }
-
-        return entries
-            .OrderBy(entry => entry.ResourceName, StringComparer.Ordinal)
-            .ThenBy(entry => entry.ResourceKey, StringComparer.Ordinal)
-            .ToArray();
     }
 
     /// <summary>
