@@ -1130,7 +1130,8 @@
                 "name": "ExpectedTimeAssessed",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "String"
+                  "kind": "String",
+                  "max_length": 30
                 },
                 "is_nullable": true,
                 "source_path": "$.expectedTimeAssessed"
@@ -14193,8 +14194,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.incidentCost"
@@ -14775,8 +14776,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.cost"
@@ -14863,7 +14864,8 @@
                 "name": "TimeRequired",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "String"
+                  "kind": "String",
+                  "max_length": 30
                 },
                 "is_nullable": true,
                 "source_path": "$.timeRequired"
@@ -25560,8 +25562,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -25702,8 +25704,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -25844,8 +25846,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -26617,8 +26619,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].innovativeDollarsSpent"
@@ -26628,8 +26630,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].innovativeDollarsSpentStrategicPriorities"
@@ -26639,8 +26641,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].innovativeProgramsFundsReceived"
@@ -26650,8 +26652,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].schoolImprovementAllocation"
@@ -26661,8 +26663,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 5,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].schoolImprovementReservedFundsPercentage"
@@ -26672,8 +26674,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 5,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].stateAssessmentAdministrationFunding"
@@ -26683,8 +26685,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].supplementalEducationalServicesFundsSpent"
@@ -26694,8 +26696,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].supplementalEducationalServicesPerPupilExpenditure"
@@ -27669,8 +27671,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -27811,8 +27813,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": false,
                 "source_path": "$.amount"
@@ -28476,8 +28478,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 15,
-                  "scale": 5
+                  "precision": 5,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.percentOfAssessment"
@@ -41141,7 +41143,7 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 5,
+                  "precision": 19,
                   "scale": 4
                 },
                 "is_nullable": true,
@@ -41210,7 +41212,7 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 5,
+                  "precision": 19,
                   "scale": 4
                 },
                 "is_nullable": true,
@@ -42099,8 +42101,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 5,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.percentageContribution"
@@ -45535,8 +45537,8 @@
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
-                  "precision": 9,
-                  "scale": 2
+                  "precision": 19,
+                  "scale": 4
                 },
                 "is_nullable": true,
                 "source_path": "$.federalFunds[*].federalProgramsFundingAllocation"
@@ -49226,7 +49228,8 @@
                 "name": "TimeAssessed",
                 "kind": "Scalar",
                 "type": {
-                  "kind": "String"
+                  "kind": "String",
+                  "max_length": 30
                 },
                 "is_nullable": true,
                 "source_path": "$.items[*].timeAssessed"
