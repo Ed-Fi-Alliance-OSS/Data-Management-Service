@@ -55,8 +55,8 @@ public sealed class RelationalModelSetBuilderContext
     private readonly Dictionary<string, ProjectSchemaInfo> _extensionProjectsByKey = new(
         StringComparer.OrdinalIgnoreCase
     );
-    private static readonly IReadOnlyList<ExtensionSite> EmptyExtensionSites = Array.Empty<ExtensionSite>();
-    private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> EmptyDescriptorPaths =
+    private static readonly IReadOnlyList<ExtensionSite> _emptyExtensionSites = Array.Empty<ExtensionSite>();
+    private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> _emptyDescriptorPaths =
         new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
 
     /// <summary>
@@ -172,7 +172,9 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName resource
     )
     {
-        return _descriptorPathsByResource.TryGetValue(resource, out var paths) ? paths : EmptyDescriptorPaths;
+        return _descriptorPathsByResource.TryGetValue(resource, out var paths)
+            ? paths
+            : _emptyDescriptorPaths;
     }
 
     /// <summary>
@@ -184,7 +186,7 @@ public sealed class RelationalModelSetBuilderContext
     {
         return _extensionDescriptorPathsByResource.TryGetValue(resource, out var paths)
             ? paths
-            : EmptyDescriptorPaths;
+            : _emptyDescriptorPaths;
     }
 
     /// <summary>
@@ -261,7 +263,7 @@ public sealed class RelationalModelSetBuilderContext
         ValidateExtensionProjectKeys(resource, extensionSites);
 
         _extensionSitesByResource[resource] =
-            extensionSites.Count == 0 ? EmptyExtensionSites : extensionSites;
+            extensionSites.Count == 0 ? _emptyExtensionSites : extensionSites;
     }
 
     /// <summary>
@@ -287,7 +289,7 @@ public sealed class RelationalModelSetBuilderContext
     /// <returns>The extension sites, or an empty list if none were registered.</returns>
     public IReadOnlyList<ExtensionSite> GetExtensionSitesForResource(QualifiedResourceName resource)
     {
-        return _extensionSitesByResource.TryGetValue(resource, out var sites) ? sites : EmptyExtensionSites;
+        return _extensionSitesByResource.TryGetValue(resource, out var sites) ? sites : _emptyExtensionSites;
     }
 
     /// <summary>
