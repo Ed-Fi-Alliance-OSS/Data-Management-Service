@@ -163,10 +163,12 @@ public sealed record DbTriggerInfo(
 /// <param name="AbstractIdentityTablesInNameOrder">Abstract identity tables ordered by resource name.</param>
 /// <param name="AbstractUnionViewsInNameOrder">Abstract union views ordered by resource name.</param>
 /// <param name="IndexesInCreateOrder">
-/// Index inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved.
+/// Index inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved and
+/// the sequence is not a dependency-aware DDL execution order.
 /// </param>
 /// <param name="TriggersInCreateOrder">
-/// Trigger inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved.
+/// Trigger inventory in canonical deterministic order by schema, table, and name; insertion order is not preserved and
+/// the sequence is not a dependency-aware DDL execution order.
 /// </param>
 public sealed record DerivedRelationalModelSet(
     EffectiveSchemaInfo EffectiveSchema,

@@ -208,6 +208,7 @@ Notes:
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). Core `dms.*` indexes/triggers are owned by core DDL emission.
+- `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
 ### 2.3 Mapping set (dialect-specific)
 
