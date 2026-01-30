@@ -487,6 +487,7 @@ internal static class EffectiveSchemaFixture
             {
                 ["resourceName"] = resource.ResourceName,
                 ["isResourceExtension"] = resource.IsResourceExtension,
+                ["documentPathsMapping"] = new JsonObject(),
             };
         }
 
@@ -505,6 +506,7 @@ internal static class EffectiveSchemaFixture
             abstractResourceSchemas[resource.EndpointName] = new JsonObject
             {
                 ["resourceName"] = resource.ResourceName,
+                ["documentPathsMapping"] = new JsonObject(),
             };
         }
 

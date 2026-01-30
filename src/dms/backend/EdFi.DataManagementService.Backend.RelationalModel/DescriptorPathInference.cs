@@ -372,6 +372,8 @@ internal static class DescriptorPathInference
             return false;
         }
 
+        // TODO: Not a fan of string inspection, but needed right now for GeneralStudentProgramAssociation, which has
+        // identity path $.programReference.programTypeDescriptor but no documentPathsMapping,
         if (!property.Name.EndsWith("Descriptor", StringComparison.Ordinal))
         {
             return false;

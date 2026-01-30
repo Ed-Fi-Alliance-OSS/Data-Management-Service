@@ -67,6 +67,7 @@
         "identityJsonPaths": [
           "$.schoolTypeDescriptorId"
         ],
+        "documentPathsMapping": {},
         "jsonSchemaForInsert": {
           "type": "object",
           "properties": {

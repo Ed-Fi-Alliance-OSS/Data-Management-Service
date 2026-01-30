@@ -9,6 +9,10 @@ using System.Linq;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Result of building descriptor path maps for a schema set, separated into base (non-<c>_ext</c>) and
+/// extension-scoped (under <c>_ext</c>) descriptor paths.
+/// </summary>
 internal sealed record DescriptorPathMapResult(
     IReadOnlyDictionary<
         QualifiedResourceName,
@@ -20,8 +24,22 @@ internal sealed record DescriptorPathMapResult(
     > ExtensionDescriptorPathsByResource
 );
 
+/// <summary>
+/// Builds per-resource descriptor path inventories for a schema set and partitions them into base vs
+/// extension-scoped paths.
+/// <para>
+/// Base traversal passes provide only base descriptor paths to the per-resource pipeline, because
+/// <c>_ext</c> properties are skipped during base schema traversal.
+/// </para>
+/// </summary>
 internal sealed class DescriptorPathMapBuilder
 {
+    /// <summary>
+    /// Builds descriptor path maps for all resources across the supplied projects, separating descriptor
+    /// value paths that appear under <c>_ext</c>.
+    /// </summary>
+    /// <param name="projectsInEndpointOrder">Project schemas in canonical endpoint order.</param>
+    /// <returns>The descriptor path maps grouped by resource.</returns>
     public DescriptorPathMapResult Build(IReadOnlyList<ProjectSchemaContext> projectsInEndpointOrder)
     {
         if (projectsInEndpointOrder.Count == 0)
@@ -75,6 +93,11 @@ internal sealed class DescriptorPathMapBuilder
         return new DescriptorPathMapResult(baseDescriptorPathsByResource, extensionDescriptorPathsByResource);
     }
 
+    /// <summary>
+    /// Determines whether the supplied JSONPath includes an <c>_ext</c> segment.
+    /// </summary>
+    /// <param name="path">The descriptor value path.</param>
+    /// <returns><see langword="true"/> when the path traverses <c>_ext</c>; otherwise <see langword="false"/>.</returns>
     private static bool IsExtensionScoped(JsonPathExpression path)
     {
         return path.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" });

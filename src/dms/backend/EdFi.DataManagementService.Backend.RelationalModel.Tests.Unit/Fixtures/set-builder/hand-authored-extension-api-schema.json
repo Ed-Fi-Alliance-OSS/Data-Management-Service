@@ -54,6 +54,7 @@
         "identityJsonPaths": [
           "$.extensionDescriptorId"
         ],
+        "documentPathsMapping": {},
         "jsonSchemaForInsert": {
           "type": "object",
           "properties": {

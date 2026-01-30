@@ -104,6 +104,8 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
             EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School"),
             EffectiveSchemaFixture.CreateResourceKey(2, "Ed-Fi", "GradingPeriod"),
             EffectiveSchemaFixture.CreateResourceKey(3, "Ed-Fi", "Section"),
+            EffectiveSchemaFixture.CreateResourceKey(4, "Ed-Fi", "SchoolTypeDescriptor"),
+            EffectiveSchemaFixture.CreateResourceKey(5, "Ed-Fi", "PeriodDescriptor"),
         };
 
         return EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
@@ -115,22 +117,58 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         {
             ["resourceName"] = "School",
             ["identityJsonPaths"] = new JsonArray { "$.schoolTypeDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["path"] = "$.schoolTypeDescriptor",
+                },
+            },
         };
         var gradingPeriodSchema = new JsonObject
         {
             ["resourceName"] = "GradingPeriod",
             ["identityJsonPaths"] = new JsonArray { "$.periodDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["PeriodDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "PeriodDescriptor",
+                    ["path"] = "$.periodDescriptor",
+                },
+            },
         };
         var sectionSchema = new JsonObject
         {
             ["resourceName"] = "Section",
             ["documentPathsMapping"] = CreateSectionDocumentPathsMapping(reverseMappingOrder),
         };
+        var schoolTypeDescriptorSchema = new JsonObject
+        {
+            ["resourceName"] = "SchoolTypeDescriptor",
+            ["identityJsonPaths"] = new JsonArray { "$.schoolTypeDescriptorId" },
+            ["documentPathsMapping"] = new JsonObject(),
+        };
+        var periodDescriptorSchema = new JsonObject
+        {
+            ["resourceName"] = "PeriodDescriptor",
+            ["identityJsonPaths"] = new JsonArray { "$.periodDescriptorId" },
+            ["documentPathsMapping"] = new JsonObject(),
+        };
 
         JsonObject resourceSchemas = new();
 
         if (reverseResourceOrder)
         {
+            resourceSchemas["periodDescriptors"] = periodDescriptorSchema;
+            resourceSchemas["schoolTypeDescriptors"] = schoolTypeDescriptorSchema;
             resourceSchemas["sections"] = sectionSchema;
             resourceSchemas["gradingPeriods"] = gradingPeriodSchema;
             resourceSchemas["schools"] = schoolSchema;
@@ -140,6 +178,8 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
             resourceSchemas["schools"] = schoolSchema;
             resourceSchemas["gradingPeriods"] = gradingPeriodSchema;
             resourceSchemas["sections"] = sectionSchema;
+            resourceSchemas["schoolTypeDescriptors"] = schoolTypeDescriptorSchema;
+            resourceSchemas["periodDescriptors"] = periodDescriptorSchema;
         }
 
         return new JsonObject { ["resourceSchemas"] = resourceSchemas };
