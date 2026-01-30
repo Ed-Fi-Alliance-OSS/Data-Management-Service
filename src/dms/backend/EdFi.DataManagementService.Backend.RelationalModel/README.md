@@ -54,7 +54,7 @@ var pipeline = new RelationalModelBuilderPipeline(
     new ValidateJsonSchemaStep(),
     new DiscoverExtensionSitesStep(),
     new DeriveTableScopesAndKeysStep(),
-    new DeriveColumnsAndDescriptorEdgesStep(),
+    new DeriveColumnsAndBindDescriptorEdgesStep(),
     new CanonicalizeOrderingStep(),
   }
 );

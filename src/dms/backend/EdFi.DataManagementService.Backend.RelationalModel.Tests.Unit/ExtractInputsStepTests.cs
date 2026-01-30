@@ -122,6 +122,7 @@ public class Given_An_ApiSchema_With_A_Descriptor_Resource
             ["isDescriptor"] = isDescriptor,
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
         };
 
         var projectSchema = new JsonObject

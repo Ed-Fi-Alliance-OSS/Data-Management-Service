@@ -208,7 +208,7 @@ internal static class CanonicalizeOrderingStepTestContext
         var deriveTables = new DeriveTableScopesAndKeysStep();
         deriveTables.Execute(context);
 
-        var deriveColumns = new DeriveColumnsAndDescriptorEdgesStep();
+        var deriveColumns = new DeriveColumnsAndBindDescriptorEdgesStep();
         deriveColumns.Execute(context);
 
         var canonicalize = new CanonicalizeOrderingStep();

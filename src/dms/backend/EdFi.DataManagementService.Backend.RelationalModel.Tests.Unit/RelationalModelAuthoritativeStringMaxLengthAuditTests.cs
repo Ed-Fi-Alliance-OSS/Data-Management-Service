@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
@@ -370,16 +371,6 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         throw new DirectoryNotFoundException(
             "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
         );
-    }
-
-    private static JsonObject RequireObject(JsonNode? node, string propertyName)
-    {
-        return node switch
-        {
-            JsonObject jsonObject => jsonObject,
-            null => throw new InvalidOperationException($"Expected {propertyName} to be present."),
-            _ => throw new InvalidOperationException($"Expected {propertyName} to be an object."),
-        };
     }
 
     private sealed record OffendingString(string ResourceEndpointName, string JsonPath);

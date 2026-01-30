@@ -82,6 +82,24 @@ public sealed record EffectiveSchemaInfo(
 );
 ```
 
+#### Dialect rules vs. SQL emission (shared, no drift)
+
+This redesign treats `SqlDialect` as a **selection key** and an input to deterministic derivation; it is not
+only a DDL-emission concern.
+
+To prevent drift between model derivation (E01) and SQL generation/plan emission (E02/E15), implement
+engine-specific “dialect rules” as a reusable component (e.g., `SqlDialectRules` / `ISqlDialectRules`) that
+is consumed by both:
+
+- **E01 (relational model derivation)**: identifier length limits and deterministic shortening (truncate + hash),
+  and any dialect-conditional default type decisions that affect the SQL-free model inventories (e.g., decisions
+  that must be stable to support collision detection and manifest output).
+- **E02 (DDL emission) / E15 (plan compilation)**: identifier quoting, DDL capability patterns, SQL formatting, and
+  mapping from the model’s dialect-neutral type categories (e.g., `RelationalScalarType`) to concrete SQL types.
+
+The SQL writer/dialect abstraction in E02 should compose over the shared dialect rules rather than duplicating
+identifier-limit/shortening/type-default logic.
+
 ### 2.2 Derived relational model set (dialect-aware, SQL-free)
 
 The derived model set is the single “authoritative” schema-derived inventory that both DDL emission and plan compilation consume.
@@ -190,6 +208,7 @@ Notes:
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). Core `dms.*` indexes/triggers are owned by core DDL emission.
+- `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
 ### 2.3 Mapping set (dialect-specific)
 
