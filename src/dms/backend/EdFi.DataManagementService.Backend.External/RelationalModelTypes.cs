@@ -185,7 +185,10 @@ public readonly record struct JsonPathExpression(string Canonical, IReadOnlyList
 /// The derived relational model for a single concrete resource.
 /// </summary>
 /// <param name="Resource">The logical resource identifier.</param>
-/// <param name="PhysicalSchema">The physical database schema for the owning project/endpoint.</param>
+/// <param name="PhysicalSchema">
+/// The owning project schema. For shared-storage resources (e.g., descriptors), this can differ from
+/// <paramref name="Root"/>'s <c>Table.Schema</c>; consumers must use each table's schema when emitting DDL.
+/// </param>
 /// <param name="StorageKind">The storage strategy for the resource.</param>
 /// <param name="Root">The root table (<c>$</c>) for the resource.</param>
 /// <param name="TablesInReadDependencyOrder">

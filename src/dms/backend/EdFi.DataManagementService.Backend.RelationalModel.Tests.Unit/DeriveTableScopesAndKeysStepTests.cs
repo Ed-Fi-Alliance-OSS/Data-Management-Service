@@ -248,6 +248,15 @@ public class Given_A_Descriptor_Resource
     }
 
     [Test]
+    public void It_should_preserve_project_schema_ownership_for_shared_descriptor_storage()
+    {
+        _resourceModel.StorageKind.Should().Be(ResourceStorageKind.SharedDescriptorTable);
+        _resourceModel.PhysicalSchema.Should().Be(new DbSchemaName("edfi"));
+        _resourceModel.Root.Table.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
+        _resourceModel.PhysicalSchema.Should().NotBe(_resourceModel.Root.Table.Schema);
+    }
+
+    [Test]
     public void It_should_not_create_per_descriptor_tables()
     {
         _resourceModel.TablesInReadDependencyOrder.Should().ContainSingle();
