@@ -978,10 +978,12 @@
             },
             "disabilityDescriptor": {
               "description": "The disability served by the bus route, if applicable.",
+              "maxLength": 306,
               "type": "string"
             },
             "expectedTransitTime": {
               "description": "The approximate amount of time, in minutes, for the bus route operation each day.",
+              "maxLength": 30,
               "type": "string"
             },
             "hoursPerWeek": {
@@ -1015,6 +1017,7 @@
                       },
                       "programTypeDescriptor": {
                         "description": "The type of program.",
+                        "maxLength": 306,
                         "type": "string"
                       }
                     },
@@ -1068,6 +1071,7 @@
                 },
                 "staffClassificationDescriptor": {
                   "description": "The titles of employment, official status, or rank of education staff.",
+                  "maxLength": 306,
                   "type": "string"
                 },
                 "staffUniqueId": {
@@ -1130,6 +1134,7 @@
                   },
                   "telephoneNumberTypeDescriptor": {
                     "description": "The type of communication number listed for an individual or organization.",
+                    "maxLength": 306,
                     "type": "string"
                   },
                   "textMessageCapabilityIndicator": {
@@ -2969,6 +2974,7 @@
                                       "properties": {
                                         "termDescriptor": {
                                           "description": "An Ed-Fi Descriptor",
+                                          "maxLength": 306,
                                           "type": "string"
                                         }
                                       },
@@ -2993,6 +2999,7 @@
                           },
                           "addressTypeDescriptor": {
                             "description": "The type of address listed for an individual or organization.    For example:  Physical Address, Mailing Address, Home Address, etc.)",
+                            "maxLength": 306,
                             "type": "string"
                           },
                           "apartmentRoomSuiteNumber": {
@@ -3034,6 +3041,7 @@
                           },
                           "localeDescriptor": {
                             "description": "A general geographic indicator that categorizes U.S. territory (e.g., City, Suburban).",
+                            "maxLength": 306,
                             "type": "string"
                           },
                           "longitude": {
@@ -3078,6 +3086,7 @@
                           },
                           "stateAbbreviationDescriptor": {
                             "description": "The abbreviation for the state (within the United States) or outlying area in which an address is located.",
+                            "maxLength": 306,
                             "type": "string"
                           },
                           "streetNumberName": {
@@ -3121,6 +3130,7 @@
                     },
                     "averageCarLineWait": {
                       "description": "The time spent per day waiting in the car line.",
+                      "maxLength": 30,
                       "type": "string"
                     },
                     "becameParent": {
@@ -3151,6 +3161,7 @@
                     },
                     "credentialFieldDescriptor": {
                       "description": "The field in which the contact holds a credential.",
+                      "maxLength": 306,
                       "type": "string"
                     },
                     "cteProgramService": {
@@ -3163,6 +3174,7 @@
                         },
                         "cteProgramServiceDescriptor": {
                           "description": "Indicates the service being provided to the student by the CTE program.",
+                          "maxLength": 306,
                           "type": "string"
                         },
                         "primaryIndicator": {
@@ -3292,6 +3304,7 @@
                               },
                               "programTypeDescriptor": {
                                 "description": "The type of program.",
+                                "maxLength": 306,
                                 "type": "string"
                               },
                               "studentUniqueId": {
@@ -5091,6 +5104,7 @@
                         },
                         "cteProgramServiceDescriptor": {
                           "description": "Indicates the service being provided to the student by the CTE program.",
+                          "maxLength": 306,
                           "type": "string"
                         },
                         "primaryIndicator": {
@@ -5889,6 +5903,7 @@
                 "properties": {
                   "artMediumDescriptor": {
                     "description": "An Ed-Fi Descriptor",
+                    "maxLength": 306,
                     "type": "string"
                   }
                 },
@@ -5944,6 +5959,7 @@
                     "properties": {
                       "artMediumDescriptor": {
                         "description": "This is documentation.",
+                        "maxLength": 306,
                         "type": "string"
                       },
                       "artPieces": {
@@ -5970,6 +5986,7 @@
                 },
                 "favoriteBookCategoryDescriptor": {
                   "description": "This is documentation.",
+                  "maxLength": 306,
                   "type": "string"
                 }
               },
@@ -5994,6 +6011,7 @@
             },
             "kilnReservationLength": {
               "description": "The number of clock minutes dedicated to the student's kiln reservation.",
+              "maxLength": 30,
               "type": "string"
             },
             "masteredMediums": {
@@ -6047,6 +6065,7 @@
                   },
                   "participationStatusDescriptor": {
                     "description": "The student's program participation status.",
+                    "maxLength": 306,
                     "type": "string"
                   },
                   "statusBeginDate": {
@@ -6085,6 +6104,7 @@
                 },
                 "programTypeDescriptor": {
                   "description": "The type of program.",
+                  "maxLength": 306,
                   "type": "string"
                 }
               },
@@ -6097,6 +6117,7 @@
             },
             "reasonExitedDescriptor": {
               "description": "The reason the student left the program within a school or district.",
+              "maxLength": 306,
               "type": "string"
             },
             "servedOutsideOfRegularSession": {
@@ -6118,6 +6139,7 @@
                   },
                   "serviceDescriptor": {
                     "description": "Indicates the service being provided to the student by the program.",
+                    "maxLength": 306,
                     "type": "string"
                   },
                   "serviceEndDate": {
@@ -7607,6 +7629,7 @@
                         "properties": {
                           "disciplineDescriptor": {
                             "description": "An Ed-Fi Descriptor",
+                            "maxLength": 306,
                             "type": "string"
                           }
                         },
@@ -7720,6 +7743,7 @@
                     },
                     "readingTimeSpent": {
                       "description": "The amount of time the contact spends reading to the student each day.",
+                      "maxLength": 30,
                       "type": "string"
                     },
                     "staffEducationOrganizationEmploymentAssociations": {
@@ -7735,6 +7759,7 @@
                               },
                               "employmentStatusDescriptor": {
                                 "description": "Reflects the type of employment or contract.",
+                                "maxLength": 306,
                                 "type": "string"
                               },
                               "hireDate": {
@@ -7791,6 +7816,7 @@
                         },
                         "telephoneNumberTypeDescriptor": {
                           "description": "The type of communication number listed for an individual or organization.",
+                          "maxLength": 306,
                           "type": "string"
                         },
                         "textMessageCapabilityIndicator": {
@@ -8462,6 +8488,7 @@
                                       "properties": {
                                         "termDescriptor": {
                                           "description": "An Ed-Fi Descriptor",
+                                          "maxLength": 306,
                                           "type": "string"
                                         }
                                       },
@@ -8486,6 +8513,7 @@
                           },
                           "addressTypeDescriptor": {
                             "description": "The type of address listed for an individual or organization.    For example:  Physical Address, Mailing Address, Home Address, etc.)",
+                            "maxLength": 306,
                             "type": "string"
                           },
                           "apartmentRoomSuiteNumber": {
@@ -8527,6 +8555,7 @@
                           },
                           "localeDescriptor": {
                             "description": "A general geographic indicator that categorizes U.S. territory (e.g., City, Suburban).",
+                            "maxLength": 306,
                             "type": "string"
                           },
                           "longitude": {
@@ -8571,6 +8600,7 @@
                           },
                           "stateAbbreviationDescriptor": {
                             "description": "The abbreviation for the state (within the United States) or outlying area in which an address is located.",
+                            "maxLength": 306,
                             "type": "string"
                           },
                           "streetNumberName": {
@@ -8608,6 +8638,7 @@
                         },
                         "programTypeDescriptor": {
                           "description": "The type of program.",
+                          "maxLength": 306,
                           "type": "string"
                         }
                       },
@@ -8695,6 +8726,7 @@
                           },
                           "studentCharacteristicDescriptor": {
                             "description": "The characteristic designated for the student.",
+                            "maxLength": 306,
                             "type": "string"
                           }
                         },
@@ -9355,6 +9387,7 @@
                 "properties": {
                   "academicSubjectDescriptor": {
                     "description": "An Ed-Fi Descriptor",
+                    "maxLength": 306,
                     "type": "string"
                   }
                 },
@@ -9400,6 +9433,7 @@
                 },
                 "cteProgramServiceDescriptor": {
                   "description": "Indicates the service being provided to the student by the CTE program.",
+                  "maxLength": 306,
                   "type": "string"
                 },
                 "primaryIndicator": {
@@ -9478,6 +9512,7 @@
                 },
                 "graduationPlanTypeDescriptor": {
                   "description": "The type of academic plan the student is following for graduation.",
+                  "maxLength": 306,
                   "type": "string"
                 },
                 "graduationSchoolYear": {
@@ -9496,6 +9531,7 @@
             },
             "highSchoolDuration": {
               "description": "The number of years remaining prior to graduation as of when the plan became effective.",
+              "maxLength": 30,
               "type": "string"
             },
             "hoursPerWeek": {
@@ -10527,6 +10563,7 @@
                   "properties": {
                     "membershipTypeDescriptor": {
                       "description": "Membership Type identifies whether a school has primary responsibility for managing a specific student's curriculum or not.",
+                      "maxLength": 306,
                       "type": "string"
                     }
                   },
@@ -10698,6 +10735,7 @@
                               },
                               "programTypeDescriptor": {
                                 "description": "The type of program.",
+                                "maxLength": 306,
                                 "type": "string"
                               },
                               "studentUniqueId": {
@@ -10990,6 +11028,7 @@
                               "properties": {
                                 "artMediumDescriptor": {
                                   "description": "This is documentation.",
+                                  "maxLength": 306,
                                   "type": "string"
                                 },
                                 "artPieces": {
@@ -11016,6 +11055,7 @@
                           },
                           "favoriteBookCategoryDescriptor": {
                             "description": "This is documentation.",
+                            "maxLength": 306,
                             "type": "string"
                           }
                         },

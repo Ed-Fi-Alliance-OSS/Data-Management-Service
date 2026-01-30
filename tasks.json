@@ -73,5 +73,38 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Validation",
+    "description": "Make index/trigger name uniqueness checks dialect-accurate in `RelationalModelSetBuilderContext`. Implement dialect-specific uniqueness rules: (1) PostgreSQL: index names must be unique per schema; trigger names must be unique per table. (2) SQL Server: index names must be unique per table; trigger names must be unique per schema. Update `ValidateIndexNameUniqueness` and `ValidateTriggerNameUniqueness` (and their XML docs) to enforce these scopes using `RelationalModelSetBuilderContext.Dialect`. Acceptance: For Pgsql, two `DbIndexInfo` entries with the same `Name` in the same schema but different tables fail fast with an actionable `InvalidOperationException`; for Mssql that same case succeeds. For Mssql, two `DbTriggerInfo` entries with the same `Name` in the same schema but different tables fail fast; for Pgsql that same case succeeds. For both dialects, duplicates within a forbidden scope are detected deterministically and the exception message includes the dialect, the violated scope, and the conflicting `schema.table:name` (or `schema:name`) keys.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Determinism",
+    "description": "Align identifier-collision detection scopes for indexes/triggers with dialect uniqueness rules. In `RelationalModelSetBuilderContext`'s identifier collision detector, change `RegisterIndex`/`RegisterTrigger` so collisions are evaluated only within the dialect's namespace: Pgsql indexes are schema-scoped and triggers are table-scoped; Mssql indexes are table-scoped and triggers are schema-scoped. Acceptance: (1) A shortening collision for two different index names on different tables must **not** fail for Mssql but **must** fail for Pgsql when the schema matches. (2) A shortening collision for two different trigger names on different tables must **not** fail for Pgsql but **must** fail for Mssql when the schema matches. (3) Collision diagnostics remain deterministic and include the collided shortened identifier plus both source descriptions.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Diagnostics",
+    "description": "Clarify collision exception wording so it is not misleading when no shortening occurs. Update the exception thrown by the identifier collision detector in `RelationalModelSetBuilderContext` to avoid the phrase \"Identifier shortening collisions\" (e.g., \"Identifier collisions detected after applying dialect rules\"). Acceptance: the error message still includes the collided identifier and the list of sources, stays deterministic in ordering, and any impacted tests (including `IdentifierShorteningCollisionTests`) are updated to assert the new message text.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add unit tests that lock in dialect-specific uniqueness and collision scoping for indexes/triggers. Add tests in `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` that construct a `RelationalModelSetBuilderContext` (via a minimal `IRelationalModelSetPass`) and populate `IndexInventory`/`TriggerInventory` to cover: Pgsql index duplicates across different tables in the same schema (must fail); Pgsql trigger duplicates across different tables in the same schema (must succeed); Mssql trigger duplicates across different tables in the same schema (must fail); Mssql index duplicates across different tables in the same schema (must succeed). Add companion tests that force shortening collisions (using a custom `ISqlDialectRules` that maps multiple names to the same shortened value) and verify collisions are only enforced within the dialect's uniqueness scope. Acceptance: tests clearly assert success/failure and error message contents, and `dotnet test` remains green without requiring any database.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
