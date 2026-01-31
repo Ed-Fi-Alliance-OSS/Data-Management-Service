@@ -9,6 +9,7 @@
         "resourceName": "Section",
         "isDescriptor": false,
         "isResourceExtension": false,
+        "isSubclass": false,
         "allowIdentityUpdates": false,
         "arrayUniquenessConstraints": [
         ],
@@ -62,6 +63,7 @@
         "resourceName": "ExtensionDescriptor",
         "isDescriptor": true,
         "isResourceExtension": false,
+        "isSubclass": false,
         "allowIdentityUpdates": false,
         "arrayUniquenessConstraints": [
         ],

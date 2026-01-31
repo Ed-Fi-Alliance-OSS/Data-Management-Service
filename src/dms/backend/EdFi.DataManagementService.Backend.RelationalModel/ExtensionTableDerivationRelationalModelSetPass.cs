@@ -403,9 +403,12 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 case SchemaKind.Scalar:
                     if (tableBuilder is null)
                     {
-                        throw new InvalidOperationException(
-                            $"Scalar value '{propertyPath.Canonical}' was found outside an extension scope."
-                        );
+                        if (context.TryGetDescriptorPath(propertyPath, out _))
+                        {
+                            usedDescriptorPaths.Add(propertyPath.Canonical);
+                        }
+
+                        continue;
                     }
 
                     AddScalarOrDescriptorColumn(
@@ -601,9 +604,17 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 return;
             }
 
-            throw new InvalidOperationException(
-                $"Array schema '{arrayScope}' was found outside an extension scope."
-            );
+            if (itemsKind == SchemaKind.Scalar)
+            {
+                var elementPath = JsonPathExpressionCompiler.FromSegments(arraySegments);
+
+                if (context.TryGetDescriptorPath(elementPath, out _))
+                {
+                    usedDescriptorPaths.Add(elementPath.Canonical);
+                }
+            }
+
+            return;
         }
 
         if (itemsKind == SchemaKind.Object && HasExtensionProperty(itemsSchema))
@@ -1567,7 +1578,14 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             return apiSchemaRoot;
         }
 
-        apiSchemaRoot = new JsonObject { ["projectSchema"] = projectSchema };
+        var detachedSchema = projectSchema.DeepClone();
+
+        if (detachedSchema is not JsonObject detachedObject)
+        {
+            throw new InvalidOperationException("Project schema must be an object.");
+        }
+
+        apiSchemaRoot = new JsonObject { ["projectSchema"] = detachedObject };
 
         apiSchemaRootsByProjectEndpoint[projectEndpointName] = apiSchemaRoot;
 

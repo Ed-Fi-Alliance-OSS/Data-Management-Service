@@ -238,6 +238,13 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             {
                 if (!lookup.TryAdd(identityBinding.ReferenceJsonPath.Canonical, binding))
                 {
+                    var existing = lookup[identityBinding.ReferenceJsonPath.Canonical];
+
+                    if (existing.ReferenceObjectPath.Canonical == binding.ReferenceObjectPath.Canonical)
+                    {
+                        continue;
+                    }
+
                     throw new InvalidOperationException(
                         $"Identity path '{identityBinding.ReferenceJsonPath.Canonical}' on resource "
                             + $"'{FormatResource(resource)}' was bound to multiple references."
