@@ -33,6 +33,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
         ApplyRootConstraints(context);
         ApplyReferenceConstraints(context);
+        ApplyArrayUniquenessConstraints(context);
     }
 
     private static void ApplyRootConstraints(RelationalModelSetBuilderContext context)
@@ -191,6 +192,607 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                 RelationalModel = updatedModel,
             };
         }
+    }
+
+    private static void ApplyArrayUniquenessConstraints(RelationalModelSetBuilderContext context)
+    {
+        var resourcesByKey = context
+            .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
+            .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
+        var baseResourcesByName = BuildBaseResourceLookup(context.ConcreteResourcesInNameOrder);
+        Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
+        Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = new();
+        Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
+
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            var resource = new QualifiedResourceName(
+                resourceContext.Project.ProjectSchema.ProjectName,
+                resourceContext.ResourceName
+            );
+            var builderContext = GetOrCreateBuilderContext(
+                resourceContext,
+                apiSchemaRootsByProjectEndpoint,
+                builderContextsByResource
+            );
+
+            if (builderContext.ArrayUniquenessConstraints.Count == 0)
+            {
+                continue;
+            }
+
+            if (IsResourceExtension(resourceContext))
+            {
+                if (!baseResourcesByName.TryGetValue(resourceContext.ResourceName, out var baseEntries))
+                {
+                    throw new InvalidOperationException(
+                        $"Resource extension '{FormatResource(resource)}' did not match a concrete base resource."
+                    );
+                }
+
+                if (baseEntries.Count != 1)
+                {
+                    var candidates = string.Join(
+                        ", ",
+                        baseEntries
+                            .Select(entry => FormatResource(entry.Model.ResourceKey.Resource))
+                            .OrderBy(name => name, StringComparer.Ordinal)
+                    );
+
+                    throw new InvalidOperationException(
+                        $"Resource extension '{FormatResource(resource)}' matched multiple concrete resources: "
+                            + $"{candidates}."
+                    );
+                }
+
+                var baseEntry = baseEntries[0];
+                var baseResource = baseEntry.Model.ResourceKey.Resource;
+                var mutation = GetOrCreateMutation(baseResource, baseEntry, mutations);
+
+                ApplyArrayUniquenessConstraintsForResource(
+                    mutation,
+                    baseEntry.Model.RelationalModel,
+                    builderContext,
+                    baseResource
+                );
+
+                continue;
+            }
+
+            if (!resourcesByKey.TryGetValue(resource, out var entry))
+            {
+                throw new InvalidOperationException(
+                    $"Concrete resource '{FormatResource(resource)}' was not found for constraint derivation."
+                );
+            }
+
+            var resourceMutation = GetOrCreateMutation(resource, entry, mutations);
+
+            ApplyArrayUniquenessConstraintsForResource(
+                resourceMutation,
+                entry.Model.RelationalModel,
+                builderContext,
+                resource
+            );
+        }
+
+        foreach (var mutation in mutations.Values)
+        {
+            if (!mutation.HasChanges)
+            {
+                continue;
+            }
+
+            var updatedModel = UpdateResourceModel(mutation.Entry.Model.RelationalModel, mutation);
+            context.ConcreteResourcesInNameOrder[mutation.Entry.Index] = mutation.Entry.Model with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+
+    private static void ApplyArrayUniquenessConstraintsForResource(
+        ResourceMutation mutation,
+        RelationalResourceModel resourceModel,
+        RelationalModelBuilderContext builderContext,
+        QualifiedResourceName resource
+    )
+    {
+        var tablesByScope = resourceModel
+            .TablesInReadDependencyOrder.GroupBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                    (IReadOnlyList<DbTableModel>)
+                        group
+                            .GroupBy(table => table.Table)
+                            .Select(tableGroup => tableGroup.First())
+                            .ToArray(),
+                StringComparer.Ordinal
+            );
+        var tablesByName = resourceModel
+            .TablesInReadDependencyOrder.GroupBy(table => table.Table)
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<DbTableModel>)group.ToArray());
+        var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
+            resourceModel.DocumentReferenceBindings,
+            resource
+        );
+        Dictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable = new();
+
+        foreach (var constraint in builderContext.ArrayUniquenessConstraints)
+        {
+            ApplyArrayUniquenessConstraint(
+                constraint,
+                mutation,
+                resource,
+                tablesByScope,
+                tablesByName,
+                referenceBindingsByIdentityPath,
+                columnsByTable
+            );
+        }
+    }
+
+    private static void ApplyArrayUniquenessConstraint(
+        ArrayUniquenessConstraintInput constraint,
+        ResourceMutation mutation,
+        QualifiedResourceName resource,
+        IReadOnlyDictionary<string, IReadOnlyList<DbTableModel>> tablesByScope,
+        IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
+        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable
+    )
+    {
+        var resolvedPaths = constraint
+            .Paths.Select(path => ResolveConstraintPath(constraint.BasePath, path))
+            .ToArray();
+        var pathsByScope = GroupPathsByArrayScope(resolvedPaths, resource);
+
+        foreach (var scopeGroup in pathsByScope)
+        {
+            var constraintPaths = scopeGroup.Value;
+            var scopePath = GetArrayScope(constraintPaths[0], resource);
+            Exception? failure = null;
+
+            if (
+                TryResolveArrayUniquenessTableForScope(
+                    scopePath.Canonical,
+                    constraintPaths,
+                    tablesByScope,
+                    referenceBindingsByIdentityPath,
+                    tablesByName,
+                    columnsByTable,
+                    resource,
+                    out var table,
+                    out var uniqueColumns,
+                    out failure
+                )
+            )
+            {
+                AddArrayUniquenessConstraint(mutation, table, uniqueColumns);
+                continue;
+            }
+
+            if (TryStripExtensionRootPrefix(scopePath, out var alignedScope))
+            {
+                var alignedPaths = StripExtensionRootPrefix(constraintPaths, resource);
+
+                if (
+                    TryResolveArrayUniquenessTableForScope(
+                        alignedScope.Canonical,
+                        alignedPaths,
+                        tablesByScope,
+                        referenceBindingsByIdentityPath,
+                        tablesByName,
+                        columnsByTable,
+                        resource,
+                        out var alignedTable,
+                        out var alignedColumns,
+                        out failure
+                    )
+                )
+                {
+                    AddArrayUniquenessConstraint(mutation, alignedTable, alignedColumns);
+                    continue;
+                }
+            }
+
+            var allCandidates = tablesByScope.Values.SelectMany(group => group).ToArray();
+
+            if (
+                TryResolveArrayUniquenessTable(
+                    allCandidates,
+                    constraintPaths,
+                    referenceBindingsByIdentityPath,
+                    tablesByName,
+                    columnsByTable,
+                    scopePath.Canonical,
+                    resource,
+                    out var fallbackTable,
+                    out var fallbackColumns,
+                    out failure
+                )
+            )
+            {
+                AddArrayUniquenessConstraint(mutation, fallbackTable, fallbackColumns);
+                continue;
+            }
+
+            if (TryStripExtensionRootPrefix(scopePath, out var fallbackAlignedScope))
+            {
+                var alignedPaths = StripExtensionRootPrefix(constraintPaths, resource);
+
+                if (
+                    TryResolveArrayUniquenessTable(
+                        allCandidates,
+                        alignedPaths,
+                        referenceBindingsByIdentityPath,
+                        tablesByName,
+                        columnsByTable,
+                        fallbackAlignedScope.Canonical,
+                        resource,
+                        out var fallbackAlignedTable,
+                        out var fallbackAlignedColumns,
+                        out failure
+                    )
+                )
+                {
+                    AddArrayUniquenessConstraint(mutation, fallbackAlignedTable, fallbackAlignedColumns);
+                    continue;
+                }
+            }
+
+            if (failure is not null)
+            {
+                throw failure;
+            }
+
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints scope '{scopeGroup.Key}' on resource "
+                    + $"'{FormatResource(resource)}' did not map to a child table."
+            );
+        }
+
+        foreach (var nested in constraint.NestedConstraints)
+        {
+            ApplyArrayUniquenessConstraint(
+                nested,
+                mutation,
+                resource,
+                tablesByScope,
+                tablesByName,
+                referenceBindingsByIdentityPath,
+                columnsByTable
+            );
+        }
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<JsonPathExpression>> GroupPathsByArrayScope(
+        IReadOnlyList<JsonPathExpression> paths,
+        QualifiedResourceName resource
+    )
+    {
+        if (paths.Count == 0)
+        {
+            throw new InvalidOperationException("arrayUniquenessConstraints must include at least one path.");
+        }
+
+        Dictionary<string, List<JsonPathExpression>> grouped = new(StringComparer.Ordinal);
+
+        foreach (var path in paths)
+        {
+            var arrayScope = GetArrayScope(path, resource);
+            var scope = arrayScope.Canonical;
+
+            if (!grouped.TryGetValue(scope, out var scopePaths))
+            {
+                scopePaths = [];
+                grouped.Add(scope, scopePaths);
+            }
+
+            scopePaths.Add(path);
+        }
+
+        return grouped.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<JsonPathExpression>)entry.Value,
+            StringComparer.Ordinal
+        );
+    }
+
+    private static JsonPathExpression GetArrayScope(JsonPathExpression path, QualifiedResourceName resource)
+    {
+        var lastArrayIndex = -1;
+
+        for (var index = 0; index < path.Segments.Count; index++)
+        {
+            if (path.Segments[index] is JsonPathSegment.AnyArrayElement)
+            {
+                lastArrayIndex = index;
+            }
+        }
+
+        if (lastArrayIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints path '{path.Canonical}' on resource '{FormatResource(resource)}' "
+                    + "must include an array wildcard segment."
+            );
+        }
+
+        var scopeSegments = path.Segments.Take(lastArrayIndex + 1).ToArray();
+        return JsonPathExpressionCompiler.FromSegments(scopeSegments);
+    }
+
+    private static void AddArrayUniquenessConstraint(
+        ResourceMutation mutation,
+        DbTableModel table,
+        IReadOnlyList<DbColumnName> uniqueColumns
+    )
+    {
+        var uniqueName = BuildUniqueConstraintName(table.Table.Name, uniqueColumns);
+        var tableBuilder = mutation.GetTableBuilder(table, mutation.Entry.Model.ResourceKey.Resource);
+
+        if (!ContainsUniqueConstraint(tableBuilder.Constraints, uniqueName))
+        {
+            tableBuilder.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns));
+            mutation.MarkTableMutated(table);
+        }
+    }
+
+    private static bool TryResolveArrayUniquenessTable(
+        IReadOnlyList<DbTableModel> candidates,
+        IReadOnlyList<JsonPathExpression> paths,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
+        IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
+        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable,
+        string scope,
+        QualifiedResourceName resource,
+        out DbTableModel table,
+        out DbColumnName[] uniqueColumns,
+        out Exception? failure
+    )
+    {
+        table = default!;
+        uniqueColumns = Array.Empty<DbColumnName>();
+        failure = null;
+
+        var orderedCandidates = candidates
+            .OrderBy(candidate => candidate.Table.ToString(), StringComparer.Ordinal)
+            .ToArray();
+        List<(DbTableModel Table, DbColumnName[] Columns)> matches = [];
+
+        foreach (var candidate in orderedCandidates)
+        {
+            try
+            {
+                var columns = BuildArrayUniquenessColumns(
+                    candidate,
+                    paths,
+                    referenceBindingsByIdentityPath,
+                    tablesByName,
+                    columnsByTable,
+                    resource
+                );
+                matches.Add((candidate, columns));
+            }
+            catch (InvalidOperationException ex)
+            {
+                failure = ex;
+            }
+        }
+
+        if (matches.Count == 1)
+        {
+            table = matches[0].Table;
+            uniqueColumns = matches[0].Columns;
+            return true;
+        }
+
+        if (matches.Count > 1)
+        {
+            var candidatesList = string.Join(
+                ", ",
+                matches
+                    .Select(match => match.Table.Table.ToString())
+                    .OrderBy(name => name, StringComparer.Ordinal)
+            );
+
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints scope '{scope}' on resource '{FormatResource(resource)}' "
+                    + $"matched multiple tables: {candidatesList}."
+            );
+        }
+
+        return false;
+    }
+
+    private static bool TryResolveArrayUniquenessTableForScope(
+        string scope,
+        IReadOnlyList<JsonPathExpression> paths,
+        IReadOnlyDictionary<string, IReadOnlyList<DbTableModel>> tablesByScope,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
+        IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
+        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable,
+        QualifiedResourceName resource,
+        out DbTableModel table,
+        out DbColumnName[] uniqueColumns,
+        out Exception? failure
+    )
+    {
+        if (!tablesByScope.TryGetValue(scope, out var candidates))
+        {
+            table = default!;
+            uniqueColumns = Array.Empty<DbColumnName>();
+            failure = null;
+            return false;
+        }
+
+        return TryResolveArrayUniquenessTable(
+            candidates,
+            paths,
+            referenceBindingsByIdentityPath,
+            tablesByName,
+            columnsByTable,
+            scope,
+            resource,
+            out table,
+            out uniqueColumns,
+            out failure
+        );
+    }
+
+    private static bool TryStripExtensionRootPrefix(JsonPathExpression path, out JsonPathExpression stripped)
+    {
+        if (
+            path.Segments.Count >= 2
+            && path.Segments[0] is JsonPathSegment.Property { Name: "_ext" }
+            && path.Segments[1] is JsonPathSegment.Property
+        )
+        {
+            var remainingSegments = path.Segments.Skip(2).ToArray();
+            stripped = JsonPathExpressionCompiler.FromSegments(remainingSegments);
+            return true;
+        }
+
+        stripped = default;
+        return false;
+    }
+
+    private static IReadOnlyList<JsonPathExpression> StripExtensionRootPrefix(
+        IReadOnlyList<JsonPathExpression> paths,
+        QualifiedResourceName resource
+    )
+    {
+        List<JsonPathExpression> stripped = new(paths.Count);
+
+        foreach (var path in paths)
+        {
+            if (!TryStripExtensionRootPrefix(path, out var strippedPath))
+            {
+                throw new InvalidOperationException(
+                    $"arrayUniquenessConstraints path '{path.Canonical}' on resource "
+                        + $"'{FormatResource(resource)}' did not map to an extension-aligned scope."
+                );
+            }
+
+            stripped.Add(strippedPath);
+        }
+
+        return stripped.ToArray();
+    }
+
+    private static DbColumnName[] BuildArrayUniquenessColumns(
+        DbTableModel table,
+        IReadOnlyList<JsonPathExpression> paths,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
+        IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
+        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable,
+        QualifiedResourceName resource
+    )
+    {
+        var parentKeyColumns = table
+            .Key.Columns.Where(column => column.Kind == ColumnKind.ParentKeyPart)
+            .Select(column => column.ColumnName)
+            .ToArray();
+
+        HashSet<string> seenColumns = new(StringComparer.Ordinal);
+        List<DbColumnName> uniqueColumns = new(parentKeyColumns.Length + paths.Count);
+
+        foreach (var keyColumn in parentKeyColumns)
+        {
+            AddUniqueColumn(keyColumn, uniqueColumns, seenColumns);
+        }
+
+        foreach (var path in paths)
+        {
+            var columnName = ResolveArrayUniquenessColumn(
+                table,
+                path,
+                referenceBindingsByIdentityPath,
+                tablesByName,
+                columnsByTable,
+                resource
+            );
+            AddUniqueColumn(columnName, uniqueColumns, seenColumns);
+        }
+
+        return uniqueColumns.ToArray();
+    }
+
+    private static DbColumnName ResolveArrayUniquenessColumn(
+        DbTableModel table,
+        JsonPathExpression path,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
+        IReadOnlyDictionary<DbTableName, IReadOnlyList<DbTableModel>> tablesByName,
+        IDictionary<DbTableName, IReadOnlyDictionary<string, DbColumnName>> columnsByTable,
+        QualifiedResourceName resource
+    )
+    {
+        if (referenceBindingsByIdentityPath.TryGetValue(path.Canonical, out var binding))
+        {
+            if (!binding.Table.Equals(table.Table))
+            {
+                throw new InvalidOperationException(
+                    $"arrayUniquenessConstraints path '{path.Canonical}' on resource '{FormatResource(resource)}' "
+                        + "did not bind to the owning table scope."
+                );
+            }
+
+            return binding.FkColumn;
+        }
+
+        if (!columnsByTable.TryGetValue(table.Table, out var columnsByPath))
+        {
+            var sourceTables = tablesByName.TryGetValue(table.Table, out var tables) ? tables : [table];
+
+            columnsByPath = sourceTables
+                .SelectMany(sourceTable => sourceTable.Columns)
+                .Where(column => column.SourceJsonPath is not null)
+                .GroupBy(column => column.SourceJsonPath!.Value.Canonical, StringComparer.Ordinal)
+                .ToDictionary(
+                    group => group.Key,
+                    group =>
+                        group
+                            .OrderBy(column => column.ColumnName.Value, StringComparer.Ordinal)
+                            .First()
+                            .ColumnName,
+                    StringComparer.Ordinal
+                );
+            columnsByTable.Add(table.Table, columnsByPath);
+        }
+
+        if (!columnsByPath.TryGetValue(path.Canonical, out var columnName))
+        {
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints path '{path.Canonical}' on resource '{FormatResource(resource)}' "
+                    + $"did not map to a column on table '{table.Table.Name}'."
+            );
+        }
+
+        return columnName;
+    }
+
+    private static JsonPathExpression ResolveConstraintPath(
+        JsonPathExpression? basePath,
+        JsonPathExpression path
+    )
+    {
+        return basePath is null ? path : ResolveRelativePath(basePath.Value, path);
+    }
+
+    private static JsonPathExpression ResolveRelativePath(
+        JsonPathExpression basePath,
+        JsonPathExpression relativePath
+    )
+    {
+        if (relativePath.Segments.Count == 0)
+        {
+            return basePath;
+        }
+
+        var combinedSegments = basePath.Segments.Concat(relativePath.Segments).ToArray();
+        return JsonPathExpressionCompiler.FromSegments(combinedSegments);
     }
 
     private static RelationalResourceModel ApplyRootConstraints(
@@ -439,6 +1041,106 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         return lookup;
     }
 
+    private static DbTableModel ResolveReferenceBindingTable(
+        DocumentReferenceBinding binding,
+        RelationalResourceModel resourceModel,
+        QualifiedResourceName resource
+    )
+    {
+        var candidates = resourceModel
+            .TablesInReadDependencyOrder.Where(table => table.Table.Equals(binding.Table))
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not map to table '{binding.Table}'."
+            );
+        }
+
+        if (candidates.Length == 1)
+        {
+            return candidates[0];
+        }
+
+        var orderedCandidates = candidates
+            .OrderBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ToArray();
+        DbTableModel? bestMatch = null;
+
+        foreach (var candidate in orderedCandidates)
+        {
+            if (!IsPrefixOf(candidate.JsonScope.Segments, binding.ReferenceObjectPath.Segments))
+            {
+                continue;
+            }
+
+            if (bestMatch is null || candidate.JsonScope.Segments.Count > bestMatch.JsonScope.Segments.Count)
+            {
+                bestMatch = candidate;
+            }
+        }
+
+        if (bestMatch is null)
+        {
+            var scopeList = string.Join(", ", orderedCandidates.Select(table => table.JsonScope.Canonical));
+
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
+                    + $"Candidates: {scopeList}."
+            );
+        }
+
+        if (
+            binding.ReferenceObjectPath.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+            && !bestMatch.JsonScope.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
+            );
+        }
+
+        return bestMatch;
+    }
+
+    private static bool IsPrefixOf(IReadOnlyList<JsonPathSegment> prefix, IReadOnlyList<JsonPathSegment> path)
+    {
+        if (prefix.Count > path.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < prefix.Count; index++)
+        {
+            var prefixSegment = prefix[index];
+            var pathSegment = path[index];
+
+            if (prefixSegment.GetType() != pathSegment.GetType())
+            {
+                return false;
+            }
+
+            if (
+                prefixSegment is JsonPathSegment.Property prefixProperty
+                && pathSegment is JsonPathSegment.Property pathProperty
+                && !string.Equals(prefixProperty.Name, pathProperty.Name, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     private static void ApplyReferenceConstraintsForResource(
         ResourceMutation mutation,
         RelationalResourceModel resourceModel,
@@ -491,7 +1193,8 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
             EnsureTargetUnique(targetInfo, identityColumns.TargetColumns, resourcesByKey, mutations);
 
-            var tableBuilder = mutation.GetTableBuilder(binding.Table, resource);
+            var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
+            var tableBuilder = mutation.GetTableBuilder(bindingTable, resource);
 
             if (identityColumns.LocalColumns.Count > 0)
             {
@@ -509,7 +1212,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                             identityColumns.LocalColumns
                         )
                     );
-                    mutation.MarkTableMutated(tableBuilder.Definition.Table);
+                    mutation.MarkTableMutated(bindingTable);
                 }
             }
 
@@ -547,7 +1250,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                         OnUpdate: onUpdate
                     )
                 );
-                mutation.MarkTableMutated(tableBuilder.Definition.Table);
+                mutation.MarkTableMutated(bindingTable);
             }
         }
     }
@@ -658,10 +1361,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         }
 
         var mutation = GetOrCreateMutation(targetInfo.Resource, entry, mutations);
-        var tableBuilder = mutation.GetTableBuilder(
-            entry.Model.RelationalModel.Root.Table,
-            targetInfo.Resource
-        );
+        var tableBuilder = mutation.GetTableBuilder(entry.Model.RelationalModel.Root, targetInfo.Resource);
         var uniqueColumns = new List<DbColumnName>(1 + targetIdentityColumns.Count)
         {
             RelationalNameConventions.DocumentIdColumnName,
@@ -673,7 +1373,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         if (!ContainsUniqueConstraint(tableBuilder.Constraints, uniqueName))
         {
             tableBuilder.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns.ToArray()));
-            mutation.MarkTableMutated(tableBuilder.Definition.Table);
+            mutation.MarkTableMutated(entry.Model.RelationalModel.Root);
         }
     }
 
@@ -1109,60 +1809,63 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
     private sealed class ResourceMutation
     {
-        private readonly HashSet<DbTableName> _mutatedTables = new();
+        private readonly HashSet<TableKey> _mutatedTables = new();
 
         public ResourceMutation(ResourceEntry entry)
         {
             Entry = entry;
-            TableBuilders = new Dictionary<DbTableName, TableBuilder>();
+            TableBuilders = new Dictionary<TableKey, TableBuilder>();
 
             foreach (var table in entry.Model.RelationalModel.TablesInReadDependencyOrder)
             {
-                if (TableBuilders.ContainsKey(table.Table))
-                {
-                    continue;
-                }
-
-                TableBuilders[table.Table] = new TableBuilder(table);
+                var key = new TableKey(table.Table, table.JsonScope.Canonical);
+                TableBuilders.TryAdd(key, new TableBuilder(table));
             }
         }
 
         public ResourceEntry Entry { get; }
 
-        public Dictionary<DbTableName, TableBuilder> TableBuilders { get; }
+        private Dictionary<TableKey, TableBuilder> TableBuilders { get; }
 
         public bool HasChanges => _mutatedTables.Count > 0;
 
-        public TableBuilder GetTableBuilder(DbTableName tableName, QualifiedResourceName resource)
+        public TableBuilder GetTableBuilder(DbTableModel table, QualifiedResourceName resource)
         {
-            if (TableBuilders.TryGetValue(tableName, out var builder))
+            var key = new TableKey(table.Table, table.JsonScope.Canonical);
+
+            if (TableBuilders.TryGetValue(key, out var builder))
             {
                 return builder;
             }
 
             throw new InvalidOperationException(
-                $"Table '{tableName}' for resource '{FormatResource(resource)}' "
-                    + "was not found for constraint derivation."
+                $"Table '{table.Table}' scope '{table.JsonScope.Canonical}' for resource "
+                    + $"'{FormatResource(resource)}' was not found for constraint derivation."
             );
         }
 
-        public void MarkTableMutated(DbTableName tableName)
+        public void MarkTableMutated(DbTableModel table)
         {
-            _mutatedTables.Add(tableName);
+            _mutatedTables.Add(new TableKey(table.Table, table.JsonScope.Canonical));
         }
 
         public DbTableModel BuildTable(DbTableModel original)
         {
-            if (!TableBuilders.TryGetValue(original.Table, out var builder))
+            var key = new TableKey(original.Table, original.JsonScope.Canonical);
+
+            if (!TableBuilders.TryGetValue(key, out var builder))
             {
                 throw new InvalidOperationException(
-                    $"Table '{original.Table}' was not found for constraint derivation."
+                    $"Table '{original.Table}' scope '{original.JsonScope.Canonical}' was not found "
+                        + "for constraint derivation."
                 );
             }
 
             var built = builder.Build();
-            return _mutatedTables.Contains(original.Table) ? CanonicalizeTable(built) : built;
+            return _mutatedTables.Contains(key) ? CanonicalizeTable(built) : built;
         }
+
+        private sealed record TableKey(DbTableName Table, string Scope);
     }
 
     private sealed class TableBuilder

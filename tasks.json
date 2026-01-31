@@ -69,7 +69,7 @@
       "Add unit tests proving parent key parts are included, `Ordinal` is excluded, reference-inner paths bind to `..._DocumentId`, and unknown paths fail fast.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Constraints",
