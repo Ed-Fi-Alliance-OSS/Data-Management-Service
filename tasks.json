@@ -33,7 +33,7 @@
       "Add a synthetic fixture with `_ext` at root and inside a collection (including an array under `_ext` containing a reference) and assert expected extension table names + key alignment + FK-to-base with `ON DELETE CASCADE`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Abstract Identity",
