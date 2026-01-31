@@ -276,6 +276,99 @@ public class Given_Abstract_Reference_Constraint_Derivation
     }
 }
 
+[TestFixture]
+public class Given_Array_Uniqueness_Constraint_Derivation
+{
+    private DbTableModel _addressTable = default!;
+    private DbTableModel _periodTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildArrayUniquenessProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ConstraintDerivationRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _addressTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddress"
+        );
+        _periodTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddressPeriod"
+        );
+    }
+
+    [Test]
+    public void It_should_map_reference_identity_paths_to_document_id()
+    {
+        var uniqueConstraint = _addressTable.Constraints.OfType<TableConstraint.Unique>().Single();
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "School_DocumentId");
+        uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+
+    [Test]
+    public void It_should_include_parent_key_parts_for_nested_arrays()
+    {
+        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
+        uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
+    }
+}
+
+[TestFixture]
+public class Given_Unmappable_Array_Uniqueness_Path
+{
+    [Test]
+    public void It_should_fail_fast_when_path_does_not_map_to_column()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildArrayUniquenessUnmappableProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ConstraintDerivationRelationalModelSetPass(),
+            }
+        );
+
+        Action action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        action.Should().Throw<InvalidOperationException>().WithMessage("*schoolReference.link*");
+    }
+}
+
 internal static class ConstraintDerivationTestSchemaBuilder
 {
     internal static JsonObject BuildReferenceConstraintProjectSchema()
@@ -354,6 +447,41 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    internal static JsonObject BuildArrayUniquenessProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(BuildBusRouteArrayUniquenessConstraints()),
+                ["schools"] = BuildSchoolSchema(),
+            },
+        };
+    }
+
+    internal static JsonObject BuildArrayUniquenessUnmappableProjectSchema()
+    {
+        JsonArray arrayUniquenessConstraints =
+        [
+            new JsonObject { ["paths"] = new JsonArray { "$.addresses[*].schoolReference.link" } },
+        ];
+
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(arrayUniquenessConstraints),
+                ["schools"] = BuildSchoolSchema(),
+            },
+        };
+    }
+
     private static JsonObject BuildReferenceConstraintEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -426,6 +554,114 @@ internal static class ConstraintDerivationTestSchemaBuilder
                         {
                             ["identityJsonPath"] = "$.studentUniqueId",
                             ["referenceJsonPath"] = "$.studentReference.studentUniqueId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonArray BuildBusRouteArrayUniquenessConstraints()
+    {
+        return new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray
+                {
+                    "$.addresses[*].schoolReference.schoolId",
+                    "$.addresses[*].schoolReference.educationOrganizationId",
+                },
+                ["nestedConstraints"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["basePath"] = "$.addresses[*]",
+                        ["paths"] = new JsonArray { "$.periods[*].beginDate" },
+                    },
+                },
+            },
+        };
+    }
+
+    private static JsonObject BuildBusRouteArrayUniquenessSchema(JsonArray arrayUniquenessConstraints)
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["streetNumberName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            ["schoolReference"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                                    ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                                    ["link"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                                },
+                            },
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["beginDate"] = new JsonObject
+                                        {
+                                            ["type"] = "string",
+                                            ["format"] = "date",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "BusRoute",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = arrayUniquenessConstraints,
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.addresses[*].schoolReference.schoolId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.addresses[*].schoolReference.educationOrganizationId",
                         },
                     },
                 },
