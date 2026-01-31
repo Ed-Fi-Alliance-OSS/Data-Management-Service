@@ -388,6 +388,329 @@ internal static class RelationalModelSetValidation
     }
 
     /// <summary>
+    /// Validates that each <c>referenceJsonPaths[*].identityJsonPath</c> resolves to a target resource
+    /// identity JSONPath.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The normalized effective schema set.</param>
+    /// <param name="effectiveResources">All resources in the effective schema set.</param>
+    internal static void ValidateReferenceIdentityJsonPaths(
+        EffectiveSchemaSet effectiveSchemaSet,
+        IReadOnlySet<QualifiedResourceName> effectiveResources
+    )
+    {
+        if (effectiveSchemaSet.ProjectsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaSet.ProjectsInEndpointOrder must be provided."
+            );
+        }
+
+        var resourceSchemaIndex = BuildResourceSchemaIndex(effectiveSchemaSet);
+        Dictionary<QualifiedResourceName, HashSet<string>> identityPathsByResource = new();
+
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    "EffectiveSchemaSet.ProjectsInEndpointOrder must not contain null entries."
+                );
+            }
+
+            if (project.ProjectSchema is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema to be present in EffectiveProjectSchema."
+                );
+            }
+
+            var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
+            var resourceSchemas = RequireObject(
+                project.ProjectSchema["resourceSchemas"],
+                "projectSchema.resourceSchemas"
+            );
+
+            ValidateReferenceIdentityJsonPathsForResourceSchemas(
+                projectName,
+                resourceSchemas,
+                effectiveResources,
+                resourceSchemaIndex,
+                identityPathsByResource,
+                "projectSchema.resourceSchemas"
+            );
+
+            if (project.ProjectSchema["abstractResources"] is JsonObject abstractResources)
+            {
+                ValidateReferenceIdentityJsonPathsForResourceSchemas(
+                    projectName,
+                    abstractResources,
+                    effectiveResources,
+                    resourceSchemaIndex,
+                    identityPathsByResource,
+                    "projectSchema.abstractResources"
+                );
+            }
+        }
+    }
+
+    private static void ValidateReferenceIdentityJsonPathsForResourceSchemas(
+        string projectName,
+        JsonObject resourceSchemas,
+        IReadOnlySet<QualifiedResourceName> effectiveResources,
+        IReadOnlyDictionary<QualifiedResourceName, JsonObject> resourceSchemaIndex,
+        IDictionary<QualifiedResourceName, HashSet<string>> identityPathsByResource,
+        string resourceSchemasPath
+    )
+    {
+        foreach (
+            var resourceSchemaEntry in OrderResourceSchemas(
+                resourceSchemas,
+                resourceSchemasPath,
+                requireNonEmptyKey: true
+            )
+        )
+        {
+            ValidateReferenceIdentityJsonPathsForResource(
+                projectName,
+                resourceSchemaEntry.ResourceName,
+                resourceSchemaEntry.ResourceSchema,
+                effectiveResources,
+                resourceSchemaIndex,
+                identityPathsByResource
+            );
+        }
+    }
+
+    private static void ValidateReferenceIdentityJsonPathsForResource(
+        string projectName,
+        string resourceName,
+        JsonObject resourceSchema,
+        IReadOnlySet<QualifiedResourceName> effectiveResources,
+        IReadOnlyDictionary<QualifiedResourceName, JsonObject> resourceSchemaIndex,
+        IDictionary<QualifiedResourceName, HashSet<string>> identityPathsByResource
+    )
+    {
+        if (resourceSchema["documentPathsMapping"] is not JsonObject documentPathsMapping)
+        {
+            return;
+        }
+
+        foreach (var mapping in documentPathsMapping.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            if (mapping.Value is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected documentPathsMapping entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (mapping.Value is not JsonObject mappingObject)
+            {
+                throw new InvalidOperationException(
+                    "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            var isReference =
+                mappingObject["isReference"]?.GetValue<bool>()
+                ?? throw new InvalidOperationException(
+                    "Expected isReference to be on documentPathsMapping entry, invalid ApiSchema."
+                );
+
+            if (!isReference)
+            {
+                continue;
+            }
+
+            var isDescriptor =
+                mappingObject["isDescriptor"]?.GetValue<bool>()
+                ?? throw new InvalidOperationException(
+                    "Expected isDescriptor to be on documentPathsMapping entry, invalid ApiSchema."
+                );
+
+            if (isDescriptor)
+            {
+                continue;
+            }
+
+            if (!mappingObject.TryGetPropertyValue("referenceJsonPaths", out var referenceJsonPathsNode))
+            {
+                throw new InvalidOperationException(
+                    "Expected referenceJsonPaths to be present on documentPathsMapping entry, "
+                        + "invalid ApiSchema."
+                );
+            }
+
+            if (referenceJsonPathsNode is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected referenceJsonPaths to be present on documentPathsMapping entry, "
+                        + "invalid ApiSchema."
+                );
+            }
+
+            if (referenceJsonPathsNode is not JsonArray referenceJsonPathsArray)
+            {
+                throw new InvalidOperationException(
+                    "Expected referenceJsonPaths to be an array on documentPathsMapping entry, "
+                        + "invalid ApiSchema."
+                );
+            }
+
+            var targetProjectName = RequireString(mappingObject, "projectName");
+            var targetResourceName = RequireString(mappingObject, "resourceName");
+            var targetResource = new QualifiedResourceName(targetProjectName, targetResourceName);
+
+            if (!effectiveResources.Contains(targetResource))
+            {
+                continue;
+            }
+
+            var targetIdentityPaths = GetIdentityPathsForResource(
+                targetResource,
+                resourceSchemaIndex,
+                identityPathsByResource
+            );
+
+            foreach (var referenceJsonPath in referenceJsonPathsArray)
+            {
+                if (referenceJsonPath is null)
+                {
+                    throw new InvalidOperationException(
+                        "Expected referenceJsonPaths to not contain null entries, invalid ApiSchema."
+                    );
+                }
+
+                if (referenceJsonPath is not JsonObject referenceJsonPathObject)
+                {
+                    throw new InvalidOperationException(
+                        "Expected referenceJsonPaths entries to be objects, invalid ApiSchema."
+                    );
+                }
+
+                var identityJsonPath = RequireString(referenceJsonPathObject, "identityJsonPath");
+                var identityPath = JsonPathExpressionCompiler.Compile(identityJsonPath);
+
+                if (targetIdentityPaths.Contains(identityPath.Canonical))
+                {
+                    continue;
+                }
+
+                throw new InvalidOperationException(
+                    $"documentPathsMapping entry '{mapping.Key}' on resource '{projectName}:{resourceName}' "
+                        + $"references identityJsonPath '{identityPath.Canonical}' which does not exist "
+                        + $"in target resource '{FormatResource(targetResource)}'."
+                );
+            }
+        }
+    }
+
+    private static IReadOnlyDictionary<QualifiedResourceName, JsonObject> BuildResourceSchemaIndex(
+        EffectiveSchemaSet effectiveSchemaSet
+    )
+    {
+        Dictionary<QualifiedResourceName, JsonObject> index = new();
+
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder ?? [])
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    "EffectiveSchemaSet.ProjectsInEndpointOrder must not contain null entries."
+                );
+            }
+
+            if (project.ProjectSchema is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema to be present in EffectiveProjectSchema."
+                );
+            }
+
+            var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
+            var resourceSchemas = RequireObject(
+                project.ProjectSchema["resourceSchemas"],
+                "projectSchema.resourceSchemas"
+            );
+
+            AddResourceSchemaEntries(index, resourceSchemas, projectName, "projectSchema.resourceSchemas");
+
+            if (project.ProjectSchema["abstractResources"] is JsonObject abstractResources)
+            {
+                AddResourceSchemaEntries(
+                    index,
+                    abstractResources,
+                    projectName,
+                    "projectSchema.abstractResources"
+                );
+            }
+        }
+
+        return index;
+    }
+
+    private static void AddResourceSchemaEntries(
+        IDictionary<QualifiedResourceName, JsonObject> index,
+        JsonObject resourceSchemas,
+        string projectName,
+        string resourceSchemasPath
+    )
+    {
+        foreach (
+            var entry in OrderResourceSchemas(resourceSchemas, resourceSchemasPath, requireNonEmptyKey: true)
+        )
+        {
+            var resourceKey = new QualifiedResourceName(projectName, entry.ResourceName);
+            index[resourceKey] = entry.ResourceSchema;
+        }
+    }
+
+    private static HashSet<string> GetIdentityPathsForResource(
+        QualifiedResourceName resource,
+        IReadOnlyDictionary<QualifiedResourceName, JsonObject> resourceSchemaIndex,
+        IDictionary<QualifiedResourceName, HashSet<string>> identityPathsByResource
+    )
+    {
+        if (identityPathsByResource.TryGetValue(resource, out var existing))
+        {
+            return existing;
+        }
+
+        if (!resourceSchemaIndex.TryGetValue(resource, out var resourceSchema))
+        {
+            throw new InvalidOperationException(
+                $"Resource schema not found for resource '{FormatResource(resource)}'."
+            );
+        }
+
+        if (resourceSchema["identityJsonPaths"] is not JsonArray identityJsonPaths)
+        {
+            throw new InvalidOperationException(
+                $"Expected identityJsonPaths to be present on resource '{FormatResource(resource)}'."
+            );
+        }
+
+        HashSet<string> identityPaths = new(StringComparer.Ordinal);
+
+        foreach (var identityJsonPath in identityJsonPaths)
+        {
+            if (identityJsonPath is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected identityJsonPaths to not contain null entries, invalid ApiSchema."
+                );
+            }
+
+            var identityPath = JsonPathExpressionCompiler.Compile(identityJsonPath.GetValue<string>());
+            identityPaths.Add(identityPath.Canonical);
+        }
+
+        identityPathsByResource[resource] = identityPaths;
+
+        return identityPaths;
+    }
+
+    /// <summary>
     /// Validates <c>documentPathsMapping</c> reference targets for all resources contained in a schema object.
     /// </summary>
     /// <param name="projectName">The owning project name.</param>

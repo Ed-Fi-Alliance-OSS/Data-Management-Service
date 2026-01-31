@@ -37,7 +37,13 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
             throw new InvalidOperationException("Json schema root must be an object.");
         }
 
-        ValidateSchema(rootSchema, "$", isRoot: true, [], context);
+        HashSet<string> scalarPaths = new(StringComparer.Ordinal);
+        HashSet<string> arrayPaths = new(StringComparer.Ordinal);
+
+        ValidateSchema(rootSchema, "$", isRoot: true, [], context, scalarPaths, arrayPaths);
+
+        ValidateIdentityJsonPaths(context, scalarPaths);
+        ValidateArrayUniquenessConstraints(context, scalarPaths, arrayPaths);
     }
 
     /// <summary>
@@ -49,7 +55,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         string path,
         bool isRoot,
         IReadOnlyList<JsonPathSegment> jsonPathSegments,
-        RelationalModelBuilderContext context
+        RelationalModelBuilderContext context,
+        ISet<string> scalarPaths,
+        ISet<string> arrayPaths
     )
     {
         JsonSchemaUnsupportedKeywordValidator.Validate(schema, path);
@@ -64,12 +72,13 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         switch (schemaKind)
         {
             case SchemaKind.Object:
-                ValidateObjectSchema(schema, path, jsonPathSegments, context);
+                ValidateObjectSchema(schema, path, jsonPathSegments, context, scalarPaths, arrayPaths);
                 break;
             case SchemaKind.Array:
-                ValidateArraySchema(schema, path, jsonPathSegments, context);
+                ValidateArraySchema(schema, path, jsonPathSegments, context, scalarPaths, arrayPaths);
                 break;
             case SchemaKind.Scalar:
+                scalarPaths.Add(JsonPathExpressionCompiler.FromSegments(jsonPathSegments).Canonical);
                 break;
             default:
                 throw new InvalidOperationException($"Unknown schema kind at {path}.");
@@ -83,7 +92,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         JsonObject schema,
         string path,
         IReadOnlyList<JsonPathSegment> jsonPathSegments,
-        RelationalModelBuilderContext context
+        RelationalModelBuilderContext context,
+        ISet<string> scalarPaths,
+        ISet<string> arrayPaths
     )
     {
         if (!schema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is null)
@@ -116,7 +127,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
                 $"{path}.properties.{property.Key}",
                 isRoot: false,
                 propertySegments,
-                context
+                context,
+                scalarPaths,
+                arrayPaths
             );
         }
     }
@@ -129,7 +142,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         JsonObject schema,
         string path,
         IReadOnlyList<JsonPathSegment> jsonPathSegments,
-        RelationalModelBuilderContext context
+        RelationalModelBuilderContext context,
+        ISet<string> scalarPaths,
+        ISet<string> arrayPaths
     )
     {
         if (!schema.TryGetPropertyValue("items", out var itemsNode) || itemsNode is null)
@@ -147,6 +162,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
             $"{path}.items",
             includeTypePathInErrors: true
         );
+
+        List<JsonPathSegment> arraySegments = [.. jsonPathSegments, new JsonPathSegment.AnyArrayElement()];
+        arrayPaths.Add(JsonPathExpressionCompiler.FromSegments(arraySegments).Canonical);
 
         if (itemsKind != SchemaKind.Object)
         {
@@ -173,12 +191,145 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
                 );
             }
 
-            ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arrayElementSegments, context);
+            ValidateSchema(
+                itemsSchema,
+                $"{path}.items",
+                isRoot: false,
+                arrayElementSegments,
+                context,
+                scalarPaths,
+                arrayPaths
+            );
             return;
         }
 
-        List<JsonPathSegment> arraySegments = [.. jsonPathSegments, new JsonPathSegment.AnyArrayElement()];
+        ValidateSchema(
+            itemsSchema,
+            $"{path}.items",
+            isRoot: false,
+            arraySegments,
+            context,
+            scalarPaths,
+            arrayPaths
+        );
+    }
 
-        ValidateSchema(itemsSchema, $"{path}.items", isRoot: false, arraySegments, context);
+    private static void ValidateIdentityJsonPaths(
+        RelationalModelBuilderContext context,
+        IReadOnlySet<string> scalarPaths
+    )
+    {
+        var missing = context
+            .IdentityJsonPaths.Select(path => path.Canonical)
+            .Where(path => !scalarPaths.Contains(path))
+            .OrderBy(path => path, StringComparer.Ordinal)
+            .ToArray();
+
+        if (missing.Length == 0)
+        {
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"identityJsonPaths were not found in JSON schema for resource "
+                + $"'{context.ProjectName}:{context.ResourceName}': {string.Join(", ", missing)}."
+        );
+    }
+
+    private static void ValidateArrayUniquenessConstraints(
+        RelationalModelBuilderContext context,
+        IReadOnlySet<string> scalarPaths,
+        IReadOnlySet<string> arrayPaths
+    )
+    {
+        if (context.ArrayUniquenessConstraints.Count == 0)
+        {
+            return;
+        }
+
+        HashSet<string> missingPaths = new(StringComparer.Ordinal);
+        HashSet<string> missingBasePaths = new(StringComparer.Ordinal);
+
+        foreach (var constraint in context.ArrayUniquenessConstraints)
+        {
+            ValidateArrayUniquenessConstraint(
+                constraint,
+                scalarPaths,
+                arrayPaths,
+                missingPaths,
+                missingBasePaths
+            );
+        }
+
+        if (missingBasePaths.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints basePath values were not found in JSON schema for resource "
+                    + $"'{context.ProjectName}:{context.ResourceName}': "
+                    + string.Join(", ", missingBasePaths.OrderBy(path => path, StringComparer.Ordinal))
+                    + "."
+            );
+        }
+
+        if (missingPaths.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints paths were not found in JSON schema for resource "
+                    + $"'{context.ProjectName}:{context.ResourceName}': "
+                    + string.Join(", ", missingPaths.OrderBy(path => path, StringComparer.Ordinal))
+                    + "."
+            );
+        }
+    }
+
+    private static void ValidateArrayUniquenessConstraint(
+        ArrayUniquenessConstraintInput constraint,
+        IReadOnlySet<string> scalarPaths,
+        IReadOnlySet<string> arrayPaths,
+        ISet<string> missingPaths,
+        ISet<string> missingBasePaths
+    )
+    {
+        var basePath = constraint.BasePath;
+
+        if (basePath is not null && !arrayPaths.Contains(basePath.Value.Canonical))
+        {
+            missingBasePaths.Add(basePath.Value.Canonical);
+        }
+
+        foreach (var path in constraint.Paths)
+        {
+            var resolvedPath = basePath is null ? path : ResolveRelativePath(basePath.Value, path);
+
+            if (!scalarPaths.Contains(resolvedPath.Canonical))
+            {
+                missingPaths.Add(resolvedPath.Canonical);
+            }
+        }
+
+        foreach (var nested in constraint.NestedConstraints)
+        {
+            ValidateArrayUniquenessConstraint(
+                nested,
+                scalarPaths,
+                arrayPaths,
+                missingPaths,
+                missingBasePaths
+            );
+        }
+    }
+
+    private static JsonPathExpression ResolveRelativePath(
+        JsonPathExpression basePath,
+        JsonPathExpression relativePath
+    )
+    {
+        if (relativePath.Segments.Count == 0)
+        {
+            return basePath;
+        }
+
+        var combinedSegments = basePath.Segments.Concat(relativePath.Segments).ToArray();
+        return JsonPathExpressionCompiler.FromSegments(combinedSegments);
     }
 }

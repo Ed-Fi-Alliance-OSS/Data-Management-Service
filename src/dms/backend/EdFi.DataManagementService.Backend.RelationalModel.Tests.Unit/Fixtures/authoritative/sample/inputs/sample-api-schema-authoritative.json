@@ -5531,7 +5531,7 @@
           },
           {
             "paths": [
-              "$.portfolioYears[*].portfolioYears"
+              "$.portfolioYears[*].portfolioYear"
             ]
           },
           {
@@ -5732,7 +5732,7 @@
             "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": false,
-            "path": "$.portfolioYears[*].portfolioYears",
+            "path": "$.portfolioYears[*].portfolioYear",
             "type": "number"
           },
           "PrivateArtProgram": {
@@ -6211,7 +6211,7 @@
           "$.masteredMediums",
           "$.numberOfDaysInAttendance",
           "$.portfolioPieces",
-          "$.portfolioYears[*].portfolioYears",
+          "$.portfolioYears[*].portfolioYear",
           "$.programFees",
           "$.programReference.educationOrganizationId"
         ],

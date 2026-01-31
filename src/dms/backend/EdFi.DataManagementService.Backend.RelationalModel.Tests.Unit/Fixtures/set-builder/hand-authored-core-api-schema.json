@@ -9,14 +9,25 @@
         "resourceName": "School",
         "isDescriptor": false,
         "isResourceExtension": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
         "identityJsonPaths": [
           "$.schoolId",
           "$.schoolTypeDescriptor"
         ],
         "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
           "SchoolTypeDescriptor": {
             "isReference": true,
             "isDescriptor": true,
+            "isPartOfIdentity": true,
+            "isRequired": true,
             "projectName": "Ed-Fi",
             "resourceName": "SchoolTypeDescriptor",
             "path": "$.schoolTypeDescriptor"
@@ -24,6 +35,8 @@
           "ExtensionDescriptor": {
             "isReference": true,
             "isDescriptor": true,
+            "isPartOfIdentity": false,
+            "isRequired": false,
             "projectName": "Sample",
             "resourceName": "ExtensionDescriptor",
             "path": "$._ext.sample.extensionDescriptor"
@@ -64,8 +77,10 @@
         "resourceName": "SchoolTypeDescriptor",
         "isDescriptor": true,
         "isResourceExtension": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
         "identityJsonPaths": [
-          "$.schoolTypeDescriptorId"
         ],
         "documentPathsMapping": {},
         "jsonSchemaForInsert": {
