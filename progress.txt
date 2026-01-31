@@ -38,3 +38,7 @@
   Decisions: Fix ResourceMutation to track tables by (DbTableName + JsonScope) to preserve duplicate table names across scopes; resolve reference constraint target tables by reference object scope to avoid collapsing tables; array uniqueness mapping now succeeds for duplicate-named tables.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; tasks.json
   Notes: dotnet test RelationalModel.Tests.Unit passed; dotnet build warning about missing SyntheticTests feature files in EdFi.DataManagementService.Tests.E2E (pre-existing).
+- Task: Manifests (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Expanded derived-set manifest to include abstract identity tables + curated resource details (AssessmentAdministration, StudentSchoolAssociation) with tables/constraints and document reference bindings; added extension site capture pass for manifest.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DerivedRelationalModelSetAuthoritativeGoldenTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/sample/expected/dms-1033-derived-relational-model-set.json; tasks.json
+  Notes: UPDATE_GOLDENS=1 dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed.

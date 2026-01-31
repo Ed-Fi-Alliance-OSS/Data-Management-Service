@@ -2153,5 +2153,1984 @@
       "storage_kind": "RelationalTables",
       "physical_schema": "sample"
     }
+  ],
+  "abstract_identity_tables": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization"
+      },
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity"
+      },
+      "identity_columns": [
+        {
+          "name": "EducationOrganizationId",
+          "kind": "Scalar",
+          "type": {
+            "kind": "Int32"
+          },
+          "is_nullable": false,
+          "source_path": "$.educationOrganizationId"
+        },
+        {
+          "name": "Discriminator",
+          "kind": "Scalar",
+          "type": {
+            "kind": "String",
+            "max_length": 256
+          },
+          "is_nullable": false,
+          "source_path": null
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "Unique",
+          "name": "UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId",
+          "columns": [
+            "DocumentId",
+            "EducationOrganizationId"
+          ]
+        },
+        {
+          "kind": "ForeignKey",
+          "name": "FK_EducationOrganizationIdentity_DocumentId",
+          "columns": [
+            "DocumentId"
+          ],
+          "target_table": {
+            "schema": "dms",
+            "name": "Document"
+          },
+          "target_columns": [
+            "DocumentId"
+          ],
+          "on_delete": "Cascade",
+          "on_update": "NoAction"
+        }
+      ]
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation"
+      },
+      "table": {
+        "schema": "edfi",
+        "name": "GeneralStudentProgramAssociationIdentity"
+      },
+      "identity_columns": [
+        {
+          "name": "BeginDate",
+          "kind": "Scalar",
+          "type": {
+            "kind": "Date"
+          },
+          "is_nullable": false,
+          "source_path": "$.beginDate"
+        },
+        {
+          "name": "EducationOrganizationReferenceEducationOrganizationId",
+          "kind": "Scalar",
+          "type": {
+            "kind": "Int32"
+          },
+          "is_nullable": false,
+          "source_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "name": "ProgramReferenceEducationOrganizationId",
+          "kind": "Scalar",
+          "type": {
+            "kind": "Int32"
+          },
+          "is_nullable": false,
+          "source_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "name": "ProgramReferenceProgramName",
+          "kind": "Scalar",
+          "type": {
+            "kind": "String",
+            "max_length": 60
+          },
+          "is_nullable": false,
+          "source_path": "$.programReference.programName"
+        },
+        {
+          "name": "ProgramReferenceProgramTypeDescriptor",
+          "kind": "DescriptorFk",
+          "type": {
+            "kind": "Int64"
+          },
+          "is_nullable": false,
+          "source_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "name": "StudentReferenceStudentUniqueId",
+          "kind": "Scalar",
+          "type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "is_nullable": false,
+          "source_path": "$.studentReference.studentUniqueId"
+        },
+        {
+          "name": "Discriminator",
+          "kind": "Scalar",
+          "type": {
+            "kind": "String",
+            "max_length": 256
+          },
+          "is_nullable": false,
+          "source_path": null
+        }
+      ],
+      "constraints": [
+        {
+          "kind": "Unique",
+          "name": "UX_GeneralStudentProgramAssociationIdentity_DocumentId_BeginDate_EducationOrganizationReferenceEducationOrganizationId_ProgramReferenceEducationOrganizationId_ProgramReferenceProgramName_ProgramReferenceProgramTypeDescriptor_StudentReferenceStudentUniqueId",
+          "columns": [
+            "DocumentId",
+            "BeginDate",
+            "EducationOrganizationReferenceEducationOrganizationId",
+            "ProgramReferenceEducationOrganizationId",
+            "ProgramReferenceProgramName",
+            "ProgramReferenceProgramTypeDescriptor",
+            "StudentReferenceStudentUniqueId"
+          ]
+        },
+        {
+          "kind": "ForeignKey",
+          "name": "FK_GeneralStudentProgramAssociationIdentity_DocumentId",
+          "columns": [
+            "DocumentId"
+          ],
+          "target_table": {
+            "schema": "dms",
+            "name": "Document"
+          },
+          "target_columns": [
+            "DocumentId"
+          ],
+          "on_delete": "Cascade",
+          "on_update": "NoAction"
+        }
+      ]
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "AssessmentAdministration"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "AssessmentAdministration",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "AdministrationIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.administrationIdentifier"
+            },
+            {
+              "name": "Assessment_AssessmentIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentReference.assessmentIdentifier"
+            },
+            {
+              "name": "Assessment_Namespace",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentReference.namespace"
+            },
+            {
+              "name": "Assigning_EducationOrganization_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.assigningEducationOrganizationReference.educationOrganizationId"
+            },
+            {
+              "name": "Assessment_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentReference"
+            },
+            {
+              "name": "Assigning_EducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assigningEducationOrganizationReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministration_AdministrationIdentifier_Assessment_DocumentId_Assigning_EducationOrganization_DocumentId",
+              "columns": [
+                "AdministrationIdentifier",
+                "Assessment_DocumentId",
+                "Assigning_EducationOrganization_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministration_DocumentId_AdministrationIdentifier_Assessment_AssessmentIdentifier_Assessment_Namespace_Assigning_EducationOrganization_EducationOrganizationId",
+              "columns": [
+                "DocumentId",
+                "AdministrationIdentifier",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace",
+                "Assigning_EducationOrganization_EducationOrganizationId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministration_Assessment_DocumentId_Assessment_AssessmentIdentifier_Assessment_Namespace",
+              "columns": [
+                "Assessment_DocumentId",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Assessment"
+              },
+              "target_columns": [
+                "DocumentId",
+                "AssessmentIdentifier",
+                "Namespace"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministration_Assigning_EducationOrganization_DocumentId_Assigning_EducationOrganization_EducationOrganizationId",
+              "columns": [
+                "Assigning_EducationOrganization_DocumentId",
+                "Assigning_EducationOrganization_EducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "EducationOrganizationIdentity"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministration_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_AssessmentAdministration_Assessment_DocumentId_AllOrNone",
+              "fk_column": "Assessment_DocumentId",
+              "dependent_columns": [
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_AssessmentAdministration_Assigning_EducationOrganization_DocumentId_AllOrNone",
+              "fk_column": "Assigning_EducationOrganization_DocumentId",
+              "dependent_columns": [
+                "Assigning_EducationOrganization_EducationOrganizationId"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "AssessmentAdministrationAssessmentBatteryPart",
+          "scope": "$.assessmentBatteryParts[*]",
+          "key_columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "AssessmentBatteryPart_AssessmentBatteryPartName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 65
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName"
+            },
+            {
+              "name": "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier"
+            },
+            {
+              "name": "AssessmentBatteryPart_AssessmentReferenceNamespace",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace"
+            },
+            {
+              "name": "AssessmentBatteryPart_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentAdministration_DocumentId",
+              "columns": [
+                "AssessmentAdministration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_DocumentId_AssessmentBatteryPart_AssessmentBatteryPartName_AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier_AssessmentBatteryPart_AssessmentReferenceNamespace",
+              "columns": [
+                "AssessmentBatteryPart_DocumentId",
+                "AssessmentBatteryPart_AssessmentBatteryPartName",
+                "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+                "AssessmentBatteryPart_AssessmentReferenceNamespace"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentBatteryPart"
+              },
+              "target_columns": [
+                "DocumentId",
+                "AssessmentBatteryPartName",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_DocumentId_AllOrNone",
+              "fk_column": "AssessmentBatteryPart_DocumentId",
+              "dependent_columns": [
+                "AssessmentBatteryPart_AssessmentBatteryPartName",
+                "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+                "AssessmentBatteryPart_AssessmentReferenceNamespace"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "AssessmentAdministrationPeriod",
+          "scope": "$.periods[*]",
+          "key_columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "BeginDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": false,
+              "source_path": "$.periods[*].beginDate"
+            },
+            {
+              "name": "EndDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": true,
+              "source_path": "$.periods[*].endDate"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministrationPeriod_AssessmentAdministration_DocumentId_BeginDate",
+              "columns": [
+                "AssessmentAdministration_DocumentId",
+                "BeginDate"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationPeriod_AssessmentAdministration_DocumentId",
+              "columns": [
+                "AssessmentAdministration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.assessmentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministration"
+          },
+          "fk_column": "Assessment_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Assessment"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assessmentReference.assessmentIdentifier",
+              "column": "Assessment_AssessmentIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentReference.namespace",
+              "column": "Assessment_Namespace"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministrationAssessmentBatteryPart"
+          },
+          "fk_column": "AssessmentBatteryPart_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "AssessmentBatteryPart"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName",
+              "column": "AssessmentBatteryPart_AssessmentBatteryPartName"
+            },
+            {
+              "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
+              "column": "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
+              "column": "AssessmentBatteryPart_AssessmentReferenceNamespace"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.assigningEducationOrganizationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministration"
+          },
+          "fk_column": "Assigning_EducationOrganization_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationOrganization"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assigningEducationOrganizationReference.educationOrganizationId",
+              "column": "Assigning_EducationOrganization_EducationOrganizationId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "StudentSchoolAssociation"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "StudentSchoolAssociation",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "EnrollmentTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.enrollmentTypeDescriptor"
+            },
+            {
+              "name": "EntryGradeLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.entryGradeLevelDescriptor"
+            },
+            {
+              "name": "EntryGradeLevelReasonDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.entryGradeLevelReasonDescriptor"
+            },
+            {
+              "name": "EntryTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.entryTypeDescriptor"
+            },
+            {
+              "name": "ExitWithdrawTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.exitWithdrawTypeDescriptor"
+            },
+            {
+              "name": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
+            },
+            {
+              "name": "NextYearGradeLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearGradeLevelDescriptor"
+            },
+            {
+              "name": "ResidencyStatusDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.residencyStatusDescriptor"
+            },
+            {
+              "name": "SchoolChoiceBasisDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolChoiceBasisDescriptor"
+            },
+            {
+              "name": "Calendar_CalendarCode",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.calendarCode"
+            },
+            {
+              "name": "Calendar_SchoolReferenceSchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolId"
+            },
+            {
+              "name": "Calendar_SchoolYearTypeReferenceSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolYear"
+            },
+            {
+              "name": "ClassOfSchoolYear_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.classOfSchoolYearTypeReference.schoolYear"
+            },
+            {
+              "name": "EmployedWhileEnrolled",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.employedWhileEnrolled"
+            },
+            {
+              "name": "EntryDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": false,
+              "source_path": "$.entryDate"
+            },
+            {
+              "name": "ExitWithdrawDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": true,
+              "source_path": "$.exitWithdrawDate"
+            },
+            {
+              "name": "FullTimeEquivalency",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 5,
+                "scale": 4
+              },
+              "is_nullable": true,
+              "source_path": "$.fullTimeEquivalency"
+            },
+            {
+              "name": "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.educationOrganizationId"
+            },
+            {
+              "name": "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.graduationSchoolYear"
+            },
+            {
+              "name": "NextYear_School_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearSchoolReference.schoolId"
+            },
+            {
+              "name": "PrimarySchool",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.primarySchool"
+            },
+            {
+              "name": "RepeatGradeIndicator",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.repeatGradeIndicator"
+            },
+            {
+              "name": "SchoolChoice",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolChoice"
+            },
+            {
+              "name": "SchoolChoiceTransfer",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolChoiceTransfer"
+            },
+            {
+              "name": "SchoolYear_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolYearTypeReference.schoolYear"
+            },
+            {
+              "name": "School_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolReference.schoolId"
+            },
+            {
+              "name": "Student_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference.studentUniqueId"
+            },
+            {
+              "name": "TermCompletionIndicator",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.termCompletionIndicator"
+            },
+            {
+              "name": "Calendar_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference"
+            },
+            {
+              "name": "ClassOfSchoolYear_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.classOfSchoolYearTypeReference"
+            },
+            {
+              "name": "GraduationPlan_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference"
+            },
+            {
+              "name": "NextYear_School_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearSchoolReference"
+            },
+            {
+              "name": "SchoolYear_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolYearTypeReference"
+            },
+            {
+              "name": "School_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolReference"
+            },
+            {
+              "name": "Student_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_DocumentId_EntryDate_School_SchoolId_Student_StudentUniqueId",
+              "columns": [
+                "DocumentId",
+                "EntryDate",
+                "School_SchoolId",
+                "Student_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_EntryDate_School_DocumentId_Student_DocumentId",
+              "columns": [
+                "EntryDate",
+                "School_DocumentId",
+                "Student_DocumentId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_Calendar_DocumentId_Calendar_CalendarCode_Calendar_SchoolReferenceSchoolId_Calendar_SchoolYearTypeReferenceSchoolYear",
+              "columns": [
+                "Calendar_DocumentId",
+                "Calendar_CalendarCode",
+                "Calendar_SchoolReferenceSchoolId",
+                "Calendar_SchoolYearTypeReferenceSchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Calendar"
+              },
+              "target_columns": [
+                "DocumentId",
+                "CalendarCode",
+                "School_SchoolId",
+                "SchoolYear_SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_ClassOfSchoolYear_DocumentId_ClassOfSchoolYear_SchoolYear",
+              "columns": [
+                "ClassOfSchoolYear_DocumentId",
+                "ClassOfSchoolYear_SchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "SchoolYearType"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EnrollmentTypeDescriptor_DescriptorId",
+              "columns": [
+                "EnrollmentTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_DescriptorId",
+              "columns": [
+                "EntryGradeLevelDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EntryGradeLevelReasonDescriptor_DescriptorId",
+              "columns": [
+                "EntryGradeLevelReasonDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EntryTypeDescriptor_DescriptorId",
+              "columns": [
+                "EntryTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_ExitWithdrawTypeDescriptor_DescriptorId",
+              "columns": [
+                "ExitWithdrawTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_DocumentId_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "columns": [
+                "GraduationPlan_DocumentId",
+                "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "GraduationPlan"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationSchoolYear_SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "columns": [
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor_DescriptorId",
+              "columns": [
+                "NextYearGradeLevelDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_NextYear_School_DocumentId_NextYear_School_SchoolId",
+              "columns": [
+                "NextYear_School_DocumentId",
+                "NextYear_School_SchoolId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_ResidencyStatusDescriptor_DescriptorId",
+              "columns": [
+                "ResidencyStatusDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_SchoolChoiceBasisDescriptor_DescriptorId",
+              "columns": [
+                "SchoolChoiceBasisDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_SchoolYear_DocumentId_SchoolYear_SchoolYear",
+              "columns": [
+                "SchoolYear_DocumentId",
+                "SchoolYear_SchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "SchoolYearType"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_School_DocumentId_School_SchoolId",
+              "columns": [
+                "School_DocumentId",
+                "School_SchoolId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_Student_DocumentId_Student_StudentUniqueId",
+              "columns": [
+                "Student_DocumentId",
+                "Student_StudentUniqueId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Student"
+              },
+              "target_columns": [
+                "DocumentId",
+                "StudentUniqueId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_Calendar_DocumentId_AllOrNone",
+              "fk_column": "Calendar_DocumentId",
+              "dependent_columns": [
+                "Calendar_CalendarCode",
+                "Calendar_SchoolReferenceSchoolId",
+                "Calendar_SchoolYearTypeReferenceSchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_ClassOfSchoolYear_DocumentId_AllOrNone",
+              "fk_column": "ClassOfSchoolYear_DocumentId",
+              "dependent_columns": [
+                "ClassOfSchoolYear_SchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_GraduationPlan_DocumentId_AllOrNone",
+              "fk_column": "GraduationPlan_DocumentId",
+              "dependent_columns": [
+                "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_NextYear_School_DocumentId_AllOrNone",
+              "fk_column": "NextYear_School_DocumentId",
+              "dependent_columns": [
+                "NextYear_School_SchoolId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_SchoolYear_DocumentId_AllOrNone",
+              "fk_column": "SchoolYear_DocumentId",
+              "dependent_columns": [
+                "SchoolYear_SchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_School_DocumentId_AllOrNone",
+              "fk_column": "School_DocumentId",
+              "dependent_columns": [
+                "School_SchoolId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_Student_DocumentId_AllOrNone",
+              "fk_column": "Student_DocumentId",
+              "dependent_columns": [
+                "Student_StudentUniqueId"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "StudentSchoolAssociationAlternativeGraduationPlan",
+          "scope": "$.alternativeGraduationPlans[*]",
+          "key_columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
+            },
+            {
+              "name": "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
+            },
+            {
+              "name": "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear"
+            },
+            {
+              "name": "Alternative_GraduationPlan_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_DocumentId_Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId_Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId_Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "columns": [
+                "Alternative_GraduationPlan_DocumentId",
+                "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "GraduationPlan"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationSchoolYear_SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "columns": [
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_StudentSchoolAssociation_DocumentId",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_DocumentId_AllOrNone",
+              "fk_column": "Alternative_GraduationPlan_DocumentId",
+              "dependent_columns": [
+                "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "StudentSchoolAssociationEducationPlan",
+          "scope": "$.educationPlans[*]",
+          "key_columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "EducationPlanDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.educationPlans[*].educationPlanDescriptor"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociationEducationPlan_StudentSchoolAssociation_DocumentId_EducationPlanDescriptor_DescriptorId",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId",
+                "EducationPlanDescriptor_DescriptorId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationEducationPlan_EducationPlanDescriptor_DescriptorId",
+              "columns": [
+                "EducationPlanDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationEducationPlan_StudentSchoolAssociation_DocumentId",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "sample",
+          "name": "StudentSchoolAssociationExtension",
+          "scope": "$._ext.sample",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "MembershipTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$._ext.sample.membershipTypeDescriptor"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_MembershipTypeDescriptor_DescriptorId",
+              "columns": [
+                "MembershipTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "document_reference_bindings": [
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+          },
+          "fk_column": "Alternative_GraduationPlan_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlan"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
+              "column": "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+              "column": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+            },
+            {
+              "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear",
+              "column": "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.calendarReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "Calendar_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Calendar"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.calendarReference.calendarCode",
+              "column": "Calendar_CalendarCode"
+            },
+            {
+              "reference_json_path": "$.calendarReference.schoolId",
+              "column": "Calendar_SchoolReferenceSchoolId"
+            },
+            {
+              "reference_json_path": "$.calendarReference.schoolYear",
+              "column": "Calendar_SchoolYearTypeReferenceSchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.classOfSchoolYearTypeReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "ClassOfSchoolYear_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolYearType"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.classOfSchoolYearTypeReference.schoolYear",
+              "column": "ClassOfSchoolYear_SchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.graduationPlanReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "GraduationPlan_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlan"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.graduationPlanReference.educationOrganizationId",
+              "column": "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+              "column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+            },
+            {
+              "reference_json_path": "$.graduationPlanReference.graduationSchoolYear",
+              "column": "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.nextYearSchoolReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "NextYear_School_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.nextYearSchoolReference.schoolId",
+              "column": "NextYear_School_SchoolId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.schoolReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "School_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.schoolReference.schoolId",
+              "column": "School_SchoolId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.schoolYearTypeReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "SchoolYear_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolYearType"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.schoolYearTypeReference.schoolYear",
+              "column": "SchoolYear_SchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.studentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "Student_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.studentReference.studentUniqueId",
+              "column": "Student_StudentUniqueId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.enrollmentTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EnrollmentTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EnrollmentTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.entryGradeLevelDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EntryGradeLevelDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GradeLevelDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.entryGradeLevelReasonDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EntryGradeLevelReasonDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EntryGradeLevelReasonDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.entryTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EntryTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EntryTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.exitWithdrawTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "ExitWithdrawTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ExitWithdrawTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.nextYearGradeLevelDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "NextYearGradeLevelDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GradeLevelDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.residencyStatusDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "ResidencyStatusDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ResidencyStatusDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.schoolChoiceBasisDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "SchoolChoiceBasisDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolChoiceBasisDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.educationPlans[*].educationPlanDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationEducationPlan"
+          },
+          "fk_column": "EducationPlanDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationPlanDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$._ext.sample.membershipTypeDescriptor",
+          "table": {
+            "schema": "sample",
+            "name": "StudentSchoolAssociationExtension"
+          },
+          "fk_column": "MembershipTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Sample",
+            "resource_name": "MembershipTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+          },
+          "fk_column": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlanTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlanTypeDescriptor"
+          }
+        }
+      ],
+      "extension_sites": []
+    }
   ]
 }
