@@ -82,6 +82,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             context.IdentityJsonPaths.Select(path => path.Canonical),
             StringComparer.Ordinal
         );
+        var referenceIdentityPaths = BuildReferenceIdentityPathSet(context.DocumentReferenceMappings);
+        var referenceObjectPaths = BuildReferenceObjectPathSet(context.DocumentReferenceMappings);
         HashSet<string> usedDescriptorPaths = new(StringComparer.Ordinal);
         List<DescriptorEdgeSource> descriptorEdgeSources = [];
 
@@ -95,6 +97,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             context,
             tableBuilders,
             identityPaths,
+            referenceIdentityPaths,
+            referenceObjectPaths,
             usedDescriptorPaths,
             descriptorEdgeSources
         );
@@ -129,6 +133,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
+        IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -149,6 +155,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     context,
                     tableBuilders,
                     identityPaths,
+                    referenceIdentityPaths,
+                    referenceObjectPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -161,6 +169,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     context,
                     tableBuilders,
                     identityPaths,
+                    referenceIdentityPaths,
+                    referenceObjectPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -186,6 +196,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
+        IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -195,18 +207,24 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             return;
         }
 
+        var scopePath = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
+
         if (propertiesNode is not JsonObject propertiesObject)
         {
-            var scopePath = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
-
             throw new InvalidOperationException($"Expected properties to be an object at {scopePath}.");
         }
 
         var requiredProperties = GetRequiredProperties(schema, pathSegments);
+        var isReferenceScope = referenceObjectPaths.Contains(scopePath);
 
         foreach (var property in propertiesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
             if (string.Equals(property.Key, ExtensionPropertyName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (isReferenceScope && string.Equals(property.Key, "link", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -247,6 +265,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                         context,
                         tableBuilders,
                         identityPaths,
+                        referenceIdentityPaths,
+                        referenceObjectPaths,
                         usedDescriptorPaths,
                         descriptorEdgeSources
                     );
@@ -260,6 +280,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                         isNullable,
                         context,
                         identityPaths,
+                        referenceIdentityPaths,
                         usedDescriptorPaths,
                         descriptorEdgeSources
                     );
@@ -281,6 +302,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
+        IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -325,6 +348,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     context,
                     tableBuilders,
                     identityPaths,
+                    referenceIdentityPaths,
+                    referenceObjectPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -337,6 +362,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     arraySegments,
                     context,
                     identityPaths,
+                    referenceIdentityPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -359,6 +385,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         List<JsonPathSegment> arraySegments,
         RelationalModelBuilderContext context,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -383,6 +410,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             isNullable,
             context,
             identityPaths,
+            referenceIdentityPaths,
             usedDescriptorPaths,
             descriptorEdgeSources
         );
@@ -399,10 +427,21 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         bool isNullable,
         RelationalModelBuilderContext context,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
     {
+        if (referenceIdentityPaths.Contains(sourcePath.Canonical))
+        {
+            if (context.TryGetDescriptorPath(sourcePath, out _))
+            {
+                usedDescriptorPaths.Add(sourcePath.Canonical);
+            }
+
+            return;
+        }
+
         if (context.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
         {
             var descriptorBaseName = BuildColumnBaseName(columnSegments);
@@ -457,6 +496,47 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         );
 
         tableBuilder.AddColumn(scalarColumn);
+    }
+
+    private static HashSet<string> BuildReferenceIdentityPathSet(
+        IReadOnlyList<DocumentReferenceMapping> mappings
+    )
+    {
+        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
+
+        if (mappings.Count == 0)
+        {
+            return referenceIdentityPaths;
+        }
+
+        foreach (var mapping in mappings)
+        {
+            foreach (var binding in mapping.ReferenceJsonPaths)
+            {
+                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
+            }
+        }
+
+        return referenceIdentityPaths;
+    }
+
+    private static HashSet<string> BuildReferenceObjectPathSet(
+        IReadOnlyList<DocumentReferenceMapping> mappings
+    )
+    {
+        HashSet<string> referenceObjectPaths = new(StringComparer.Ordinal);
+
+        if (mappings.Count == 0)
+        {
+            return referenceObjectPaths;
+        }
+
+        foreach (var mapping in mappings)
+        {
+            referenceObjectPaths.Add(mapping.ReferenceObjectPath.Canonical);
+        }
+
+        return referenceObjectPaths;
     }
 
     /// <summary>

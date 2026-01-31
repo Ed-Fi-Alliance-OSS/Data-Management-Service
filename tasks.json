@@ -24,7 +24,7 @@
       "Add a unit test proving a reference identity field path does not produce a `...Reference_...` scalar/descriptor column, and that the pipeline still succeeds.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Extensions",
