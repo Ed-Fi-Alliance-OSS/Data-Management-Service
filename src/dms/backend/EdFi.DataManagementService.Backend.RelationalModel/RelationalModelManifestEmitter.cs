@@ -256,6 +256,13 @@ public static class RelationalModelManifestEmitter
                 writer.WriteString("on_delete", foreignKey.OnDelete.ToString());
                 writer.WriteString("on_update", foreignKey.OnUpdate.ToString());
                 break;
+            case TableConstraint.AllOrNoneNullability allOrNone:
+                writer.WriteString("kind", "AllOrNoneNullability");
+                writer.WriteString("name", allOrNone.Name);
+                writer.WriteString("fk_column", allOrNone.FkColumn.Value);
+                writer.WritePropertyName("dependent_columns");
+                WriteColumnNameList(writer, allOrNone.DependentColumns);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(constraint),

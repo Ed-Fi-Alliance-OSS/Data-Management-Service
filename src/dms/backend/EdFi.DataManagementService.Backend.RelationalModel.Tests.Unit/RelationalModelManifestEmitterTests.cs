@@ -136,6 +136,118 @@ public class Given_A_Relational_Model_Manifest_Emitter
         addressColumns.Should().StartWith("School_DocumentId", "Ordinal");
     }
 
+    [Test]
+    public void It_should_emit_all_or_none_nullability_constraints()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+
+        var fkColumn = new DbColumnName("Student_DocumentId");
+        var dependentColumns = new[]
+        {
+            new DbColumnName("Student_StudentUniqueId"),
+            new DbColumnName("Student_SchoolId"),
+        };
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                fkColumn,
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "Student")
+            ),
+            new DbColumnModel(
+                dependentColumns[0],
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                dependentColumns[1],
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.schoolId"),
+                TargetResource: null
+            ),
+        };
+
+        var constraints = new TableConstraint[]
+        {
+            new TableConstraint.AllOrNoneNullability(
+                "CK_School_Student_DocumentId_AllOrNone",
+                fkColumn,
+                dependentColumns
+            ),
+        };
+
+        var table = new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "School"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            new[] { table },
+            new[] { table },
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var manifest = RelationalModelManifestEmitter.Emit(resourceModel, Array.Empty<ExtensionSite>());
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        var tableNode =
+            tables.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected table to be a JSON object.");
+
+        var constraintNodes =
+            tableNode["constraints"] as JsonArray
+            ?? throw new InvalidOperationException("Expected constraints to be a JSON array.");
+
+        var constraint =
+            constraintNodes.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected constraint to be a JSON object.");
+
+        constraint["kind"]!.GetValue<string>().Should().Be("AllOrNoneNullability");
+        constraint["name"]!.GetValue<string>().Should().Be("CK_School_Student_DocumentId_AllOrNone");
+        constraint["fk_column"]!.GetValue<string>().Should().Be("Student_DocumentId");
+
+        var dependentColumnNodes =
+            constraint["dependent_columns"] as JsonArray
+            ?? throw new InvalidOperationException("Expected dependent_columns to be a JSON array.");
+
+        dependentColumnNodes
+            .Select(column => column?.GetValue<string>())
+            .Should()
+            .Equal("Student_StudentUniqueId", "Student_SchoolId");
+    }
+
     private static JsonObject CreateSchema()
     {
         var extensionSchema = CreateExtensionSchema();

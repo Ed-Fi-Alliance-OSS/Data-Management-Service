@@ -425,14 +425,31 @@ internal static class DescriptorPathInference
                 continue;
             }
 
-            if (!mappingObject.TryGetPropertyValue("referenceJsonPaths", out var referenceJsonPathsNode))
+            var isDescriptor =
+                mappingObject["isDescriptor"]?.GetValue<bool>()
+                ?? throw new InvalidOperationException(
+                    "Expected isDescriptor to be on documentPathsMapping entry, invalid ApiSchema."
+                );
+
+            if (isDescriptor)
             {
                 continue;
             }
 
+            if (!mappingObject.TryGetPropertyValue("referenceJsonPaths", out var referenceJsonPathsNode))
+            {
+                throw new InvalidOperationException(
+                    "Expected referenceJsonPaths to be present on documentPathsMapping entry, "
+                        + "invalid ApiSchema."
+                );
+            }
+
             if (referenceJsonPathsNode is null)
             {
-                continue;
+                throw new InvalidOperationException(
+                    "Expected referenceJsonPaths to be present on documentPathsMapping entry, "
+                        + "invalid ApiSchema."
+                );
             }
 
             if (referenceJsonPathsNode is not JsonArray referenceJsonPathsArray)

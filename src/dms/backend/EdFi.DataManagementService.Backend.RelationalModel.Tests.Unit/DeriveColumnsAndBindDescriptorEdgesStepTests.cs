@@ -366,6 +366,113 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
 }
 
 [TestFixture]
+public class Given_A_Reference_Identity_Field
+{
+    private DbTableModel _rootTable = default!;
+    private IReadOnlyList<DescriptorEdgeSource> _descriptorEdges = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["programReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["programName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
+                        ["programTypeDescriptor"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 306,
+                        },
+                        ["link"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["href"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                            },
+                        },
+                    },
+                    ["required"] = new JsonArray("programName", "programTypeDescriptor"),
+                },
+                ["name"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
+            },
+            ["required"] = new JsonArray("programReference", "name"),
+        };
+
+        var referenceObjectPath = JsonPathExpressionCompiler.Compile("$.programReference");
+        var programNamePath = JsonPathExpressionCompiler.Compile("$.programReference.programName");
+        var programTypeDescriptorPath = JsonPathExpressionCompiler.Compile(
+            "$.programReference.programTypeDescriptor"
+        );
+
+        var descriptorInfo = new DescriptorPathInfo(
+            programTypeDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+        );
+
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [programTypeDescriptorPath.Canonical] = descriptorInfo,
+                };
+                builderContext.DocumentReferenceMappings =
+                [
+                    new DocumentReferenceMapping(
+                        "programReference",
+                        new QualifiedResourceName("Ed-Fi", "Program"),
+                        true,
+                        false,
+                        referenceObjectPath,
+                        new[]
+                        {
+                            new ReferenceJsonPathBinding(
+                                JsonPathExpressionCompiler.Compile("$.programName"),
+                                programNamePath
+                            ),
+                            new ReferenceJsonPathBinding(
+                                JsonPathExpressionCompiler.Compile("$.programTypeDescriptor"),
+                                programTypeDescriptorPath
+                            ),
+                        }
+                    ),
+                ];
+            }
+        );
+
+        _rootTable = context.ResourceModel!.Root;
+        _descriptorEdges = context.ResourceModel.DescriptorEdgeSources;
+    }
+
+    [Test]
+    public void It_should_suppress_reference_identity_columns()
+    {
+        var columnNames = _rootTable.Columns.Select(column => column.ColumnName.Value).ToArray();
+
+        columnNames.Should().NotContain("ProgramReferenceProgramName");
+        columnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor_DescriptorId");
+        columnNames.Should().NotContain("ProgramReferenceLinkHref");
+    }
+
+    [Test]
+    public void It_should_not_emit_descriptor_edges_for_reference_identity_fields()
+    {
+        _descriptorEdges.Should().BeEmpty();
+    }
+}
+
+[TestFixture]
 public class Given_A_Property_With_XNullable
 {
     private DbColumnModel _column = default!;

@@ -53,6 +53,8 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
         {
             ["resourceName"] = "School",
             ["isDescriptor"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject
@@ -61,6 +63,8 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
                 {
                     ["isReference"] = true,
                     ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = false,
+                    ["isRequired"] = false,
                     ["projectName"] = "Ed-Fi",
                     ["resourceName"] = "SchoolTypeDescriptor",
                     ["path"] = "$.schoolTypeDescriptor",
@@ -120,6 +124,8 @@ public class Given_An_ApiSchema_With_A_Descriptor_Resource
         {
             ["resourceName"] = resourceName,
             ["isDescriptor"] = isDescriptor,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),

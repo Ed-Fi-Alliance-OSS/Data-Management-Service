@@ -9,13 +9,25 @@
         "resourceName": "Section",
         "isDescriptor": false,
         "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
         "identityJsonPaths": [
           "$.sectionId"
         ],
         "documentPathsMapping": {
+          "SectionId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.sectionId"
+          },
           "School": {
             "isReference": true,
             "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
             "projectName": "Ed-Fi",
             "resourceName": "School",
             "referenceJsonPaths": [
@@ -51,8 +63,11 @@
         "resourceName": "ExtensionDescriptor",
         "isDescriptor": true,
         "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
         "identityJsonPaths": [
-          "$.extensionDescriptorId"
         ],
         "documentPathsMapping": {},
         "jsonSchemaForInsert": {

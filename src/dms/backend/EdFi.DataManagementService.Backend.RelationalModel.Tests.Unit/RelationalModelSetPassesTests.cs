@@ -23,10 +23,17 @@ public class Given_Default_RelationalModelSet_Passes
     }
 
     [Test]
-    public void It_should_begin_with_base_traversal()
+    public void It_should_expose_the_canonical_pass_order()
     {
-        _firstPassTypes.Should().NotBeEmpty();
-        _firstPassTypes[0].Should().Be(typeof(BaseTraversalAndDescriptorBindingRelationalModelSetPass));
+        _firstPassTypes
+            .Should()
+            .Equal(
+                typeof(BaseTraversalAndDescriptorBindingRelationalModelSetPass),
+                typeof(ExtensionTableDerivationRelationalModelSetPass),
+                typeof(AbstractIdentityTableDerivationRelationalModelSetPass),
+                typeof(ReferenceBindingRelationalModelSetPass),
+                typeof(ConstraintDerivationRelationalModelSetPass)
+            );
     }
 
     [Test]

@@ -86,6 +86,10 @@ public sealed class RelationalModelSetBuilderContext
             effectiveSchemaSet,
             effectiveResources.Resources
         );
+        RelationalModelSetValidation.ValidateReferenceIdentityJsonPaths(
+            effectiveSchemaSet,
+            effectiveResources.Resources
+        );
         _resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
             entry => entry.Resource
         );
@@ -604,6 +608,7 @@ public sealed class RelationalModelSetBuilderContext
         {
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
             _ => throw new InvalidOperationException(
                 $"Unsupported constraint type '{constraint.GetType().Name}'."
             ),
