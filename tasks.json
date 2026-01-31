@@ -78,7 +78,7 @@
       "Add unit tests for allowIdentityUpdates gating, abstract-target non-cascade, target-identity ordering, and presence of target-side UNIQUE.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Set-Level Integration",
