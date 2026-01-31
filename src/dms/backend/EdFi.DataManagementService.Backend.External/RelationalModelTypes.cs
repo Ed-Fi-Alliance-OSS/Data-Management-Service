@@ -289,6 +289,20 @@ public abstract record TableConstraint
         ReferentialAction OnDelete = ReferentialAction.NoAction,
         ReferentialAction OnUpdate = ReferentialAction.NoAction
     ) : TableConstraint;
+
+    /// <summary>
+    /// A check constraint that enforces all-or-none nullability for a document reference group.
+    /// </summary>
+    /// <param name="Name">The physical constraint name.</param>
+    /// <param name="FkColumn">The <c>..._DocumentId</c> FK column for the reference.</param>
+    /// <param name="DependentColumns">
+    /// The identity columns that must be populated when the FK column is populated.
+    /// </param>
+    public sealed record AllOrNoneNullability(
+        string Name,
+        DbColumnName FkColumn,
+        IReadOnlyList<DbColumnName> DependentColumns
+    ) : TableConstraint;
 }
 
 /// <summary>

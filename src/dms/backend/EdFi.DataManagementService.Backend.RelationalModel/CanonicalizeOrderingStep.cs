@@ -165,7 +165,7 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
 
     /// <summary>
     /// Assigns a grouping bucket used to order constraints with uniques first, then foreign keys,
-    /// and finally any other constraint types.
+    /// then check constraints, and finally any other constraint types.
     /// </summary>
     /// <param name="constraint">The constraint to classify.</param>
     /// <returns>A numeric group value used for ordering.</returns>
@@ -175,6 +175,7 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         {
             TableConstraint.Unique => 1,
             TableConstraint.ForeignKey => 2,
+            TableConstraint.AllOrNoneNullability => 3,
             _ => 99,
         };
     }
@@ -190,6 +191,7 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         {
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
             _ => string.Empty,
         };
     }
