@@ -385,6 +385,7 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         {
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
             _ => string.Empty,
         };
     }

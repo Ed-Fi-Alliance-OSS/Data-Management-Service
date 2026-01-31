@@ -604,6 +604,7 @@ public sealed class RelationalModelSetBuilderContext
         {
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
             _ => throw new InvalidOperationException(
                 $"Unsupported constraint type '{constraint.GetType().Name}'."
             ),
