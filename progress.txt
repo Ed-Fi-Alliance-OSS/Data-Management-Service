@@ -50,3 +50,7 @@
   Decisions: Ran UPDATE_GOLDENS and confirmed no diffs; goldens already aligned to latest reference/constraint outputs.
   Files: tasks.json; progress.txt
   Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed (incl UPDATE_GOLDENS=1).
+- Task: Build (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: dotnet build ran; warning about missing SyntheticTests feature files persists (pre-existing).
+  Files: tasks.json; progress.txt
+  Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded (1 warning).
