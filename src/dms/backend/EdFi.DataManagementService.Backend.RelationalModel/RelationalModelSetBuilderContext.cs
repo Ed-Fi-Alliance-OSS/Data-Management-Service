@@ -86,6 +86,10 @@ public sealed class RelationalModelSetBuilderContext
             effectiveSchemaSet,
             effectiveResources.Resources
         );
+        RelationalModelSetValidation.ValidateReferenceIdentityJsonPaths(
+            effectiveSchemaSet,
+            effectiveResources.Resources
+        );
         _resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
             entry => entry.Resource
         );
