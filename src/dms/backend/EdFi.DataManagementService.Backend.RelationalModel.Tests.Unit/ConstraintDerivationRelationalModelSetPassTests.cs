@@ -265,13 +265,13 @@ public class Given_Abstract_Reference_Constraint_Derivation
     }
 
     [Test]
-    public void It_should_not_cascade_updates_for_abstract_targets()
+    public void It_should_cascade_updates_for_abstract_targets()
     {
         var educationOrganizationFk = _enrollmentTable
             .Constraints.OfType<TableConstraint.ForeignKey>()
             .Single(constraint => constraint.Columns[0].Value == "EducationOrganization_DocumentId");
 
-        educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.Cascade);
         educationOrganizationFk.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
     }
 }

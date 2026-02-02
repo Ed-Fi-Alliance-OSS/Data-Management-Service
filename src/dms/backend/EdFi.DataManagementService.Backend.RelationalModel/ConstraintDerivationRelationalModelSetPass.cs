@@ -1236,7 +1236,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             if (!ContainsForeignKeyConstraint(tableBuilder.Constraints, fkName))
             {
                 var onUpdate =
-                    targetInfo.IsAbstract ? ReferentialAction.NoAction
+                    targetInfo.IsAbstract ? ReferentialAction.Cascade
                     : targetInfo.AllowIdentityUpdates ? ReferentialAction.Cascade
                     : ReferentialAction.NoAction;
 

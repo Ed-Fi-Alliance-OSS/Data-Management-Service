@@ -54,3 +54,7 @@
   Decisions: dotnet build ran; warning about missing SyntheticTests feature files persists (pre-existing).
   Files: tasks.json; progress.txt
   Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded (1 warning).
+- Task: Constraints (abstract reference ON UPDATE CASCADE) (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Abstract-target composite FKs now use OnUpdate Cascade; updated abstract reference unit test expectation; refreshed sample authoritative derived-set manifest entry for the abstract FK.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/sample/expected/dms-1033-derived-relational-model-set.json; tasks.json; progress.txt
+  Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
