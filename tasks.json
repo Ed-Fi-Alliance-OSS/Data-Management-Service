@@ -311,5 +311,25 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": false
+  },
+  {
+    "category": "Schema Inputs",
+    "description": "Fail fast on duplicate `identityJsonPaths` per resource/abstract resource. Today duplicates can slip through extraction, and later unique-constraint derivation de-dupes by column name, masking schema issues. Acceptance: (1) `identityJsonPaths` are compiled to canonical JSONPaths and must be unique per resource schema entry (both `projectSchema.resourceSchemas` and `projectSchema.abstractResources`); duplicates fail compilation with an exception that includes the resource name and the duplicate canonical path(s); (2) duplicate detection happens before any constraint/name generation; (3) unit tests cover duplicate detection for a concrete resource and for an abstract resource identity list; (4) all unit tests pass.",
+    "steps-to-verify": [
+      "Update `ExtractIdentityJsonPaths` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` to detect duplicate canonical JSONPaths and throw with an actionable message.",
+      "Update abstract identity path extraction in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/AbstractIdentityTableDerivationRelationalModelSetPass.cs` to detect duplicate canonical JSONPaths and throw similarly.",
+      "Add unit tests (concrete + abstract cases) asserting the fail-fast behavior and the exception message includes the duplicate canonical path(s).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Add a DMS-930 → DMS-931 naming handoff note to `reference/design/backend-redesign/epics/01-relational-model/02-naming-and-overrides.md`. This should document what DMS-930 already implemented, what is intentionally provisional/placeholder behavior, and what remains for DMS-931 so future work doesn’t accidentally rely on pre-naming identifiers. Acceptance: (1) The doc includes a clearly labeled section (e.g., “Handoff from DMS-930”) describing: current provisional identifier generation in DMS-930 (constraint/index/column/table names may exceed dialect limits), current placeholder `relational.nameOverrides` behavior (reference-only / fail-fast on non-reference keys), and current shortening behavior (collision detection exists but identifiers are not rewritten); (2) the doc lists the DMS-931 responsibilities: apply naming rules, apply full overrides, apply dialect shortening into the model, and ensure collisions are detected after rewriting; (3) the section references the relevant implementation passes/classes by name; (4) content is specific enough for a new contributor to understand the boundary between stories.",
+    "steps-to-verify": [
+      "Update `./reference/design/backend-redesign/epics/01-relational-model/02-naming-and-overrides.md` to add a handoff section describing DMS-930 naming placeholders and DMS-931 responsibilities.",
+      "Verify the doc references the relevant code locations (passes and key helpers) accurately and uses concrete examples (e.g., `UX_{table}_{col1}_{col2}_...` naming and dialect shortening limits)."
+    ],
+    "completed": false
   }
 ]
