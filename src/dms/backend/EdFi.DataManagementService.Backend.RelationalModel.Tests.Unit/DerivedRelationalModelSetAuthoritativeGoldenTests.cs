@@ -550,8 +550,6 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         private readonly Dictionary<QualifiedResourceName, IReadOnlyList<ExtensionSite>> _sitesByResource =
             new();
 
-        public int Order { get; } = 100;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

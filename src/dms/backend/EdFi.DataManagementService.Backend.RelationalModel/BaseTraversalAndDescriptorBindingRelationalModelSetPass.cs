@@ -33,11 +33,6 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
     }
 
     /// <summary>
-    /// The explicit order for the base traversal + descriptor binding pass.
-    /// </summary>
-    public int Order { get; } = 0;
-
-    /// <summary>
     /// Executes the base traversal + descriptor binding across all concrete, non-extension resources.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>

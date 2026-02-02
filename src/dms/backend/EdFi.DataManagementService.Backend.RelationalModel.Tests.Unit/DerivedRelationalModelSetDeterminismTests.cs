@@ -122,8 +122,6 @@ public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
         private readonly Dictionary<QualifiedResourceName, IReadOnlyList<ExtensionSite>> _sitesByResource =
             new();
 
-        public int Order { get; } = 100;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

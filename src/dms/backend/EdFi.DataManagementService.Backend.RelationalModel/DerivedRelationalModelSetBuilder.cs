@@ -13,7 +13,7 @@ public sealed class DerivedRelationalModelSetBuilder
     private readonly IReadOnlyList<IRelationalModelSetPass> _passes;
 
     /// <summary>
-    /// Creates a new builder with a deterministic pass ordering.
+    /// Creates a new builder that executes passes in the supplied order.
     /// </summary>
     /// <param name="passes">The passes to execute in order.</param>
     public DerivedRelationalModelSetBuilder(IReadOnlyList<IRelationalModelSetPass> passes)
@@ -31,7 +31,7 @@ public sealed class DerivedRelationalModelSetBuilder
             throw new ArgumentException("Pass list cannot contain null entries.", nameof(passes));
         }
 
-        _passes = OrderPasses(passes);
+        _passes = passes.ToArray();
     }
 
     /// <summary>
@@ -65,54 +65,4 @@ public sealed class DerivedRelationalModelSetBuilder
 
         return context.BuildResult();
     }
-
-    /// <summary>
-    /// Validates pass order uniqueness and returns the pass list sorted by <see cref="IRelationalModelSetPass.Order"/>.
-    /// </summary>
-    /// <param name="passes">The unordered pass list.</param>
-    /// <returns>A deterministically ordered pass list.</returns>
-    private static IReadOnlyList<IRelationalModelSetPass> OrderPasses(
-        IReadOnlyList<IRelationalModelSetPass> passes
-    )
-    {
-        var passEntries = passes
-            .Select(pass => new PassEntry(pass, pass.Order, pass.GetType().FullName ?? pass.GetType().Name))
-            .ToArray();
-
-        if (passEntries.Any(pass => string.IsNullOrWhiteSpace(pass.TypeName)))
-        {
-            throw new InvalidOperationException("Pass type name must be non-empty.");
-        }
-
-        var duplicateOrders = passEntries
-            .GroupBy(entry => entry.Order)
-            .Where(group => group.Count() > 1)
-            .Select(group =>
-                $"Order {group.Key}: "
-                + string.Join(
-                    ", ",
-                    group
-                        .Select(entry => entry.TypeName)
-                        .Distinct(StringComparer.Ordinal)
-                        .OrderBy(name => name, StringComparer.Ordinal)
-                )
-            )
-            .ToArray();
-
-        if (duplicateOrders.Length > 0)
-        {
-            throw new InvalidOperationException(
-                "Duplicate pass order values detected: " + string.Join("; ", duplicateOrders)
-            );
-        }
-
-        var orderedPasses = passEntries.OrderBy(entry => entry.Order).Select(entry => entry.Pass).ToArray();
-
-        return orderedPasses;
-    }
-
-    /// <summary>
-    /// Materialized pass metadata used for deterministic ordering and diagnostics.
-    /// </summary>
-    private sealed record PassEntry(IRelationalModelSetPass Pass, int Order, string TypeName);
 }

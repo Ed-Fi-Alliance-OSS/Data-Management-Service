@@ -19,11 +19,6 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
     private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
 
     /// <summary>
-    /// The explicit order for the abstract identity table derivation pass.
-    /// </summary>
-    public int Order { get; } = 20;
-
-    /// <summary>
     /// Executes abstract identity table derivation across all abstract resources.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)

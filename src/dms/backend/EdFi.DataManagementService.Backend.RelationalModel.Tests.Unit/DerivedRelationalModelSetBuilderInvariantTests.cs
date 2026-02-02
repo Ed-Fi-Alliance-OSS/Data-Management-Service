@@ -55,8 +55,6 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
             _model = DerivedRelationalModelSetInvariantTestHelpers.CreateMinimalModel(_resourceKey.Resource);
         }
 
-        public int Order { get; } = 1;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -104,8 +102,6 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
 
     private sealed class DuplicateIndexNamesPass : IRelationalModelSetPass
     {
-        public int Order { get; } = 1;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -156,8 +152,6 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
 
     private sealed class DuplicateTriggerNamesPass : IRelationalModelSetPass
     {
-        public int Order { get; } = 1;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

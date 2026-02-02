@@ -19,11 +19,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
     private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
-    /// The explicit order for the reference binding pass.
-    /// </summary>
-    public int Order { get; } = 30;
-
-    /// <summary>
     /// Executes reference binding across all concrete resources and resource extensions.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>

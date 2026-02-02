@@ -61,8 +61,6 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
             );
         }
 
-        public int Order { get; } = 1;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

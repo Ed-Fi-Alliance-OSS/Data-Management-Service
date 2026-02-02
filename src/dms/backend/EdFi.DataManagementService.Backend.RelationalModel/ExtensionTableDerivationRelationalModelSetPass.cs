@@ -19,11 +19,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
     private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
-    /// The explicit order for the extension table derivation pass.
-    /// </summary>
-    public int Order { get; } = 10;
-
-    /// <summary>
     /// Executes extension table derivation across all resource-extension schemas.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>

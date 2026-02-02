@@ -108,8 +108,6 @@ public class Given_Unordered_Derived_Collections
             _section = FindResourceKey(effectiveSchemaSet, "Sample", "Section");
         }
 
-        public int Order { get; } = 1;
-
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);

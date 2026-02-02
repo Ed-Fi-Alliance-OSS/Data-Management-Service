@@ -19,11 +19,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
     private const int DiscriminatorMaxLength = 128;
 
     /// <summary>
-    /// The explicit order for the constraint derivation pass.
-    /// </summary>
-    public int Order { get; } = 40;
-
-    /// <summary>
     /// Derives root-table unique constraints for each concrete resource.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>
