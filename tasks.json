@@ -266,7 +266,7 @@
       "Assert the nested child table has a UX constraint with expected columns (including parent ordinal).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance",

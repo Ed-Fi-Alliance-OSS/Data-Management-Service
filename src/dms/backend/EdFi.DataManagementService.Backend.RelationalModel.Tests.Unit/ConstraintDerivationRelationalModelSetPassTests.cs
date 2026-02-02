@@ -459,6 +459,70 @@ public class Given_Array_Uniqueness_Constraint_Derivation
 }
 
 [TestFixture]
+public class Given_Nested_Array_Uniqueness_Constraint_Derivation
+{
+    private DbTableModel _periodTable = default!;
+    private DbTableModel _sessionTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildNestedArrayUniquenessProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ConstraintDerivationRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var busRouteModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "BusRoute"
+            )
+            .RelationalModel;
+
+        _periodTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddressPeriod"
+        );
+        _sessionTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+            table.Table.Name == "BusRouteAddressPeriodSession"
+        );
+    }
+
+    [Test]
+    public void It_should_include_parent_key_parts_for_nested_constraints()
+    {
+        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
+    }
+
+    [Test]
+    public void It_should_include_parent_key_parts_for_deeper_nested_constraints()
+    {
+        var uniqueConstraint = _sessionTable.Constraints.OfType<TableConstraint.Unique>().Single();
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("BusRoute_DocumentId", "AddressOrdinal", "PeriodOrdinal", "SessionName");
+    }
+}
+
+[TestFixture]
 public class Given_Unmappable_Array_Uniqueness_Path
 {
     [Test]
@@ -738,6 +802,22 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    internal static JsonObject BuildNestedArrayUniquenessProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["busRoutes"] = BuildBusRouteNestedArrayUniquenessSchema(
+                    BuildBusRouteNestedArrayUniquenessConstraints()
+                ),
+            },
+        };
+    }
+
     internal static JsonObject BuildArrayUniquenessUnmappableProjectSchema()
     {
         JsonArray arrayUniquenessConstraints =
@@ -1013,6 +1093,33 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    private static JsonArray BuildBusRouteNestedArrayUniquenessConstraints()
+    {
+        return new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray { "$.addresses[*].addressType" },
+                ["nestedConstraints"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["basePath"] = "$.addresses[*]",
+                        ["paths"] = new JsonArray { "$.periods[*].beginDate" },
+                        ["nestedConstraints"] = new JsonArray
+                        {
+                            new JsonObject
+                            {
+                                ["basePath"] = "$.addresses[*].periods[*]",
+                                ["paths"] = new JsonArray { "$.sessions[*].sessionName" },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
     private static JsonObject BuildBusRouteArrayUniquenessSchema(JsonArray arrayUniquenessConstraints)
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1094,6 +1201,74 @@ internal static class ConstraintDerivationTestSchemaBuilder
                     },
                 },
             },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildBusRouteNestedArrayUniquenessSchema(JsonArray arrayUniquenessConstraints)
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["addressType"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["beginDate"] = new JsonObject
+                                        {
+                                            ["type"] = "string",
+                                            ["format"] = "date",
+                                        },
+                                        ["sessions"] = new JsonObject
+                                        {
+                                            ["type"] = "array",
+                                            ["items"] = new JsonObject
+                                            {
+                                                ["type"] = "object",
+                                                ["properties"] = new JsonObject
+                                                {
+                                                    ["sessionName"] = new JsonObject
+                                                    {
+                                                        ["type"] = "string",
+                                                        ["maxLength"] = 60,
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "BusRoute",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = arrayUniquenessConstraints,
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }
