@@ -301,7 +301,7 @@
       "If unreachable, remove the `hasCompleteIdentity` calculation and the `continue` branch; otherwise add test coverage and inline comment explaining the intended partial-mapping behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Maintainability",

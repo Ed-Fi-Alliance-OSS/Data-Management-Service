@@ -1107,13 +1107,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             );
             var identityColumns = BuildReferenceIdentityColumns(mapping, binding, targetInfo, resource);
 
-            var hasCompleteIdentity = identityColumns.TargetColumns.Count == targetInfo.IdentityColumns.Count;
-
-            if (targetInfo.IsAbstract && !hasCompleteIdentity)
-            {
-                continue;
-            }
-
             EnsureTargetUnique(targetInfo, identityColumns.TargetColumns, resourcesByKey, mutations);
 
             var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
