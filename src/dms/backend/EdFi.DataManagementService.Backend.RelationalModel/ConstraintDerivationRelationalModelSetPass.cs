@@ -496,11 +496,11 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
     )
     {
         var uniqueName = BuildUniqueConstraintName(table.Table.Name, uniqueColumns);
-        var tableBuilder = mutation.GetTableBuilder(table, mutation.Entry.Model.ResourceKey.Resource);
+        var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
 
-        if (!ContainsUniqueConstraint(tableBuilder.Constraints, uniqueName))
+        if (!ContainsUniqueConstraint(tableAccumulator.Constraints, uniqueName))
         {
-            tableBuilder.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns));
+            tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns));
             mutation.MarkTableMutated(table);
         }
     }
@@ -767,14 +767,14 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
     )
     {
         var rootTable = resourceModel.Root;
-        var tableBuilder = new TableBuilder(rootTable);
+        var tableAccumulator = new TableColumnAccumulator(rootTable);
         var mutated = false;
 
         if (resourceModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
         {
-            mutated |= EnsureDescriptorColumn(tableBuilder, rootTable, BuildUriColumn(), UriColumnLabel);
+            mutated |= EnsureDescriptorColumn(tableAccumulator, rootTable, BuildUriColumn(), UriColumnLabel);
             mutated |= EnsureDescriptorColumn(
-                tableBuilder,
+                tableAccumulator,
                 rootTable,
                 BuildDiscriminatorColumn(),
                 DiscriminatorColumnLabel
@@ -792,7 +792,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
             if (!ContainsUniqueConstraint(rootTable.Constraints, descriptorUniqueName))
             {
-                tableBuilder.AddConstraint(
+                tableAccumulator.AddConstraint(
                     new TableConstraint.Unique(descriptorUniqueName, descriptorUniqueColumns)
                 );
                 mutated = true;
@@ -803,7 +803,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                 return resourceModel;
             }
 
-            var updatedRoot = RelationalModelOrdering.CanonicalizeTable(tableBuilder.Build());
+            var updatedRoot = RelationalModelOrdering.CanonicalizeTable(tableAccumulator.Build());
 
             return UpdateResourceModel(resourceModel, updatedRoot);
         }
@@ -819,7 +819,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
         if (!ContainsUniqueConstraint(rootTable.Constraints, rootUniqueName))
         {
-            tableBuilder.AddConstraint(new TableConstraint.Unique(rootUniqueName, identityColumns));
+            tableAccumulator.AddConstraint(new TableConstraint.Unique(rootUniqueName, identityColumns));
             mutated = true;
         }
 
@@ -828,7 +828,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             return resourceModel;
         }
 
-        var updatedRootTable = RelationalModelOrdering.CanonicalizeTable(tableBuilder.Build());
+        var updatedRootTable = RelationalModelOrdering.CanonicalizeTable(tableAccumulator.Build());
 
         return UpdateResourceModel(resourceModel, updatedRootTable);
     }
@@ -1120,18 +1120,18 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             EnsureTargetUnique(targetInfo, identityColumns.TargetColumns, resourcesByKey, mutations);
 
             var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
-            var tableBuilder = mutation.GetTableBuilder(bindingTable, resource);
+            var tableAccumulator = mutation.GetTableAccumulator(bindingTable, resource);
 
             if (identityColumns.LocalColumns.Count > 0)
             {
                 var allOrNoneName = BuildAllOrNoneConstraintName(
-                    tableBuilder.Definition.Table.Name,
+                    tableAccumulator.Definition.Table.Name,
                     binding.FkColumn
                 );
 
-                if (!ContainsAllOrNoneConstraint(tableBuilder.Constraints, allOrNoneName))
+                if (!ContainsAllOrNoneConstraint(tableAccumulator.Constraints, allOrNoneName))
                 {
-                    tableBuilder.AddConstraint(
+                    tableAccumulator.AddConstraint(
                         new TableConstraint.AllOrNoneNullability(
                             allOrNoneName,
                             binding.FkColumn,
@@ -1155,18 +1155,18 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             targetColumns.AddRange(identityColumns.TargetColumns);
 
             var fkName = RelationalNameConventions.ForeignKeyName(
-                tableBuilder.Definition.Table.Name,
+                tableAccumulator.Definition.Table.Name,
                 localColumns
             );
 
-            if (!ContainsForeignKeyConstraint(tableBuilder.Constraints, fkName))
+            if (!ContainsForeignKeyConstraint(tableAccumulator.Constraints, fkName))
             {
                 var onUpdate =
                     targetInfo.IsAbstract ? ReferentialAction.Cascade
                     : targetInfo.AllowIdentityUpdates ? ReferentialAction.Cascade
                     : ReferentialAction.NoAction;
 
-                tableBuilder.AddConstraint(
+                tableAccumulator.AddConstraint(
                     new TableConstraint.ForeignKey(
                         fkName,
                         localColumns.ToArray(),
@@ -1310,18 +1310,21 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         }
 
         var mutation = GetOrCreateMutation(targetInfo.Resource, entry, mutations);
-        var tableBuilder = mutation.GetTableBuilder(entry.Model.RelationalModel.Root, targetInfo.Resource);
+        var tableAccumulator = mutation.GetTableAccumulator(
+            entry.Model.RelationalModel.Root,
+            targetInfo.Resource
+        );
         var uniqueColumns = new List<DbColumnName>(1 + targetIdentityColumns.Count)
         {
             RelationalNameConventions.DocumentIdColumnName,
         };
         uniqueColumns.AddRange(targetIdentityColumns);
 
-        var uniqueName = BuildUniqueConstraintName(tableBuilder.Definition.Table.Name, uniqueColumns);
+        var uniqueName = BuildUniqueConstraintName(tableAccumulator.Definition.Table.Name, uniqueColumns);
 
-        if (!ContainsUniqueConstraint(tableBuilder.Constraints, uniqueName))
+        if (!ContainsUniqueConstraint(tableAccumulator.Constraints, uniqueName))
         {
-            tableBuilder.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns.ToArray()));
+            tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns.ToArray()));
             mutation.MarkTableMutated(entry.Model.RelationalModel.Root);
         }
     }
@@ -1438,7 +1441,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
     }
 
     private static bool EnsureDescriptorColumn(
-        TableBuilder tableBuilder,
+        TableColumnAccumulator tableAccumulator,
         DbTableModel rootTable,
         DbColumnModel column,
         string columnName
@@ -1453,7 +1456,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             return false;
         }
 
-        tableBuilder.AddColumn(column);
+        tableAccumulator.AddColumn(column);
 
         return true;
     }
@@ -1566,26 +1569,26 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         public ResourceMutation(ResourceEntry entry)
         {
             Entry = entry;
-            TableBuilders = new Dictionary<TableKey, TableBuilder>();
+            TableAccumulators = new Dictionary<TableKey, TableColumnAccumulator>();
 
             foreach (var table in entry.Model.RelationalModel.TablesInReadDependencyOrder)
             {
                 var key = new TableKey(table.Table, table.JsonScope.Canonical);
-                TableBuilders.TryAdd(key, new TableBuilder(table));
+                TableAccumulators.TryAdd(key, new TableColumnAccumulator(table));
             }
         }
 
         public ResourceEntry Entry { get; }
 
-        private Dictionary<TableKey, TableBuilder> TableBuilders { get; }
+        private Dictionary<TableKey, TableColumnAccumulator> TableAccumulators { get; }
 
         public bool HasChanges => _mutatedTables.Count > 0;
 
-        public TableBuilder GetTableBuilder(DbTableModel table, QualifiedResourceName resource)
+        public TableColumnAccumulator GetTableAccumulator(DbTableModel table, QualifiedResourceName resource)
         {
             var key = new TableKey(table.Table, table.JsonScope.Canonical);
 
-            if (TableBuilders.TryGetValue(key, out var builder))
+            if (TableAccumulators.TryGetValue(key, out var builder))
             {
                 return builder;
             }
@@ -1605,7 +1608,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         {
             var key = new TableKey(original.Table, original.JsonScope.Canonical);
 
-            if (!TableBuilders.TryGetValue(key, out var builder))
+            if (!TableAccumulators.TryGetValue(key, out var builder))
             {
                 throw new InvalidOperationException(
                     $"Table '{original.Table}' scope '{original.JsonScope.Canonical}' was not found "
@@ -1618,67 +1621,5 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         }
 
         private sealed record TableKey(DbTableName Table, string Scope);
-    }
-
-    private sealed class TableBuilder
-    {
-        private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
-
-        public TableBuilder(DbTableModel table)
-        {
-            Definition = table;
-            Columns = new List<DbColumnModel>(table.Columns);
-            Constraints = new List<TableConstraint>(table.Constraints);
-
-            foreach (var column in table.Columns)
-            {
-                _columnSources[column.ColumnName.Value] = column.SourceJsonPath;
-            }
-
-            foreach (var keyColumn in table.Key.Columns)
-            {
-                _columnSources.TryAdd(keyColumn.ColumnName.Value, null);
-            }
-        }
-
-        public DbTableModel Definition { get; }
-
-        public List<DbColumnModel> Columns { get; }
-
-        public List<TableConstraint> Constraints { get; }
-
-        public void AddColumn(DbColumnModel column)
-        {
-            if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
-            {
-                var tableName = Definition.Table.Name;
-                var existingPath = ResolveSourcePath(existingSource);
-                var incomingPath = ResolveSourcePath(column.SourceJsonPath);
-
-                throw new InvalidOperationException(
-                    $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'. "
-                        + $"Colliding source paths '{existingPath}' and '{incomingPath}'. "
-                        + "Use relational.nameOverrides to resolve the collision."
-                );
-            }
-
-            _columnSources.Add(column.ColumnName.Value, column.SourceJsonPath);
-            Columns.Add(column);
-        }
-
-        public void AddConstraint(TableConstraint constraint)
-        {
-            Constraints.Add(constraint);
-        }
-
-        public DbTableModel Build()
-        {
-            return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
-        }
-
-        private string ResolveSourcePath(JsonPathExpression? sourcePath)
-        {
-            return (sourcePath ?? Definition.JsonScope).Canonical;
-        }
     }
 }
