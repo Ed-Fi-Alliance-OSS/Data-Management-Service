@@ -302,7 +302,8 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         QualifiedResourceName resource
     )
     {
-        TableScopeEntry? bestMatch = null;
+        var bestMatches = new List<TableScopeEntry>();
+        var bestSegmentCount = -1;
 
         foreach (var scope in tableScopes)
         {
@@ -311,21 +312,20 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                 continue;
             }
 
-            if (bestMatch is null || scope.Segments.Count > bestMatch.Segments.Count)
+            var segmentCount = scope.Segments.Count;
+            if (segmentCount > bestSegmentCount)
             {
-                bestMatch = scope;
+                bestSegmentCount = segmentCount;
+                bestMatches.Clear();
+                bestMatches.Add(scope);
             }
-            else if (
-                bestMatch is not null
-                && scope.Segments.Count == bestMatch.Segments.Count
-                && string.CompareOrdinal(scope.Canonical, bestMatch.Canonical) < 0
-            )
+            else if (segmentCount == bestSegmentCount)
             {
-                bestMatch = scope;
+                bestMatches.Add(scope);
             }
         }
 
-        if (bestMatch is null)
+        if (bestMatches.Count == 0)
         {
             throw new InvalidOperationException(
                 $"Reference object path '{referenceObjectPath.Canonical}' on resource "
@@ -333,6 +333,22 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
             );
         }
 
+        var candidateScopes = bestMatches
+            .Select(entry => entry.Canonical)
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(scope => scope, StringComparer.Ordinal)
+            .ToArray();
+
+        if (candidateScopes.Length > 1)
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' matched multiple table scopes with the same depth: "
+                    + $"{string.Join(", ", candidateScopes.Select(scope => $"'{scope}'"))}."
+            );
+        }
+
+        var bestMatch = bestMatches[0];
         if (
             referenceObjectPath.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" })
             && !bestMatch.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" })

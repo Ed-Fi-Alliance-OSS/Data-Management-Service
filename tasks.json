@@ -244,7 +244,7 @@
       "Run existing tests to confirm no legitimate ambiguity exists: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "If a test fails, investigate whether the tiebreak is needed and document it."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Tests",
