@@ -47,6 +47,10 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName,
         IReadOnlyDictionary<string, DescriptorPathInfo>
     > _extensionDescriptorPathsByResource;
+    private readonly Dictionary<
+        QualifiedResourceName,
+        IReadOnlyDictionary<string, DescriptorPathInfo>
+    > _allDescriptorPathsByResource = new();
     private readonly IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> _resourceKeysByResource;
     private readonly Dictionary<
         QualifiedResourceName,
@@ -200,16 +204,23 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName resource
     )
     {
+        if (_allDescriptorPathsByResource.TryGetValue(resource, out var cached))
+        {
+            return cached;
+        }
+
         var basePaths = GetDescriptorPathsForResource(resource);
         var extensionPaths = GetExtensionDescriptorPathsForResource(resource);
 
         if (extensionPaths.Count == 0)
         {
+            _allDescriptorPathsByResource[resource] = basePaths;
             return basePaths;
         }
 
         if (basePaths.Count == 0)
         {
+            _allDescriptorPathsByResource[resource] = extensionPaths;
             return extensionPaths;
         }
 
@@ -225,6 +236,7 @@ public sealed class RelationalModelSetBuilderContext
             combined[entry.Key] = entry.Value;
         }
 
+        _allDescriptorPathsByResource[resource] = combined;
         return combined;
     }
 
