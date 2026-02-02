@@ -28,6 +28,7 @@ public class Given_Root_Unique_Constraint_Derivation
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ExtensionTableDerivationRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
                 new ConstraintDerivationRelationalModelSetPass(),
             }
@@ -485,6 +486,109 @@ public class Given_Unmappable_Array_Uniqueness_Path
     }
 }
 
+[TestFixture]
+public class Given_Extension_Array_Uniqueness_Constraint_Alignment
+{
+    private DbTableModel _periodTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildExtensionArrayUniquenessCoreProjectSchema();
+        var extensionProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildExtensionArrayUniquenessExtensionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ConstraintDerivationRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var contactModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "Contact"
+            )
+            .RelationalModel;
+
+        _periodTable = contactModel.TablesInReadDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.addresses[*].periods[*]"
+        );
+    }
+
+    [Test]
+    public void It_should_align_extension_scoped_constraints_to_base_tables()
+    {
+        var uniqueConstraint = _periodTable.Constraints.OfType<TableConstraint.Unique>().Single();
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("Contact_DocumentId", "AddressOrdinal", "BeginDate");
+    }
+}
+
+[TestFixture]
+public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
+{
+    private Action _action = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildExtensionArrayUniquenessCoreProjectSchema();
+        var extensionProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildExtensionArrayUniquenessMissingExtensionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ConstraintDerivationRelationalModelSetPass(),
+            }
+        );
+
+        _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_extension_alignment_has_no_target_table()
+    {
+        var exception = _action.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("$._ext.sample.missing[*]");
+        exception.Message.Should().Contain("Contact");
+    }
+}
+
 internal static class ConstraintDerivationTestSchemaBuilder
 {
     internal static JsonObject BuildReferenceConstraintProjectSchema()
@@ -650,6 +754,51 @@ internal static class ConstraintDerivationTestSchemaBuilder
             {
                 ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(arrayUniquenessConstraints),
                 ["schools"] = BuildSchoolSchema(),
+            },
+        };
+    }
+
+    internal static JsonObject BuildExtensionArrayUniquenessCoreProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["contacts"] = BuildContactSchema() },
+        };
+    }
+
+    internal static JsonObject BuildExtensionArrayUniquenessExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["contacts"] = BuildContactExtensionSchema(
+                    BuildContactExtensionAddressesSchema(),
+                    BuildContactExtensionArrayUniquenessConstraints()
+                ),
+            },
+        };
+    }
+
+    internal static JsonObject BuildExtensionArrayUniquenessMissingExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["contacts"] = BuildContactExtensionSchema(
+                    BuildContactExtensionMissingSchema(),
+                    BuildContactExtensionMissingArrayUniquenessConstraints()
+                ),
             },
         };
     }
@@ -947,6 +1096,197 @@ internal static class ConstraintDerivationTestSchemaBuilder
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
+    }
+
+    private static JsonObject BuildContactSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["streetNumberName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["beginDate"] = new JsonObject
+                                        {
+                                            ["type"] = "string",
+                                            ["format"] = "date",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Contact",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildContactExtensionSchema(
+        JsonObject extensionProjectSchema,
+        JsonArray arrayUniquenessConstraints
+    )
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject { ["sample"] = extensionProjectSchema },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Contact",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = arrayUniquenessConstraints,
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildContactExtensionAddressesSchema()
+    {
+        var addressItems = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["sponsorCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            },
+                        },
+                    },
+                },
+                ["periods"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["beginDate"] = new JsonObject { ["type"] = "string", ["format"] = "date" },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["addresses"] = new JsonObject { ["type"] = "array", ["items"] = addressItems },
+            },
+        };
+    }
+
+    private static JsonObject BuildContactExtensionMissingSchema()
+    {
+        var missingItems = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["marker"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            },
+                        },
+                    },
+                },
+                ["foo"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["missing"] = new JsonObject { ["type"] = "array", ["items"] = missingItems },
+            },
+        };
+    }
+
+    private static JsonArray BuildContactExtensionArrayUniquenessConstraints()
+    {
+        return
+        [
+            new JsonObject
+            {
+                ["basePath"] = "$._ext.sample.addresses[*]",
+                ["paths"] = new JsonArray { "$.periods[*].beginDate" },
+            },
+        ];
+    }
+
+    private static JsonArray BuildContactExtensionMissingArrayUniquenessConstraints()
+    {
+        return
+        [
+            new JsonObject
+            {
+                ["basePath"] = "$._ext.sample.missing[*]",
+                ["paths"] = new JsonArray { "$.foo" },
+            },
+        ];
     }
 
     private static JsonObject BuildReferenceConstraintSchoolSchema()
