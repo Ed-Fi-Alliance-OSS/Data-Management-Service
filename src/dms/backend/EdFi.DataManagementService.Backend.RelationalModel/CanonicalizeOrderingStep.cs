@@ -28,7 +28,7 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
             );
 
         var canonicalTables = resourceModel
-            .TablesInReadDependencyOrder.Select(CanonicalizeTable)
+            .TablesInReadDependencyOrder.Select(RelationalModelOrdering.CanonicalizeTable)
             .OrderBy(table => CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
@@ -80,120 +80,6 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
 
         context.ExtensionSites.Clear();
         context.ExtensionSites.AddRange(orderedExtensionSites);
-    }
-
-    /// <summary>
-    /// Reorders table columns and constraints into a stable, predictable sequence.
-    /// </summary>
-    /// <param name="table">The table model to canonicalize.</param>
-    /// <returns>A copy of the table model with canonical column and constraint order.</returns>
-    private static DbTableModel CanonicalizeTable(DbTableModel table)
-    {
-        var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
-
-        var orderedColumns = table
-            .Columns.OrderBy(column => GetColumnGroup(column, keyColumnOrder))
-            .ThenBy(column => GetColumnKeyIndex(column, keyColumnOrder))
-            .ThenBy(column => column.ColumnName.Value, StringComparer.Ordinal)
-            .ToArray();
-
-        var orderedConstraints = table
-            .Constraints.OrderBy(GetConstraintGroup)
-            .ThenBy(GetConstraintName, StringComparer.Ordinal)
-            .ToArray();
-
-        return table with
-        {
-            Columns = orderedColumns,
-            Constraints = orderedConstraints,
-        };
-    }
-
-    /// <summary>
-    /// Builds a lookup from key column name to its ordinal position within the key definition.
-    /// </summary>
-    /// <param name="keyColumns">The key columns to index.</param>
-    /// <returns>A mapping of column name to key position.</returns>
-    private static Dictionary<string, int> BuildKeyColumnOrder(IReadOnlyList<DbKeyColumn> keyColumns)
-    {
-        Dictionary<string, int> keyOrder = new(StringComparer.Ordinal);
-
-        for (var index = 0; index < keyColumns.Count; index++)
-        {
-            keyOrder[keyColumns[index].ColumnName.Value] = index;
-        }
-
-        return keyOrder;
-    }
-
-    /// <summary>
-    /// Assigns a grouping bucket used to order columns such that key columns come first,
-    /// followed by descriptor foreign keys, scalar columns, and then all remaining kinds.
-    /// </summary>
-    /// <param name="column">The column to classify.</param>
-    /// <param name="keyColumnOrder">Lookup of key column names to their key order.</param>
-    /// <returns>A numeric group value used for ordering.</returns>
-    private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
-    {
-        if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
-        {
-            return 0;
-        }
-
-        return column.Kind switch
-        {
-            ColumnKind.DescriptorFk => 1,
-            ColumnKind.Scalar => 2,
-            _ => 3,
-        };
-    }
-
-    /// <summary>
-    /// Returns the ordinal position of a column within the key, or <see cref="int.MaxValue"/>
-    /// when the column is not part of the key.
-    /// </summary>
-    /// <param name="column">The column whose key index is requested.</param>
-    /// <param name="keyColumnOrder">Lookup of key column names to their key order.</param>
-    /// <returns>The key ordinal index, or <see cref="int.MaxValue"/> when not a key column.</returns>
-    private static int GetColumnKeyIndex(
-        DbColumnModel column,
-        IReadOnlyDictionary<string, int> keyColumnOrder
-    )
-    {
-        return keyColumnOrder.TryGetValue(column.ColumnName.Value, out var index) ? index : int.MaxValue;
-    }
-
-    /// <summary>
-    /// Assigns a grouping bucket used to order constraints with uniques first, then foreign keys,
-    /// then check constraints, and finally any other constraint types.
-    /// </summary>
-    /// <param name="constraint">The constraint to classify.</param>
-    /// <returns>A numeric group value used for ordering.</returns>
-    private static int GetConstraintGroup(TableConstraint constraint)
-    {
-        return constraint switch
-        {
-            TableConstraint.Unique => 1,
-            TableConstraint.ForeignKey => 2,
-            TableConstraint.AllOrNoneNullability => 3,
-            _ => 99,
-        };
-    }
-
-    /// <summary>
-    /// Extracts the constraint name used as a stable tiebreaker during ordering.
-    /// </summary>
-    /// <param name="constraint">The constraint whose name should be returned.</param>
-    /// <returns>The constraint name, or an empty string when unnamed.</returns>
-    private static string GetConstraintName(TableConstraint constraint)
-    {
-        return constraint switch
-        {
-            TableConstraint.Unique unique => unique.Name,
-            TableConstraint.ForeignKey foreignKey => foreignKey.Name,
-            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
-            _ => string.Empty,
-        };
     }
 
     /// <summary>

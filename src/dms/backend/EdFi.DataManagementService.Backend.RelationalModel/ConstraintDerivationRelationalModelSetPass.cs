@@ -791,7 +791,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                 return resourceModel;
             }
 
-            var updatedRoot = CanonicalizeTable(tableBuilder.Build());
+            var updatedRoot = RelationalModelOrdering.CanonicalizeTable(tableBuilder.Build());
 
             return UpdateResourceModel(resourceModel, updatedRoot);
         }
@@ -816,7 +816,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             return resourceModel;
         }
 
-        var updatedRootTable = CanonicalizeTable(tableBuilder.Build());
+        var updatedRootTable = RelationalModelOrdering.CanonicalizeTable(tableBuilder.Build());
 
         return UpdateResourceModel(resourceModel, updatedRootTable);
     }
@@ -1507,85 +1507,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         return $"CK_{tableName}_{fkColumn.Value}_AllOrNone";
     }
 
-    private static DbTableModel CanonicalizeTable(DbTableModel table)
-    {
-        var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
-
-        var orderedColumns = table
-            .Columns.OrderBy(column => GetColumnGroup(column, keyColumnOrder))
-            .ThenBy(column => GetColumnKeyIndex(column, keyColumnOrder))
-            .ThenBy(column => column.ColumnName.Value, StringComparer.Ordinal)
-            .ToArray();
-
-        var orderedConstraints = table
-            .Constraints.OrderBy(GetConstraintGroup)
-            .ThenBy(GetConstraintName, StringComparer.Ordinal)
-            .ToArray();
-
-        return table with
-        {
-            Columns = orderedColumns,
-            Constraints = orderedConstraints,
-        };
-    }
-
-    private static Dictionary<string, int> BuildKeyColumnOrder(IReadOnlyList<DbKeyColumn> keyColumns)
-    {
-        Dictionary<string, int> keyOrder = new(StringComparer.Ordinal);
-
-        for (var index = 0; index < keyColumns.Count; index++)
-        {
-            keyOrder[keyColumns[index].ColumnName.Value] = index;
-        }
-
-        return keyOrder;
-    }
-
-    private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
-    {
-        if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
-        {
-            return 0;
-        }
-
-        return column.Kind switch
-        {
-            ColumnKind.DescriptorFk => 1,
-            ColumnKind.Scalar => 2,
-            _ => 3,
-        };
-    }
-
-    private static int GetColumnKeyIndex(
-        DbColumnModel column,
-        IReadOnlyDictionary<string, int> keyColumnOrder
-    )
-    {
-        return keyColumnOrder.TryGetValue(column.ColumnName.Value, out var index) ? index : int.MaxValue;
-    }
-
-    private static int GetConstraintGroup(TableConstraint constraint)
-    {
-        return constraint switch
-        {
-            TableConstraint.Unique => 1,
-            TableConstraint.ForeignKey => 2,
-            TableConstraint.AllOrNoneNullability => 3,
-            _ => 99,
-        };
-    }
-
-    private static string GetConstraintName(TableConstraint constraint)
-    {
-        return constraint switch
-        {
-            TableConstraint.Unique unique => unique.Name,
-            TableConstraint.ForeignKey foreignKey => foreignKey.Name,
-            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
-            _ => string.Empty,
-        };
-    }
-
     private static RelationalModelBuilderContext BuildResourceContext(
         ConcreteResourceSchemaContext resourceContext,
         IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint
@@ -1801,7 +1722,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             }
 
             var built = builder.Build();
-            return _mutatedTables.Contains(key) ? CanonicalizeTable(built) : built;
+            return _mutatedTables.Contains(key) ? RelationalModelOrdering.CanonicalizeTable(built) : built;
         }
 
         private sealed record TableKey(DbTableName Table, string Scope);
