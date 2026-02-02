@@ -48,7 +48,7 @@ These tests detect cases where the `DocumentId` is correct but the `ReferentialI
   - the old `ReferentialId` no longer resolves,
   - alias row(s) (if any) update consistently.
 - **No-op update test**: update only non-identity fields; assert `dms.ReferentialIdentity` does not change.
-- **Cascaded-update trigger firing**: change an upstream identity that propagates into dependent identity columns (e.g., via `ON UPDATE CASCADE`); assert dependents’ `ReferentialId`s recompute (guards “cascade updated columns didn’t trigger recompute”).
+- **Cascaded-update trigger firing**: change an upstream identity that propagates into dependent identity columns (e.g., via `ON UPDATE CASCADE` when `allowIdentityUpdates=true`); assert dependents’ `ReferentialId`s recompute (guards “cascade updated columns didn’t trigger recompute”).
 - **Cascade recompute convergence test**: in one transaction, perform an upstream identity change that forces dependent recomputes; assert all impacted documents have the correct post-commit `ReferentialId` (no stale window).
 - **Delete cleanup test**: delete a document; assert its `dms.ReferentialIdentity` rows are removed (trigger/`ON DELETE CASCADE` correctness).
 - **Uniqueness conflict test**: attempt an identity change that would collide with another document’s identity; assert the transaction fails and `dms.ReferentialIdentity` is unchanged (no partial state).

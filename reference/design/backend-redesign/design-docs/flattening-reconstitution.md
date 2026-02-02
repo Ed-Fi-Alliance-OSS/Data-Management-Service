@@ -233,7 +233,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - abstract identity fields (from `abstractResources[A].identityPathOrder`),
      - optional `Discriminator`.
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
-   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites so `ON UPDATE CASCADE` can propagate identity changes and enforce membership/type at the DB level.
+   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
 ### 4.2 Recommended child-table keys (composite parent+ordinal)
@@ -473,7 +473,7 @@ Within a single transaction:
    - extension scope/collection rows keyed to the same composite keys as the base scope they extend (document id + ordinals)
    - use the same baseline “replace” strategy as core collections (delete existing, insert current)
 5. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate via `ON UPDATE CASCADE` into stored reference identity columns, and
+   - referential-id impacts propagate into stored reference identity columns via composite FKs; use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
@@ -524,7 +524,7 @@ In this redesign, identity fields inside reference objects are persisted as loca
 
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
-  kept consistent via composite FKs with `ON UPDATE CASCADE`.
+  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 
@@ -663,7 +663,7 @@ In this redesign, identity fields inside reference objects are stored as local c
 
 - `..._DocumentId`, plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns,
-  kept consistent via composite FKs with `ON UPDATE CASCADE`.
+  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
 
 Therefore reference expansion during JSON writing is a pure “read local columns and emit the reference object” operation. No batched reference identity projection queries (joins to referenced tables or `{AbstractResource}_View`) are required to populate reference identity fields.
 
@@ -1589,7 +1589,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
-    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE).
+    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE when allowIdentityUpdates=true).
 
     await tx.CommitAsync(ct);
 }

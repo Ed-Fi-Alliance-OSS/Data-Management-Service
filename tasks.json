@@ -285,7 +285,7 @@
       "Run: `rg -n \"ON UPDATE CASCADE\" reference/design/backend-redesign/design-docs` and confirm remaining mentions are conditional or explicitly scoped to `allowIdentityUpdates`-enabled targets.",
       "Sanity check: compare wording against `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` onUpdate selection logic."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Inputs",

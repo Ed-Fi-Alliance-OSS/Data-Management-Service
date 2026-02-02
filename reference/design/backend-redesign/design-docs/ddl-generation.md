@@ -170,9 +170,9 @@ The DDL generator must emit document-reference columns and constraints that enab
   - `..._DocumentId`, and
   - `{RefBaseName}_{IdentityPart}` propagated identity columns.
 - Enforce “all-or-none” for the reference group via a CHECK constraint (to avoid null-bypassing of composite FKs).
-- Enforce a composite FK with `ON UPDATE CASCADE` to:
-  - a concrete target root table key `(DocumentId, <IdentityParts...>)`, or
-  - an abstract target identity table key `(DocumentId, <IdentityParts...>)`.
+- Enforce a composite FK to:
+  - a concrete target root table key `(DocumentId, <IdentityParts...>)`, using `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), or
+  - an abstract target identity table key `(DocumentId, <IdentityParts...>)`, using `ON UPDATE CASCADE` (identity tables are trigger-maintained).
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
 
 **Triggers (required)**
