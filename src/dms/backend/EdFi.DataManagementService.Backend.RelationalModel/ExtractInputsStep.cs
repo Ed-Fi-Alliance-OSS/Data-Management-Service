@@ -292,7 +292,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                     projectName,
                     resourceName,
                     isPartOfIdentity,
-                    pathIsPartOfIdentity
+                    pathIsPartOfIdentity,
+                    new[] { pathExpression.Canonical }
                 );
 
                 mappedIdentityPaths.Add(pathExpression.Canonical);
@@ -315,7 +316,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                     projectName,
                     resourceName,
                     isPartOfIdentity,
-                    descriptorIsPartOfIdentity
+                    descriptorIsPartOfIdentity,
+                    new[] { pathExpression.Canonical }
                 );
 
                 mappedIdentityPaths.Add(pathExpression.Canonical);
@@ -341,15 +343,17 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 mappedIdentityPaths.Add(referenceJsonPath.ReferenceJsonPath.Canonical);
             }
 
-            var referenceIsPartOfIdentity = referenceJsonPaths.Any(binding =>
-                identityJsonPaths.Contains(binding.ReferenceJsonPath.Canonical)
-            );
+            var referencePaths = referenceJsonPaths
+                .Select(binding => binding.ReferenceJsonPath.Canonical)
+                .ToArray();
+            var referenceIsPartOfIdentity = referencePaths.Any(identityJsonPaths.Contains);
             var effectiveIsPartOfIdentity = ResolveIsPartOfIdentity(
                 mapping.Key,
                 projectName,
                 resourceName,
                 isPartOfIdentity,
-                referenceIsPartOfIdentity
+                referenceIsPartOfIdentity,
+                referencePaths
             );
             ValidateReferenceIdentityCompleteness(
                 mapping.Key,
@@ -769,11 +773,23 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         string projectName,
         string resourceName,
         bool? isPartOfIdentity,
-        bool derivedIsPartOfIdentity
+        bool derivedIsPartOfIdentity,
+        IReadOnlyList<string> mappingPaths
     )
     {
         if (!derivedIsPartOfIdentity)
         {
+            if (isPartOfIdentity is true)
+            {
+                var orderedPaths = mappingPaths.OrderBy(path => path, StringComparer.Ordinal).ToArray();
+
+                throw new InvalidOperationException(
+                    $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
+                        + "marked as isPartOfIdentity but identityJsonPaths does not include path(s): "
+                        + string.Join(", ", orderedPaths)
+                );
+            }
+
             return isPartOfIdentity ?? false;
         }
 

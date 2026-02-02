@@ -876,7 +876,7 @@
             "type": "number"
           },
           "Telephone.TelephoneNumber": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$.telephones[*].telephoneNumber",
@@ -884,7 +884,7 @@
           },
           "Telephone.TelephoneNumberTypeDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$.telephones[*].telephoneNumberTypeDescriptor",
@@ -2538,7 +2538,7 @@
         "documentPathsMapping": {
           "Address.AddressTypeDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].addressTypeDescriptor",
@@ -2561,7 +2561,7 @@
             "type": "string"
           },
           "Address.City": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].city",
@@ -2634,7 +2634,7 @@
             "type": "boolean"
           },
           "Address.Period.BeginDate": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].periods[*].beginDate",
@@ -2648,7 +2648,7 @@
             "type": "date"
           },
           "Address.PostalCode": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].postalCode",
@@ -2663,7 +2663,7 @@
           },
           "Address.StateAbbreviationDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].stateAbbreviationDescriptor",
@@ -2672,7 +2672,7 @@
             "type": "string"
           },
           "Address.StreetNumberName": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].streetNumberName",
@@ -2718,7 +2718,7 @@
           },
           "CTEProgramService.CTEProgramServiceDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.cteProgramService.cteProgramServiceDescriptor",
@@ -5019,7 +5019,7 @@
           },
           "CTEProgramService.CTEProgramServiceDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.cteProgramService.cteProgramServiceDescriptor",
@@ -5315,7 +5315,7 @@
             "type": "boolean"
           },
           "Pet.PetName": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.pets[*].petName",
@@ -5654,7 +5654,7 @@
           },
           "FavoriteBook.FavoriteBookArtMedium.ArtMediumDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$.favoriteBook.artMedia[*].artMediumDescriptor",
@@ -5671,7 +5671,7 @@
           },
           "FavoriteBook.FavoriteBookCategoryDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$.favoriteBook.favoriteBookCategoryDescriptor",
@@ -5783,7 +5783,7 @@
           },
           "ProgramParticipationStatus.ParticipationStatusDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$.programParticipationStatuses[*].participationStatusDescriptor",
@@ -5792,7 +5792,7 @@
             "type": "string"
           },
           "ProgramParticipationStatus.StatusBeginDate": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$.programParticipationStatuses[*].statusBeginDate",
@@ -5838,7 +5838,7 @@
           },
           "Service.ServiceDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$.services[*].serviceDescriptor",
@@ -7560,7 +7560,7 @@
             "type": "number"
           },
           "Telephone.TelephoneNumber": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.telephone.telephoneNumber",
@@ -7568,7 +7568,7 @@
           },
           "Telephone.TelephoneNumberTypeDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.telephone.telephoneNumberTypeDescriptor",
@@ -8186,7 +8186,7 @@
         "documentPathsMapping": {
           "Address.AddressTypeDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].addressTypeDescriptor",
@@ -8209,7 +8209,7 @@
             "type": "string"
           },
           "Address.City": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].city",
@@ -8282,7 +8282,7 @@
             "type": "boolean"
           },
           "Address.Period.BeginDate": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].periods[*].beginDate",
@@ -8296,7 +8296,7 @@
             "type": "date"
           },
           "Address.PostalCode": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].postalCode",
@@ -8311,7 +8311,7 @@
           },
           "Address.StateAbbreviationDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].stateAbbreviationDescriptor",
@@ -8320,7 +8320,7 @@
             "type": "string"
           },
           "Address.StreetNumberName": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.addresses[*].streetNumberName",
@@ -8369,7 +8369,7 @@
             "type": "string"
           },
           "StudentCharacteristic.Period.BeginDate": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.studentCharacteristics[*].periods[*].beginDate",
@@ -8384,7 +8384,7 @@
           },
           "StudentCharacteristic.StudentCharacteristicDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.studentCharacteristics[*].studentCharacteristicDescriptor",
@@ -8393,7 +8393,7 @@
             "type": "string"
           },
           "StudentCharacteristic.StudentNeed.BeginDate": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.studentCharacteristics[*]._ext.sample.studentNeeds[*].beginDate",
@@ -9162,7 +9162,7 @@
           },
           "CTEProgramService.CTEProgramServiceDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$.cteProgramService.cteProgramServiceDescriptor",
@@ -10889,14 +10889,14 @@
             "type": "boolean"
           },
           "AquaticPet.MimimumTankVolume": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.aquaticPets[*].mimimumTankVolume",
             "type": "number"
           },
           "AquaticPet.PetName": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.aquaticPets[*].petName",
@@ -10911,7 +10911,7 @@
           },
           "FavoriteBook.FavoriteBookArtMedium.ArtMediumDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.favoriteBooks[*].artMedia[*].artMediumDescriptor",
@@ -10928,7 +10928,7 @@
           },
           "FavoriteBook.FavoriteBookCategoryDescriptor": {
             "isDescriptor": true,
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": true,
             "isRequired": true,
             "path": "$._ext.sample.favoriteBooks[*].favoriteBookCategoryDescriptor",
@@ -10944,7 +10944,7 @@
             "type": "boolean"
           },
           "Pet.PetName": {
-            "isPartOfIdentity": true,
+            "isPartOfIdentity": false,
             "isReference": false,
             "isRequired": true,
             "path": "$._ext.sample.pets[*].petName",
