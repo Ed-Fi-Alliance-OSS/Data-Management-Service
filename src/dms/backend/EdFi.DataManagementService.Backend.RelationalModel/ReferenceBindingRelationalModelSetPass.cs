@@ -483,21 +483,23 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
             return true;
         }
 
-        if (
-            identityJsonPath.Segments.Count > 0
-            && identityJsonPath.Segments[^1] is JsonPathSegment.Property property
-            && property.Name.EndsWith("Descriptor", StringComparison.Ordinal)
-        )
+        if (IsDescriptorIdentityPath(identityJsonPath))
         {
-            descriptorPathInfo = new DescriptorPathInfo(
-                identityJsonPath,
-                new QualifiedResourceName(targetResource.ProjectName, property.Name)
+            throw new InvalidOperationException(
+                $"Descriptor identity path '{identityJsonPath.Canonical}' on resource "
+                    + $"'{FormatResource(targetResource)}' was not found in descriptor path map."
             );
-            return true;
         }
 
         descriptorPathInfo = default;
         return false;
+    }
+
+    private static bool IsDescriptorIdentityPath(JsonPathExpression identityJsonPath)
+    {
+        return identityJsonPath.Segments.Count > 0
+            && identityJsonPath.Segments[^1] is JsonPathSegment.Property property
+            && property.Name.EndsWith("Descriptor", StringComparison.Ordinal);
     }
 
     private static JsonObject ResolveSchemaForPath(

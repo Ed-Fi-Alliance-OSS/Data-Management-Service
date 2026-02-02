@@ -141,7 +141,7 @@
       "Add a unit test that constructs a reference mapping whose `identityJsonPath` ends with `Descriptor` but is not present in the descriptor-path map, and assert an `InvalidOperationException` with path/resource details.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Constraints",

@@ -62,3 +62,7 @@
   Decisions: Fail fast when concrete reference mappings omit target identityJsonPaths; added fixture mapping for Sample:Section -> School schoolId; added unit test for missing identity path error.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/set-builder/hand-authored-extension-api-schema.json; tasks.json; progress.txt
   Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
+- Task: Descriptor Paths (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Removed descriptor-identity fallback in reference binding; now fail fast when descriptor identity path missing from descriptor-path map; added test for missing descriptor path mapping.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ReferenceBindingRelationalModelSetPassTests.cs; tasks.json; progress.txt
+  Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed.

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
@@ -150,6 +151,41 @@ public class Given_Reference_Binding
         _extensionRootTable
             .Columns.Should()
             .Contain(column => column.ColumnName.Value == "SponsorSchool_DocumentId");
+    }
+}
+
+[TestFixture]
+public class Given_Reference_Binding_When_Descriptor_Path_Is_Missing
+{
+    private Action _action = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = ReferenceBindingMissingDescriptorPathSchemaBuilder.BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+            }
+        );
+
+        _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_fail_fast_when_descriptor_identity_path_is_missing_from_map()
+    {
+        _action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*$.programTypeDescriptor*Ed-Fi:Program*descriptor path map*");
     }
 }
 
@@ -555,6 +591,106 @@ internal static class ReferenceBindingTestSchemaBuilder
                 ["properties"] = new JsonObject
                 {
                     ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                },
+            },
+        };
+    }
+}
+
+internal static class ReferenceBindingMissingDescriptorPathSchemaBuilder
+{
+    internal static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["students"] = BuildStudentSchema(),
+                ["programs"] = BuildProgramSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildStudentSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["programReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["programTypeDescriptor"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 300,
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Student",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["Program"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Program",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.programTypeDescriptor",
+                            ["referenceJsonPath"] = "$.programReference.programTypeDescriptor",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildProgramSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Program",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.programTypeDescriptor" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["ProgramTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.programTypeDescriptor",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 300 },
                 },
             },
         };
