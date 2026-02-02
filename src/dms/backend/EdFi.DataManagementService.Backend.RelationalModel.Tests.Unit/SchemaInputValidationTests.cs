@@ -96,6 +96,55 @@ public class Given_A_Document_Reference_With_Inconsistent_ReferenceJsonPaths_Pre
 }
 
 [TestFixture]
+public class Given_A_Document_Reference_With_Duplicate_IdentityJsonPaths
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.educationOrganizationId",
+                    },
+                },
+            },
+        };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject()
+        );
+    }
+
+    [Test]
+    public void It_should_fail_with_duplicate_identity_paths()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("duplicate identityJsonPath");
+        _exception.Message.Should().Contain("$.schoolId");
+    }
+}
+
+[TestFixture]
 public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_IdentityJsonPaths
 {
     private Exception? _exception;

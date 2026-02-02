@@ -703,6 +703,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     {
         List<ReferenceJsonPathBinding> referenceJsonPaths = new(referenceJsonPathsArray.Count);
         JsonPathExpression? referencePrefix = null;
+        Dictionary<string, string> referencePathsByIdentityPath = new(StringComparer.Ordinal);
 
         foreach (var referenceJsonPath in referenceJsonPathsArray)
         {
@@ -742,6 +743,17 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                     $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' "
                         + $"has inconsistent referenceJsonPaths prefix '{referencePrefix.Value.Canonical}' "
                         + $"and '{prefixPath.Canonical}'."
+                );
+            }
+
+            if (!referencePathsByIdentityPath.TryAdd(identityPath.Canonical, referencePath.Canonical))
+            {
+                var existingReferencePath = referencePathsByIdentityPath[identityPath.Canonical];
+
+                throw new InvalidOperationException(
+                    $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' "
+                        + $"has duplicate identityJsonPath '{identityPath.Canonical}' mapped to "
+                        + $"'{existingReferencePath}' and '{referencePath.Canonical}'."
                 );
             }
 

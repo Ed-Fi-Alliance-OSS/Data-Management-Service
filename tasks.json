@@ -291,7 +291,7 @@
       "Add unit tests constructing ApiSchema fixtures with duplicate referenceJsonPaths entries and assert compilation fails with a clear message.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Robustness",

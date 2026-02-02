@@ -1186,38 +1186,56 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
     )
     {
         Dictionary<string, JsonPathExpression> referencePathsByIdentityPath = new(StringComparer.Ordinal);
+        Dictionary<string, DbColumnName> localColumnsByIdentityPath = new(StringComparer.Ordinal);
 
-        foreach (var path in mapping.ReferenceJsonPaths)
+        if (mapping.ReferenceJsonPaths.Count != binding.IdentityBindings.Count)
         {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + "did not align referenceJsonPaths with identity bindings."
+            );
+        }
+
+        for (var index = 0; index < mapping.ReferenceJsonPaths.Count; index++)
+        {
+            var path = mapping.ReferenceJsonPaths[index];
+            var identityBinding = binding.IdentityBindings[index];
+
+            if (
+                !string.Equals(
+                    path.ReferenceJsonPath.Canonical,
+                    identityBinding.ReferenceJsonPath.Canonical,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"did not align reference path '{path.ReferenceJsonPath.Canonical}' with "
+                        + $"binding '{identityBinding.ReferenceJsonPath.Canonical}'."
+                );
+            }
+
             if (!referencePathsByIdentityPath.TryAdd(path.IdentityJsonPath.Canonical, path.ReferenceJsonPath))
             {
                 var existing = referencePathsByIdentityPath[path.IdentityJsonPath.Canonical];
 
-                if (string.CompareOrdinal(existing.Canonical, path.ReferenceJsonPath.Canonical) > 0)
-                {
-                    referencePathsByIdentityPath[path.IdentityJsonPath.Canonical] = path.ReferenceJsonPath;
-                }
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"contains duplicate identity path '{path.IdentityJsonPath.Canonical}' bound to "
+                        + $"'{existing.Canonical}' and '{path.ReferenceJsonPath.Canonical}'."
+                );
             }
-        }
 
-        Dictionary<string, DbColumnName> columnsByReferencePath = new(StringComparer.Ordinal);
-
-        foreach (var identityBinding in binding.IdentityBindings)
-        {
-            if (
-                !columnsByReferencePath.TryAdd(
-                    identityBinding.ReferenceJsonPath.Canonical,
-                    identityBinding.Column
-                )
-            )
+            if (!localColumnsByIdentityPath.TryAdd(path.IdentityJsonPath.Canonical, identityBinding.Column))
             {
-                var existing = columnsByReferencePath[identityBinding.ReferenceJsonPath.Canonical];
+                var existing = localColumnsByIdentityPath[path.IdentityJsonPath.Canonical];
 
-                if (string.CompareOrdinal(existing.Value, identityBinding.Column.Value) > 0)
-                {
-                    columnsByReferencePath[identityBinding.ReferenceJsonPath.Canonical] =
-                        identityBinding.Column;
-                }
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"contains duplicate identity path '{path.IdentityJsonPath.Canonical}' bound to "
+                        + $"columns '{existing.Value}' and '{identityBinding.Column.Value}'."
+                );
             }
         }
 
@@ -1235,18 +1253,10 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
         foreach (var identityPath in targetInfo.IdentityJsonPaths)
         {
-            if (!referencePathsByIdentityPath.TryGetValue(identityPath.Canonical, out var referencePath))
+            if (!localColumnsByIdentityPath.TryGetValue(identityPath.Canonical, out var localColumn))
             {
                 missingIdentityPaths.Add(identityPath);
                 continue;
-            }
-
-            if (!columnsByReferencePath.TryGetValue(referencePath.Canonical, out var localColumn))
-            {
-                throw new InvalidOperationException(
-                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                        + $"did not bind reference path '{referencePath.Canonical}' to a column."
-                );
             }
 
             if (!targetColumnsByIdentityPath.TryGetValue(identityPath.Canonical, out var targetColumn))
