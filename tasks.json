@@ -235,10 +235,11 @@
   },
   {
     "category": "Robustness",
-    "description": "Add explicit pass ordering validation. RelationalModelSetPasses.cs hardcodes pass order and each pass declares an `Order` property, but nothing validates that the array is sorted by Order or that Order values are unique. A future developer could add a pass at the wrong array index. Acceptance: (1) An assertion (in the pipeline runner or RelationalModelSetBuilderContext.BuildResult) validates that passes are in strictly ascending Order; (2) duplicate Order values fail fast; (3) a unit test in RelationalModelSetPassesTests asserts CreatePasses() returns passes in ascending Order with unique values.",
+    "description": "Remove the redundant Order property from IRelationalModelSetPass and all pass implementations. The canonical pass ordering is already determined by array position in RelationalModelSetPasses.CreatePasses(). The Order property is a second source of truth that can get out of sync. Acceptance: (1) Order property removed from the interface and all implementations; (2) no ordering validation needed since array position IS the order; (3) all unit tests pass.",
     "steps-to-verify": [
-      "Add ordering validation in RelationalModelBuilderPipeline or RelationalModelSetBuilderContext.BuildResult.",
-      "Add a unit test in RelationalModelSetPassesTests asserting ascending unique Order values.",
+      "Remove Order from IRelationalModelSetPass interface.",
+      "Remove Order property from all pass implementations (BaseTraversalAndDescriptorBindingRelationalModelSetPass, ExtensionTableDerivationRelationalModelSetPass, AbstractIdentityTableDerivationRelationalModelSetPass, ReferenceBindingRelationalModelSetPass, ConstraintDerivationRelationalModelSetPass).",
+      "Remove any references to Order in pipeline runner or tests.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
@@ -268,15 +269,6 @@
     "steps-to-verify": [
       "Update AddColumn in both TableBuilder and ExtensionTableBuilder to throw on duplicate column names at insertion time.",
       "Remove redundant collision checks from Build().",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": false
-  },
-  {
-    "category": "Tests",
-    "description": "Add a unit test asserting pass ordering contract. There is no test that RelationalModelSetPasses.CreatePasses() returns passes in ascending Order with unique Order values. If someone reorders the array, tests would fail indirectly with confusing output rather than a clear ordering violation. Acceptance: (1) A test in RelationalModelSetPassesTests calls CreatePasses() and asserts Order values are strictly ascending; (2) the test also asserts no duplicate Order values exist.",
-    "steps-to-verify": [
-      "Add the ordering assertion test in RelationalModelSetPassesTests.cs.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
