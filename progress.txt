@@ -78,3 +78,7 @@
   Decisions: Precomputed resource->index map for reference binding updates; removed FindIndex scan while keeping extension behavior.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs; tasks.json; progress.txt
   Notes: dotnet test RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
+- Task: Performance (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Verified reference-binding index map change already in place; marked task complete in tasks.json after re-running tests/build.
+  Files: tasks.json; progress.txt
+  Notes: dotnet test RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
