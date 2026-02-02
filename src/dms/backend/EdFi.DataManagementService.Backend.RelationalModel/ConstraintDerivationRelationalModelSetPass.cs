@@ -1308,11 +1308,13 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
         List<DbColumnName> localColumns = new(targetInfo.IdentityJsonPaths.Count);
         List<DbColumnName> targetColumns = new(targetInfo.IdentityJsonPaths.Count);
+        List<JsonPathExpression> missingIdentityPaths = new();
 
         foreach (var identityPath in targetInfo.IdentityJsonPaths)
         {
             if (!referencePathsByIdentityPath.TryGetValue(identityPath.Canonical, out var referencePath))
             {
+                missingIdentityPaths.Add(identityPath);
                 continue;
             }
 
@@ -1335,6 +1337,17 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
             localColumns.Add(localColumn);
             targetColumns.Add(targetColumn);
+        }
+
+        if (!targetInfo.IsAbstract && missingIdentityPaths.Count > 0)
+        {
+            var missingPaths = string.Join(", ", missingIdentityPaths.Select(path => $"'{path.Canonical}'"));
+
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + $"did not include identity path(s) {missingPaths} required by target "
+                    + $"'{FormatResource(mapping.TargetResource)}'."
+            );
         }
 
         return new ReferenceIdentityColumnSet(localColumns.ToArray(), targetColumns.ToArray());

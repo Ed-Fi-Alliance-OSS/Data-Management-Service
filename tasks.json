@@ -161,7 +161,7 @@
       "Add a unit test that creates a concrete target with multiple identityJsonPaths but supplies only a subset in `referenceJsonPaths`, and assert the fail-fast exception includes the missing identity path(s).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Inputs",
