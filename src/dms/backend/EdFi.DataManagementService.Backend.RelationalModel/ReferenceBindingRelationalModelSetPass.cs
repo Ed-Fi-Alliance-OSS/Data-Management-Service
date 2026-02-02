@@ -110,7 +110,7 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
     )
     {
         var tableBuilders = resourceModel
-            .TablesInReadDependencyOrder.Select(table => new TableBuilder(table))
+            .TablesInReadDependencyOrder.Select(table => new TableColumnAccumulator(table))
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         var tableScopes = tableBuilders
@@ -312,7 +312,7 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         return builderContext;
     }
 
-    private static TableBuilder ResolveOwningTableBuilder(
+    private static TableColumnAccumulator ResolveOwningTableBuilder(
         JsonPathExpression referenceObjectPath,
         IReadOnlyList<TableScopeEntry> tableScopes,
         QualifiedResourceName resource
@@ -812,68 +812,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
     private sealed record TableScopeEntry(
         string Canonical,
         IReadOnlyList<JsonPathSegment> Segments,
-        TableBuilder Builder
+        TableColumnAccumulator Builder
     );
-
-    private sealed class TableBuilder
-    {
-        private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
-
-        public TableBuilder(DbTableModel table)
-        {
-            Definition = table;
-            Columns = new List<DbColumnModel>(table.Columns);
-            Constraints = new List<TableConstraint>(table.Constraints);
-
-            foreach (var column in table.Columns)
-            {
-                _columnSources[column.ColumnName.Value] = column.SourceJsonPath;
-            }
-
-            foreach (var keyColumn in table.Key.Columns)
-            {
-                _columnSources.TryAdd(keyColumn.ColumnName.Value, null);
-            }
-        }
-
-        public DbTableModel Definition { get; }
-
-        public List<DbColumnModel> Columns { get; }
-
-        public List<TableConstraint> Constraints { get; }
-
-        public void AddColumn(DbColumnModel column)
-        {
-            if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
-            {
-                var tableName = Definition.Table.Name;
-                var existingPath = ResolveSourcePath(existingSource);
-                var incomingPath = ResolveSourcePath(column.SourceJsonPath);
-
-                throw new InvalidOperationException(
-                    $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'. "
-                        + $"Colliding source paths '{existingPath}' and '{incomingPath}'. "
-                        + "Use relational.nameOverrides to resolve the collision."
-                );
-            }
-
-            _columnSources.Add(column.ColumnName.Value, column.SourceJsonPath);
-            Columns.Add(column);
-        }
-
-        public void AddConstraint(TableConstraint constraint)
-        {
-            Constraints.Add(constraint);
-        }
-
-        public DbTableModel Build()
-        {
-            return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
-        }
-
-        private string ResolveSourcePath(JsonPathExpression? sourcePath)
-        {
-            return (sourcePath ?? Definition.JsonScope).Canonical;
-        }
-    }
 }

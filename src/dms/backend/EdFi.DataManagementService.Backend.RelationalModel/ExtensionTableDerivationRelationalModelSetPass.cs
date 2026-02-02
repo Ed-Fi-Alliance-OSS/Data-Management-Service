@@ -1596,66 +1596,31 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
     private sealed class ExtensionTableBuilder
     {
-        private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
+        private readonly TableColumnAccumulator _accumulator;
 
         public ExtensionTableBuilder(DbTableModel table, IReadOnlyList<string> collectionBaseNames)
         {
-            Definition = table;
+            _accumulator = new TableColumnAccumulator(table);
             CollectionBaseNames = collectionBaseNames;
-            Columns = new List<DbColumnModel>(table.Columns);
-            Constraints = new List<TableConstraint>(table.Constraints);
-
-            foreach (var column in table.Columns)
-            {
-                _columnSources[column.ColumnName.Value] = column.SourceJsonPath;
-            }
-
-            foreach (var keyColumn in table.Key.Columns)
-            {
-                _columnSources.TryAdd(keyColumn.ColumnName.Value, null);
-            }
         }
 
-        public DbTableModel Definition { get; }
+        public DbTableModel Definition => _accumulator.Definition;
 
         public IReadOnlyList<string> CollectionBaseNames { get; }
 
-        public List<DbColumnModel> Columns { get; }
-
-        public List<TableConstraint> Constraints { get; }
-
         public void AddColumn(DbColumnModel column)
         {
-            if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
-            {
-                var tableName = Definition.Table.Name;
-                var existingPath = ResolveSourcePath(existingSource);
-                var incomingPath = ResolveSourcePath(column.SourceJsonPath);
-
-                throw new InvalidOperationException(
-                    $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'. "
-                        + $"Colliding source paths '{existingPath}' and '{incomingPath}'. "
-                        + "Use relational.nameOverrides to resolve the collision."
-                );
-            }
-
-            _columnSources.Add(column.ColumnName.Value, column.SourceJsonPath);
-            Columns.Add(column);
+            _accumulator.AddColumn(column);
         }
 
         public void AddConstraint(TableConstraint constraint)
         {
-            Constraints.Add(constraint);
+            _accumulator.AddConstraint(constraint);
         }
 
         public DbTableModel Build()
         {
-            return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
-        }
-
-        private string ResolveSourcePath(JsonPathExpression? sourcePath)
-        {
-            return (sourcePath ?? Definition.JsonScope).Canonical;
+            return _accumulator.Build();
         }
     }
 }

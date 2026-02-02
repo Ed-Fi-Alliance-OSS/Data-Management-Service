@@ -98,3 +98,7 @@
   Decisions: Removed brute-force array uniqueness fallback levels; fail fast after scope + extension-aligned attempts; documented _ext cross-boundary scope alignment example.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs; tasks.json; progress.txt
   Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
+- Task: Refactor (shared table column accumulator) (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Added TableColumnAccumulator shared helper for column/constraint accumulation + collision detection; ReferenceBinding uses it directly; ExtensionTableBuilder delegates to it.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/TableColumnAccumulator.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtensionTableDerivationRelationalModelSetPass.cs; tasks.json; progress.txt
+  Notes: dotnet test RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
