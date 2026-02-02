@@ -51,9 +51,9 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            DocumentIdentity documentIdentity = new(
-                [new DocumentIdentityElement(new JsonPath("$.schoolId"), "123")]
-            );
+            DocumentIdentity documentIdentity = new([
+                new DocumentIdentityElement(new JsonPath("$.schoolId"), "123"),
+            ]);
             BaseResourceInfo resourceInfo = new(new ProjectName("Ed-Fi"), new ResourceName("School"), false);
             referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }
@@ -74,15 +74,13 @@ public class DocumentIdentityTests
         [SetUp]
         public void Setup()
         {
-            DocumentIdentity documentIdentity = new(
-                [
-                    new DocumentIdentityElement(new JsonPath("$.localCourseCode"), "abc"),
-                    new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId"), "123"),
-                    new DocumentIdentityElement(new JsonPath("$.sessionReference.schoolYear"), "2030"),
-                    new DocumentIdentityElement(new JsonPath("$.sectionIdentifier"), "sectionId"),
-                    new DocumentIdentityElement(new JsonPath("$.sessionReference.sessionName"), "d"),
-                ]
-            );
+            DocumentIdentity documentIdentity = new([
+                new DocumentIdentityElement(new JsonPath("$.localCourseCode"), "abc"),
+                new DocumentIdentityElement(new JsonPath("$.schoolReference.schoolId"), "123"),
+                new DocumentIdentityElement(new JsonPath("$.sessionReference.schoolYear"), "2030"),
+                new DocumentIdentityElement(new JsonPath("$.sectionIdentifier"), "sectionId"),
+                new DocumentIdentityElement(new JsonPath("$.sessionReference.sessionName"), "d"),
+            ]);
             BaseResourceInfo resourceInfo = new(new ProjectName("Ed-Fi"), new ResourceName("Section"), false);
             referentialId = ReferentialIdFrom(resourceInfo, documentIdentity);
         }

@@ -23,15 +23,13 @@ public class ExtractDocumentReferencesTests
         return new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("Section")
-            .WithIdentityJsonPaths(
-                [
-                    "$.courseOfferingReference.localCourseCode",
-                    "$.courseOfferingReference.schoolId",
-                    "$.courseOfferingReference.schoolYear",
-                    "$.courseOfferingReference.sessionName",
-                    "$.sectionIdentifier",
-                ]
-            )
+            .WithIdentityJsonPaths([
+                "$.courseOfferingReference.localCourseCode",
+                "$.courseOfferingReference.schoolId",
+                "$.courseOfferingReference.schoolYear",
+                "$.courseOfferingReference.sessionName",
+                "$.sectionIdentifier",
+            ])
             .WithStartDocumentPathsMapping()
             .WithDocumentPathScalar("SectionIdentifier", "$.sectionIdentifier")
             .WithDocumentPathReference(

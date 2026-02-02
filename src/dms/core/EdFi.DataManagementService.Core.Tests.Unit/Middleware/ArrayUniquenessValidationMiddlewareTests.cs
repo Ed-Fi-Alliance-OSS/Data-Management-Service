@@ -243,13 +243,11 @@ public class ArrayUniquenessValidationMiddlewareTests
             var apiSchema = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Assessment")
-                .WithArrayUniquenessConstraintSimple(
-                    [
-                        "$.items[*].assessmentItemReference.assessmentIdentifier",
-                        "$.items[*].assessmentItemReference.identificationCode",
-                        "$.items[*].assessmentItemReference.namespace",
-                    ]
-                )
+                .WithArrayUniquenessConstraintSimple([
+                    "$.items[*].assessmentItemReference.assessmentIdentifier",
+                    "$.items[*].assessmentItemReference.identificationCode",
+                    "$.items[*].assessmentItemReference.namespace",
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -316,13 +314,11 @@ public class ArrayUniquenessValidationMiddlewareTests
             var apiSchema = new ApiSchemaBuilder()
                 .WithStartProject()
                 .WithStartResource("Assessment")
-                .WithArrayUniquenessConstraintSimple(
-                    [
-                        "$.items[*].assessmentItemReference.assessmentIdentifier",
-                        "$.items[*].assessmentItemReference.identificationCode",
-                        "$.items[*].assessmentItemReference.namespace",
-                    ]
-                )
+                .WithArrayUniquenessConstraintSimple([
+                    "$.items[*].assessmentItemReference.assessmentIdentifier",
+                    "$.items[*].assessmentItemReference.identificationCode",
+                    "$.items[*].assessmentItemReference.namespace",
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -376,22 +372,20 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
-                    [
-                        new
+                .WithArrayUniquenessConstraint([
+                    new
+                    {
+                        paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.requiredImmunizations[*]",
-                                    paths = new[] { "$.dates[*].immunizationDate" },
-                                },
+                                basePath = "$.requiredImmunizations[*]",
+                                paths = new[] { "$.dates[*].immunizationDate" },
                             },
                         },
-                    ]
-                )
+                    },
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -444,22 +438,20 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
-                    [
-                        new
+                .WithArrayUniquenessConstraint([
+                    new
+                    {
+                        paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.requiredImmunizations[*]",
-                                    paths = new[] { "$.dates[*].immunizationDate" },
-                                },
+                                basePath = "$.requiredImmunizations[*]",
+                                paths = new[] { "$.dates[*].immunizationDate" },
                             },
                         },
-                    ]
-                )
+                    },
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -527,22 +519,20 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
-                    [
-                        new
+                .WithArrayUniquenessConstraint([
+                    new
+                    {
+                        paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.requiredImmunizations[*]",
-                                    paths = new[] { "$.dates[*].immunizationDate" },
-                                },
+                                basePath = "$.requiredImmunizations[*]",
+                                paths = new[] { "$.dates[*].immunizationDate" },
                             },
                         },
-                    ]
-                )
+                    },
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -613,22 +603,20 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
-                    [
-                        new
+                .WithArrayUniquenessConstraint([
+                    new
+                    {
+                        paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.requiredImmunizations[*]",
-                                    paths = new[] { "$.dates[*].immunizationDate" },
-                                },
+                                basePath = "$.requiredImmunizations[*]",
+                                paths = new[] { "$.dates[*].immunizationDate" },
                             },
                         },
-                    ]
-                )
+                    },
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -707,34 +695,32 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
-                    [
-                        new
+                .WithArrayUniquenessConstraint([
+                    new
+                    {
+                        paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.requiredImmunizations[*]",
-                                    paths = new[] { "$.dates[*].immunizationDate" },
-                                },
+                                basePath = "$.requiredImmunizations[*]",
+                                paths = new[] { "$.dates[*].immunizationDate" },
                             },
                         },
-                        new
+                    },
+                    new
+                    {
+                        paths = new[] { "$.documentations[*].documentationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.documentations[*].documentationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.documentations[*]",
-                                    paths = new[] { "$.dates[*].documentationDate" },
-                                },
+                                basePath = "$.documentations[*]",
+                                paths = new[] { "$.dates[*].documentationDate" },
                             },
                         },
-                    ]
-                )
+                    },
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -851,22 +837,20 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("RequiredImmunization")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraint(
-                    [
-                        new
+                .WithArrayUniquenessConstraint([
+                    new
+                    {
+                        paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
+                        nestedConstraints = new[]
                         {
-                            paths = new[] { "$.requiredImmunizations[*].immunizationTypeDescriptor" },
-                            nestedConstraints = new[]
+                            new
                             {
-                                new
-                                {
-                                    basePath = "$.requiredImmunizations[*]",
-                                    paths = new[] { "$.dates[*].immunizationDate" },
-                                },
+                                basePath = "$.requiredImmunizations[*]",
+                                paths = new[] { "$.dates[*].immunizationDate" },
                             },
                         },
-                    ]
-                )
+                    },
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();
@@ -919,14 +903,12 @@ public class ArrayUniquenessValidationMiddlewareTests
                 .WithStartResource("StudentEducationOrganizationAssociation")
                 .WithStartDocumentPathsMapping()
                 .WithEndDocumentPathsMapping()
-                .WithArrayUniquenessConstraintSimple(
-                    [
-                        "$.addresses[*].addressTypeDescriptor",
-                        "$.addresses[*].city",
-                        "$.addresses[*].postalCode",
-                        "$.addresses[*].streetNumberName",
-                    ]
-                )
+                .WithArrayUniquenessConstraintSimple([
+                    "$.addresses[*].addressTypeDescriptor",
+                    "$.addresses[*].city",
+                    "$.addresses[*].postalCode",
+                    "$.addresses[*].streetNumberName",
+                ])
                 .WithEndResource()
                 .WithEndProject()
                 .ToApiSchemaDocuments();

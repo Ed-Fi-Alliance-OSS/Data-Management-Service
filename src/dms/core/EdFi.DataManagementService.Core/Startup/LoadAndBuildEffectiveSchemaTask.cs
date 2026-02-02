@@ -77,9 +77,26 @@ internal class LoadAndBuildEffectiveSchemaTask(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 2: Normalize schema inputs (no-op for now, future DMS-923)
+        // Step 2: Normalize schema inputs
         _logger.LogDebug("Normalizing schema inputs");
-        var normalizedNodes = _inputNormalizer.Normalize(rawNodes);
+        var normalizationResult = _inputNormalizer.Normalize(rawNodes);
+        var normalizedNodes = normalizationResult switch
+        {
+            ApiSchemaNormalizationResult.SuccessResult success => success.NormalizedNodes,
+            ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult failure =>
+                throw new InvalidOperationException(
+                    $"Schema normalization failed for '{failure.SchemaSource}': {failure.Details}"
+                ),
+            ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult failure =>
+                throw new InvalidOperationException(
+                    $"apiSchemaVersion mismatch in '{failure.SchemaSource}': expected '{failure.ExpectedVersion}', got '{failure.ActualVersion}'"
+                ),
+            ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult failure =>
+                throw new InvalidOperationException(
+                    $"Duplicate projectEndpointName '{failure.ProjectEndpointName}' found in: {string.Join(", ", failure.ConflictingSources)}"
+                ),
+            _ => throw new InvalidOperationException("Unknown normalization result"),
+        };
 
         cancellationToken.ThrowIfCancellationRequested();
 
