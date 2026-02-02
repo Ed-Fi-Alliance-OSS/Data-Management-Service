@@ -275,7 +275,7 @@
       "Refactor BuildConcreteMetadata to only build full metadata for resources where isSubclass=true, or switch to lazy resolution during BuildIdentityColumns.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Design",

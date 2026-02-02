@@ -141,12 +141,17 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
                 );
             }
 
+            var isSubclass = RequireBoolean(resourceSchema, "isSubclass");
+            if (!isSubclass)
+            {
+                continue;
+            }
+
             var jsonSchemaForInsert = RequireObject(
                 resourceSchema["jsonSchemaForInsert"],
                 "jsonSchemaForInsert"
             );
             var identityJsonPaths = ExtractIdentityJsonPaths(resourceSchema, resource);
-            var isSubclass = RequireBoolean(resourceSchema, "isSubclass");
             var subclassType = TryGetOptionalString(resourceSchema, "subclassType");
             var superclassProjectName = TryGetOptionalString(resourceSchema, "superclassProjectName");
             var superclassResourceName = TryGetOptionalString(resourceSchema, "superclassResourceName");
@@ -159,23 +164,20 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
                 : JsonPathExpressionCompiler.Compile(superclassIdentityJsonPath);
             var decimalInfos = ExtractDecimalPropertyValidationInfos(resourceSchema);
 
-            if (isSubclass)
+            if (string.IsNullOrWhiteSpace(superclassProjectName))
             {
-                if (string.IsNullOrWhiteSpace(superclassProjectName))
-                {
-                    throw new InvalidOperationException(
-                        $"Expected superclassProjectName to be present for subclass resource "
-                            + $"'{FormatResource(resource)}'."
-                    );
-                }
+                throw new InvalidOperationException(
+                    $"Expected superclassProjectName to be present for subclass resource "
+                        + $"'{FormatResource(resource)}'."
+                );
+            }
 
-                if (string.IsNullOrWhiteSpace(superclassResourceName))
-                {
-                    throw new InvalidOperationException(
-                        $"Expected superclassResourceName to be present for subclass resource "
-                            + $"'{FormatResource(resource)}'."
-                    );
-                }
+            if (string.IsNullOrWhiteSpace(superclassResourceName))
+            {
+                throw new InvalidOperationException(
+                    $"Expected superclassResourceName to be present for subclass resource "
+                        + $"'{FormatResource(resource)}'."
+                );
             }
 
             metadataByResource[resource] = new ConcreteResourceMetadata(
