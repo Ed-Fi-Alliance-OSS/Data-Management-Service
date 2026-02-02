@@ -199,6 +199,6 @@
       "Move/merge prefix-check logic into a shared helper and update call sites in both passes.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

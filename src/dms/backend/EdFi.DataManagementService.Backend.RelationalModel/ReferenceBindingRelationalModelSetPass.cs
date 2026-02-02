@@ -368,36 +368,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         return bestMatch.Builder;
     }
 
-    private static bool IsPrefixOf(IReadOnlyList<JsonPathSegment> prefix, IReadOnlyList<JsonPathSegment> path)
-    {
-        if (prefix.Count > path.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < prefix.Count; index++)
-        {
-            var prefixSegment = prefix[index];
-            var pathSegment = path[index];
-
-            if (prefixSegment.GetType() != pathSegment.GetType())
-            {
-                return false;
-            }
-
-            if (
-                prefixSegment is JsonPathSegment.Property prefixProperty
-                && pathSegment is JsonPathSegment.Property pathProperty
-                && !string.Equals(prefixProperty.Name, pathProperty.Name, StringComparison.Ordinal)
-            )
-            {
-                return false;
-            }
-        }
-
-        return true;
-    }
-
     private static string ResolveReferenceBaseName(
         DocumentReferenceMapping mapping,
         RelationalModelBuilderContext builderContext

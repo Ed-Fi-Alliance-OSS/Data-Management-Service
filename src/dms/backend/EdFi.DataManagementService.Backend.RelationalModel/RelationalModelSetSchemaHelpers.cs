@@ -152,6 +152,45 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Determines whether the prefix segments match the beginning of the path segments.
+    /// </summary>
+    /// <param name="prefix">The prefix segments to compare.</param>
+    /// <param name="path">The full path segments.</param>
+    /// <returns><see langword="true"/> when the prefix matches; otherwise <see langword="false"/>.</returns>
+    internal static bool IsPrefixOf(
+        IReadOnlyList<JsonPathSegment> prefix,
+        IReadOnlyList<JsonPathSegment> path
+    )
+    {
+        if (prefix.Count > path.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < prefix.Count; index++)
+        {
+            var prefixSegment = prefix[index];
+            var pathSegment = path[index];
+
+            if (prefixSegment.GetType() != pathSegment.GetType())
+            {
+                return false;
+            }
+
+            if (
+                prefixSegment is JsonPathSegment.Property prefixProperty
+                && pathSegment is JsonPathSegment.Property pathProperty
+                && !string.Equals(prefixProperty.Name, pathProperty.Name, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Orders resource schema entries deterministically by resource name and schema key.
     /// </summary>
     /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
