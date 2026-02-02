@@ -370,6 +370,9 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
             if (TryStripExtensionRootPrefix(scopePath, out var alignedScope))
             {
+                // Extension schemas can declare array uniqueness under _ext.{project} even though the
+                // owning table lives in the base scope (e.g., contacts $._ext.sample.addresses[*]
+                // with paths $.periods[*].beginDate -> $.addresses[*].periods[*]).
                 var alignedPaths = StripExtensionRootPrefix(constraintPaths, resource);
 
                 if (
@@ -388,51 +391,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                 )
                 {
                     AddArrayUniquenessConstraint(mutation, alignedTable, alignedColumns);
-                    continue;
-                }
-            }
-
-            var allCandidates = tablesByScope.Values.SelectMany(group => group).ToArray();
-
-            if (
-                TryResolveArrayUniquenessTable(
-                    allCandidates,
-                    constraintPaths,
-                    referenceBindingsByIdentityPath,
-                    tablesByName,
-                    columnsByTable,
-                    scopePath.Canonical,
-                    resource,
-                    out var fallbackTable,
-                    out var fallbackColumns,
-                    out failure
-                )
-            )
-            {
-                AddArrayUniquenessConstraint(mutation, fallbackTable, fallbackColumns);
-                continue;
-            }
-
-            if (TryStripExtensionRootPrefix(scopePath, out var fallbackAlignedScope))
-            {
-                var alignedPaths = StripExtensionRootPrefix(constraintPaths, resource);
-
-                if (
-                    TryResolveArrayUniquenessTable(
-                        allCandidates,
-                        alignedPaths,
-                        referenceBindingsByIdentityPath,
-                        tablesByName,
-                        columnsByTable,
-                        fallbackAlignedScope.Canonical,
-                        resource,
-                        out var fallbackAlignedTable,
-                        out var fallbackAlignedColumns,
-                        out failure
-                    )
-                )
-                {
-                    AddArrayUniquenessConstraint(mutation, fallbackAlignedTable, fallbackAlignedColumns);
                     continue;
                 }
             }
