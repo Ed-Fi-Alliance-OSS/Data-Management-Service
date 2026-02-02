@@ -83,24 +83,33 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
                     members,
                     context
                 );
-                var columnsWithDiscriminator = identityColumns
-                    .Concat(new[] { BuildDiscriminatorColumn() })
-                    .ToArray();
+                var columns = new List<DbColumnModel>(1 + identityColumns.Count + 1)
+                {
+                    BuildDocumentIdColumn(),
+                };
+                columns.AddRange(identityColumns);
+                columns.Add(BuildDiscriminatorColumn());
 
                 var tableName = new DbTableName(
                     project.ProjectSchema.PhysicalSchema,
                     $"{RelationalNameConventions.ToPascalCase(abstractEntry.ResourceName)}Identity"
                 );
+                var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
+                var key = new TableKey(
+                    new[]
+                    {
+                        new DbKeyColumn(
+                            RelationalNameConventions.DocumentIdColumnName,
+                            ColumnKind.ParentKeyPart
+                        ),
+                    }
+                );
                 var constraints = BuildIdentityTableConstraints(tableName, identityColumns);
                 var resourceKeyEntry = context.GetResourceKeyEntry(abstractResource);
+                var tableModel = new DbTableModel(tableName, jsonScope, key, columns.ToArray(), constraints);
 
                 context.AbstractIdentityTablesInNameOrder.Add(
-                    new AbstractIdentityTableInfo(
-                        resourceKeyEntry,
-                        tableName,
-                        columnsWithDiscriminator,
-                        constraints
-                    )
+                    new AbstractIdentityTableInfo(resourceKeyEntry, tableModel)
                 );
             }
         }
@@ -473,6 +482,18 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
             new DbColumnName(DiscriminatorColumnLabel),
             ColumnKind.Scalar,
             new RelationalScalarType(ScalarKind.String, 256),
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+    }
+
+    private static DbColumnModel BuildDocumentIdColumn()
+    {
+        return new DbColumnModel(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart,
+            new RelationalScalarType(ScalarKind.Int64),
             IsNullable: false,
             SourceJsonPath: null,
             TargetResource: null

@@ -37,15 +37,8 @@ public sealed record ConcreteResourceModel(
 /// Derived identity table metadata for an abstract resource.
 /// </summary>
 /// <param name="AbstractResourceKey">The abstract resource key entry.</param>
-/// <param name="Table">The identity table name.</param>
-/// <param name="ColumnsInIdentityOrder">Identity columns in key order.</param>
-/// <param name="Constraints">Constraints applied to the identity table.</param>
-public sealed record AbstractIdentityTableInfo(
-    ResourceKeyEntry AbstractResourceKey,
-    DbTableName Table,
-    IReadOnlyList<DbColumnModel> ColumnsInIdentityOrder,
-    IReadOnlyList<TableConstraint> Constraints
-);
+/// <param name="TableModel">The identity table model.</param>
+public sealed record AbstractIdentityTableInfo(ResourceKeyEntry AbstractResourceKey, DbTableModel TableModel);
 
 /// <summary>
 /// Derived union view metadata for an abstract resource.

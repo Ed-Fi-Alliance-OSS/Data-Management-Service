@@ -2162,55 +2162,71 @@
       },
       "table": {
         "schema": "edfi",
-        "name": "EducationOrganizationIdentity"
-      },
-      "identity_columns": [
-        {
-          "name": "EducationOrganizationId",
-          "kind": "Scalar",
-          "type": {
-            "kind": "Int32"
+        "name": "EducationOrganizationIdentity",
+        "scope": "$",
+        "key_columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart"
+          }
+        ],
+        "columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": null
           },
-          "is_nullable": false,
-          "source_path": "$.educationOrganizationId"
-        },
-        {
-          "name": "Discriminator",
-          "kind": "Scalar",
-          "type": {
-            "kind": "String",
-            "max_length": 256
+          {
+            "name": "EducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.educationOrganizationId"
           },
-          "is_nullable": false,
-          "source_path": null
-        }
-      ],
-      "constraints": [
-        {
-          "kind": "Unique",
-          "name": "UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId",
-          "columns": [
-            "DocumentId",
-            "EducationOrganizationId"
-          ]
-        },
-        {
-          "kind": "ForeignKey",
-          "name": "FK_EducationOrganizationIdentity_DocumentId",
-          "columns": [
-            "DocumentId"
-          ],
-          "target_table": {
-            "schema": "dms",
-            "name": "Document"
+          {
+            "name": "Discriminator",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 256
+            },
+            "is_nullable": false,
+            "source_path": null
+          }
+        ],
+        "constraints": [
+          {
+            "kind": "Unique",
+            "name": "UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId",
+            "columns": [
+              "DocumentId",
+              "EducationOrganizationId"
+            ]
           },
-          "target_columns": [
-            "DocumentId"
-          ],
-          "on_delete": "Cascade",
-          "on_update": "NoAction"
-        }
-      ]
+          {
+            "kind": "ForeignKey",
+            "name": "FK_EducationOrganizationIdentity_DocumentId",
+            "columns": [
+              "DocumentId"
+            ],
+            "target_table": {
+              "schema": "dms",
+              "name": "Document"
+            },
+            "target_columns": [
+              "DocumentId"
+            ],
+            "on_delete": "Cascade",
+            "on_update": "NoAction"
+          }
+        ]
+      }
     },
     {
       "resource": {
@@ -2219,107 +2235,123 @@
       },
       "table": {
         "schema": "edfi",
-        "name": "GeneralStudentProgramAssociationIdentity"
-      },
-      "identity_columns": [
-        {
-          "name": "BeginDate",
-          "kind": "Scalar",
-          "type": {
-            "kind": "Date"
+        "name": "GeneralStudentProgramAssociationIdentity",
+        "scope": "$",
+        "key_columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart"
+          }
+        ],
+        "columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": null
           },
-          "is_nullable": false,
-          "source_path": "$.beginDate"
-        },
-        {
-          "name": "EducationOrganizationReferenceEducationOrganizationId",
-          "kind": "Scalar",
-          "type": {
-            "kind": "Int32"
+          {
+            "name": "BeginDate",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Date"
+            },
+            "is_nullable": false,
+            "source_path": "$.beginDate"
           },
-          "is_nullable": false,
-          "source_path": "$.educationOrganizationReference.educationOrganizationId"
-        },
-        {
-          "name": "ProgramReferenceEducationOrganizationId",
-          "kind": "Scalar",
-          "type": {
-            "kind": "Int32"
+          {
+            "name": "EducationOrganizationReferenceEducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.educationOrganizationReference.educationOrganizationId"
           },
-          "is_nullable": false,
-          "source_path": "$.programReference.educationOrganizationId"
-        },
-        {
-          "name": "ProgramReferenceProgramName",
-          "kind": "Scalar",
-          "type": {
-            "kind": "String",
-            "max_length": 60
+          {
+            "name": "ProgramReferenceEducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.programReference.educationOrganizationId"
           },
-          "is_nullable": false,
-          "source_path": "$.programReference.programName"
-        },
-        {
-          "name": "ProgramReferenceProgramTypeDescriptor",
-          "kind": "DescriptorFk",
-          "type": {
-            "kind": "Int64"
+          {
+            "name": "ProgramReferenceProgramName",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 60
+            },
+            "is_nullable": false,
+            "source_path": "$.programReference.programName"
           },
-          "is_nullable": false,
-          "source_path": "$.programReference.programTypeDescriptor"
-        },
-        {
-          "name": "StudentReferenceStudentUniqueId",
-          "kind": "Scalar",
-          "type": {
-            "kind": "String",
-            "max_length": 32
+          {
+            "name": "ProgramReferenceProgramTypeDescriptor",
+            "kind": "DescriptorFk",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": "$.programReference.programTypeDescriptor"
           },
-          "is_nullable": false,
-          "source_path": "$.studentReference.studentUniqueId"
-        },
-        {
-          "name": "Discriminator",
-          "kind": "Scalar",
-          "type": {
-            "kind": "String",
-            "max_length": 256
+          {
+            "name": "StudentReferenceStudentUniqueId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 32
+            },
+            "is_nullable": false,
+            "source_path": "$.studentReference.studentUniqueId"
           },
-          "is_nullable": false,
-          "source_path": null
-        }
-      ],
-      "constraints": [
-        {
-          "kind": "Unique",
-          "name": "UX_GeneralStudentProgramAssociationIdentity_DocumentId_BeginDate_EducationOrganizationReferenceEducationOrganizationId_ProgramReferenceEducationOrganizationId_ProgramReferenceProgramName_ProgramReferenceProgramTypeDescriptor_StudentReferenceStudentUniqueId",
-          "columns": [
-            "DocumentId",
-            "BeginDate",
-            "EducationOrganizationReferenceEducationOrganizationId",
-            "ProgramReferenceEducationOrganizationId",
-            "ProgramReferenceProgramName",
-            "ProgramReferenceProgramTypeDescriptor",
-            "StudentReferenceStudentUniqueId"
-          ]
-        },
-        {
-          "kind": "ForeignKey",
-          "name": "FK_GeneralStudentProgramAssociationIdentity_DocumentId",
-          "columns": [
-            "DocumentId"
-          ],
-          "target_table": {
-            "schema": "dms",
-            "name": "Document"
+          {
+            "name": "Discriminator",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 256
+            },
+            "is_nullable": false,
+            "source_path": null
+          }
+        ],
+        "constraints": [
+          {
+            "kind": "Unique",
+            "name": "UX_GeneralStudentProgramAssociationIdentity_DocumentId_BeginDate_EducationOrganizationReferenceEducationOrganizationId_ProgramReferenceEducationOrganizationId_ProgramReferenceProgramName_ProgramReferenceProgramTypeDescriptor_StudentReferenceStudentUniqueId",
+            "columns": [
+              "DocumentId",
+              "BeginDate",
+              "EducationOrganizationReferenceEducationOrganizationId",
+              "ProgramReferenceEducationOrganizationId",
+              "ProgramReferenceProgramName",
+              "ProgramReferenceProgramTypeDescriptor",
+              "StudentReferenceStudentUniqueId"
+            ]
           },
-          "target_columns": [
-            "DocumentId"
-          ],
-          "on_delete": "Cascade",
-          "on_update": "NoAction"
-        }
-      ]
+          {
+            "kind": "ForeignKey",
+            "name": "FK_GeneralStudentProgramAssociationIdentity_DocumentId",
+            "columns": [
+              "DocumentId"
+            ],
+            "target_table": {
+              "schema": "dms",
+              "name": "Document"
+            },
+            "target_columns": [
+              "DocumentId"
+            ],
+            "on_delete": "Cascade",
+            "on_update": "NoAction"
+          }
+        ]
+      }
     }
   ],
   "resource_details": [

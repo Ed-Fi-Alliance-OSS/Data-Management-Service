@@ -130,9 +130,7 @@ public sealed record ConcreteResourceModel(
 
 public sealed record AbstractIdentityTableInfo(
     ResourceKeyEntry AbstractResourceKey,
-    DbTableName Table,
-    IReadOnlyList<DbColumnModel> ColumnsInIdentityOrder,
-    IReadOnlyList<TableConstraint> Constraints
+    DbTableModel TableModel
 );
 
 public sealed record AbstractUnionViewInfo(

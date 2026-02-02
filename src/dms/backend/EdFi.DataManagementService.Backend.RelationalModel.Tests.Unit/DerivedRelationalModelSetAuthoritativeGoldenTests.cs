@@ -211,23 +211,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             writer.WriteStartObject();
             WriteResource(writer, tableInfo.AbstractResourceKey.Resource);
             writer.WritePropertyName("table");
-            WriteTableReference(writer, tableInfo.Table);
-
-            writer.WritePropertyName("identity_columns");
-            writer.WriteStartArray();
-            foreach (var column in tableInfo.ColumnsInIdentityOrder)
-            {
-                WriteColumn(writer, column);
-            }
-            writer.WriteEndArray();
-
-            writer.WritePropertyName("constraints");
-            writer.WriteStartArray();
-            foreach (var constraint in tableInfo.Constraints)
-            {
-                WriteConstraint(writer, constraint);
-            }
-            writer.WriteEndArray();
+            WriteTable(writer, tableInfo.TableModel);
 
             writer.WriteEndObject();
         }

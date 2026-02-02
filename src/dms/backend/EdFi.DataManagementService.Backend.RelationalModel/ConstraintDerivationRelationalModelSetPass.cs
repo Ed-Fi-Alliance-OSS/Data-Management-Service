@@ -1337,7 +1337,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         if (abstractIdentityTablesByResource.TryGetValue(targetResource, out var abstractTable))
         {
             var abstractIdentityColumns = abstractTable
-                .ColumnsInIdentityOrder.Where(column => column.SourceJsonPath is not null)
+                .TableModel.Columns.Where(column => column.SourceJsonPath is not null)
                 .ToArray();
             var identityPaths = abstractIdentityColumns
                 .Select(column => column.SourceJsonPath!.Value)
@@ -1346,7 +1346,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
 
             var abstractInfo = new TargetIdentityInfo(
                 targetResource,
-                abstractTable.Table,
+                abstractTable.TableModel.Table,
                 identityPaths,
                 columnNames,
                 AllowIdentityUpdates: false,

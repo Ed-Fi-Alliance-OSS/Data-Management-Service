@@ -433,30 +433,31 @@ public sealed class RelationalModelSetBuilderContext
         foreach (var table in orderedAbstractIdentityTables)
         {
             var resourceLabel = FormatResource(table.AbstractResourceKey.Resource);
+            var tableModel = table.TableModel;
 
             detector.RegisterTable(
-                table.Table,
-                $"table {FormatTable(table.Table)} (abstract identity for {resourceLabel})"
+                tableModel.Table,
+                $"table {FormatTable(tableModel.Table)} (abstract identity for {resourceLabel})"
             );
 
-            foreach (var column in table.ColumnsInIdentityOrder)
+            foreach (var column in tableModel.Columns)
             {
                 detector.RegisterColumn(
-                    table.Table,
+                    tableModel.Table,
                     column.ColumnName,
-                    $"column {FormatColumn(table.Table, column.ColumnName)} "
+                    $"column {FormatColumn(tableModel.Table, column.ColumnName)} "
                         + $"(abstract identity for {resourceLabel})"
                 );
             }
 
-            foreach (var constraint in table.Constraints)
+            foreach (var constraint in tableModel.Constraints)
             {
                 var constraintName = GetConstraintName(constraint);
 
                 detector.RegisterConstraint(
-                    table.Table,
+                    tableModel.Table,
                     constraintName,
-                    $"constraint {constraintName} on {FormatTable(table.Table)} "
+                    $"constraint {constraintName} on {FormatTable(tableModel.Table)} "
                         + $"(abstract identity for {resourceLabel})"
                 );
             }

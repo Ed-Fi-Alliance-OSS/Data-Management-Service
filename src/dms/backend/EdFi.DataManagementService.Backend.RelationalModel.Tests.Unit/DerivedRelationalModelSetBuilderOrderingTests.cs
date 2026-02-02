@@ -116,23 +116,13 @@ public class Given_Unordered_Derived_Collections
             var sampleSchema = new DbSchemaName("sample");
 
             context.AbstractIdentityTablesInNameOrder.Add(
-                new AbstractIdentityTableInfo(
-                    _section,
-                    new DbTableName(sampleSchema, "SectionIdentity"),
-                    [],
-                    []
-                )
+                BuildAbstractIdentityTable(_section, sampleSchema, "SectionIdentity")
             );
             context.AbstractIdentityTablesInNameOrder.Add(
-                new AbstractIdentityTableInfo(
-                    _schoolTypeDescriptor,
-                    new DbTableName(edfiSchema, "SchoolTypeDescriptorIdentity"),
-                    [],
-                    []
-                )
+                BuildAbstractIdentityTable(_schoolTypeDescriptor, edfiSchema, "SchoolTypeDescriptorIdentity")
             );
             context.AbstractIdentityTablesInNameOrder.Add(
-                new AbstractIdentityTableInfo(_school, new DbTableName(edfiSchema, "SchoolIdentity"), [], [])
+                BuildAbstractIdentityTable(_school, edfiSchema, "SchoolIdentity")
             );
 
             context.AbstractUnionViewsInNameOrder.Add(
@@ -218,6 +208,42 @@ public class Given_Unordered_Derived_Collections
                     []
                 )
             );
+        }
+
+        private static AbstractIdentityTableInfo BuildAbstractIdentityTable(
+            ResourceKeyEntry resourceKey,
+            DbSchemaName schema,
+            string tableName
+        )
+        {
+            var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
+            var key = new TableKey(
+                new[]
+                {
+                    new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
+                }
+            );
+            DbColumnModel[] columns =
+            [
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ];
+
+            var table = new DbTableModel(
+                new DbTableName(schema, tableName),
+                jsonScope,
+                key,
+                columns,
+                Array.Empty<TableConstraint>()
+            );
+
+            return new AbstractIdentityTableInfo(resourceKey, table);
         }
 
         private static ResourceKeyEntry FindResourceKey(

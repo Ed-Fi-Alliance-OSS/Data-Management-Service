@@ -40,20 +40,37 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     [Test]
-    public void It_should_order_identity_columns_by_identityJsonPaths()
+    public void It_should_order_columns_with_document_id_identity_and_discriminator()
     {
-        var identityColumns = _abstractIdentityTable
-            .ColumnsInIdentityOrder.Where(column => column.ColumnName.Value != "Discriminator")
-            .Select(column => column.ColumnName.Value)
+        var columns = _abstractIdentityTable
+            .TableModel.Columns.Select(column => column.ColumnName.Value)
             .ToArray();
 
-        identityColumns.Should().Equal("EducationOrganizationId", "OrganizationName");
+        columns.Should().Equal("DocumentId", "EducationOrganizationId", "OrganizationName", "Discriminator");
+    }
+
+    [Test]
+    public void It_should_define_document_id_key_and_column()
+    {
+        var table = _abstractIdentityTable.TableModel;
+        var keyColumns = table.Key.Columns.Select(column => column.ColumnName.Value).ToArray();
+
+        keyColumns.Should().Equal("DocumentId");
+        table.Key.Columns.Single().Kind.Should().Be(ColumnKind.ParentKeyPart);
+
+        var documentIdColumn = table.Columns.Single(column => column.ColumnName.Value == "DocumentId");
+
+        documentIdColumn.Kind.Should().Be(ColumnKind.ParentKeyPart);
+        documentIdColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        documentIdColumn.IsNullable.Should().BeFalse();
+        documentIdColumn.SourceJsonPath.Should().BeNull();
+        documentIdColumn.TargetResource.Should().BeNull();
     }
 
     [Test]
     public void It_should_include_discriminator_column()
     {
-        var discriminator = _abstractIdentityTable.ColumnsInIdentityOrder.Single(column =>
+        var discriminator = _abstractIdentityTable.TableModel.Columns.Single(column =>
             column.ColumnName.Value == "Discriminator"
         );
 
@@ -65,7 +82,7 @@ public class Given_Abstract_Identity_Table_Derivation
     [Test]
     public void It_should_include_composite_unique_constraint()
     {
-        var unique = _abstractIdentityTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var unique = _abstractIdentityTable.TableModel.Constraints.OfType<TableConstraint.Unique>().Single();
 
         unique
             .Columns.Select(column => column.Value)
@@ -79,7 +96,9 @@ public class Given_Abstract_Identity_Table_Derivation
     [Test]
     public void It_should_use_no_action_on_update_for_document_fk()
     {
-        var foreignKey = _abstractIdentityTable.Constraints.OfType<TableConstraint.ForeignKey>().Single();
+        var foreignKey = _abstractIdentityTable
+            .TableModel.Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single();
 
         foreignKey.TargetTable.Schema.Value.Should().Be("dms");
         foreignKey.TargetTable.Name.Should().Be("Document");
