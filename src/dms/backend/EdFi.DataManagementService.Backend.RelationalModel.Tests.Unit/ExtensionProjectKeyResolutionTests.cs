@@ -42,10 +42,10 @@ public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name
         };
 
         var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
-        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("SAMPLE-EXT");
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("sample-ext");
 
         _project = context.ResolveExtensionProjectKey(
-            "SAMPLE-EXT",
+            "sample-ext",
             extensionSite,
             new QualifiedResourceName("Ed-Fi", "School")
         );
@@ -148,10 +148,10 @@ public class Given_An_Extension_Project_Key_Matching_Endpoint_And_Project_Names
         };
 
         var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
-        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("ALPHA");
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("alpha");
 
         _project = context.ResolveExtensionProjectKey(
-            "ALPHA",
+            "alpha",
             extensionSite,
             new QualifiedResourceName("Ed-Fi", "School")
         );

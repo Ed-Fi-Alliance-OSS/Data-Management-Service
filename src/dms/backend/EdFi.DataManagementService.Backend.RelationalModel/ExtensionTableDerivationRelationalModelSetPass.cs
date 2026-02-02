@@ -824,7 +824,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             segments.Count >= 2
             && segments[0] is JsonPathSegment.Property { Name: ExtensionPropertyName }
             && segments[1] is JsonPathSegment.Property projectSegment
-            && string.Equals(projectSegment.Name, projectKey, StringComparison.OrdinalIgnoreCase)
+            && string.Equals(projectSegment.Name, projectKey, StringComparison.Ordinal)
         )
         {
             return segments.Skip(2).ToArray();
@@ -891,7 +891,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
     {
         foreach (var entry in projectKeysObject)
         {
-            if (string.Equals(entry.Key, match, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(entry.Key, match, StringComparison.Ordinal))
             {
                 return entry.Key;
             }

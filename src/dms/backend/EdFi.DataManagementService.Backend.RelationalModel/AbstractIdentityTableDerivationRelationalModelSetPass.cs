@@ -257,11 +257,7 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
             );
         }
 
-        var isAssociation = string.Equals(
-            member.SubclassType,
-            "association",
-            StringComparison.OrdinalIgnoreCase
-        );
+        var isAssociation = string.Equals(member.SubclassType, "association", StringComparison.Ordinal);
 
         if (!isAssociation && member.SuperclassIdentityJsonPath is not null)
         {
