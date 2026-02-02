@@ -191,6 +191,121 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Resolves the schema node for a JSON path within a resource schema.
+    /// </summary>
+    /// <param name="rootSchemaNode">The root schema node.</param>
+    /// <param name="path">The JSON path to resolve.</param>
+    /// <param name="resource">The resource identifier for diagnostics.</param>
+    /// <param name="pathRole">A label used in error messages (e.g., Reference, Identity).</param>
+    /// <returns>The resolved <see cref="JsonObject"/> schema node.</returns>
+    internal static JsonObject ResolveSchemaForPath(
+        JsonNode? rootSchemaNode,
+        JsonPathExpression path,
+        QualifiedResourceName resource,
+        string pathRole
+    )
+    {
+        if (rootSchemaNode is not JsonObject rootSchema)
+        {
+            throw new InvalidOperationException("Json schema root must be an object.");
+        }
+
+        var current = rootSchema;
+
+        foreach (var segment in path.Segments)
+        {
+            var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(current);
+
+            switch (segment)
+            {
+                case JsonPathSegment.Property property:
+                    if (schemaKind != SchemaKind.Object)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected object schema for '{path.Canonical}' while resolving "
+                                + $"'{property.Name}' on resource '{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (
+                        !current.TryGetPropertyValue("properties", out var propertiesNode)
+                        || propertiesNode is null
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected properties to be present for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (propertiesNode is not JsonObject propertiesObject)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected properties to be an object for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (
+                        !propertiesObject.TryGetPropertyValue(property.Name, out var propertyNode)
+                        || propertyNode is null
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"{pathRole} path '{path.Canonical}' was not found in jsonSchemaForInsert for "
+                                + $"resource '{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (propertyNode is not JsonObject propertySchema)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected schema object at '{path.Canonical}' for resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    current = propertySchema;
+                    break;
+                case JsonPathSegment.AnyArrayElement:
+                    if (schemaKind != SchemaKind.Array)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected array schema for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (!current.TryGetPropertyValue("items", out var itemsNode) || itemsNode is null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected array items for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (itemsNode is not JsonObject itemsSchema)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected array items schema to be an object for '{path.Canonical}' on "
+                                + $"resource '{FormatResource(resource)}'."
+                        );
+                    }
+
+                    current = itemsSchema;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported JSONPath segment for '{path.Canonical}' on resource "
+                            + $"'{FormatResource(resource)}'."
+                    );
+            }
+        }
+
+        return current;
+    }
+
+    /// <summary>
     /// Orders resource schema entries deterministically by resource name and schema key.
     /// </summary>
     /// <param name="resourceSchemas">The resource schema object to enumerate.</param>
