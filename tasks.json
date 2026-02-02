@@ -1,149 +1,5 @@
 [
   {
-    "category": "Contracts",
-    "description": "Add a structured CHECK-constraint model for reference groups: introduce `TableConstraint.AllOrNoneNullability` (include deterministic `Name`, `FkColumn`, and the dependent identity columns). Acceptance: `DerivedRelationalModelSet` can represent all-or-none reference-group constraints without embedding SQL; `CanonicalizeOrderingStep`, collision detection, and manifest emission handle the new constraint type deterministically; name pattern is `CK_{TableName}_{FkColumn}_AllOrNone`.",
-    "steps-to-verify": [
-      "Add/extend unit tests asserting deterministic ordering and manifest serialization for the new constraint type.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Schema Inputs",
-    "description": "Implement schema readers/validators for this story\u2019s inputs: `documentPathsMapping` reference entries (must have `referenceJsonPaths`, fail-fast otherwise, and validate each `referenceJsonPaths[*].identityJsonPath` exists in the target resource\u2019s `identityJsonPaths`), `arrayUniquenessConstraints` (object-based format including `basePath` and recursive `nestedConstraints`, where nested `paths` are JSONPaths relative to the base item), `allowIdentityUpdates`, and `relational.nameOverrides` (use only for reference base-name overrides in this story; do not fail-fast on unrelated overrides). Acceptance: all malformed/missing/mismatched inputs fail fast with actionable messages (unmapped identityJsonPaths, unmapped arrayUniquenessConstraints paths/basePath, inconsistent referenceJsonPaths prefix, missing referenceJsonPaths on references, nestedConstraints missing basePath, mismatched `isPartOfIdentity` vs actual identityJsonPaths usage, referenceJsonPaths identityJsonPath not in target identityJsonPaths).",
-    "steps-to-verify": [
-      "Add synthetic unit tests that exercise each fail-fast condition with clear diagnostics.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Column Derivation",
-    "description": "Refactor column derivation to suppress reference-object identity fields from being emitted as ordinary scalar/descriptor columns (they must only exist as `{RefBaseName}_{IdentityPart}` propagated identity columns created by this story). Acceptance: no duplicate data columns are emitted for reference identity fields; descriptor-path enforcement does not fail due to suppressed reference-identity descriptor paths; no `link` internals are emitted (inputs shouldn\u2019t have them, but suppression remains safe).",
-    "steps-to-verify": [
-      "Add a unit test proving a reference identity field path does not produce a `...Reference_...` scalar/descriptor column, and that the pipeline still succeeds.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Extensions",
-    "description": "Implement 'just enough DMS-932' extension-table modeling to host reference sites under `_ext` now: associate resource-extension schemas to base resources by matching `resourceName` across projects and extension project key = extension project endpoint name; derive extension tables by walking the resource-extension `jsonSchemaForInsert` payloads (base resource schemas may not contain `_ext`) and mapping those extension scopes back onto the owning base resource scopes for key alignment; derive scope-aligned extension tables and extension child tables (arrays under `_ext`) per `extensions.md`, including scalar columns and descriptor FK columns. Acceptance: extension tables live in the extension project schema, keys align exactly to the base scope keys (including ordinals), and extension tables can host document references and descriptors under `_ext` (including arrays under `_ext`).",
-    "steps-to-verify": [
-      "Add a synthetic fixture with `_ext` at root and inside a collection (including an array under `_ext` containing a reference) and assert expected extension table names + key alignment + FK-to-base with `ON DELETE CASCADE`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Abstract Identity",
-    "description": "Implement 'just enough DMS-933' to derive `{schema}.{Abstract}Identity` table models used as composite FK targets: determine participating concrete resources using `isSubclass`/`superclassProjectName`/`superclassResourceName`; identity column ordering comes from abstract `identityJsonPaths`; infer abstract identity column types from participating concrete member identity columns and fail-fast if any member type differs; include a `Discriminator` column; add FK `DocumentId -> dms.Document(DocumentId) ON DELETE CASCADE`; always add the target-side UNIQUE needed for composite FKs. Acceptance: abstract identity tables are present in `DerivedRelationalModelSet.AbstractIdentityTablesInNameOrder` and are usable as FK targets; ON UPDATE CASCADE is never emitted for FKs targeting abstract identity tables.",
-    "steps-to-verify": [
-      "Add unit tests asserting (a) column ordering equals `identityJsonPaths` order, (b) discriminator exists, (c) required UNIQUE exists, and (d) abstract targets never get `ON UPDATE CASCADE`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Reference Binding",
-    "description": "Bind document references from `documentPathsMapping.referenceJsonPaths`: for each reference site, create a `..._DocumentId` column at the owning table scope (base or extension) and propagated identity columns `{RefBaseName}_{IdentityPart}` at the same scope; descriptor identity parts inside a reference object are stored as reference-aligned `..._DescriptorId` columns (e.g. `Program_ProgramTypeDescriptor_DescriptorId`) and must contribute `DescriptorEdgeSource` metadata and an FK constraint to `dms.Descriptor(DocumentId)`; populate `RelationalResourceModel.DocumentReferenceBindings` (including deterministic `IdentityBindings` ordering) with correct `IsIdentityComponent` classification; reference base name comes from the mapping entry key with `relational.nameOverrides` escape hatch; nested identity paths (e.g. `$.staffReference.staffUniqueId`) use expanded naming. Acceptance: references inside nested collections bind to the correct child table; references under `_ext` bind to the correct extension tables; `documentPathsMapping.isRequired` is the source of truth for reference-group nullability (do not derive it from JSON Schema required/x-nullable rules).",
-    "steps-to-verify": [
-      "Add unit tests covering: nested reference scope selection, `IsIdentityComponent` true/false, nested-identity naming, and descriptor-identity naming inside reference objects.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Derive root-table natural-key UNIQUE constraints from canonical `identityJsonPaths`: map scalar identities to scalar columns; map descriptor identities to `*_DescriptorId`; map identity paths under document references to the reference\u2019s `..._DocumentId` column (de-dupe if multiple identity paths share the same reference). For descriptor resources (`SharedDescriptorTable`), ensure the shared descriptor table model includes `Uri` and `Discriminator` columns (not present in `jsonSchemaForInsert`) and derive UNIQUE `(Uri, Discriminator)` even when `identityJsonPaths` is empty. Acceptance: root UNIQUE matches design rules and fails fast when an identityJsonPath cannot be mapped.",
-    "steps-to-verify": [
-      "Add unit tests for: identity paths under a reference de-dupe to a single `..._DocumentId`, descriptor resource UNIQUE uses `(Uri, Discriminator)` with empty identityJsonPaths, and unmapped identityJsonPaths fail fast.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Derive child-table UNIQUE constraints from `arrayUniquenessConstraints` (including recursive `nestedConstraints`): determine owning child table by wildcard scope; map each uniqueness path to a column, including mapping paths inside reference objects to the reference\u2019s `..._DocumentId` (de-dupe); scope each UNIQUE by the parent key parts (root document id + ancestor ordinals), excluding the current `Ordinal`; column ordering is: parent key parts (key order) then mapped uniqueness columns in `paths` order. For nestedConstraints, use `basePath` as the parent wildcard scope and treat nested `paths` as relative-to-item JSONPaths when resolving the owning child table. Acceptance: constraints are deterministic, enforce uniqueness per parent, and fail fast on unmapped paths.",
-    "steps-to-verify": [
-      "Add unit tests proving parent key parts are included, `Ordinal` is excluded, reference-inner paths bind to `..._DocumentId`, and unknown paths fail fast.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Add per-reference constraints: (1) a structured all-or-none constraint (`AllOrNoneNullability`) per reference site, and (2) composite FKs from `(Ref_DocumentId, Ref_{IdentityParts...})` to the target identity key `(DocumentId, IdentityParts...)` with deterministic column ordering following the target resource\u2019s `identityJsonPaths` order. Applies equally to reference sites on base tables and extension tables. Reference-group nullability is sourced from `documentPathsMapping.isRequired`. Acceptance: `ON UPDATE CASCADE` is only emitted when the concrete target has `allowIdentityUpdates: true`; abstract targets never allow `ON UPDATE CASCADE`; `ON DELETE` is always `NO ACTION`; and the required target-side UNIQUE for composite FKs is modeled on referenced tables (concrete roots and abstract identity tables), using the target\u2019s natural-key value columns (including propagated reference-derived identity columns).",
-    "steps-to-verify": [
-      "Add unit tests for allowIdentityUpdates gating, abstract-target non-cascade, target-identity ordering, and presence of target-side UNIQUE.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Set-Level Integration",
-    "description": "Wire this story into `DerivedRelationalModelSetBuilder` as ordered whole-schema passes: base traversal, extension-table modeling, abstract identity-table modeling, then reference binding + constraint derivation. Acceptance: pass ordering is deterministic, all passes operate over projects/resources in canonical order, and the final `DerivedRelationalModelSet` is stable across input ordering and JSON property ordering.",
-    "steps-to-verify": [
-      "Update/extend determinism and pass-ordering unit tests to include the new passes.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Tests",
-    "description": "Add new synthetic fixtures and unit tests (NUnit + FluentAssertions) covering: nested references in collections (scope selection), identity-component classification, all fail-fast validations, allowIdentityUpdates gating, reference-group nullability source-of-truth (`documentPathsMapping.isRequired`), and constraints mapping for array uniqueness and reference groups. Acceptance: tests are small, readable, and isolate behavior; failures are deterministic and diagnostic.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Manifests",
-    "description": "Expand the authoritative `DerivedRelationalModelSet` manifest used by `DerivedRelationalModelSetAuthoritativeGoldenTests` so goldens can cover this story\u2019s output: include abstract identity tables (table name, columns in identity order, constraints), and include a curated subset of concrete resources with their tables/columns/constraints (including reference-derived columns, UNIQUEs, composite FKs, and all-or-none constraints) plus a summary of `DocumentReferenceBindings`. Acceptance: manifest output is deterministic, stable across runs/input ordering, and kept to a manageable size for the ds-5.2 + sample fixtures.",
-    "steps-to-verify": [
-      "Update/extend the authoritative derived-set golden test to use the expanded manifest and regenerate expected output via `UPDATE_GOLDENS=1`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Goldens",
-    "description": "Update authoritative fixture goldens for both `ds-5.2` and `sample` to reflect reference binding, constraints, extension tables, and abstract identity tables. This may require enhancing the authoritative derived-set manifest output to include the newly-derived inventories (potentially for a curated subset of resources to keep output size reasonable). This also includes updating the per-resource authoritative manifest (currently `dms-929-relational-model.manifest.json`) impacted by reference-identity column suppression. Acceptance: authoritative golden tests pass with no diff; goldens are regenerated only via `UPDATE_GOLDENS=1` and remain stable across runs.",
-    "steps-to-verify": [
-      "Run: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Build",
-    "description": "Ensure the DMS solution builds cleanly after the story implementation. Acceptance: no new build warnings/errors introduced by the relational model changes.",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Fix abstract reference propagation mismatch: design requires composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <IdentityParts...>)` with `ON UPDATE CASCADE`, but current derivation uses `ReferentialAction.NoAction` for abstract targets. Update `ConstraintDerivationRelationalModelSetPass` so abstract-target `TableConstraint.ForeignKey.OnUpdate` is `ReferentialAction.Cascade`. Acceptance: (1) For abstract reference sites, the derived FK targets the abstract identity table and uses `OnUpdate: Cascade`; (2) the FK column order remains `DocumentId` + identity parts in target identity order; (3) concrete-target `allowIdentityUpdates` gating remains unchanged; (4) unit tests are updated to assert the cascade behavior for abstract targets.",
-    "steps-to-verify": [
-      "Update unit test `Given_Abstract_Reference_Constraint_Derivation` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` to expect `ReferentialAction.Cascade` for the abstract-target FK.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Descriptor Paths",
-    "description": "Remove descriptor-identity inference \u201cguess\u201d path: `ReferenceBindingRelationalModelSetPass.TryResolveDescriptorIdentity` currently falls back to inferring descriptor identity by checking if the last segment ends with `\"Descriptor\"`. Remove this heuristic and require that descriptor identity paths must be present in the descriptor-path map (`RelationalModelSetBuilderContext.GetAllDescriptorPathsForResource`). Acceptance: (1) If an identityJsonPath is a descriptor identity part but is not present in the descriptor-path map, model compilation fails fast with an actionable error including target resource and path; (2) no descriptor identity columns are derived via naming heuristics; (3) existing happy-path reference binding (where descriptor paths are present) continues to pass all tests.",
-    "steps-to-verify": [
-      "Remove the `EndsWith(\"Descriptor\")` fallback in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs` and throw when the descriptor-path map does not contain the identity path.",
-      "Add a unit test that constructs a reference mapping whose `identityJsonPath` ends with `Descriptor` but is not present in the descriptor-path map, and assert an `InvalidOperationException` with path/resource details.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
     "category": "Constraints",
     "description": "Fail fast on incomplete abstract identity mappings: `ConstraintDerivationRelationalModelSetPass` currently skips abstract-target reference constraints when the reference mapping does not include all abstract identity parts (it `continue`s). Change behavior to throw with missing identity parts. Acceptance: (1) For abstract targets, if the reference mapping is missing any identityJsonPath required by `{Abstract}Identity`, compilation fails with an exception that lists the missing identityJsonPaths and identifies the source resource + mapping key; (2) no silent omissions for abstract reference constraints; (3) a unit test covers this failure case deterministically.",
     "steps-to-verify": [
@@ -313,5 +169,112 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Duplication",
+    "description": "Extract duplicated helper methods shared across passes into RelationalModelSetSchemaHelpers. The following methods are copy-pasted nearly verbatim across ReferenceBindingRelationalModelSetPass, ConstraintDerivationRelationalModelSetPass, ExtensionTableDerivationRelationalModelSetPass, and AbstractIdentityTableDerivationRelationalModelSetPass: IsResourceExtension(), GetApiSchemaRoot(), BuildBaseResourceLookup(), BuildResourceContext()/GetOrCreateBuilderContext(). Acceptance: (1) Each helper exists in exactly one location (RelationalModelSetSchemaHelpers or a new shared class); (2) All four passes call the shared implementation; (3) No private copies of these methods remain in individual pass files; (4) All 184 unit tests pass with no behavioral change.",
+    "steps-to-verify": [
+      "Move IsResourceExtension to RelationalModelSetSchemaHelpers and update all four pass files to use it.",
+      "Move GetApiSchemaRoot to RelationalModelSetSchemaHelpers and update all callers.",
+      "Move BuildBaseResourceLookup to RelationalModelSetSchemaHelpers and update all callers.",
+      "Move BuildResourceContext / GetOrCreateBuilderContext to a shared location and update all callers.",
+      "Grep the pass files to confirm no private copies remain: `grep -n 'IsResourceExtension\\|GetApiSchemaRoot\\|BuildBaseResourceLookup' src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/*Pass.cs`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Duplication",
+    "description": "Consolidate ConstraintDerivationRelationalModelSetPass.TableBuilder with the shared TableColumnAccumulator. ConstraintDerivationRelationalModelSetPass contains a private TableBuilder class (lines 1731-1791) that duplicates column-collision detection and constraint accumulation from the shared TableColumnAccumulator. Meanwhile ReferenceBindingRelationalModelSetPass uses TableColumnAccumulator directly. Acceptance: (1) The private TableBuilder is removed from ConstraintDerivationRelationalModelSetPass; (2) ResourceMutation wraps TableColumnAccumulator instead; (3) Column-collision detection logic exists in exactly one place; (4) All unit tests pass.",
+    "steps-to-verify": [
+      "Replace private TableBuilder in ConstraintDerivationRelationalModelSetPass with TableColumnAccumulator.",
+      "Update ResourceMutation to use TableColumnAccumulator in its Dictionary<TableKey, ...>.",
+      "Verify no private TableBuilder class remains in ConstraintDerivationRelationalModelSetPass.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Duplication",
+    "description": "AbstractIdentityTableDerivationRelationalModelSetPass contains its own copy of scalar type resolution (ResolveScalarType, ResolveStringType, BuildStringType, ResolveIntegerType, ResolveDecimalType at lines 660-775) that duplicates the shared RelationalScalarTypeResolver added in this branch. Acceptance: (1) The private scalar resolution methods are removed from AbstractIdentityTableDerivationRelationalModelSetPass; (2) The pass uses RelationalScalarTypeResolver.ResolveScalarType instead; (3) If RelationalScalarTypeResolver needs a minor signature adjustment to accept ConcreteResourceMetadata's decimal infos, that is acceptable; (4) All unit tests pass.",
+    "steps-to-verify": [
+      "Remove ResolveScalarType, ResolveStringType, BuildStringType, ResolveIntegerType, ResolveDecimalType from AbstractIdentityTableDerivationRelationalModelSetPass.",
+      "Update ResolveColumnSignature to call RelationalScalarTypeResolver.ResolveScalarType.",
+      "Adjust RelationalScalarTypeResolver if needed to accept the decimal property validation infos from ConcreteResourceMetadata.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Duplication",
+    "description": "Extract duplicated ResolveSchemaForPath JSON schema traversal. Both ReferenceBindingRelationalModelSetPass (lines 462-566) and AbstractIdentityTableDerivationRelationalModelSetPass (lines 369-468) contain nearly identical ResolveSchemaForPath methods that walk a JSON schema by path segments. Acceptance: (1) A single shared ResolveSchemaForPath exists (e.g., in RelationalModelSetSchemaHelpers or a new JsonSchemaNavigation utility); (2) Both passes call the shared method; (3) Error messages remain resource-specific (the shared method should accept a resource name for diagnostics); (4) All unit tests pass.",
+    "steps-to-verify": [
+      "Extract ResolveSchemaForPath to a shared location, parameterized by a resource identifier for error messages.",
+      "Update both ReferenceBindingRelationalModelSetPass and AbstractIdentityTableDerivationRelationalModelSetPass to use the shared method.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "ReferenceBindingRelationalModelSetPass.BuildResourceContext creates a new RelationalModelBuilderContext and runs ExtractInputsStep().Execute() for every resource without caching. ConstraintDerivationRelationalModelSetPass correctly caches via GetOrCreateBuilderContext. Apply the same caching pattern to ReferenceBindingRelationalModelSetPass. Acceptance: (1) ReferenceBindingRelationalModelSetPass caches builder contexts per resource (identical to ConstraintDerivationRelationalModelSetPass.GetOrCreateBuilderContext pattern); (2) ExtractInputsStep is executed at most once per resource across the pass; (3) All unit tests pass.",
+    "steps-to-verify": [
+      "Add a Dictionary<QualifiedResourceName, RelationalModelBuilderContext> cache to the Execute method in ReferenceBindingRelationalModelSetPass.",
+      "Replace direct BuildResourceContext calls with a GetOrCreateBuilderContext pattern.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Design",
+    "description": "Investigate and document whether TablesInWriteDependencyOrder should differ from TablesInReadDependencyOrder. Both ReferenceBindingRelationalModelSetPass (line 286-288) and ConstraintDerivationRelationalModelSetPass (line 838-839) always set TablesInWriteDependencyOrder = TablesInReadDependencyOrder (same array). If they are always identical, remove TablesInWriteDependencyOrder from RelationalResourceModel to eliminate redundant state. If they are intended to diverge in a future story, add a code comment documenting the intent. Acceptance: (1) Either TablesInWriteDependencyOrder is removed (if always identical), OR a code comment on RelationalResourceModel documents when and why it will diverge; (2) No behavioral change; (3) All unit tests pass.",
+    "steps-to-verify": [
+      "Search all assignments to TablesInWriteDependencyOrder to confirm it always equals TablesInReadDependencyOrder.",
+      "If always identical: remove TablesInWriteDependencyOrder from RelationalResourceModel and update all callers to use TablesInReadDependencyOrder.",
+      "If future divergence planned: add a doc comment on the property explaining the planned distinction.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Robustness",
+    "description": "ResolveOwningTableBuilder in ReferenceBindingRelationalModelSetPass silently picks the lexicographically-first scope when two table scopes match at the same segment depth (lines 334-341). This tiebreaking could mask genuine ambiguity (e.g., extension vs base table at same depth). Change to throw on ambiguous matches. Acceptance: (1) When two scopes match the reference path with the same segment count, the method throws an InvalidOperationException listing both candidates; (2) If there is a legitimate scenario requiring tiebreaking, document it with a comment and add a unit test; (3) All existing unit tests pass (confirming the ambiguous case does not occur in practice).",
+    "steps-to-verify": [
+      "Replace the tiebreak logic (lines 334-341) with a throw listing both candidate scopes.",
+      "Run existing tests to confirm no legitimate ambiguity exists: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "If a test fails, investigate whether the tiebreak is needed and document it."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add targeted unit tests for extension array uniqueness constraint alignment. The TryStripExtensionRootPrefix/StripExtensionRootPrefix fallback path in ConstraintDerivationRelationalModelSetPass (lines 371-396) handles extension schemas declaring array uniqueness under _ext.{project} when the owning table is in the base scope. This is only tested indirectly through golden tests. Acceptance: (1) A focused unit test creates a resource extension with arrayUniquenessConstraints scoped under _ext.{project} that must align to a base-scope table; (2) The test asserts the correct UNIQUE constraint appears on the correct base-scope child table; (3) A second test asserts that when alignment fails (no matching base table), the pass throws with a diagnostic message.",
+    "steps-to-verify": [
+      "Add tests in ConstraintDerivationRelationalModelSetPassTests.cs for the extension-to-base scope alignment path.",
+      "One test: valid alignment produces correct UX constraint on the base child table.",
+      "One test: invalid alignment (no matching base table) throws with diagnostic scope info.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add unit tests for nested ArrayUniquenessConstraintInput recursion. The ArrayUniquenessConstraintInput record supports NestedConstraints, and ApplyArrayUniquenessConstraint handles them recursively (lines 409-421). There is no targeted test for multi-level nested collection uniqueness derivation. Acceptance: (1) A unit test builds a resource with a 2-level nested collection (e.g., addresses[*].periods[*]) where both levels have uniqueness constraints; (2) The test asserts both the parent and nested child tables receive the correct UNIQUE constraints; (3) Column ordering in each constraint is deterministic and matches the expected parent-key-parts + constraint-paths order.",
+    "steps-to-verify": [
+      "Add a test in ConstraintDerivationRelationalModelSetPassTests.cs with a fixture containing nested arrayUniquenessConstraints.",
+      "Assert the parent collection table has a UX constraint with expected columns.",
+      "Assert the nested child table has a UX constraint with expected columns (including parent ordinal).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "AbstractIdentityTableDerivationRelationalModelSetPass.BuildConcreteMetadata eagerly builds metadata (including JsonSchemaForInsert, DecimalPropertyValidationInfos, full RelationalResourceModel) for every concrete resource, even though only subclass members are used during identity column derivation. Acceptance: (1) Metadata is built lazily — only for resources that are actually members of an abstract resource; (2) Non-subclass resources do not have their JsonSchemaForInsert parsed or DecimalPropertyValidationInfos extracted; (3) All unit tests pass; (4) Behavior is unchanged for subclass resources.",
+    "steps-to-verify": [
+      "Refactor BuildConcreteMetadata to only build full metadata for resources where isSubclass=true, or switch to lazy resolution during BuildIdentityColumns.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
