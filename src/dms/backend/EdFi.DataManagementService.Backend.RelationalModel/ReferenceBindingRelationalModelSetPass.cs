@@ -36,6 +36,7 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
             )
             .ToDictionary(entry => entry.Resource, entry => entry.Index);
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
+        Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = new();
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
@@ -43,9 +44,10 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                 resourceContext.Project.ProjectSchema.ProjectName,
                 resourceContext.ResourceName
             );
-            var builderContext = BuildResourceContext(
+            var builderContext = GetOrCreateBuilderContext(
                 resourceContext,
                 apiSchemaRootsByProjectEndpoint,
+                builderContextsByResource,
                 cloneProjectSchema: true
             );
 
