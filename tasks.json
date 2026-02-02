@@ -122,5 +122,83 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Constraints",
+    "description": "Fix abstract reference propagation mismatch: design requires composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <IdentityParts...>)` with `ON UPDATE CASCADE`, but current derivation uses `ReferentialAction.NoAction` for abstract targets. Update `ConstraintDerivationRelationalModelSetPass` so abstract-target `TableConstraint.ForeignKey.OnUpdate` is `ReferentialAction.Cascade`. Acceptance: (1) For abstract reference sites, the derived FK targets the abstract identity table and uses `OnUpdate: Cascade`; (2) the FK column order remains `DocumentId` + identity parts in target identity order; (3) concrete-target `allowIdentityUpdates` gating remains unchanged; (4) unit tests are updated to assert the cascade behavior for abstract targets.",
+    "steps-to-verify": [
+      "Update unit test `Given_Abstract_Reference_Constraint_Derivation` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` to expect `ReferentialAction.Cascade` for the abstract-target FK.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Descriptor Paths",
+    "description": "Remove descriptor-identity inference “guess” path: `ReferenceBindingRelationalModelSetPass.TryResolveDescriptorIdentity` currently falls back to inferring descriptor identity by checking if the last segment ends with `\"Descriptor\"`. Remove this heuristic and require that descriptor identity paths must be present in the descriptor-path map (`RelationalModelSetBuilderContext.GetAllDescriptorPathsForResource`). Acceptance: (1) If an identityJsonPath is a descriptor identity part but is not present in the descriptor-path map, model compilation fails fast with an actionable error including target resource and path; (2) no descriptor identity columns are derived via naming heuristics; (3) existing happy-path reference binding (where descriptor paths are present) continues to pass all tests.",
+    "steps-to-verify": [
+      "Remove the `EndsWith(\"Descriptor\")` fallback in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs` and throw when the descriptor-path map does not contain the identity path.",
+      "Add a unit test that constructs a reference mapping whose `identityJsonPath` ends with `Descriptor` but is not present in the descriptor-path map, and assert an `InvalidOperationException` with path/resource details.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Constraints",
+    "description": "Fail fast on incomplete abstract identity mappings: `ConstraintDerivationRelationalModelSetPass` currently skips abstract-target reference constraints when the reference mapping does not include all abstract identity parts (it `continue`s). Change behavior to throw with missing identity parts. Acceptance: (1) For abstract targets, if the reference mapping is missing any identityJsonPath required by `{Abstract}Identity`, compilation fails with an exception that lists the missing identityJsonPaths and identifies the source resource + mapping key; (2) no silent omissions for abstract reference constraints; (3) a unit test covers this failure case deterministically.",
+    "steps-to-verify": [
+      "Change abstract-target handling in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` so incomplete identity results in an exception (include missing identity paths in the message).",
+      "Add a unit test that builds an abstract target reference mapping with missing identity part(s) and asserts the fail-fast exception message includes the missing identity path(s).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Constraints",
+    "description": "Fail fast on missing target identityJsonPaths for concrete reference mappings: reference identity completeness is currently optional because missing target identity paths are silently skipped when building composite FK columns. Update derivation/validation so a document reference mapping must bind every target identityJsonPath to a local column for concrete targets. Acceptance: (1) For concrete targets, if `documentPathsMapping.referenceJsonPaths[*].identityJsonPath` does not cover the full target `identityJsonPaths` set, compilation fails with an error listing missing target identityJsonPaths; (2) FK column order remains deterministic and matches target identity order; (3) a unit test covers the missing-identity failure case.",
+    "steps-to-verify": [
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` (or set-level validation) to detect missing target identityJsonPaths for concrete references and throw with a list of missing paths.",
+      "Add a unit test that creates a concrete target with multiple identityJsonPaths but supplies only a subset in `referenceJsonPaths`, and assert the fail-fast exception includes the missing identity path(s).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Schema Inputs",
+    "description": "Make `isPartOfIdentity` validation bi-directional: currently validation fails only when identityJsonPaths includes a mapping path but `isPartOfIdentity` is explicitly false; it should also fail when `isPartOfIdentity` is true but the mapping path is not present in identityJsonPaths. Acceptance: (1) `isPartOfIdentity=true` must imply the mapping path (or at least one referenceJsonPath for a reference mapping) is present in `identityJsonPaths`; otherwise throw with an actionable message; (2) existing validation (identityJsonPaths present but isPartOfIdentity=false) continues to fail fast; (3) unit tests cover both directions for scalar/descriptor mappings and for reference mappings.",
+    "steps-to-verify": [
+      "Update `ResolveIsPartOfIdentity` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` to throw when `isPartOfIdentity=true` but `identityJsonPaths` does not include the relevant path(s).",
+      "Add unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs` for the new failure direction (both non-reference and reference cases).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add a focused unit test asserting `TableConstraint.AllOrNoneNullability` is derived correctly for a reference group. Acceptance: (1) The derived table contains exactly one `AllOrNoneNullability` constraint per reference group (where identity columns are present); (2) `Name` matches `CK_{TableName}_{FkColumn}_AllOrNone`; (3) `FkColumn` matches the reference `..._DocumentId` column; (4) `DependentColumns` equals the propagated identity columns for that reference (correct names and deterministic order).",
+    "steps-to-verify": [
+      "Add a new test fixture (or extend existing) in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` that asserts the `AllOrNoneNullability` constraint for a known reference (e.g., `SchoolReference`) has the expected `FkColumn` and dependent identity columns.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "Tighten reference binding complexity by carrying an index map: `ReferenceBindingRelationalModelSetPass` currently does a list scan (`FindIndex`) to update concrete models. Refactor to precompute a `Dictionary<QualifiedResourceName, int>` (resource -> index) like the constraint pass does, and use it for updates. Acceptance: (1) No `FindIndex` usage remains in the pass; (2) behavior is unchanged for base resources and resource extensions; (3) reference binding remains deterministic and all unit tests pass.",
+    "steps-to-verify": [
+      "Refactor `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs` to use a resource->index map for updates.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Review and remove helper duplication: `IsPrefixOf` exists in multiple passes (e.g., `ReferenceBindingRelationalModelSetPass` and `ConstraintDerivationRelationalModelSetPass`). Consolidate into a single shared helper (e.g., in `RelationalModelSetSchemaHelpers`) and update callers. Acceptance: (1) only one implementation exists in the codebase for JSONPath prefix checks; (2) callers use the shared helper; (3) behavior remains identical (all unit tests pass); (4) no new ordering/determinism regressions are introduced.",
+    "steps-to-verify": [
+      "Move/merge prefix-check logic into a shared helper and update call sites in both passes.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

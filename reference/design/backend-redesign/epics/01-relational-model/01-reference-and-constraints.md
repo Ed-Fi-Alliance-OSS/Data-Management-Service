@@ -16,7 +16,7 @@ Augment the base derived model with `documentPathsMapping`, `identityJsonPaths`,
 Key rules:
 - Document reference objects are represented by one `..._DocumentId` FK column at the owning scope, plus propagated
   identity natural-key columns for the referenced resource.
-- Root natural key unique constraint is derived from `identityJsonPaths`, using propagated identity columns for
+- Root natural key unique constraint is derived from `identityJsonPaths`, using the `..._DocumentId` FK column for
   identity components sourced from references.
 - Child uniqueness constraints are derived from `arrayUniquenessConstraints`.
 
@@ -39,6 +39,7 @@ Descriptor binding (`*_DescriptorId` columns + descriptor edge metadata) is hand
   - `{RefBaseName}_{IdentityPart}` propagated identity columns at the same scope,
   - a `DocumentReferenceBinding` with correct `IsIdentityComponent` classification and column bindings.
 - Root-table natural key UNIQUE constraint matches `identityJsonPaths` semantics.
+  - For identity components sourced from references, the UNIQUE constraint uses the `..._DocumentId` column.
 - Child-table UNIQUE constraints are created per `arrayUniquenessConstraints` with deterministic column ordering.
 - Unknown/mismatched mapping paths fail fast during model compilation (no silent omissions).
 
