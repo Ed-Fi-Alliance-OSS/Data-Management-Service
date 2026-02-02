@@ -200,5 +200,85 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Refactor",
+    "description": "Extract a shared WalkSchema context record to eliminate the 17-parameter explosion in ExtensionTableDerivationRelationalModelSetPass.WalkSchema. Bundle stable per-walk parameters (extensionProject, baseRootBaseName, extensionRootBaseName, baseTablesByScope, identityPaths, referenceIdentityPaths, referenceObjectPaths) into a `readonly record struct ExtensionWalkContext`. Pass one context object + the per-call mutation targets. Acceptance: (1) WalkSchema, WalkObjectSchema, and WalkArraySchema each accept <= 10 parameters; (2) no behavioral change — all existing unit tests pass; (3) the context record is immutable (readonly record struct or sealed record with init-only properties).",
+    "steps-to-verify": [
+      "Introduce `ExtensionWalkContext` in ExtensionTableDerivationRelationalModelSetPass.cs and refactor WalkSchema/WalkObjectSchema/WalkArraySchema to use it.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Consolidate duplicate TableBuilder and ExtensionTableBuilder into a single shared builder. ReferenceBindingRelationalModelSetPass.TableBuilder and ExtensionTableDerivationRelationalModelSetPass.ExtensionTableBuilder contain nearly identical column-collision detection and constraint accumulation logic. Extract a shared `TableColumnAccumulator` (or make one compose/inherit the other). Acceptance: (1) Only one implementation of column-collision detection exists; (2) both passes use the shared builder; (3) all unit tests pass with no behavioral change.",
+    "steps-to-verify": [
+      "Extract shared builder and update both ReferenceBindingRelationalModelSetPass and ExtensionTableDerivationRelationalModelSetPass to use it.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Robustness",
+    "description": "Remove fallback levels 3-4 from ConstraintDerivationRelationalModelSetPass.ApplyArrayUniquenessConstraint (lines 336-468). Analysis: Level 1 (direct scope match) handles the standard case where constraint scope matches table JsonScope directly. Level 2 (strip _ext.{project} prefix) is required for the cross-boundary nested constraint pattern — e.g. the contacts extension has basePath=$._ext.sample.addresses[*] with paths=[$.periods[*].beginDate], which resolves to scope $._ext.sample.addresses[*].periods[*], but the actual table is the base ContactAddressPeriod with scope $.addresses[*].periods[*]; stripping _ext.sample makes this match. Levels 3-4 (brute-force scan across ALL tables) are not exercised by any real Ed-Fi schema (ds-5.2 or sample). They catch InvalidOperationException per-candidate and silently continue, meaning if a table happens to have columns with matching names at the wrong scope, the constraint lands on the wrong table — violating the story AC 'no silent omissions'. Recommendation: Remove levels 3-4 and fail fast after level 2 with a diagnostic error citing the unmatched scope. Add a code comment on level 2 documenting the cross-boundary pattern it handles.",
+    "steps-to-verify": [
+      "Remove the two TryResolveArrayUniquenessTable brute-force blocks (levels 3-4, approx lines 400-443) from ApplyArrayUniquenessConstraint.",
+      "After level 2 fails, throw immediately with a diagnostic message citing the unmatched scope.",
+      "Add a code comment on level 2 explaining the cross-boundary extension constraint pattern (contacts/addresses/periods example).",
+      "Verify all existing tests still pass — no real schema exercises levels 3-4.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Robustness",
+    "description": "Add explicit pass ordering validation. RelationalModelSetPasses.cs hardcodes pass order and each pass declares an `Order` property, but nothing validates that the array is sorted by Order or that Order values are unique. A future developer could add a pass at the wrong array index. Acceptance: (1) An assertion (in the pipeline runner or RelationalModelSetBuilderContext.BuildResult) validates that passes are in strictly ascending Order; (2) duplicate Order values fail fast; (3) a unit test in RelationalModelSetPassesTests asserts CreatePasses() returns passes in ascending Order with unique values.",
+    "steps-to-verify": [
+      "Add ordering validation in RelationalModelBuilderPipeline or RelationalModelSetBuilderContext.BuildResult.",
+      "Add a unit test in RelationalModelSetPassesTests asserting ascending unique Order values.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "Cache GetAllDescriptorPathsForResource in RelationalModelSetBuilderContext. The method builds a merged dictionary from base + extension descriptor paths on every call. During constraint derivation this may be called repeatedly for the same resource. Acceptance: (1) The merged result is cached per resource (similar to GetOrCreateBuilderContext); (2) no behavioral change — all unit tests pass; (3) cache is lazily populated and not invalidated (descriptor paths are immutable after extraction).",
+    "steps-to-verify": [
+      "Add a Dictionary<QualifiedResourceName, ...> cache field in RelationalModelSetBuilderContext and populate it lazily in GetAllDescriptorPathsForResource.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Robustness",
+    "description": "Standardize string comparison to Ordinal. ExtensionTableDerivationRelationalModelSetPass uses StringComparison.OrdinalIgnoreCase in some places but StringComparer.Ordinal elsewhere. The design docs specify PascalCase naming, so case-insensitive comparison could mask naming bugs (e.g., accepting 'school' where 'School' is expected). Acceptance: (1) All string comparisons in the relational model derivation passes use StringComparer.Ordinal / StringComparison.Ordinal unless there is a documented reason for case-insensitivity; (2) any intentional case-insensitive comparisons are annotated with a comment explaining why; (3) all unit tests pass.",
+    "steps-to-verify": [
+      "Grep for OrdinalIgnoreCase in all relational model pass files and evaluate each usage.",
+      "Replace with Ordinal or add justification comment for each.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Robustness",
+    "description": "Move column collision detection from Build() to AddColumn() time in TableBuilder and ExtensionTableBuilder. Currently duplicate columns are only detected when Build() is called, meaning the error is reported far from the code that introduced the duplicate. Acceptance: (1) AddColumn (or equivalent) throws immediately when a duplicate column name is added, with context about the conflicting source; (2) Build() no longer needs separate collision detection; (3) all unit tests pass.",
+    "steps-to-verify": [
+      "Update AddColumn in both TableBuilder and ExtensionTableBuilder to throw on duplicate column names at insertion time.",
+      "Remove redundant collision checks from Build().",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add a unit test asserting pass ordering contract. There is no test that RelationalModelSetPasses.CreatePasses() returns passes in ascending Order with unique Order values. If someone reorders the array, tests would fail indirectly with confusing output rather than a clear ordering violation. Acceptance: (1) A test in RelationalModelSetPassesTests calls CreatePasses() and asserts Order values are strictly ascending; (2) the test also asserts no duplicate Order values exist.",
+    "steps-to-verify": [
+      "Add the ordering assertion test in RelationalModelSetPassesTests.cs.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
