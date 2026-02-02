@@ -152,6 +152,161 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag to determine whether the schema entry represents a
+    /// resource-extension document rather than a concrete base resource.
+    /// </summary>
+    /// <param name="resourceContext">The resource schema context.</param>
+    /// <returns><see langword="true"/> for resource extensions; otherwise <see langword="false"/>.</returns>
+    internal static bool IsResourceExtension(ConcreteResourceSchemaContext resourceContext)
+    {
+        var resource = new QualifiedResourceName(
+            resourceContext.Project.ProjectSchema.ProjectName,
+            resourceContext.ResourceName
+        );
+
+        return IsResourceExtension(resourceContext.ResourceSchema, resource);
+    }
+
+    /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag from a resource schema object.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema object.</param>
+    /// <param name="resource">The resource identifier for diagnostics.</param>
+    /// <returns><see langword="true"/> for resource extensions; otherwise <see langword="false"/>.</returns>
+    internal static bool IsResourceExtension(JsonObject resourceSchema, QualifiedResourceName resource)
+    {
+        return IsResourceExtension(resourceSchema, FormatResource(resource));
+    }
+
+    /// <summary>
+    /// Builds (and caches) a minimal <c>ApiSchema.json</c>-shaped root node for per-resource pipelines.
+    /// </summary>
+    /// <param name="apiSchemaRootsByProjectEndpoint">Cache of root nodes by project endpoint name.</param>
+    /// <param name="projectEndpointName">The project endpoint name for the resource.</param>
+    /// <param name="projectSchema">The project schema node.</param>
+    /// <param name="cloneProjectSchema">Whether to clone the project schema before caching.</param>
+    /// <returns>A root object containing the <c>projectSchema</c> property.</returns>
+    internal static JsonObject GetApiSchemaRoot(
+        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
+        string projectEndpointName,
+        JsonObject projectSchema,
+        bool cloneProjectSchema
+    )
+    {
+        if (apiSchemaRootsByProjectEndpoint.TryGetValue(projectEndpointName, out var apiSchemaRoot))
+        {
+            return apiSchemaRoot;
+        }
+
+        var rootSchema = cloneProjectSchema ? CloneProjectSchema(projectSchema) : projectSchema;
+
+        apiSchemaRoot = new JsonObject { ["projectSchema"] = rootSchema };
+
+        apiSchemaRootsByProjectEndpoint[projectEndpointName] = apiSchemaRoot;
+
+        return apiSchemaRoot;
+    }
+
+    /// <summary>
+    /// Builds a lookup of base resources keyed by resource name.
+    /// </summary>
+    /// <typeparam name="TEntry">The entry type stored in the lookup.</typeparam>
+    /// <param name="resources">The ordered list of concrete resources.</param>
+    /// <param name="entryFactory">Factory for lookup entries.</param>
+    /// <returns>The lookup keyed by resource name.</returns>
+    internal static Dictionary<string, List<TEntry>> BuildBaseResourceLookup<TEntry>(
+        IReadOnlyList<ConcreteResourceModel> resources,
+        Func<int, ConcreteResourceModel, TEntry> entryFactory
+    )
+    {
+        Dictionary<string, List<TEntry>> lookup = new(StringComparer.Ordinal);
+
+        for (var index = 0; index < resources.Count; index++)
+        {
+            var resource = resources[index];
+            var resourceName = resource.ResourceKey.Resource.ResourceName;
+
+            if (!lookup.TryGetValue(resourceName, out var entries))
+            {
+                entries = [];
+                lookup.Add(resourceName, entries);
+            }
+
+            entries.Add(entryFactory(index, resource));
+        }
+
+        return lookup;
+    }
+
+    /// <summary>
+    /// Builds a per-resource relational model builder context by executing input extraction.
+    /// </summary>
+    /// <param name="resourceContext">The resource schema context.</param>
+    /// <param name="apiSchemaRootsByProjectEndpoint">Cache of root nodes by project endpoint name.</param>
+    /// <param name="cloneProjectSchema">Whether to clone the project schema before caching.</param>
+    /// <returns>The initialized builder context.</returns>
+    internal static RelationalModelBuilderContext BuildResourceContext(
+        ConcreteResourceSchemaContext resourceContext,
+        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
+        bool cloneProjectSchema
+    )
+    {
+        var projectSchema = resourceContext.Project.ProjectSchema;
+        var apiSchemaRoot = GetApiSchemaRoot(
+            apiSchemaRootsByProjectEndpoint,
+            projectSchema.ProjectEndpointName,
+            resourceContext.Project.EffectiveProject.ProjectSchema,
+            cloneProjectSchema
+        );
+
+        var builderContext = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = resourceContext.ResourceEndpointName,
+        };
+
+        new ExtractInputsStep().Execute(builderContext);
+
+        return builderContext;
+    }
+
+    /// <summary>
+    /// Builds or retrieves a cached builder context for the supplied resource.
+    /// </summary>
+    /// <param name="resourceContext">The resource schema context.</param>
+    /// <param name="apiSchemaRootsByProjectEndpoint">Cache of root nodes by project endpoint name.</param>
+    /// <param name="builderContextsByResource">Cache of builder contexts by resource key.</param>
+    /// <param name="cloneProjectSchema">Whether to clone the project schema before caching.</param>
+    /// <returns>The builder context.</returns>
+    internal static RelationalModelBuilderContext GetOrCreateBuilderContext(
+        ConcreteResourceSchemaContext resourceContext,
+        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
+        IDictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource,
+        bool cloneProjectSchema
+    )
+    {
+        var resource = new QualifiedResourceName(
+            resourceContext.Project.ProjectSchema.ProjectName,
+            resourceContext.ResourceName
+        );
+
+        if (builderContextsByResource.TryGetValue(resource, out var cached))
+        {
+            return cached;
+        }
+
+        var builderContext = BuildResourceContext(
+            resourceContext,
+            apiSchemaRootsByProjectEndpoint,
+            cloneProjectSchema
+        );
+
+        builderContextsByResource[resource] = builderContext;
+
+        return builderContext;
+    }
+
+    /// <summary>
     /// Determines whether the prefix segments match the beginning of the path segments.
     /// </summary>
     /// <param name="prefix">The prefix segments to compare.</param>
@@ -188,6 +343,41 @@ internal static class RelationalModelSetSchemaHelpers
         }
 
         return true;
+    }
+
+    private static bool IsResourceExtension(JsonObject resourceSchema, string resourceLabel)
+    {
+        if (
+            !resourceSchema.TryGetPropertyValue("isResourceExtension", out var resourceExtensionNode)
+            || resourceExtensionNode is null
+        )
+        {
+            throw new InvalidOperationException(
+                $"Expected isResourceExtension to be on ResourceSchema for resource '{resourceLabel}', "
+                    + "invalid ApiSchema."
+            );
+        }
+
+        return resourceExtensionNode switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            _ => throw new InvalidOperationException(
+                $"Expected isResourceExtension to be a boolean for resource '{resourceLabel}', "
+                    + "invalid ApiSchema."
+            ),
+        };
+    }
+
+    private static JsonObject CloneProjectSchema(JsonObject projectSchema)
+    {
+        var detachedSchema = projectSchema.DeepClone();
+
+        if (detachedSchema is not JsonObject detachedObject)
+        {
+            throw new InvalidOperationException("Project schema must be an object.");
+        }
+
+        return detachedObject;
     }
 
     /// <summary>

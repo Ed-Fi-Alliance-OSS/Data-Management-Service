@@ -576,29 +576,6 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         };
     }
 
-    private static bool IsResourceExtension(JsonObject resourceSchema, QualifiedResourceName resource)
-    {
-        if (
-            !resourceSchema.TryGetPropertyValue("isResourceExtension", out var resourceExtensionNode)
-            || resourceExtensionNode is null
-        )
-        {
-            throw new InvalidOperationException(
-                $"Expected isResourceExtension to be on ResourceSchema for resource "
-                    + $"'{FormatResource(resource)}', invalid ApiSchema."
-            );
-        }
-
-        return resourceExtensionNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<bool>(),
-            _ => throw new InvalidOperationException(
-                $"Expected isResourceExtension to be a boolean for resource "
-                    + $"'{FormatResource(resource)}', invalid ApiSchema."
-            ),
-        };
-    }
-
     private static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,

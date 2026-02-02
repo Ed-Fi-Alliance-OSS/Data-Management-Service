@@ -58,7 +58,11 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
                 );
             }
 
-            var builderContext = BuildResourceContext(resourceContext, apiSchemaRootsByProjectEndpoint);
+            var builderContext = BuildResourceContext(
+                resourceContext,
+                apiSchemaRootsByProjectEndpoint,
+                cloneProjectSchema: true
+            );
             var updatedModel = ApplyRootConstraints(builderContext, entry.Model.RelationalModel, resource);
 
             if (ReferenceEquals(updatedModel, entry.Model.RelationalModel))
@@ -78,7 +82,10 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         var resourcesByKey = context
             .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
             .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
-        var baseResourcesByName = BuildBaseResourceLookup(context.ConcreteResourcesInNameOrder);
+        var baseResourcesByName = BuildBaseResourceLookup(
+            context.ConcreteResourcesInNameOrder,
+            static (index, model) => new ResourceEntry(index, model)
+        );
         var abstractIdentityTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>
             table.AbstractResourceKey.Resource
         );
@@ -97,7 +104,8 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             var builderContext = GetOrCreateBuilderContext(
                 resourceContext,
                 apiSchemaRootsByProjectEndpoint,
-                builderContextsByResource
+                builderContextsByResource,
+                cloneProjectSchema: true
             );
 
             if (builderContext.DocumentReferenceMappings.Count == 0)
@@ -194,7 +202,10 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         var resourcesByKey = context
             .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
             .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
-        var baseResourcesByName = BuildBaseResourceLookup(context.ConcreteResourcesInNameOrder);
+        var baseResourcesByName = BuildBaseResourceLookup(
+            context.ConcreteResourcesInNameOrder,
+            static (index, model) => new ResourceEntry(index, model)
+        );
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
         Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = new();
         Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
@@ -208,7 +219,8 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             var builderContext = GetOrCreateBuilderContext(
                 resourceContext,
                 apiSchemaRootsByProjectEndpoint,
-                builderContextsByResource
+                builderContextsByResource,
+                cloneProjectSchema: true
             );
 
             if (builderContext.ArrayUniquenessConstraints.Count == 0)
@@ -1374,7 +1386,8 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         var builderContext = GetOrCreateBuilderContext(
             resourceContext,
             apiSchemaRootsByProjectEndpoint,
-            builderContextsByResource
+            builderContextsByResource,
+            cloneProjectSchema: true
         );
         var identityColumns = BuildIdentityValueColumns(
             entry.Model.RelationalModel,
@@ -1505,50 +1518,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         return $"CK_{tableName}_{fkColumn.Value}_AllOrNone";
     }
 
-    private static RelationalModelBuilderContext BuildResourceContext(
-        ConcreteResourceSchemaContext resourceContext,
-        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint
-    )
-    {
-        var projectSchema = resourceContext.Project.ProjectSchema;
-        var apiSchemaRoot = GetApiSchemaRoot(
-            apiSchemaRootsByProjectEndpoint,
-            projectSchema.ProjectEndpointName,
-            resourceContext.Project.EffectiveProject.ProjectSchema
-        );
-
-        var builderContext = new RelationalModelBuilderContext
-        {
-            ApiSchemaRoot = apiSchemaRoot,
-            ResourceEndpointName = resourceContext.ResourceEndpointName,
-        };
-
-        new ExtractInputsStep().Execute(builderContext);
-
-        return builderContext;
-    }
-
-    private static RelationalModelBuilderContext GetOrCreateBuilderContext(
-        ConcreteResourceSchemaContext resourceContext,
-        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
-        IDictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource
-    )
-    {
-        var resource = new QualifiedResourceName(
-            resourceContext.Project.ProjectSchema.ProjectName,
-            resourceContext.ResourceName
-        );
-
-        if (builderContextsByResource.TryGetValue(resource, out var cached))
-        {
-            return cached;
-        }
-
-        var builderContext = BuildResourceContext(resourceContext, apiSchemaRootsByProjectEndpoint);
-        builderContextsByResource[resource] = builderContext;
-        return builderContext;
-    }
-
     private static IReadOnlyDictionary<
         QualifiedResourceName,
         ConcreteResourceSchemaContext
@@ -1572,81 +1541,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         }
 
         return lookup;
-    }
-
-    private static Dictionary<string, List<ResourceEntry>> BuildBaseResourceLookup(
-        IReadOnlyList<ConcreteResourceModel> resources
-    )
-    {
-        Dictionary<string, List<ResourceEntry>> lookup = new(StringComparer.Ordinal);
-
-        for (var index = 0; index < resources.Count; index++)
-        {
-            var resource = resources[index];
-            var resourceName = resource.ResourceKey.Resource.ResourceName;
-
-            if (!lookup.TryGetValue(resourceName, out var entries))
-            {
-                entries = [];
-                lookup.Add(resourceName, entries);
-            }
-
-            entries.Add(new ResourceEntry(index, resource));
-        }
-
-        return lookup;
-    }
-
-    private static bool IsResourceExtension(ConcreteResourceSchemaContext resourceContext)
-    {
-        if (
-            !resourceContext.ResourceSchema.TryGetPropertyValue(
-                "isResourceExtension",
-                out var resourceExtensionNode
-            ) || resourceExtensionNode is null
-        )
-        {
-            throw new InvalidOperationException(
-                $"Expected isResourceExtension to be on ResourceSchema for resource "
-                    + $"'{resourceContext.Project.ProjectSchema.ProjectName}:{resourceContext.ResourceName}', "
-                    + "invalid ApiSchema."
-            );
-        }
-
-        return resourceExtensionNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<bool>(),
-            _ => throw new InvalidOperationException(
-                $"Expected isResourceExtension to be a boolean for resource "
-                    + $"'{resourceContext.Project.ProjectSchema.ProjectName}:{resourceContext.ResourceName}', "
-                    + "invalid ApiSchema."
-            ),
-        };
-    }
-
-    private static JsonObject GetApiSchemaRoot(
-        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
-        string projectEndpointName,
-        JsonObject projectSchema
-    )
-    {
-        if (apiSchemaRootsByProjectEndpoint.TryGetValue(projectEndpointName, out var apiSchemaRoot))
-        {
-            return apiSchemaRoot;
-        }
-
-        var detachedSchema = projectSchema.DeepClone();
-
-        if (detachedSchema is not JsonObject detachedObject)
-        {
-            throw new InvalidOperationException("Project schema must be an object.");
-        }
-
-        apiSchemaRoot = new JsonObject { ["projectSchema"] = detachedObject };
-
-        apiSchemaRootsByProjectEndpoint[projectEndpointName] = apiSchemaRoot;
-
-        return apiSchemaRoot;
     }
 
     private sealed record ResourceEntry(int Index, ConcreteResourceModel Model);
