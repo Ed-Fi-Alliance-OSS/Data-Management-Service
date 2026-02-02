@@ -292,5 +292,26 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
+  },
+  {
+    "category": "Robustness",
+    "description": "Confirm whether the abstract-target `hasCompleteIdentity` branch is dead. In `ConstraintDerivationRelationalModelSetPass.ApplyReferenceConstraintsForResource`, `hasCompleteIdentity` is computed from `BuildReferenceIdentityColumns(...)` but `BuildReferenceIdentityColumns` currently throws when any target identity path is missing, which likely makes the `if (targetInfo.IsAbstract && !hasCompleteIdentity) continue;` path unreachable. Acceptance: (1) Prove via unit test(s) or reasoning + code change that this branch is unreachable; (2) If dead, remove the branch and simplify logic; (3) If not dead, add a unit test that exercises it and document why abstract targets are allowed to be partially mapped.",
+    "steps-to-verify": [
+      "Add or update a unit test that attempts to build an abstract reference with missing identity mapping and verify whether it throws before reaching the `hasCompleteIdentity` gate.",
+      "If unreachable, remove the `hasCompleteIdentity` calculation and the `continue` branch; otherwise add test coverage and inline comment explaining the intended partial-mapping behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Remove duplicated logic in relational model derivation: (1) scalar type resolution is duplicated verbatim in `DeriveColumnsAndBindDescriptorEdgesStep` and `ReferenceBindingRelationalModelSetPass`; (2) canonical table ordering logic is duplicated between `CanonicalizeOrderingStep` and `ConstraintDerivationRelationalModelSetPass`. Acceptance: (1) Extract shared helpers (e.g., `RelationalScalarTypeResolver` and `RelationalModelOrdering`) and replace duplicate implementations; (2) Ensure behavior is unchanged by covering both code paths with existing/new unit tests; (3) All unit tests pass.",
+    "steps-to-verify": [
+      "Extract scalar-type resolution helpers into a shared type and use it from both `DeriveColumnsAndBindDescriptorEdgesStep` and `ReferenceBindingRelationalModelSetPass`.",
+      "Extract table/constraint canonical ordering helpers and use it from both `CanonicalizeOrderingStep` and `ConstraintDerivationRelationalModelSetPass` (or remove the local copy and call the canonical implementation).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
