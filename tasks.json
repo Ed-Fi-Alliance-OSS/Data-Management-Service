@@ -276,5 +276,15 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
+  },
+  {
+    "category": "Design",
+    "description": "Update backend redesign design docs to state composite foreign keys for document references only use `ON UPDATE CASCADE` when the referenced target resource has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`). Align wording in `reference/design/backend-redesign/design-docs/data-model.md`, `reference/design/backend-redesign/design-docs/ddl-generation.md`, and `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` with current behavior in `ConstraintDerivationRelationalModelSetPass`.",
+    "steps-to-verify": [
+      "Update the reference constraint sections in the listed design docs to describe `allowIdentityUpdates` gating for `ON UPDATE CASCADE` and the non-cascade behavior when it is false.",
+      "Run: `rg -n \"ON UPDATE CASCADE\" reference/design/backend-redesign/design-docs` and confirm remaining mentions are conditional or explicitly scoped to `allowIdentityUpdates`-enabled targets.",
+      "Sanity check: compare wording against `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` onUpdate selection logic."
+    ],
+    "completed": false
   }
 ]
