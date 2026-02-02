@@ -274,6 +274,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 ["addresses"] = addressesSchema,
                 ["_ext"] = extensionSchema,
             },
+            ["required"] = new JsonArray("schoolTypeDescriptor"),
         };
     }
 

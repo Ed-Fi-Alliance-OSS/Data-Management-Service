@@ -503,6 +503,58 @@ public class Given_A_Property_With_XNullable
 }
 
 [TestFixture]
+public class Given_A_Nullable_Identity_Property
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolId"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["maxLength"] = 10,
+                    ["x-nullable"] = true,
+                },
+            },
+            ["required"] = new JsonArray("schoolId"),
+        };
+
+        var identityPath = JsonPathExpressionCompiler.Compile("$.schoolId");
+
+        try
+        {
+            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
+                schema,
+                builderContext =>
+                {
+                    builderContext.IdentityJsonPaths = new[] { identityPath };
+                }
+            );
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_fast_for_nullable_identity()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Identity path");
+        _exception.Message.Should().Contain("$.schoolId");
+        _exception.Message.Should().Contain("nullable");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+    }
+}
+
+[TestFixture]
 public class Given_A_String_Property_Without_MaxLength
 {
     private Exception? _exception;

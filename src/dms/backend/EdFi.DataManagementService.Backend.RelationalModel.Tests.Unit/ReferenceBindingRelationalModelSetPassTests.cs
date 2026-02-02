@@ -467,6 +467,7 @@ internal static class ReferenceBindingTestSchemaBuilder
             {
                 ["type"] = "object",
                 ["properties"] = new JsonObject { ["schoolId"] = new JsonObject { ["type"] = "integer" } },
+                ["required"] = new JsonArray("schoolId"),
             },
         };
     }
@@ -503,8 +504,10 @@ internal static class ReferenceBindingTestSchemaBuilder
                         {
                             ["firstName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 30 },
                         },
+                        ["required"] = new JsonArray("firstName"),
                     },
                 },
+                ["required"] = new JsonArray("name"),
             },
         };
     }
@@ -539,6 +542,7 @@ internal static class ReferenceBindingTestSchemaBuilder
                 {
                     ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 300 },
                 },
+                ["required"] = new JsonArray("programTypeDescriptor"),
             },
         };
     }
@@ -570,6 +574,7 @@ internal static class ReferenceBindingTestSchemaBuilder
                 {
                     ["calendarCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
                 },
+                ["required"] = new JsonArray("calendarCode"),
             },
         };
     }
@@ -692,6 +697,7 @@ internal static class ReferenceBindingMissingDescriptorPathSchemaBuilder
                 {
                     ["programTypeDescriptor"] = new JsonObject { ["type"] = "string", ["maxLength"] = 300 },
                 },
+                ["required"] = new JsonArray("programTypeDescriptor"),
             },
         };
     }

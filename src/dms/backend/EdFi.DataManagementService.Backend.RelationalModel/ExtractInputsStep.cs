@@ -368,6 +368,15 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             var targetResourceName = RequireString(mappingObject, "resourceName");
             var isRequired = mappingObject["isRequired"]?.GetValue<bool>() ?? false;
 
+            if (effectiveIsPartOfIdentity && !isRequired)
+            {
+                throw new InvalidOperationException(
+                    $"documentPathsMapping entry '{mapping.Key}' on resource '{projectName}:{resourceName}' is "
+                        + "marked as isPartOfIdentity but isRequired is false. "
+                        + "Identity references must be required."
+                );
+            }
+
             referenceObjectPaths.Add(referenceObjectPath.Canonical);
             referenceMappings.Add(
                 new DocumentReferenceMapping(

@@ -839,6 +839,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                 ["schoolId"] = new JsonObject { ["type"] = "integer" },
                 ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
             },
+            ["required"] = new JsonArray("schoolId", "educationOrganizationId"),
         };
 
         return new JsonObject
@@ -974,6 +975,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
             {
                 ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
             },
+            ["required"] = new JsonArray("educationOrganizationId"),
         };
 
         return new JsonObject
@@ -1009,6 +1011,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                 ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
                 ["organizationCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
             },
+            ["required"] = new JsonArray("educationOrganizationId", "organizationCode"),
         };
 
         return new JsonObject
@@ -1133,6 +1136,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                 ["schoolId"] = new JsonObject { ["type"] = "integer" },
                 ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
             },
+            ["required"] = new JsonArray("schoolId", "educationOrganizationId"),
         };
 
         return new JsonObject
@@ -1165,6 +1169,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
             {
                 ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
             },
+            ["required"] = new JsonArray("studentUniqueId"),
         };
 
         return new JsonObject
@@ -1229,6 +1234,7 @@ internal static class ConstraintDerivationTestSchemaBuilder
                         {
                             ["streetNumberName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
                         },
+                        ["required"] = new JsonArray("streetNumberName"),
                     },
                 },
             },

@@ -281,7 +281,7 @@
       "Add/extend unit tests that define a reference identity component (isPartOfIdentity=true) with isRequired=false and assert compilation fails with a clear message.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Robustness",

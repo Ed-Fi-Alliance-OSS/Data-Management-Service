@@ -442,6 +442,17 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             return;
         }
 
+        if (identityPaths.Contains(sourcePath.Canonical) && isNullable)
+        {
+            var projectName = context.ProjectName ?? "Unknown";
+            var resourceName = context.ResourceName ?? "Unknown";
+
+            throw new InvalidOperationException(
+                $"Identity path '{sourcePath.Canonical}' on resource '{projectName}:{resourceName}' "
+                    + "maps to a nullable column. Identity components must be non-null."
+            );
+        }
+
         if (context.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
         {
             var descriptorBaseName = BuildColumnBaseName(columnSegments);
