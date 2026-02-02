@@ -1,83 +1,5 @@
 [
   {
-    "category": "Constraints",
-    "description": "Fail fast on incomplete abstract identity mappings: `ConstraintDerivationRelationalModelSetPass` currently skips abstract-target reference constraints when the reference mapping does not include all abstract identity parts (it `continue`s). Change behavior to throw with missing identity parts. Acceptance: (1) For abstract targets, if the reference mapping is missing any identityJsonPath required by `{Abstract}Identity`, compilation fails with an exception that lists the missing identityJsonPaths and identifies the source resource + mapping key; (2) no silent omissions for abstract reference constraints; (3) a unit test covers this failure case deterministically.",
-    "steps-to-verify": [
-      "Change abstract-target handling in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` so incomplete identity results in an exception (include missing identity paths in the message).",
-      "Add a unit test that builds an abstract target reference mapping with missing identity part(s) and asserts the fail-fast exception message includes the missing identity path(s).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Fail fast on missing target identityJsonPaths for concrete reference mappings: reference identity completeness is currently optional because missing target identity paths are silently skipped when building composite FK columns. Update derivation/validation so a document reference mapping must bind every target identityJsonPath to a local column for concrete targets. Acceptance: (1) For concrete targets, if `documentPathsMapping.referenceJsonPaths[*].identityJsonPath` does not cover the full target `identityJsonPaths` set, compilation fails with an error listing missing target identityJsonPaths; (2) FK column order remains deterministic and matches target identity order; (3) a unit test covers the missing-identity failure case.",
-    "steps-to-verify": [
-      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` (or set-level validation) to detect missing target identityJsonPaths for concrete references and throw with a list of missing paths.",
-      "Add a unit test that creates a concrete target with multiple identityJsonPaths but supplies only a subset in `referenceJsonPaths`, and assert the fail-fast exception includes the missing identity path(s).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Schema Inputs",
-    "description": "Make `isPartOfIdentity` validation bi-directional: currently validation fails only when identityJsonPaths includes a mapping path but `isPartOfIdentity` is explicitly false; it should also fail when `isPartOfIdentity` is true but the mapping path is not present in identityJsonPaths. Acceptance: (1) `isPartOfIdentity=true` must imply the mapping path (or at least one referenceJsonPath for a reference mapping) is present in `identityJsonPaths`; otherwise throw with an actionable message; (2) existing validation (identityJsonPaths present but isPartOfIdentity=false) continues to fail fast; (3) unit tests cover both directions for scalar/descriptor mappings and for reference mappings.",
-    "steps-to-verify": [
-      "Update `ResolveIsPartOfIdentity` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` to throw when `isPartOfIdentity=true` but `identityJsonPaths` does not include the relevant path(s).",
-      "Add unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs` for the new failure direction (both non-reference and reference cases).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Tests",
-    "description": "Add a focused unit test asserting `TableConstraint.AllOrNoneNullability` is derived correctly for a reference group. Acceptance: (1) The derived table contains exactly one `AllOrNoneNullability` constraint per reference group (where identity columns are present); (2) `Name` matches `CK_{TableName}_{FkColumn}_AllOrNone`; (3) `FkColumn` matches the reference `..._DocumentId` column; (4) `DependentColumns` equals the propagated identity columns for that reference (correct names and deterministic order).",
-    "steps-to-verify": [
-      "Add a new test fixture (or extend existing) in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` that asserts the `AllOrNoneNullability` constraint for a known reference (e.g., `SchoolReference`) has the expected `FkColumn` and dependent identity columns.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Performance",
-    "description": "Tighten reference binding complexity by carrying an index map: `ReferenceBindingRelationalModelSetPass` currently does a list scan (`FindIndex`) to update concrete models. Refactor to precompute a `Dictionary<QualifiedResourceName, int>` (resource -> index) like the constraint pass does, and use it for updates. Acceptance: (1) No `FindIndex` usage remains in the pass; (2) behavior is unchanged for base resources and resource extensions; (3) reference binding remains deterministic and all unit tests pass.",
-    "steps-to-verify": [
-      "Refactor `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs` to use a resource->index map for updates.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Review and remove helper duplication: `IsPrefixOf` exists in multiple passes (e.g., `ReferenceBindingRelationalModelSetPass` and `ConstraintDerivationRelationalModelSetPass`). Consolidate into a single shared helper (e.g., in `RelationalModelSetSchemaHelpers`) and update callers. Acceptance: (1) only one implementation exists in the codebase for JSONPath prefix checks; (2) callers use the shared helper; (3) behavior remains identical (all unit tests pass); (4) no new ordering/determinism regressions are introduced.",
-    "steps-to-verify": [
-      "Move/merge prefix-check logic into a shared helper and update call sites in both passes.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Extract a shared WalkSchema context record to eliminate the 17-parameter explosion in ExtensionTableDerivationRelationalModelSetPass.WalkSchema. Bundle stable per-walk parameters (extensionProject, baseRootBaseName, extensionRootBaseName, baseTablesByScope, identityPaths, referenceIdentityPaths, referenceObjectPaths) into a `readonly record struct ExtensionWalkContext`. Pass one context object + the per-call mutation targets. Acceptance: (1) WalkSchema, WalkObjectSchema, and WalkArraySchema each accept <= 10 parameters; (2) no behavioral change \u2014 all existing unit tests pass; (3) the context record is immutable (readonly record struct or sealed record with init-only properties).",
-    "steps-to-verify": [
-      "Introduce `ExtensionWalkContext` in ExtensionTableDerivationRelationalModelSetPass.cs and refactor WalkSchema/WalkObjectSchema/WalkArraySchema to use it.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Consolidate duplicate TableBuilder and ExtensionTableBuilder into a single shared builder. ReferenceBindingRelationalModelSetPass.TableBuilder and ExtensionTableDerivationRelationalModelSetPass.ExtensionTableBuilder contain nearly identical column-collision detection and constraint accumulation logic. Extract a shared `TableColumnAccumulator` (or make one compose/inherit the other). Acceptance: (1) Only one implementation of column-collision detection exists; (2) both passes use the shared builder; (3) all unit tests pass with no behavioral change.",
-    "steps-to-verify": [
-      "Extract shared builder and update both ReferenceBindingRelationalModelSetPass and ExtensionTableDerivationRelationalModelSetPass to use it.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": true
-  },
-  {
     "category": "Robustness",
     "description": "Remove fallback levels 3-4 from ConstraintDerivationRelationalModelSetPass.ApplyArrayUniquenessConstraint (lines 336-468). Analysis: Level 1 (direct scope match) handles the standard case where constraint scope matches table JsonScope directly. Level 2 (strip _ext.{project} prefix) is required for the cross-boundary nested constraint pattern \u2014 e.g. the contacts extension has basePath=$._ext.sample.addresses[*] with paths=[$.periods[*].beginDate], which resolves to scope $._ext.sample.addresses[*].periods[*], but the actual table is the base ContactAddressPeriod with scope $.addresses[*].periods[*]; stripping _ext.sample makes this match. Levels 3-4 (brute-force scan across ALL tables) are not exercised by any real Ed-Fi schema (ds-5.2 or sample). They catch InvalidOperationException per-candidate and silently continue, meaning if a table happens to have columns with matching names at the wrong scope, the constraint lands on the wrong table \u2014 violating the story AC 'no silent omissions'. Recommendation: Remove levels 3-4 and fail fast after level 2 with a diagnostic error citing the unmatched scope. Add a code comment on level 2 documenting the cross-boundary pattern it handles.",
     "steps-to-verify": [
@@ -331,5 +253,44 @@
       "Verify the doc references the relevant code locations (passes and key helpers) accurately and uses concrete examples (e.g., `UX_{table}_{col1}_{col2}_...` naming and dialect shortening limits)."
     ],
     "completed": true
+  },
+  {
+    "category": "Maintainability",
+    "description": "Extract shared extension-resolution boilerplate from passes into a single helper. The 'resolve resource extension to base resource' pattern (BuildBaseResourceLookup → TryGetValue → count-check → error message) is copy-pasted in ReferenceBindingRelationalModelSetPass.Execute (lines 59-98), ConstraintDerivationRelationalModelSetPass.ApplyReferenceConstraints (lines 116-158), and ConstraintDerivationRelationalModelSetPass.ApplyArrayUniquenessConstraints (lines 231-267). If the matching logic or error wording changes, all three must be updated in lockstep. Acceptance: (1) A shared method (e.g., ResolveBaseResourceForExtension) exists in RelationalModelSetSchemaHelpers that takes a resource extension context and the base resource lookup and returns the single matching base entry, throwing on zero or multiple matches with the same error messages as today; (2) All three call sites use the shared method; (3) No private copies of the matching/error logic remain in individual pass files; (4) All unit tests pass with no behavioral change.",
+    "steps-to-verify": [
+      "Add ResolveBaseResourceForExtension<TEntry> to RelationalModelSetSchemaHelpers that accepts resourceName, resource (for error formatting), and the base resource lookup, returning the single TEntry.",
+      "Replace the inline logic in ReferenceBindingRelationalModelSetPass.Execute with a call to the shared helper.",
+      "Replace the inline logic in ConstraintDerivationRelationalModelSetPass.ApplyReferenceConstraints with a call to the shared helper.",
+      "Replace the inline logic in ConstraintDerivationRelationalModelSetPass.ApplyArrayUniquenessConstraints with a call to the shared helper.",
+      "Grep pass files to confirm no private copies remain: grep -n 'baseEntries.Count != 1' src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/*Pass.cs",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Split ConstraintDerivationRelationalModelSetPass into focused passes. At ~1,625 lines, this class houses three independent concerns: (A) root identity unique constraints, (B) reference FK + all-or-none constraints, (C) array uniqueness constraints. Each sub-pass independently rebuilds resourcesByKey, baseResourcesByName, apiSchemaRootsByProjectEndpoint, and builderContextsByResource dictionaries. The ApplyReferenceConstraintsForResource method takes 11 parameters. Acceptance: (1) The class is split into 2-3 separate IRelationalModelSetPass implementations (e.g., RootIdentityConstraintPass, ReferenceConstraintPass, ArrayUniquenessConstraintPass — or at minimum separate the reference constraint logic from root/array); (2) Each new pass is registered in RelationalModelSetPasses.CreateDefault() in the correct order (root constraints before reference constraints before array uniqueness); (3) The ApplyReferenceConstraintsForResource 11-parameter signature is reduced by introducing a context record that bundles the shared lookup state; (4) All 194 unit tests pass with no behavioral change; (5) The authoritative golden test output is byte-identical.",
+    "steps-to-verify": [
+      "Extract root identity constraint derivation into its own IRelationalModelSetPass (or keep inline if trivial).",
+      "Extract reference FK + all-or-none constraint derivation into its own IRelationalModelSetPass with a bundled context record replacing the 11-parameter method.",
+      "Extract array uniqueness constraint derivation into its own IRelationalModelSetPass.",
+      "Register new passes in RelationalModelSetPasses.CreateDefault() in correct order.",
+      "Verify ApplyReferenceConstraintsForResource (or equivalent) parameter count is ≤ 5.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj",
+      "Diff authoritative golden test output to confirm byte-identical results."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Correctness",
+    "description": "Fix swallowed exception in TryResolveArrayUniquenessTable to preserve all failure diagnostics. In ConstraintDerivationRelationalModelSetPass.TryResolveArrayUniquenessTable (lines 530-548), when iterating candidates, failures from BuildArrayUniquenessColumns are caught and assigned to the 'failure' out parameter, but only the last failure is preserved — earlier diagnostic information is silently discarded. When zero candidates match (line 572, returns false) and the aligned-scope fallback also fails, the caller at line 410 throws the failure from the aligned attempt rather than the original, producing misleading diagnostics. Acceptance: (1) All candidate failures are collected (e.g., in a List<Exception>); (2) When no candidate matches, the out failure is an AggregateException (or a single exception with all candidate error messages concatenated) so no diagnostic context is lost; (3) The caller at line 410 prefers the original-scope failure over the aligned-scope failure when both fail (or includes both); (4) Unit test: construct a fixture where two candidates exist for the same scope and both fail with different errors — assert the thrown exception message contains diagnostic info from both failures; (5) All existing 194 unit tests pass.",
+    "steps-to-verify": [
+      "Change TryResolveArrayUniquenessTable to collect all candidate failures in a List<Exception> instead of overwriting a single 'failure' variable.",
+      "When returning false with failures, set the out parameter to an AggregateException containing all collected failures (or a single exception with concatenated messages if only one).",
+      "Update the caller in ApplyArrayUniquenessConstraint (around line 410) to prefer the original-scope failure when both original and aligned attempts fail, or wrap both in an AggregateException.",
+      "Add a unit test with two candidates at the same scope that both fail for different reasons and assert the exception contains both error messages.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
+    ],
+    "completed": false
   }
 ]
