@@ -66,3 +66,7 @@
   Decisions: Removed descriptor-identity fallback in reference binding; now fail fast when descriptor identity path missing from descriptor-path map; added test for missing descriptor path mapping.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ReferenceBindingRelationalModelSetPassTests.cs; tasks.json; progress.txt
   Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed.
+- Task: Constraints (abstract reference missing identity fail-fast) (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Missing identity paths now error for abstract targets too; added abstract reference fixture with extra identity part to assert fail-fast message.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; tasks.json; progress.txt
+  Notes: dotnet test EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.

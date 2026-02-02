@@ -1339,7 +1339,7 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
             targetColumns.Add(targetColumn);
         }
 
-        if (!targetInfo.IsAbstract && missingIdentityPaths.Count > 0)
+        if (missingIdentityPaths.Count > 0)
         {
             var missingPaths = string.Join(", ", missingIdentityPaths.Select(path => $"'{path.Canonical}'"));
 

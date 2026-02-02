@@ -177,6 +177,40 @@ public class Given_Incomplete_Reference_Identity_Mapping
 }
 
 [TestFixture]
+public class Given_Incomplete_Abstract_Reference_Identity_Mapping
+{
+    [Test]
+    public void It_should_fail_fast_when_abstract_reference_mapping_is_missing_identity_paths()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildAbstractReferenceMissingIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new AbstractIdentityTableDerivationRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ConstraintDerivationRelationalModelSetPass(),
+            }
+        );
+
+        Action action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*Reference mapping 'EducationOrganization'*Ed-Fi:Enrollment*'$.organizationCode'*Ed-Fi:EducationOrganization*"
+            );
+    }
+}
+
+[TestFixture]
 public class Given_Reference_Constraint_Derivation
 {
     private DbTableModel _enrollmentTable = default!;
@@ -453,6 +487,32 @@ internal static class ConstraintDerivationTestSchemaBuilder
             {
                 ["enrollments"] = BuildAbstractReferenceEnrollmentSchema(),
                 ["schools"] = BuildAbstractReferenceSchoolSchema(),
+            },
+        };
+    }
+
+    internal static JsonObject BuildAbstractReferenceMissingIdentityProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["identityJsonPaths"] = new JsonArray
+                    {
+                        "$.educationOrganizationId",
+                        "$.organizationCode",
+                    },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildAbstractReferenceMissingIdentityEnrollmentSchema(),
+                ["schools"] = BuildAbstractReferenceSchoolWithOrganizationCodeSchema(),
             },
         };
     }
@@ -853,6 +913,58 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    private static JsonObject BuildAbstractReferenceMissingIdentityEnrollmentSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["educationOrganizationReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                        ["organizationCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Enrollment",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "EducationOrganization",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] =
+                                "$.educationOrganizationReference.educationOrganizationId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
     private static JsonObject BuildAbstractReferenceSchoolSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -881,6 +993,46 @@ internal static class ConstraintDerivationTestSchemaBuilder
                 {
                     ["isReference"] = false,
                     ["path"] = "$.educationOrganizationId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildAbstractReferenceSchoolWithOrganizationCodeSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                ["organizationCode"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["isSubclass"] = true,
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "EducationOrganization",
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.organizationCode" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.educationOrganizationId",
+                },
+                ["OrganizationCode"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.organizationCode",
                 },
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
