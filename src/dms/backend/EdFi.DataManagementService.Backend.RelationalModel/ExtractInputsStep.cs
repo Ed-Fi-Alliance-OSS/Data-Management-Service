@@ -632,18 +632,40 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
 
         Dictionary<string, string> overrides = new(StringComparer.Ordinal);
+        HashSet<string> unsupportedOverrides = new(StringComparer.Ordinal);
 
-        foreach (var referenceObjectPath in referenceObjectPaths)
+        foreach (var overrideEntry in nameOverridesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
-            if (!nameOverridesObject.TryGetPropertyValue(referenceObjectPath, out var overrideNode))
+            JsonPathExpression compiledPath;
+            var overrideKey = overrideEntry.Key;
+
+            try
             {
+                compiledPath = JsonPathExpressionCompiler.Compile(overrideKey);
+            }
+            catch (Exception ex) when (ex is ArgumentException or ArgumentOutOfRangeException)
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry '{overrideKey}' on resource "
+                        + $"'{projectName}:{resourceName}' is not a valid JSONPath.",
+                    ex
+                );
+            }
+
+            var canonicalPath = compiledPath.Canonical;
+
+            if (!referenceObjectPaths.Contains(canonicalPath))
+            {
+                unsupportedOverrides.Add(canonicalPath);
                 continue;
             }
+
+            var overrideNode = overrideEntry.Value;
 
             if (overrideNode is null)
             {
                 throw new InvalidOperationException(
-                    $"relational.nameOverrides entry '{referenceObjectPath}' is null on resource "
+                    $"relational.nameOverrides entry '{overrideKey}' is null on resource "
                         + $"'{projectName}:{resourceName}'."
                 );
             }
@@ -651,7 +673,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             if (overrideNode is not JsonValue overrideValue)
             {
                 throw new InvalidOperationException(
-                    $"relational.nameOverrides entry '{referenceObjectPath}' must be a string on resource "
+                    $"relational.nameOverrides entry '{overrideKey}' must be a string on resource "
                         + $"'{projectName}:{resourceName}'."
                 );
             }
@@ -661,12 +683,25 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             if (string.IsNullOrWhiteSpace(overrideText))
             {
                 throw new InvalidOperationException(
-                    $"relational.nameOverrides entry '{referenceObjectPath}' must be non-empty on resource "
+                    $"relational.nameOverrides entry '{overrideKey}' must be non-empty on resource "
                         + $"'{projectName}:{resourceName}'."
                 );
             }
 
-            overrides[referenceObjectPath] = overrideText;
+            overrides[canonicalPath] = overrideText;
+        }
+
+        if (unsupportedOverrides.Count > 0)
+        {
+            var unsupportedPaths = unsupportedOverrides
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+
+            throw new InvalidOperationException(
+                $"relational.nameOverrides on resource '{projectName}:{resourceName}' contains unsupported "
+                    + $"JSONPaths: {string.Join(", ", unsupportedPaths)}. "
+                    + "Only document reference object paths are supported until DMS-931."
+            );
         }
 
         return overrides;

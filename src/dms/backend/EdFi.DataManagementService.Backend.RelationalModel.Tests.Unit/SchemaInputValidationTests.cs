@@ -760,13 +760,146 @@ public class Given_Reference_IdentityJsonPath_Not_In_Target_IdentityJsonPaths
     }
 }
 
+[TestFixture]
+public class Given_A_Relational_NameOverride_With_Invalid_JsonPath
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var relational = new JsonObject
+        {
+            ["nameOverrides"] = new JsonObject { ["$.schoolReference..schoolId"] = "School" },
+        };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: new JsonObject(),
+            jsonSchemaForInsert: new JsonObject(),
+            relational: relational
+        );
+    }
+
+    [Test]
+    public void It_should_fail_with_invalid_json_path()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("relational.nameOverrides");
+        _exception.Message.Should().Contain("$.schoolReference..schoolId");
+        _exception.Message.Should().Contain("Ed-Fi:Section");
+    }
+}
+
+[TestFixture]
+public class Given_A_Relational_NameOverride_For_NonReference_Path
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                },
+            },
+        };
+
+        var relational = new JsonObject { ["nameOverrides"] = new JsonObject { ["$.schoolId"] = "School" } };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject(),
+            relational: relational
+        );
+    }
+
+    [Test]
+    public void It_should_fail_with_unsupported_override_key()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("unsupported");
+        _exception.Message.Should().Contain("$.schoolId");
+        _exception.Message.Should().Contain("Ed-Fi:Section");
+    }
+}
+
+[TestFixture]
+public class Given_A_Relational_NameOverride_For_A_Reference_Path
+{
+    private RelationalModelBuilderContext? _context;
+
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                },
+            },
+        };
+
+        var relational = new JsonObject
+        {
+            ["nameOverrides"] = new JsonObject { ["$.schoolReference"] = "SchoolReferenceOverride" },
+        };
+
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject(),
+            relational: relational
+        );
+    }
+
+    [Test]
+    public void It_should_apply_the_override()
+    {
+        _context.Should().NotBeNull();
+        _context!
+            .ReferenceNameOverridesByPath.Should()
+            .ContainKey("$.schoolReference")
+            .WhoseValue.Should()
+            .Be("SchoolReferenceOverride");
+    }
+}
+
 internal static class SchemaInputValidationHelpers
 {
     public static Exception CaptureExtractInputsException(
         JsonArray identityJsonPaths,
         JsonObject documentPathsMapping,
         JsonNode jsonSchemaForInsert,
-        JsonArray? arrayUniquenessConstraints = null
+        JsonArray? arrayUniquenessConstraints = null,
+        JsonObject? relational = null
     )
     {
         var resourceSchema = new JsonObject
@@ -779,6 +912,11 @@ internal static class SchemaInputValidationHelpers
             ["documentPathsMapping"] = documentPathsMapping,
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
+
+        if (relational is not null)
+        {
+            resourceSchema["relational"] = relational;
+        }
 
         var apiSchemaRoot = CreateApiSchemaRoot(resourceSchema, "sections");
         var context = new RelationalModelBuilderContext
@@ -805,7 +943,8 @@ internal static class SchemaInputValidationHelpers
         JsonArray identityJsonPaths,
         JsonObject documentPathsMapping,
         JsonNode jsonSchemaForInsert,
-        JsonArray? arrayUniquenessConstraints = null
+        JsonArray? arrayUniquenessConstraints = null,
+        JsonObject? relational = null
     )
     {
         var resourceSchema = new JsonObject
@@ -818,6 +957,11 @@ internal static class SchemaInputValidationHelpers
             ["documentPathsMapping"] = documentPathsMapping,
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
+
+        if (relational is not null)
+        {
+            resourceSchema["relational"] = relational;
+        }
 
         var apiSchemaRoot = CreateApiSchemaRoot(resourceSchema, "sections");
         var context = new RelationalModelBuilderContext
@@ -840,6 +984,43 @@ internal static class SchemaInputValidationHelpers
         }
 
         throw new InvalidOperationException("Expected pipeline to fail.");
+    }
+
+    public static RelationalModelBuilderContext ExecuteExtractInputs(
+        JsonArray identityJsonPaths,
+        JsonObject documentPathsMapping,
+        JsonNode jsonSchemaForInsert,
+        JsonArray? arrayUniquenessConstraints = null,
+        JsonObject? relational = null
+    )
+    {
+        var resourceSchema = new JsonObject
+        {
+            ["resourceName"] = "Section",
+            ["isDescriptor"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = arrayUniquenessConstraints ?? new JsonArray(),
+            ["identityJsonPaths"] = identityJsonPaths,
+            ["documentPathsMapping"] = documentPathsMapping,
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+
+        if (relational is not null)
+        {
+            resourceSchema["relational"] = relational;
+        }
+
+        var apiSchemaRoot = CreateApiSchemaRoot(resourceSchema, "sections");
+        var context = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = "sections",
+        };
+
+        var step = new ExtractInputsStep();
+        step.Execute(context);
+
+        return context;
     }
 
     private static JsonNode CreateApiSchemaRoot(JsonObject resourceSchema, string endpointName)

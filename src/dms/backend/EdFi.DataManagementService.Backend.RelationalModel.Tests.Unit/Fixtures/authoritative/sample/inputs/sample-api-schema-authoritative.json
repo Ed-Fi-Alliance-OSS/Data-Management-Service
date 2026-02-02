@@ -1,8 +1,7 @@
 {
   "apiSchemaVersion": "1.0.0",
   "projectSchema": {
-    "abstractResources": {
-    },
+    "abstractResources": {},
     "caseInsensitiveEndpointNameMapping": {
       "artmediumdescriptors": "artMediumDescriptors",
       "buses": "buses",
@@ -14,18 +13,14 @@
     },
     "compatibleDsRange": "5.2.0",
     "description": "Sample-Core",
-    "domains": [
-    ],
+    "domains": [],
     "educationOrganizationHierarchy": {
-      "CommunityOrganization": {
-      },
+      "CommunityOrganization": {},
       "CommunityProvider": {
         "CommunityOrganization": "$.communityOrganizationReference.communityOrganizationId"
       },
-      "EducationOrganization": {
-      },
-      "EducationOrganizationNetwork": {
-      },
+      "EducationOrganization": {},
+      "EducationOrganizationNetwork": {},
       "EducationServiceCenter": {
         "StateEducationAgency": "$.stateEducationAgencyReference.stateEducationAgencyId"
       },
@@ -37,13 +32,11 @@
       "OrganizationDepartment": {
         "EducationOrganization": "$.parentEducationOrganizationReference.educationOrganizationId"
       },
-      "PostSecondaryInstitution": {
-      },
+      "PostSecondaryInstitution": {},
       "School": {
         "LocalEducationAgency": "$.localEducationAgencyReference.localEducationAgencyId"
       },
-      "StateEducationAgency": {
-      }
+      "StateEducationAgency": {}
     },
     "educationOrganizationTypes": [
       "CommunityOrganization",
@@ -73,26 +66,16 @@
     "resourceSchemas": {
       "artMediumDescriptors": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
-        "booleanJsonPaths": [
-        ],
-        "dateJsonPaths": [
-        ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
-        "documentPathsMapping": {
-        },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {},
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": true,
         "isResourceExtension": false,
         "isSchoolYearEnumeration": false,
@@ -147,8 +130,7 @@
           "title": "EdFi.Descriptor",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "descriptors": {
             "components": {
@@ -384,8 +366,7 @@
                     "artMediumDescriptors"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/artMediumDescriptors/{id}": {
                 "delete": {
@@ -563,8 +544,7 @@
                     "artMediumDescriptors"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -621,20 +601,15 @@
         },
         "resourceName": "ArtMediumDescriptor",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
+          "Contact": [],
+          "EducationOrganization": [],
           "Namespace": [
             "$.namespace"
           ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "busRoutes": {
         "allowIdentityUpdates": false,
@@ -661,8 +636,7 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$.daily",
           "$.telephones[*].doNotPublishIndicator",
@@ -672,8 +646,7 @@
           "$.staffEducationOrganizationAssignmentAssociationReference.beginDate",
           "$.startDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
+        "dateTimeJsonPaths": [],
         "decimalPropertyValidationInfos": [
           {
             "decimalPlaces": 2,
@@ -907,10 +880,8 @@
             "type": "number"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
         "identityJsonPaths": [
           "$.busReference.busId",
           "$.busRouteNumber"
@@ -1695,8 +1666,7 @@
                     "busRoutes"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/busRoutes/{id}": {
                 "delete": {
@@ -1874,8 +1844,7 @@
                     "busRoutes"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -1992,34 +1961,22 @@
         },
         "resourceName": "BusRoute",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "buses": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
-        "booleanJsonPaths": [
-        ],
-        "dateJsonPaths": [
-        ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "BusId": {
             "isPartOfIdentity": true,
@@ -2029,10 +1986,8 @@
             "type": "string"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
         "identityJsonPaths": [
           "$.busId"
         ],
@@ -2058,8 +2013,7 @@
           "title": "Sample.Bus",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "resources": {
             "components": {
@@ -2226,8 +2180,7 @@
                     "buses"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/buses/{id}": {
                 "delete": {
@@ -2405,8 +2358,7 @@
                     "buses"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -2433,19 +2385,13 @@
         },
         "resourceName": "Bus",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "contacts": {
         "allowIdentityUpdates": false,
@@ -2495,8 +2441,7 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.addresses[*]._ext.sample.onBusRoute",
           "$._ext.sample.addresses[*].doNotPublishIndicator",
@@ -2511,8 +2456,7 @@
           "$._ext.sample.graduationDate",
           "$._ext.sample.studentProgramAssociations[*].studentProgramAssociationReference.beginDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
+        "dateTimeJsonPaths": [],
         "decimalPropertyValidationInfos": [
           {
             "decimalPlaces": 1,
@@ -2904,12 +2848,9 @@
             "type": "time"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -3847,42 +3788,26 @@
         },
         "resourceName": "Contact",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "favoriteBookCategoryDescriptors": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
-        "booleanJsonPaths": [
-        ],
-        "dateJsonPaths": [
-        ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
-        "documentPathsMapping": {
-        },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {},
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": true,
         "isResourceExtension": false,
         "isSchoolYearEnumeration": false,
@@ -3937,8 +3862,7 @@
           "title": "EdFi.Descriptor",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "descriptors": {
             "components": {
@@ -4174,8 +4098,7 @@
                     "favoriteBookCategoryDescriptors"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/favoriteBookCategoryDescriptors/{id}": {
                 "delete": {
@@ -4353,8 +4276,7 @@
                     "favoriteBookCategoryDescriptors"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -4411,43 +4333,28 @@
         },
         "resourceName": "FavoriteBookCategoryDescriptor",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
+          "Contact": [],
+          "EducationOrganization": [],
           "Namespace": [
             "$.namespace"
           ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "membershipTypeDescriptors": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
-        "booleanJsonPaths": [
-        ],
-        "dateJsonPaths": [
-        ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
-        "documentPathsMapping": {
-        },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
+        "documentPathsMapping": {},
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": true,
         "isResourceExtension": false,
         "isSchoolYearEnumeration": false,
@@ -4502,8 +4409,7 @@
           "title": "EdFi.Descriptor",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "descriptors": {
             "components": {
@@ -4739,8 +4645,7 @@
                     "membershipTypeDescriptors"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/membershipTypeDescriptors/{id}": {
                 "delete": {
@@ -4918,8 +4823,7 @@
                     "membershipTypeDescriptors"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -4976,27 +4880,20 @@
         },
         "resourceName": "MembershipTypeDescriptor",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
+          "Contact": [],
+          "EducationOrganization": [],
           "Namespace": [
             "$.namespace"
           ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "schools": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.cteProgramService.primaryIndicator",
           "$._ext.sample.isExemplary"
@@ -5005,10 +4902,8 @@
           "$._ext.sample.cteProgramService.serviceBeginDate",
           "$._ext.sample.cteProgramService.serviceEndDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "CTEProgramService.CIPCode": {
             "isPartOfIdentity": false,
@@ -5071,12 +4966,9 @@
             "type": "boolean"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -5170,8 +5062,7 @@
           "title": "Sample.School",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "resources": {
             "components": {
@@ -5264,19 +5155,13 @@
         },
         "resourceName": "School",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "staffs": {
         "allowIdentityUpdates": false,
@@ -5287,18 +5172,15 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.pets[*].isFixed"
         ],
         "dateJsonPaths": [
           "$._ext.sample.firstPetOwnedDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "FirstPetOwnedDate": {
             "isPartOfIdentity": false,
@@ -5336,12 +5218,9 @@
             "type": "number"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -5502,19 +5381,13 @@
         },
         "resourceName": "Staff",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "studentArtProgramAssociations": {
         "allowIdentityUpdates": false,
@@ -5551,8 +5424,7 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$.privateArtProgram",
           "$.servedOutsideOfRegularSession",
@@ -5567,8 +5439,7 @@
           "$.services[*].serviceBeginDate",
           "$.services[*].serviceEndDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
+        "dateTimeJsonPaths": [],
         "decimalPropertyValidationInfos": [
           {
             "decimalPlaces": 2,
@@ -5876,10 +5747,8 @@
             "type": "string"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
         "identityJsonPaths": [
           "$.beginDate",
           "$.educationOrganizationReference.educationOrganizationId",
@@ -6851,8 +6720,7 @@
                     "studentArtProgramAssociations"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/studentArtProgramAssociations/{id}": {
                 "delete": {
@@ -7030,8 +6898,7 @@
                     "studentArtProgramAssociations"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -7172,51 +7039,41 @@
         },
         "relational": {
           "nameOverrides": {
-            "$.favoriteBook.artMedia[*]": "FavoriteBookArtMedium",
-            "$.portfolioYears[*]": "PortfolioYears",
             "$.programReference": "Program_Program"
           }
         },
         "resourceName": "StudentArtProgramAssociation",
         "securableElements": {
-          "Contact": [
-          ],
+          "Contact": [],
           "EducationOrganization": [
             {
               "jsonPath": "$.educationOrganizationReference.educationOrganizationId",
               "metaEdName": "EducationOrganizationId"
             }
           ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
+          "Namespace": [],
+          "Staff": [],
           "Student": [
             "$.studentReference.studentUniqueId"
           ]
         },
-        "sensitiveDataJsonPaths": [
-        ],
+        "sensitiveDataJsonPaths": [],
         "subclassType": "association",
         "superclassProjectName": "Ed-Fi",
         "superclassResourceName": "GeneralStudentProgramAssociation"
       },
       "studentCTEProgramAssociations": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.analysisCompleted"
         ],
-        "dateJsonPaths": [
-        ],
+        "dateJsonPaths": [],
         "dateTimeJsonPaths": [
           "$._ext.sample.analysisDate"
         ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "AnalysisCompleted": {
             "isPartOfIdentity": false,
@@ -7233,12 +7090,9 @@
             "type": "date-time"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -7275,13 +7129,11 @@
           "title": "Sample.StudentCTEProgramAssociation",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "resources": {
             "components": {
-              "schemas": {
-              }
+              "schemas": {}
             },
             "exts": {
               "EdFi_StudentCteProgramAssociation": {
@@ -7313,19 +7165,13 @@
         },
         "resourceName": "StudentCTEProgramAssociation",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "studentContactAssociations": {
         "allowIdentityUpdates": false,
@@ -7351,8 +7197,7 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.bedtimeReader",
           "$._ext.sample.telephone.doNotPublishIndicator",
@@ -7362,8 +7207,7 @@
           "$._ext.sample.readGreenEggsAndHamDate",
           "$._ext.sample.staffEducationOrganizationEmploymentAssociations[*].staffEducationOrganizationEmploymentAssociationReference.hireDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
+        "dateTimeJsonPaths": [],
         "decimalPropertyValidationInfos": [
           {
             "decimalPlaces": 4,
@@ -7584,12 +7428,9 @@
             "type": "boolean"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -8098,19 +7939,13 @@
         },
         "resourceName": "StudentContactAssociation",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "studentEducationOrganizationAssociations": {
         "allowIdentityUpdates": false,
@@ -8164,8 +7999,7 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.addresses[*]._ext.sample.onBusRoute",
           "$._ext.sample.addresses[*].doNotPublishIndicator",
@@ -8179,10 +8013,8 @@
           "$._ext.sample.studentCharacteristics[*].periods[*].beginDate",
           "$._ext.sample.studentCharacteristics[*].periods[*].endDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "Address.AddressTypeDescriptor": {
             "isDescriptor": true,
@@ -8414,16 +8246,14 @@
             "type": "boolean"
           }
         },
-        "domains": [
-        ],
+        "domains": [],
         "equalityConstraints": [
           {
             "sourceJsonPath": "$._ext.sample.favoriteProgramReference.educationOrganizationId",
             "targetJsonPath": "$.educationOrganizationReference.educationOrganizationId"
           }
         ],
-        "identityJsonPaths": [
-        ],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -9059,19 +8889,13 @@
         },
         "resourceName": "StudentEducationOrganizationAssociation",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "studentGraduationPlanAssociations": {
         "allowIdentityUpdates": false,
@@ -9107,8 +8931,7 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$.cteProgramService.primaryIndicator",
           "$.isActivePlan"
@@ -9118,8 +8941,7 @@
           "$.cteProgramService.serviceEndDate",
           "$.effectiveDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
+        "dateTimeJsonPaths": [],
         "decimalPropertyValidationInfos": [
           {
             "decimalPlaces": 4,
@@ -9358,8 +9180,7 @@
             "type": "number"
           }
         },
-        "domains": [
-        ],
+        "domains": [],
         "equalityConstraints": [
           {
             "sourceJsonPath": "$.studentContactAssociations[*].studentContactAssociationReference.studentUniqueId",
@@ -10214,8 +10035,7 @@
                     "studentGraduationPlanAssociations"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               },
               "/sample/studentGraduationPlanAssociations/{id}": {
                 "delete": {
@@ -10393,8 +10213,7 @@
                     "studentGraduationPlanAssociations"
                   ]
                 },
-                "x-Ed-Fi-domains": [
-                ]
+                "x-Ed-Fi-domains": []
               }
             },
             "tags": [
@@ -10493,39 +10312,29 @@
         },
         "resourceName": "StudentGraduationPlanAssociation",
         "securableElements": {
-          "Contact": [
-          ],
+          "Contact": [],
           "EducationOrganization": [
             {
               "jsonPath": "$.graduationPlanReference.educationOrganizationId",
               "metaEdName": "EducationOrganizationId"
             }
           ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
+          "Namespace": [],
+          "Staff": [],
           "Student": [
             "$.studentReference.studentUniqueId"
           ]
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "studentSchoolAssociations": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
-        "booleanJsonPaths": [
-        ],
-        "dateJsonPaths": [
-        ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "MembershipTypeDescriptor": {
             "isDescriptor": true,
@@ -10538,12 +10347,9 @@
             "type": "string"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -10576,13 +10382,11 @@
           "title": "Sample.StudentSchoolAssociation",
           "type": "object"
         },
-        "numericJsonPaths": [
-        ],
+        "numericJsonPaths": [],
         "openApiFragments": {
           "resources": {
             "components": {
-              "schemas": {
-              }
+              "schemas": {}
             },
             "exts": {
               "EdFi_StudentSchoolAssociation": {
@@ -10609,35 +10413,24 @@
         },
         "resourceName": "StudentSchoolAssociation",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "studentSectionAssociations": {
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "authorizationPathways": [
-        ],
-        "booleanJsonPaths": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "authorizationPathways": [],
+        "booleanJsonPaths": [],
         "dateJsonPaths": [
           "$._ext.sample.relatedGeneralStudentProgramAssociations[*].relatedGeneralStudentProgramAssociationReference.beginDate"
         ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "RelatedGeneralStudentProgramAssociation": {
             "isDescriptor": false,
@@ -10680,16 +10473,14 @@
             "resourceName": "GeneralStudentProgramAssociation"
           }
         },
-        "domains": [
-        ],
+        "domains": [],
         "equalityConstraints": [
           {
             "sourceJsonPath": "$._ext.sample.relatedGeneralStudentProgramAssociations[*].relatedGeneralStudentProgramAssociationReference.studentUniqueId",
             "targetJsonPath": "$.studentReference.studentUniqueId"
           }
         ],
-        "identityJsonPaths": [
-        ],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -10826,19 +10617,13 @@
         },
         "resourceName": "StudentSectionAssociation",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       },
       "students": {
         "allowIdentityUpdates": false,
@@ -10868,18 +10653,14 @@
             ]
           }
         ],
-        "authorizationPathways": [
-        ],
+        "authorizationPathways": [],
         "booleanJsonPaths": [
           "$._ext.sample.aquaticPets[*].isFixed",
           "$._ext.sample.pets[*].isFixed"
         ],
-        "dateJsonPaths": [
-        ],
-        "dateTimeJsonPaths": [
-        ],
-        "decimalPropertyValidationInfos": [
-        ],
+        "dateJsonPaths": [],
+        "dateTimeJsonPaths": [],
+        "decimalPropertyValidationInfos": [],
         "documentPathsMapping": {
           "AquaticPet.IsFixed": {
             "isPartOfIdentity": false,
@@ -10965,12 +10746,9 @@
             "type": "number"
           }
         },
-        "domains": [
-        ],
-        "equalityConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "domains": [],
+        "equalityConstraints": [],
+        "identityJsonPaths": [],
         "isDescriptor": false,
         "isResourceExtension": true,
         "isSchoolYearEnumeration": false,
@@ -11292,19 +11070,13 @@
         },
         "resourceName": "Student",
         "securableElements": {
-          "Contact": [
-          ],
-          "EducationOrganization": [
-          ],
-          "Namespace": [
-          ],
-          "Staff": [
-          ],
-          "Student": [
-          ]
+          "Contact": [],
+          "EducationOrganization": [],
+          "Namespace": [],
+          "Staff": [],
+          "Student": []
         },
-        "sensitiveDataJsonPaths": [
-        ]
+        "sensitiveDataJsonPaths": []
       }
     }
   }
