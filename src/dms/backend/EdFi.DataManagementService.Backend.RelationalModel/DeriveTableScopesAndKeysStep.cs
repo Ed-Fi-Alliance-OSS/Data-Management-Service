@@ -78,7 +78,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 storageKind,
                 descriptorRootTableScope.Table,
                 descriptorTables,
-                descriptorTables,
                 Array.Empty<DocumentReferenceBinding>(),
                 Array.Empty<DescriptorEdgeSource>()
             );
@@ -99,7 +98,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             physicalSchema,
             storageKind,
             rootTableScope.Table,
-            tables,
             tables,
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()

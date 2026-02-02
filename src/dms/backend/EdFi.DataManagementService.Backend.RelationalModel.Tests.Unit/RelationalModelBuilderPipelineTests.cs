@@ -78,7 +78,6 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            [table],
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()
         );

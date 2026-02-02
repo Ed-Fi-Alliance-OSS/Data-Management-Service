@@ -73,7 +73,6 @@ public sealed class CanonicalizeOrderingStep : IRelationalModelBuilderStep
         {
             Root = rootTable,
             TablesInReadDependencyOrder = canonicalTables,
-            TablesInWriteDependencyOrder = canonicalTables,
             DocumentReferenceBindings = orderedDocumentReferences,
             DescriptorEdgeSources = orderedDescriptorEdges,
         };

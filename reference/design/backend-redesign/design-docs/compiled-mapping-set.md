@@ -295,7 +295,7 @@ For a write request targeting resource `R`:
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
 
 5. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
-   - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInWriteDependencyOrder`, enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
+   - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInReadDependencyOrder` (the same order used for reads), enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
    - Each `TableWritePlan` contains `ColumnBindings: IReadOnlyList<WriteColumnBinding>`.
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
      - `DocumentId`, `ParentKeyPart(i)`, `Ordinal`

@@ -207,7 +207,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return baseModel with
         {
             TablesInReadDependencyOrder = updatedTables,
-            TablesInWriteDependencyOrder = updatedTables,
             DescriptorEdgeSources = updatedEdges,
         };
     }

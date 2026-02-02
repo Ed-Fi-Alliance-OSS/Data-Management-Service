@@ -836,7 +836,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         {
             Root = updatedRoot,
             TablesInReadDependencyOrder = updatedTables,
-            TablesInWriteDependencyOrder = updatedTables,
         };
     }
 
@@ -854,7 +853,6 @@ public sealed class ConstraintDerivationRelationalModelSetPass : IRelationalMode
         {
             Root = updatedRoot,
             TablesInReadDependencyOrder = updatedTables,
-            TablesInWriteDependencyOrder = updatedTables,
         };
     }
 

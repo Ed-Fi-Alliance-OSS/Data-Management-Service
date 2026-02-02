@@ -283,7 +283,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         {
             Root = updatedRoot,
             TablesInReadDependencyOrder = updatedTables,
-            TablesInWriteDependencyOrder = updatedTables,
             DocumentReferenceBindings = documentReferenceBindings.ToArray(),
             DescriptorEdgeSources = descriptorEdgeSources.ToArray(),
         };

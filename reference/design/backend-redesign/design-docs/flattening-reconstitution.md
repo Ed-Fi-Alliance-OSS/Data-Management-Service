@@ -391,7 +391,7 @@ public sealed class ResourceFlattener : IResourceFlattener
               resolved: resolved);
 
           // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
-          foreach (var tableModel in plan.Model.TablesInWriteDependencyOrder)
+          foreach (var tableModel in plan.Model.TablesInReadDependencyOrder)
           {
               if (tableModel.Table.Equals(rootTable))
                   continue;
@@ -887,10 +887,7 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// <param name="TablesInReadDependencyOrder">
 /// Tables ordered for hydration (root first, then child tables, then nested child tables).
 /// This order is used to emit SELECT result sets and to reconstitute efficiently without N+1 queries.
-/// </param>
-/// <param name="TablesInWriteDependencyOrder">
-/// Tables ordered for writing (root first, then child tables in depth-first order).
-/// This order is used to delete/insert child rows in a stable way (replace semantics).
+/// It is also used for writes (root first, then child tables in depth-first order).
 /// </param>
 /// <param name="DocumentReferenceBindings">
 /// The set of document-reference bindings derived from documentPathsMapping.referenceJsonPaths.
@@ -905,7 +902,6 @@ public sealed record RelationalResourceModel(
     DbSchemaName PhysicalSchema,
     DbTableModel Root,
     IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
-    IReadOnlyList<DbTableModel> TablesInWriteDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
 );

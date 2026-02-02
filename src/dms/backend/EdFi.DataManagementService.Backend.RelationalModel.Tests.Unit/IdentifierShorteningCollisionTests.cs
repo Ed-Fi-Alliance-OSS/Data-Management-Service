@@ -113,7 +113,6 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
                 ResourceStorageKind.RelationalTables,
                 table,
                 new[] { table },
-                new[] { table },
                 Array.Empty<DocumentReferenceBinding>(),
                 Array.Empty<DescriptorEdgeSource>()
             );

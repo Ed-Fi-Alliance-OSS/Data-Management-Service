@@ -115,7 +115,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         {
             Root = updatedRoot,
             TablesInReadDependencyOrder = updatedTables,
-            TablesInWriteDependencyOrder = updatedTables,
             DescriptorEdgeSources = descriptorEdgeSources.ToArray(),
         };
     }

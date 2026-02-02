@@ -207,7 +207,6 @@ public class Given_A_Relational_Model_Manifest_Emitter
             ResourceStorageKind.RelationalTables,
             table,
             new[] { table },
-            new[] { table },
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()
         );

@@ -216,7 +216,6 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            [table],
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()
         );

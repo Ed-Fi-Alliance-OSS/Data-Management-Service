@@ -69,7 +69,6 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             ResourceStorageKind.RelationalTables,
             rootTable,
             new[] { addressTable, rootTable },
-            new[] { addressTable, rootTable },
             Array.Empty<DocumentReferenceBinding>(),
             new[] { BuildAddressDescriptorEdge(schema), BuildRootDescriptorEdge(schema) }
         );

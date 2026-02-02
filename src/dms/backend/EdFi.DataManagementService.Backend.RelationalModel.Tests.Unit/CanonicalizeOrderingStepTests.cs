@@ -286,7 +286,6 @@ public class Given_Mixed_Constraint_Types
             ResourceStorageKind.RelationalTables,
             table,
             new[] { table },
-            new[] { table },
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()
         );

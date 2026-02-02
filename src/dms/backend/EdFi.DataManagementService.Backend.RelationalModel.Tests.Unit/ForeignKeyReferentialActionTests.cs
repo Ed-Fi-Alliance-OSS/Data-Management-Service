@@ -76,7 +76,6 @@ public class Given_A_Reference_Identity_Foreign_Key
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            [table],
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()
         );
