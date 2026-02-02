@@ -510,6 +510,42 @@ public class Given_IdentityJsonPaths_Not_Mapped_In_DocumentPathsMapping
 }
 
 [TestFixture]
+public class Given_Duplicate_IdentityJsonPaths
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var identityJsonPaths = new JsonArray { "$.schoolId", "$.schoolId" };
+        var documentPathsMapping = new JsonObject
+        {
+            ["SchoolId"] = new JsonObject
+            {
+                ["isReference"] = false,
+                ["isPartOfIdentity"] = false,
+                ["path"] = "$.schoolId",
+            },
+        };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: identityJsonPaths,
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject()
+        );
+    }
+
+    [Test]
+    public void It_should_fail_with_duplicate_identity_paths()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("duplicate");
+        _exception.Message.Should().Contain("$.schoolId");
+        _exception.Message.Should().Contain("Ed-Fi:Section");
+    }
+}
+
+[TestFixture]
 public class Given_Nested_ArrayUniquenessConstraint_Without_BasePath
 {
     private Exception? _exception;

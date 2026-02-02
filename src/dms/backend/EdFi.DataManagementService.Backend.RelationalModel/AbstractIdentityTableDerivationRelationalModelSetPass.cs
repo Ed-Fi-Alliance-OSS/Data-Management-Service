@@ -480,6 +480,8 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         }
 
         List<JsonPathExpression> compiledPaths = new(identityJsonPaths.Count);
+        HashSet<string> seenPaths = new(StringComparer.Ordinal);
+        HashSet<string> duplicatePaths = new(StringComparer.Ordinal);
 
         foreach (var identityJsonPath in identityJsonPaths)
         {
@@ -491,7 +493,22 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
             }
 
             var identityPath = identityJsonPath.GetValue<string>();
-            compiledPaths.Add(JsonPathExpressionCompiler.Compile(identityPath));
+            var compiledPath = JsonPathExpressionCompiler.Compile(identityPath);
+            compiledPaths.Add(compiledPath);
+
+            if (!seenPaths.Add(compiledPath.Canonical))
+            {
+                duplicatePaths.Add(compiledPath.Canonical);
+            }
+        }
+
+        if (duplicatePaths.Count > 0)
+        {
+            var duplicates = string.Join(", ", duplicatePaths.OrderBy(path => path, StringComparer.Ordinal));
+
+            throw new InvalidOperationException(
+                $"identityJsonPaths on abstract resource '{FormatResource(resource)}' contains duplicate JSONPaths: {duplicates}."
+            );
         }
 
         return compiledPaths.ToArray();

@@ -71,7 +71,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 "Expected jsonSchemaForInsert to be on ResourceSchema, invalid ApiSchema."
             );
 
-        var identityJsonPaths = ExtractIdentityJsonPaths(resourceSchema);
+        var identityJsonPaths = ExtractIdentityJsonPaths(resourceSchema, projectName, resourceName);
         var identityJsonPathSet = new HashSet<string>(
             identityJsonPaths.Select(path => path.Canonical),
             StringComparer.Ordinal
@@ -124,10 +124,16 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     /// </summary>
     /// <param name="resourceSchema">The resource schema containing <c>identityJsonPaths</c>.</param>
     /// <returns>The compiled identity paths.</returns>
-    private static IReadOnlyList<JsonPathExpression> ExtractIdentityJsonPaths(JsonObject resourceSchema)
+    private static IReadOnlyList<JsonPathExpression> ExtractIdentityJsonPaths(
+        JsonObject resourceSchema,
+        string projectName,
+        string resourceName
+    )
     {
         var identityJsonPaths = RequireArray(resourceSchema, "identityJsonPaths");
         List<JsonPathExpression> compiledPaths = new(identityJsonPaths.Count);
+        HashSet<string> seenPaths = new(StringComparer.Ordinal);
+        HashSet<string> duplicatePaths = new(StringComparer.Ordinal);
 
         foreach (var identityJsonPath in identityJsonPaths)
         {
@@ -139,7 +145,22 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             }
 
             var identityPath = identityJsonPath.GetValue<string>();
-            compiledPaths.Add(JsonPathExpressionCompiler.Compile(identityPath));
+            var compiledPath = JsonPathExpressionCompiler.Compile(identityPath);
+            compiledPaths.Add(compiledPath);
+
+            if (!seenPaths.Add(compiledPath.Canonical))
+            {
+                duplicatePaths.Add(compiledPath.Canonical);
+            }
+        }
+
+        if (duplicatePaths.Count > 0)
+        {
+            var duplicates = string.Join(", ", duplicatePaths.OrderBy(path => path, StringComparer.Ordinal));
+
+            throw new InvalidOperationException(
+                $"identityJsonPaths on resource '{projectName}:{resourceName}' contains duplicate JSONPaths: {duplicates}."
+            );
         }
 
         return compiledPaths.ToArray();

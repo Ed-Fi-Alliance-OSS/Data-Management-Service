@@ -154,16 +154,71 @@ public class Given_Abstract_Identity_Table_With_Mismatched_Types
     }
 }
 
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var abstractIdentityJsonPaths = new JsonArray
+        {
+            "$.educationOrganizationId",
+            "$.educationOrganizationId",
+        };
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false,
+            abstractIdentityJsonPaths: abstractIdentityJsonPaths
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new AbstractIdentityTableDerivationRelationalModelSetPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    [Test]
+    public void It_should_fail_fast_on_duplicate_identity_paths()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("duplicate");
+        _exception.Message.Should().Contain("$.educationOrganizationId");
+        _exception.Message.Should().Contain("Ed-Fi:EducationOrganization");
+    }
+}
+
 internal static class AbstractIdentityTableTestSchemaBuilder
 {
-    internal static JsonObject BuildProjectSchema(bool mismatchMemberType)
+    internal static JsonObject BuildProjectSchema(
+        bool mismatchMemberType,
+        JsonArray? abstractIdentityJsonPaths = null
+    )
     {
+        var identityJsonPaths =
+            abstractIdentityJsonPaths ?? new JsonArray { "$.educationOrganizationId", "$.organizationName" };
         var abstractResources = new JsonObject
         {
             ["EducationOrganization"] = new JsonObject
             {
                 ["resourceName"] = "EducationOrganization",
-                ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.organizationName" },
+                ["identityJsonPaths"] = identityJsonPaths,
             },
         };
 

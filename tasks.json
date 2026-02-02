@@ -321,7 +321,7 @@
       "Add unit tests (concrete + abstract cases) asserting the fail-fast behavior and the exception message includes the duplicate canonical path(s).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs",
