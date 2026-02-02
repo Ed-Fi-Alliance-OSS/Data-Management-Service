@@ -286,5 +286,15 @@
       "Sanity check: compare wording against `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` onUpdate selection logic."
     ],
     "completed": false
+  },
+  {
+    "category": "Schema Inputs",
+    "description": "Fail fast on unsupported `resourceSchema.relational.nameOverrides` keys and validate override JSONPath grammar. Today `ExtractReferenceNameOverrides` only checks for overrides on bound document reference object paths and silently ignores any other keys. This makes non-reference override keys a silent no-op until DMS-931 is implemented. Acceptance: (1) every key in `relational.nameOverrides` must compile as a valid JSONPath (throw with the invalid key and resource name when it does not); (2) until DMS-931, only document reference object path overrides are supported — any other override key causes compilation to fail, listing the unsupported keys and identifying the resource; (3) override matching uses canonical JSONPath strings (compile keys to canonical form before comparing) so valid overrides are not missed due to non-canonical input; (4) unit tests cover invalid JSONPath keys, unsupported non-reference keys, and a valid reference override key.",
+    "steps-to-verify": [
+      "Update `ExtractReferenceNameOverrides` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` to iterate all `relational.nameOverrides` entries, compile each key using `JsonPathExpressionCompiler.Compile`, and throw if the canonical key is not in the derived `referenceObjectPaths` set.",
+      "Add tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs`: (a) invalid JSONPath override key throws; (b) non-reference override key throws and lists the key; (c) valid reference override key does not throw and is applied.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
