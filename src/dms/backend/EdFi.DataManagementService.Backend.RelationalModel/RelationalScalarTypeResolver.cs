@@ -9,30 +9,35 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 internal static class RelationalScalarTypeResolver
 {
+    private static readonly IReadOnlySet<string> EmptyStringMaxLengthOmissionPaths = new HashSet<string>(
+        StringComparer.Ordinal
+    );
+
+    private delegate bool TryGetDecimalPropertyValidationInfo(
+        JsonPathExpression path,
+        out DecimalPropertyValidationInfo validationInfo
+    );
+
     public static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,
         RelationalModelBuilderContext context
     )
     {
-        var schemaType = GetSchemaType(schema, sourcePath.Canonical);
+        ArgumentNullException.ThrowIfNull(context);
 
-        return schemaType switch
-        {
-            "string" => ResolveStringType(schema, sourcePath, context),
-            "integer" => ResolveIntegerType(schema, sourcePath),
-            "number" => ResolveDecimalType(sourcePath, context),
-            "boolean" => new RelationalScalarType(ScalarKind.Boolean),
-            _ => throw new InvalidOperationException(
-                $"Unsupported scalar type '{schemaType}' at {sourcePath.Canonical}."
-            ),
-        };
+        return ResolveScalarType(
+            schema,
+            sourcePath,
+            context.TryGetDecimalPropertyValidationInfo,
+            context.StringMaxLengthOmissionPaths
+        );
     }
 
     private static RelationalScalarType ResolveStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
+        IReadOnlySet<string> stringMaxLengthOmissionPaths
     )
     {
         var format = GetOptionalString(schema, "format", sourcePath.Canonical);
@@ -44,22 +49,22 @@ internal static class RelationalScalarTypeResolver
                 "date" => new RelationalScalarType(ScalarKind.Date),
                 "date-time" => new RelationalScalarType(ScalarKind.DateTime),
                 "time" => new RelationalScalarType(ScalarKind.Time),
-                _ => BuildStringType(schema, sourcePath, context),
+                _ => BuildStringType(schema, sourcePath, stringMaxLengthOmissionPaths),
             };
         }
 
-        return BuildStringType(schema, sourcePath, context);
+        return BuildStringType(schema, sourcePath, stringMaxLengthOmissionPaths);
     }
 
     private static RelationalScalarType BuildStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
+        IReadOnlySet<string> stringMaxLengthOmissionPaths
     )
     {
         if (!schema.TryGetPropertyValue("maxLength", out var maxLengthNode) || maxLengthNode is null)
         {
-            if (IsMaxLengthOmissionAllowed(sourcePath, context))
+            if (IsMaxLengthOmissionAllowed(sourcePath, stringMaxLengthOmissionPaths))
             {
                 return new RelationalScalarType(ScalarKind.String);
             }
@@ -90,10 +95,10 @@ internal static class RelationalScalarTypeResolver
 
     private static bool IsMaxLengthOmissionAllowed(
         JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
+        IReadOnlySet<string> stringMaxLengthOmissionPaths
     )
     {
-        return context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
+        return stringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
     }
 
     private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)
@@ -109,10 +114,10 @@ internal static class RelationalScalarTypeResolver
 
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
+        TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo
     )
     {
-        if (!context.TryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
+        if (!tryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
         {
             throw new InvalidOperationException(
                 $"Decimal property validation info is required for number properties at {sourcePath.Canonical}."
@@ -144,6 +149,47 @@ internal static class RelationalScalarTypeResolver
             ScalarKind.Decimal,
             Decimal: (validationInfo.TotalDigits.Value, validationInfo.DecimalPlaces.Value)
         );
+    }
+
+    public static RelationalScalarType ResolveScalarType(
+        JsonObject schema,
+        JsonPathExpression sourcePath,
+        IReadOnlyDictionary<string, DecimalPropertyValidationInfo> decimalPropertyValidationInfosByPath
+    )
+    {
+        ArgumentNullException.ThrowIfNull(decimalPropertyValidationInfosByPath);
+
+        return ResolveScalarType(
+            schema,
+            sourcePath,
+            (JsonPathExpression path, out DecimalPropertyValidationInfo info) =>
+                decimalPropertyValidationInfosByPath.TryGetValue(path.Canonical, out info),
+            EmptyStringMaxLengthOmissionPaths
+        );
+    }
+
+    private static RelationalScalarType ResolveScalarType(
+        JsonObject schema,
+        JsonPathExpression sourcePath,
+        TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo,
+        IReadOnlySet<string> stringMaxLengthOmissionPaths
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tryGetDecimalPropertyValidationInfo);
+        ArgumentNullException.ThrowIfNull(stringMaxLengthOmissionPaths);
+
+        var schemaType = GetSchemaType(schema, sourcePath.Canonical);
+
+        return schemaType switch
+        {
+            "string" => ResolveStringType(schema, sourcePath, stringMaxLengthOmissionPaths),
+            "integer" => ResolveIntegerType(schema, sourcePath),
+            "number" => ResolveDecimalType(sourcePath, tryGetDecimalPropertyValidationInfo),
+            "boolean" => new RelationalScalarType(ScalarKind.Boolean),
+            _ => throw new InvalidOperationException(
+                $"Unsupported scalar type '{schemaType}' at {sourcePath.Canonical}."
+            ),
+        };
     }
 
     private static string GetSchemaType(JsonObject schema, string path)

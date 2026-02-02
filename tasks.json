@@ -203,7 +203,7 @@
       "Adjust RelationalScalarTypeResolver if needed to accept the decimal property validation infos from ConcreteResourceMetadata.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Duplication",

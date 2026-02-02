@@ -171,3 +171,7 @@
   Decisions: Added extension arrayUniquenessConstraints alignment tests for base-scope mapping + missing base table failure; added Contact core/extension schema fixtures with _ext-scoped paths.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
+- Task: Duplication (abstract identity scalar resolver) (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Removed duplicate scalar resolution helpers from abstract identity pass; added RelationalScalarTypeResolver overload for decimal infos and reuse.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalScalarTypeResolver.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/AbstractIdentityTableDerivationRelationalModelSetPass.cs; tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with pre-existing SyntheticTests feature warning.
