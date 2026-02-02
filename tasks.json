@@ -180,7 +180,7 @@
       "Add a new test fixture (or extend existing) in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` that asserts the `AllOrNoneNullability` constraint for a known reference (e.g., `SchoolReference`) has the expected `FkColumn` and dependent identity columns.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Performance",

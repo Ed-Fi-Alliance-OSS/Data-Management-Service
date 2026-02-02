@@ -32,9 +32,11 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         ArgumentNullException.ThrowIfNull(context);
 
         var baseResourcesByName = BuildBaseResourceLookup(context.ConcreteResourcesInNameOrder);
-        var resourcesByKey = context.ConcreteResourcesInNameOrder.ToDictionary(resource =>
-            resource.ResourceKey.Resource
-        );
+        var resourceIndexByKey = context
+            .ConcreteResourcesInNameOrder.Select(
+                (resource, index) => new { resource.ResourceKey.Resource, Index = index }
+            )
+            .ToDictionary(entry => entry.Resource, entry => entry.Index);
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
@@ -91,25 +93,15 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                 continue;
             }
 
-            if (!resourcesByKey.TryGetValue(resource, out var concrete))
+            if (!resourceIndexByKey.TryGetValue(resource, out var index))
             {
                 throw new InvalidOperationException(
                     $"Concrete resource '{FormatResource(resource)}' was not found for reference binding."
                 );
             }
 
+            var concrete = context.ConcreteResourcesInNameOrder[index];
             var updated = ApplyReferenceMappings(context, concrete.RelationalModel, builderContext, resource);
-
-            var index = context.ConcreteResourcesInNameOrder.FindIndex(entry =>
-                entry.ResourceKey.Resource == resource
-            );
-
-            if (index < 0)
-            {
-                throw new InvalidOperationException(
-                    $"Concrete resource '{FormatResource(resource)}' was not found in derived inventory."
-                );
-            }
 
             context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updated };
         }
