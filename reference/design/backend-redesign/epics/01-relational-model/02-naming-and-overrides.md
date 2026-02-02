@@ -18,6 +18,20 @@ Implement deterministic physical naming per `reference/design/backend-redesign/d
 
 This story is part of building the unified `DerivedRelationalModelSet` (see `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`) so DDL emission and plan compilation consume the same physical names.
 
+## Handoff from DMS-930
+
+DMS-930 intentionally stopped at provisional naming so the reference/constraint story could land. Current behavior:
+
+- Provisional naming: `RelationalNameConventions` is used by `ProjectSchemaNormalizer`, `DeriveTableScopesAndKeysStep`, `DeriveColumnsAndBindDescriptorEdgesStep`, `ReferenceBindingRelationalModelSetPass`, `ConstraintDerivationRelationalModelSetPass`, and `AbstractIdentityTableDerivationRelationalModelSetPass` to assemble schema/table/column/constraint names directly from resource and JSONPath segments (PascalCase + singularization). Constraint names are emitted as `FK_{Table}_{ColumnSuffix}`, `UX_{Table}_{Col1}_{Col2}_...`, and `CK_{Table}_{FkColumn}_AllOrNone`. These identifiers are not shortened and can exceed dialect limits (PostgreSQL 63 bytes, SQL Server 128 chars).
+- Placeholder overrides: `ExtractInputsStep.ExtractReferenceNameOverrides` validates `resourceSchema.relational.nameOverrides` JSONPaths and only accepts document reference object paths. Valid overrides only affect reference base names used in `ReferenceBindingRelationalModelSetPass`; all non-reference keys fail fast with `Only document reference object paths are supported until DMS-931.`
+- Placeholder shortening: `RelationalModelSetBuilderContext.ValidateIdentifierShorteningCollisions` + `IdentifierCollisionDetector` call `ISqlDialectRules.ShortenIdentifier` to detect collisions, but derived identifiers are not rewritten. The model still carries the original long names.
+
+DMS-931 responsibilities (naming handoff):
+
+- Apply the full naming rules and override semantics (including `rootTableNameOverride` and non-reference `relational.nameOverrides`) across schema/table/column/constraint/index/trigger/view names in the derived model.
+- Implement dialect shortening in the model itself (rewrite identifiers, then validate collisions after rewriting), reusing or replacing `IdentifierCollisionDetector`.
+- Ensure collision detection runs on the rewritten identifiers and produces actionable diagnostics.
+
 ## Integration (ordered passes)
 
 - Shared services: naming/override/shortening helpers are used by all per-resource derivation code when producing physical identifiers.

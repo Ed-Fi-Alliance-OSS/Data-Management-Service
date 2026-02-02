@@ -330,6 +330,6 @@
       "Update `./reference/design/backend-redesign/epics/01-relational-model/02-naming-and-overrides.md` to add a handoff section describing DMS-930 naming placeholders and DMS-931 responsibilities.",
       "Verify the doc references the relevant code locations (passes and key helpers) accurately and uses concrete examples (e.g., `UX_{table}_{col1}_{col2}_...` naming and dialect shortening limits)."
     ],
-    "completed": false
+    "completed": true
   }
 ]
