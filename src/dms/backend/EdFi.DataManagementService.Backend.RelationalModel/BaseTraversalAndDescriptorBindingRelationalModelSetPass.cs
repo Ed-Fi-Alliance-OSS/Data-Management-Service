@@ -72,6 +72,7 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
             };
 
             var result = _pipeline.Run(builderContext);
+            context.RegisterResourceBuilderContext(resourceKey, builderContext);
             var resourceKeyEntry = context.GetResourceKeyEntry(resourceKey);
 
             context.ConcreteResourcesInNameOrder.Add(

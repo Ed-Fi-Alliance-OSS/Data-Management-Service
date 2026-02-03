@@ -58,6 +58,7 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName,
         RelationalModelBuilderContext
     > _builderContextsByResource = new();
+    private readonly IRelationalModelBuilderStep _extractInputsStep;
     private readonly IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> _resourceKeysByResource;
     private readonly Dictionary<
         QualifiedResourceName,
@@ -76,10 +77,12 @@ public sealed class RelationalModelSetBuilderContext
     /// <param name="effectiveSchemaSet">The normalized effective schema set payload.</param>
     /// <param name="dialect">The target SQL dialect.</param>
     /// <param name="dialectRules">The shared dialect rules used during derivation.</param>
+    /// <param name="extractInputsStep">Optional extractor to populate per-resource inputs.</param>
     public RelationalModelSetBuilderContext(
         EffectiveSchemaSet effectiveSchemaSet,
         SqlDialect dialect,
-        ISqlDialectRules dialectRules
+        ISqlDialectRules dialectRules,
+        IRelationalModelBuilderStep? extractInputsStep = null
     )
     {
         ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
@@ -88,6 +91,7 @@ public sealed class RelationalModelSetBuilderContext
         EffectiveSchemaSet = effectiveSchemaSet;
         Dialect = dialect;
         DialectRules = dialectRules;
+        _extractInputsStep = extractInputsStep ?? new ExtractInputsStep();
 
         var effectiveResources = RelationalModelSetValidation.BuildEffectiveSchemaResourceIndex(
             effectiveSchemaSet
@@ -282,11 +286,33 @@ public sealed class RelationalModelSetBuilderContext
             DescriptorPathsByJsonPath = descriptorPaths,
         };
 
-        new ExtractInputsStep().Execute(builderContext);
+        _extractInputsStep.Execute(builderContext);
 
         _builderContextsByResource[resource] = builderContext;
 
         return builderContext;
+    }
+
+    /// <summary>
+    /// Registers a prebuilt builder context for the supplied resource.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <param name="builderContext">The builder context to cache.</param>
+    public void RegisterResourceBuilderContext(
+        QualifiedResourceName resource,
+        RelationalModelBuilderContext builderContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(builderContext);
+
+        if (_builderContextsByResource.ContainsKey(resource))
+        {
+            throw new InvalidOperationException(
+                $"Builder context already registered for resource '{FormatResource(resource)}'."
+            );
+        }
+
+        _builderContextsByResource[resource] = builderContext;
     }
 
     /// <summary>

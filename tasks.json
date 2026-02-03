@@ -170,6 +170,6 @@
       "Add unit test that builds a small effective schema set with N resources and asserts the extractor is invoked exactly N times per build (not 2N).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
