@@ -46,6 +46,13 @@ public class SchemaToolsTests
             var assemblyLocation = typeof(SchemaToolsTests).Assembly.Location;
             var testBinDir = Path.GetDirectoryName(assemblyLocation)!;
 
+            // Extract configuration and framework from current test assembly path
+            // Path structure: .../bin/{Configuration}/{Framework}/
+            var frameworkDir = new DirectoryInfo(testBinDir);
+            var configurationDir = frameworkDir.Parent!;
+            var framework = frameworkDir.Name;
+            var configuration = configurationDir.Name;
+
             // Navigate from test bin to SchemaTools bin (same configuration)
             var schemaToolsBinDir = Path.Combine(
                 testBinDir,
@@ -55,8 +62,8 @@ public class SchemaToolsTests
                 "..",
                 "EdFi.DataManagementService.SchemaTools",
                 "bin",
-                "Debug",
-                "net10.0"
+                configuration,
+                framework
             );
 
             var exePath = Path.Combine(schemaToolsBinDir, "dms-schema.exe");

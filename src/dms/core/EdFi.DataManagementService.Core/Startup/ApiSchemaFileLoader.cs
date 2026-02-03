@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Startup;
@@ -24,7 +25,7 @@ public class ApiSchemaFileLoader(
     {
         logger.LogDebug(
             "Loading API schemas: core={CorePath}, extensions={ExtensionCount}",
-            SanitizeForLog(coreSchemaPath),
+            LoggingSanitizer.SanitizeForLogging(coreSchemaPath),
             extensionSchemaPaths.Count
         );
 
@@ -69,7 +70,10 @@ public class ApiSchemaFileLoader(
     {
         if (!File.Exists(filePath))
         {
-            logger.LogError("Schema file not found: {FilePath}", SanitizeForLog(filePath));
+            logger.LogError(
+                "Schema file not found: {FilePath}",
+                LoggingSanitizer.SanitizeForLogging(filePath)
+            );
             return (null, new ApiSchemaFileLoadResult.FileNotFoundResult(filePath));
         }
 
@@ -80,7 +84,11 @@ public class ApiSchemaFileLoader(
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            logger.LogError(ex, "Failed to read schema file: {FilePath}", SanitizeForLog(filePath));
+            logger.LogError(
+                ex,
+                "Failed to read schema file: {FilePath}",
+                LoggingSanitizer.SanitizeForLogging(filePath)
+            );
             return (null, new ApiSchemaFileLoadResult.FileReadErrorResult(filePath, ex.Message));
         }
 
@@ -89,41 +97,22 @@ public class ApiSchemaFileLoader(
             var node = JsonNode.Parse(jsonContent);
             if (node == null)
             {
-                logger.LogError("Schema file contains null JSON: {FilePath}", SanitizeForLog(filePath));
+                logger.LogError(
+                    "Schema file contains null JSON: {FilePath}",
+                    LoggingSanitizer.SanitizeForLogging(filePath)
+                );
                 return (null, new ApiSchemaFileLoadResult.InvalidJsonResult(filePath, "JSON parsed to null"));
             }
             return (node, null);
         }
         catch (JsonException ex)
         {
-            logger.LogError(ex, "Schema file contains invalid JSON: {FilePath}", SanitizeForLog(filePath));
+            logger.LogError(
+                ex,
+                "Schema file contains invalid JSON: {FilePath}",
+                LoggingSanitizer.SanitizeForLogging(filePath)
+            );
             return (null, new ApiSchemaFileLoadResult.InvalidJsonResult(filePath, ex.Message));
         }
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                    || c == '\\'
-                )
-                .ToArray()
-        );
     }
 }

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.Startup;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Serilog;
@@ -28,7 +29,7 @@ try
 
     logger.LogInformation(
         "Loading schemas: core={CorePath}, extensions={ExtensionCount}",
-        coreSchemaPath,
+        LoggingSanitizer.SanitizeForLogging(coreSchemaPath),
         extensionSchemaPaths.Count
     );
 
@@ -60,7 +61,7 @@ int HandleSuccess(ApiSchemaFileLoadResult.SuccessResult success)
 
     logger.LogInformation(
         "Schema loaded and normalized successfully. Core: {CoreEndpoint}, Extensions: {ExtensionCount}",
-        coreEndpoint,
+        LoggingSanitizer.SanitizeForLogging(coreEndpoint),
         extensionCount
     );
 
@@ -72,7 +73,10 @@ int HandleSuccess(ApiSchemaFileLoadResult.SuccessResult success)
             )
             .Where(n => n != null);
 
-        logger.LogInformation("Extension endpoints: {Extensions}", string.Join(", ", extensionEndpoints));
+        logger.LogInformation(
+            "Extension endpoints: {Extensions}",
+            string.Join(", ", extensionEndpoints.Select(LoggingSanitizer.SanitizeForLogging))
+        );
     }
 
     Console.WriteLine("Schema normalization successful.");
@@ -81,21 +85,29 @@ int HandleSuccess(ApiSchemaFileLoadResult.SuccessResult success)
 
 int HandleFileNotFound(ApiSchemaFileLoadResult.FileNotFoundResult failure)
 {
-    logger.LogError("File not found: {FilePath}", failure.FilePath);
+    logger.LogError("File not found: {FilePath}", LoggingSanitizer.SanitizeForLogging(failure.FilePath));
     Console.Error.WriteLine($"Error: File not found: {failure.FilePath}");
     return 1;
 }
 
 int HandleFileReadError(ApiSchemaFileLoadResult.FileReadErrorResult failure)
 {
-    logger.LogError("Failed to read file {FilePath}: {Error}", failure.FilePath, failure.ErrorMessage);
+    logger.LogError(
+        "Failed to read file {FilePath}: {Error}",
+        LoggingSanitizer.SanitizeForLogging(failure.FilePath),
+        LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
+    );
     Console.Error.WriteLine($"Error: Failed to read file {failure.FilePath}: {failure.ErrorMessage}");
     return 1;
 }
 
 int HandleInvalidJson(ApiSchemaFileLoadResult.InvalidJsonResult failure)
 {
-    logger.LogError("Invalid JSON in file {FilePath}: {Error}", failure.FilePath, failure.ErrorMessage);
+    logger.LogError(
+        "Invalid JSON in file {FilePath}: {Error}",
+        LoggingSanitizer.SanitizeForLogging(failure.FilePath),
+        LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
+    );
     Console.Error.WriteLine($"Error: Invalid JSON in file {failure.FilePath}: {failure.ErrorMessage}");
     return 1;
 }
@@ -113,7 +125,7 @@ int HandleNormalizationFailure(ApiSchemaFileLoadResult.NormalizationFailureResul
         _ => "Unknown normalization failure",
     };
 
-    logger.LogError("Schema normalization failed: {Message}", message);
+    logger.LogError("Schema normalization failed: {Message}", LoggingSanitizer.SanitizeForLogging(message));
     Console.Error.WriteLine($"Error: {message}");
     return 1;
 }

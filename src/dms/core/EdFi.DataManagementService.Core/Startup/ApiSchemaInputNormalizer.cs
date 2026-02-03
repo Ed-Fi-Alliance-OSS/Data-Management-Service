@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Startup;
@@ -34,7 +35,10 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         }
 
         var coreVersion = GetApiSchemaVersion(nodes.CoreApiSchemaRootNode);
-        _logger.LogDebug("Core schema apiSchemaVersion: {Version}", SanitizeForLog(coreVersion));
+        _logger.LogDebug(
+            "Core schema apiSchemaVersion: {Version}",
+            LoggingSanitizer.SanitizeForLogging(coreVersion)
+        );
 
         // Step 2: Validate all extensions and check for version mismatches
         var extensionSchemas = new List<(JsonNode Node, string EndpointName, string SchemaSource)>();
@@ -54,9 +58,9 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
             {
                 _logger.LogError(
                     "apiSchemaVersion mismatch in {SchemaSource}: expected {Expected}, got {Actual}",
-                    SanitizeForLog(schemaSource),
-                    SanitizeForLog(coreVersion),
-                    SanitizeForLog(extVersion)
+                    LoggingSanitizer.SanitizeForLogging(schemaSource),
+                    LoggingSanitizer.SanitizeForLogging(coreVersion),
+                    LoggingSanitizer.SanitizeForLogging(extVersion)
                 );
                 return new ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult(
                     coreVersion,
@@ -103,7 +107,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         {
             _logger.LogError(
                 "Schema {SchemaSource} is missing projectSchema node",
-                SanitizeForLog(schemaSource)
+                LoggingSanitizer.SanitizeForLogging(schemaSource)
             );
             return new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
                 schemaSource,
@@ -116,7 +120,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         {
             _logger.LogError(
                 "Schema {SchemaSource} is missing apiSchemaVersion",
-                SanitizeForLog(schemaSource)
+                LoggingSanitizer.SanitizeForLogging(schemaSource)
             );
             return new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
                 schemaSource,
@@ -129,7 +133,7 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         {
             _logger.LogError(
                 "Schema {SchemaSource} is missing projectEndpointName in projectSchema",
-                SanitizeForLog(schemaSource)
+                LoggingSanitizer.SanitizeForLogging(schemaSource)
             );
             return new ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult(
                 schemaSource,
@@ -183,8 +187,11 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
             {
                 _logger.LogError(
                     "Duplicate projectEndpointName {EndpointName} found in: {Sources}",
-                    SanitizeForLog(collision.ProjectEndpointName),
-                    string.Join(", ", collision.ConflictingSources.Select(SanitizeForLog))
+                    LoggingSanitizer.SanitizeForLogging(collision.ProjectEndpointName),
+                    string.Join(
+                        ", ",
+                        collision.ConflictingSources.Select(LoggingSanitizer.SanitizeForLogging)
+                    )
                 );
             }
             return new ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult(collisions);
@@ -229,32 +236,5 @@ public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger)
         }
 
         return cloned;
-    }
-
-    /// <summary>
-    /// Sanitizes a string for safe logging by allowing only safe characters.
-    /// Uses a whitelist approach to prevent log injection and log forging attacks.
-    /// Allows: letters, digits, spaces, and safe punctuation (_-.:/)
-    /// </summary>
-    private static string SanitizeForLog(string? input)
-    {
-        if (string.IsNullOrEmpty(input))
-        {
-            return string.Empty;
-        }
-
-        return new string(
-            input
-                .Where(c =>
-                    char.IsLetterOrDigit(c)
-                    || c == ' '
-                    || c == '_'
-                    || c == '-'
-                    || c == '.'
-                    || c == ':'
-                    || c == '/'
-                )
-                .ToArray()
-        );
     }
 }
