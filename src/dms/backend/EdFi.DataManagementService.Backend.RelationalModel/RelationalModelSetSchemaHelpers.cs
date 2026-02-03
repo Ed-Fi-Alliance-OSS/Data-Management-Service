@@ -239,6 +239,47 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Resolves the single concrete base resource entry for a resource extension, with consistent validation.
+    /// </summary>
+    /// <typeparam name="TEntry">The entry type stored in the lookup.</typeparam>
+    /// <param name="resourceName">The extension resource name used to locate base resources.</param>
+    /// <param name="resource">The resource identifier for diagnostics.</param>
+    /// <param name="baseResourcesByName">The lookup of base resources keyed by resource name.</param>
+    /// <param name="entryResourceSelector">Selector for the resource identifier on each entry.</param>
+    /// <returns>The matching base resource entry.</returns>
+    internal static TEntry ResolveBaseResourceForExtension<TEntry>(
+        string resourceName,
+        QualifiedResourceName resource,
+        IReadOnlyDictionary<string, List<TEntry>> baseResourcesByName,
+        Func<TEntry, QualifiedResourceName> entryResourceSelector
+    )
+    {
+        if (!baseResourcesByName.TryGetValue(resourceName, out var baseEntries))
+        {
+            throw new InvalidOperationException(
+                $"Resource extension '{FormatResource(resource)}' did not match a concrete base resource."
+            );
+        }
+
+        if (baseEntries.Count != 1)
+        {
+            var candidates = string.Join(
+                ", ",
+                baseEntries
+                    .Select(entry => FormatResource(entryResourceSelector(entry)))
+                    .OrderBy(name => name, StringComparer.Ordinal)
+            );
+
+            throw new InvalidOperationException(
+                $"Resource extension '{FormatResource(resource)}' matched multiple concrete resources: "
+                    + $"{candidates}."
+            );
+        }
+
+        return baseEntries[0];
+    }
+
+    /// <summary>
     /// Determines whether the prefix segments match the beginning of the path segments.
     /// </summary>
     /// <param name="prefix">The prefix segments to compare.</param>

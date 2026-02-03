@@ -55,29 +55,12 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
 
             if (IsResourceExtension(resourceContext))
             {
-                if (!baseResourcesByName.TryGetValue(resourceContext.ResourceName, out var baseEntries))
-                {
-                    throw new InvalidOperationException(
-                        $"Resource extension '{FormatResource(resource)}' did not match a concrete base resource."
-                    );
-                }
-
-                if (baseEntries.Count != 1)
-                {
-                    var candidates = string.Join(
-                        ", ",
-                        baseEntries
-                            .Select(entry => FormatResource(entry.Model.ResourceKey.Resource))
-                            .OrderBy(name => name, StringComparer.Ordinal)
-                    );
-
-                    throw new InvalidOperationException(
-                        $"Resource extension '{FormatResource(resource)}' matched multiple concrete resources: "
-                            + $"{candidates}."
-                    );
-                }
-
-                var baseEntry = baseEntries[0];
+                var baseEntry = ResolveBaseResourceForExtension(
+                    resourceContext.ResourceName,
+                    resource,
+                    baseResourcesByName,
+                    static entry => entry.Model.ResourceKey.Resource
+                );
                 var baseResource = baseEntry.Model.ResourceKey.Resource;
                 var mutation = GetOrCreateMutation(baseResource, baseEntry, mutations);
 

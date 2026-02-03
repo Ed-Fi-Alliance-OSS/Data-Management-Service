@@ -39,38 +39,25 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 continue;
             }
 
+            var resource = new QualifiedResourceName(
+                resourceContext.Project.ProjectSchema.ProjectName,
+                resourceContext.ResourceName
+            );
+
             if (!resourceContext.Project.ProjectSchema.IsExtensionProject)
             {
                 throw new InvalidOperationException(
-                    $"Resource extension '{FormatResource(new QualifiedResourceName(resourceContext.Project.ProjectSchema.ProjectName, resourceContext.ResourceName))}' "
+                    $"Resource extension '{FormatResource(resource)}' "
                         + "must be defined in an extension project."
                 );
             }
 
-            if (!baseResourcesByName.TryGetValue(resourceContext.ResourceName, out var baseEntries))
-            {
-                throw new InvalidOperationException(
-                    $"Resource extension '{FormatResource(new QualifiedResourceName(resourceContext.Project.ProjectSchema.ProjectName, resourceContext.ResourceName))}' "
-                        + "did not match a concrete base resource."
-                );
-            }
-
-            if (baseEntries.Count != 1)
-            {
-                var candidates = string.Join(
-                    ", ",
-                    baseEntries
-                        .Select(entry => FormatResource(entry.Model.ResourceKey.Resource))
-                        .OrderBy(name => name, StringComparer.Ordinal)
-                );
-
-                throw new InvalidOperationException(
-                    $"Resource extension '{FormatResource(new QualifiedResourceName(resourceContext.Project.ProjectSchema.ProjectName, resourceContext.ResourceName))}' "
-                        + $"matched multiple concrete resources: {candidates}."
-                );
-            }
-
-            var baseEntry = baseEntries[0];
+            var baseEntry = ResolveBaseResourceForExtension(
+                resourceContext.ResourceName,
+                resource,
+                baseResourcesByName,
+                static entry => entry.Model.ResourceKey.Resource
+            );
             var baseModel = context.ConcreteResourcesInNameOrder[baseEntry.Index];
             var extensionContext = BuildExtensionContext(
                 context,
