@@ -61,7 +61,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IDmsStartupTask, BackendMappingInitializationTask>()
             // Startup components
             .AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>()
-            .AddSingleton<IEffectiveSchemaHashProvider, NoOpEffectiveSchemaHashProvider>()
+            .AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>()
             .AddSingleton<IResourceKeySeedProvider, NoOpResourceKeySeedProvider>()
             .AddSingleton<IBackendMappingInitializer, NoOpBackendMappingInitializer>()
             // Core services
