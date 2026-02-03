@@ -86,7 +86,9 @@ int HandleSuccess(ApiSchemaFileLoadResult.SuccessResult success)
 int HandleFileNotFound(ApiSchemaFileLoadResult.FileNotFoundResult failure)
 {
     logger.LogError("File not found: {FilePath}", LoggingSanitizer.SanitizeForLogging(failure.FilePath));
-    Console.Error.WriteLine($"Error: File not found: {failure.FilePath}");
+    Console.Error.WriteLine(
+        $"Error: File not found: {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}"
+    );
     return 1;
 }
 
@@ -97,7 +99,9 @@ int HandleFileReadError(ApiSchemaFileLoadResult.FileReadErrorResult failure)
         LoggingSanitizer.SanitizeForLogging(failure.FilePath),
         LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
     );
-    Console.Error.WriteLine($"Error: Failed to read file {failure.FilePath}: {failure.ErrorMessage}");
+    Console.Error.WriteLine(
+        $"Error: Failed to read file {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}: {LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)}"
+    );
     return 1;
 }
 
@@ -108,7 +112,9 @@ int HandleInvalidJson(ApiSchemaFileLoadResult.InvalidJsonResult failure)
         LoggingSanitizer.SanitizeForLogging(failure.FilePath),
         LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)
     );
-    Console.Error.WriteLine($"Error: Invalid JSON in file {failure.FilePath}: {failure.ErrorMessage}");
+    Console.Error.WriteLine(
+        $"Error: Invalid JSON in file {LoggingSanitizer.SanitizeForLogging(failure.FilePath)}: {LoggingSanitizer.SanitizeForLogging(failure.ErrorMessage)}"
+    );
     return 1;
 }
 
@@ -126,7 +132,7 @@ int HandleNormalizationFailure(ApiSchemaFileLoadResult.NormalizationFailureResul
     };
 
     logger.LogError("Schema normalization failed: {Message}", LoggingSanitizer.SanitizeForLogging(message));
-    Console.Error.WriteLine($"Error: {message}");
+    Console.Error.WriteLine($"Error: {LoggingSanitizer.SanitizeForLogging(message)}");
     return 1;
 }
 
