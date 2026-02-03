@@ -1102,7 +1102,7 @@ public class Given_A_Relational_NameOverride_With_Invalid_JsonPath
 [TestFixture]
 public class Given_A_Relational_NameOverride_For_NonReference_Path
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -1132,7 +1132,7 @@ public class Given_A_Relational_NameOverride_For_NonReference_Path
 
         var relational = new JsonObject { ["nameOverrides"] = new JsonObject { ["$.schoolId"] = "School" } };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject(),
@@ -1141,15 +1141,18 @@ public class Given_A_Relational_NameOverride_For_NonReference_Path
     }
 
     /// <summary>
-    /// It should fail with unsupported override key.
+    /// It should defer the override until DMS-931.
     /// </summary>
     [Test]
-    public void It_should_fail_with_unsupported_override_key()
+    public void It_should_defer_the_override_until_DMS_931()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("unsupported");
-        _exception.Message.Should().Contain("$.schoolId");
-        _exception.Message.Should().Contain("Ed-Fi:Section");
+        _context.Should().NotBeNull();
+        _context!.ReferenceNameOverridesByPath.Should().NotContainKey("$.schoolId");
+        _context
+            .NameOverridesDeferredToNextStory.Should()
+            .ContainKey("$.schoolId")
+            .WhoseValue.Should()
+            .Be("School");
     }
 }
 

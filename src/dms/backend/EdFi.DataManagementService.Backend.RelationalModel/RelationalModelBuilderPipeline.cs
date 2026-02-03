@@ -103,6 +103,15 @@ public sealed class RelationalModelBuilderContext
         new Dictionary<string, string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// Captures <c>relational.nameOverrides</c> entries that are not yet supported by the relational model builder.
+    ///
+    /// DMS-931 must apply these overrides when non-reference paths (for example, array/table scopes) become
+    /// supported.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> NameOverridesDeferredToNextStory { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
     /// Descriptor value paths keyed by canonical JSONPath, used to derive descriptor FK columns instead of
     /// storing raw descriptor strings.
     /// </summary>

@@ -94,7 +94,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             projectName,
             resourceName
         );
-        var referenceNameOverrides = ExtractReferenceNameOverrides(
+        var nameOverrides = ExtractNameOverrides(
             resourceSchema,
             documentPathsMapping.ReferenceObjectPaths,
             projectName,
@@ -118,7 +118,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         context.AllowIdentityUpdates = allowIdentityUpdates;
         context.DocumentReferenceMappings = documentPathsMapping.ReferenceMappings;
         context.ArrayUniquenessConstraints = arrayUniquenessConstraints;
-        context.ReferenceNameOverridesByPath = referenceNameOverrides;
+        context.ReferenceNameOverridesByPath = nameOverrides.ReferenceNameOverridesByPath;
+        context.NameOverridesDeferredToNextStory = nameOverrides.DeferredNameOverrides;
         context.DescriptorPathsByJsonPath = descriptorPathsByJsonPath;
         context.DecimalPropertyValidationInfosByPath = decimalPropertyValidationInfosByPath;
         context.StringMaxLengthOmissionPaths = stringMaxLengthOmissionPaths;
@@ -320,7 +321,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                     resourceName,
                     isPartOfIdentity,
                     pathIsPartOfIdentity,
-                    new[] { pathExpression.Canonical }
+                    new[] { pathExpression.Canonical },
+                    pathExpression.Segments.Count > 1
                 );
 
                 mappedIdentityPaths.Add(pathExpression.Canonical);
@@ -344,7 +346,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                     resourceName,
                     isPartOfIdentity,
                     descriptorIsPartOfIdentity,
-                    new[] { pathExpression.Canonical }
+                    new[] { pathExpression.Canonical },
+                    pathExpression.Segments.Count > 1
                 );
 
                 mappedIdentityPaths.Add(pathExpression.Canonical);
@@ -380,7 +383,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 resourceName,
                 isPartOfIdentity,
                 referenceIsPartOfIdentity,
-                referencePaths
+                referencePaths,
+                referenceObjectPath.Segments.Count > 1
             );
             ValidateReferenceIdentityCompleteness(
                 mapping.Key,
@@ -600,7 +604,15 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     /// <summary>
     /// Extracts reference base-name overrides from <c>resourceSchema.relational.nameOverrides</c>.
     /// </summary>
-    private static IReadOnlyDictionary<string, string> ExtractReferenceNameOverrides(
+    private sealed record NameOverridesExtractionResult(
+        IReadOnlyDictionary<string, string> ReferenceNameOverridesByPath,
+        IReadOnlyDictionary<string, string> DeferredNameOverrides
+    );
+
+    /// <summary>
+    /// Extracts reference base-name overrides from <c>resourceSchema.relational.nameOverrides</c>.
+    /// </summary>
+    private static NameOverridesExtractionResult ExtractNameOverrides(
         JsonObject resourceSchema,
         IReadOnlySet<string> referenceObjectPaths,
         string projectName,
@@ -609,12 +621,18 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     {
         if (!resourceSchema.TryGetPropertyValue("relational", out var relationalNode))
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return new NameOverridesExtractionResult(
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            );
         }
 
         if (relationalNode is null)
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return new NameOverridesExtractionResult(
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            );
         }
 
         if (relationalNode is not JsonObject relationalObject)
@@ -626,12 +644,18 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 
         if (!relationalObject.TryGetPropertyValue("nameOverrides", out var nameOverridesNode))
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return new NameOverridesExtractionResult(
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            );
         }
 
         if (nameOverridesNode is null)
         {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
+            return new NameOverridesExtractionResult(
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, string>(StringComparer.Ordinal)
+            );
         }
 
         if (nameOverridesNode is not JsonObject nameOverridesObject)
@@ -643,7 +667,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
 
         Dictionary<string, string> overrides = new(StringComparer.Ordinal);
-        HashSet<string> unsupportedOverrides = new(StringComparer.Ordinal);
+        Dictionary<string, string> deferredOverrides = new(StringComparer.Ordinal);
 
         foreach (var overrideEntry in nameOverridesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
@@ -664,12 +688,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             }
 
             var canonicalPath = compiledPath.Canonical;
-
-            if (!referenceObjectPaths.Contains(canonicalPath))
-            {
-                unsupportedOverrides.Add(canonicalPath);
-                continue;
-            }
 
             var overrideNode = overrideEntry.Value;
 
@@ -699,23 +717,18 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 );
             }
 
-            overrides[canonicalPath] = overrideText;
+            if (referenceObjectPaths.Contains(canonicalPath))
+            {
+                overrides[canonicalPath] = overrideText;
+                continue;
+            }
+
+            // DMS-931 must apply these overrides when non-reference paths (for example, array/table scopes)
+            // become supported.
+            deferredOverrides[canonicalPath] = overrideText;
         }
 
-        if (unsupportedOverrides.Count > 0)
-        {
-            var unsupportedPaths = unsupportedOverrides
-                .OrderBy(path => path, StringComparer.Ordinal)
-                .ToArray();
-
-            throw new InvalidOperationException(
-                $"relational.nameOverrides on resource '{projectName}:{resourceName}' contains unsupported "
-                    + $"JSONPaths: {string.Join(", ", unsupportedPaths)}. "
-                    + "Only document reference object paths are supported until DMS-931."
-            );
-        }
-
-        return overrides;
+        return new NameOverridesExtractionResult(overrides, deferredOverrides);
     }
 
     /// <summary>
@@ -877,12 +890,13 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         string resourceName,
         bool? isPartOfIdentity,
         bool derivedIsPartOfIdentity,
-        IReadOnlyList<string> mappingPaths
+        IReadOnlyList<string> mappingPaths,
+        bool isNestedContext
     )
     {
         if (!derivedIsPartOfIdentity)
         {
-            if (isPartOfIdentity is true)
+            if (isPartOfIdentity is true && !isNestedContext)
             {
                 var orderedPaths = mappingPaths.OrderBy(path => path, StringComparer.Ordinal).ToArray();
 
@@ -893,7 +907,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 );
             }
 
-            return isPartOfIdentity ?? false;
+            return false;
         }
 
         if (isPartOfIdentity is false)
