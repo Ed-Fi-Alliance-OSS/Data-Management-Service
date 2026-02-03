@@ -170,7 +170,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         {
             var constraintPaths = scopeGroup.Value;
             var scopePath = GetArrayScope(constraintPaths[0], resource);
-            Exception? failure = null;
+            Exception? scopeFailure = null;
 
             if (
                 TryResolveArrayUniquenessTableForScope(
@@ -183,13 +183,15 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
                     resource,
                     out var table,
                     out var uniqueColumns,
-                    out failure
+                    out scopeFailure
                 )
             )
             {
                 AddArrayUniquenessConstraint(mutation, table, uniqueColumns);
                 continue;
             }
+
+            Exception? alignedFailure = null;
 
             if (TryStripExtensionRootPrefix(scopePath, out var alignedScope))
             {
@@ -209,7 +211,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
                         resource,
                         out var alignedTable,
                         out var alignedColumns,
-                        out failure
+                        out alignedFailure
                     )
                 )
                 {
@@ -218,9 +220,19 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
                 }
             }
 
-            if (failure is not null)
+            if (scopeFailure is not null && alignedFailure is not null)
             {
-                throw failure;
+                throw CombineArrayUniquenessFailures([scopeFailure, alignedFailure])!;
+            }
+
+            if (scopeFailure is not null)
+            {
+                throw scopeFailure;
+            }
+
+            if (alignedFailure is not null)
+            {
+                throw alignedFailure;
             }
 
             throw new InvalidOperationException(
@@ -337,6 +349,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
             .OrderBy(candidate => candidate.Table.ToString(), StringComparer.Ordinal)
             .ToArray();
         List<(DbTableModel Table, DbColumnName[] Columns)> matches = [];
+        List<Exception> failures = [];
 
         foreach (var candidate in orderedCandidates)
         {
@@ -354,7 +367,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
             }
             catch (InvalidOperationException ex)
             {
-                failure = ex;
+                failures.Add(ex);
             }
         }
 
@@ -380,7 +393,30 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
             );
         }
 
+        if (failures.Count > 0)
+        {
+            failure = CombineArrayUniquenessFailures(failures);
+        }
+
         return false;
+    }
+
+    private static Exception? CombineArrayUniquenessFailures(IReadOnlyList<Exception> failures)
+    {
+        if (failures.Count == 0)
+        {
+            return null;
+        }
+
+        if (failures.Count == 1)
+        {
+            return failures[0];
+        }
+
+        var combinedMessage = string.Join(" ", failures.Select(failure => failure.Message));
+        var aggregate = new AggregateException(failures);
+
+        return new InvalidOperationException(combinedMessage, aggregate);
     }
 
     private static bool TryResolveArrayUniquenessTableForScope(

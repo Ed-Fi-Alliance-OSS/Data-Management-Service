@@ -573,6 +573,167 @@ public class Given_Unmappable_Array_Uniqueness_Path
 }
 
 [TestFixture]
+public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
+{
+    private const string ProjectName = "Ed-Fi";
+    private const string ResourceName = "Sample";
+    private const string TableNameA = "SampleItems";
+    private const string TableNameB = "SampleItemsAlt";
+    private Action _action = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildArrayUniquenessMultipleCandidateProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new DuplicateScopeResourceModelPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
+            }
+        );
+
+        _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_include_all_candidate_failures_in_the_exception_message()
+    {
+        var exception = _action.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain(TableNameA);
+        exception.Message.Should().Contain(TableNameB);
+        exception.Message.Should().Contain("did not map to a column");
+    }
+
+    private sealed class DuplicateScopeResourceModelPass : IRelationalModelSetPass
+    {
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var resource = new QualifiedResourceName(ProjectName, ResourceName);
+            var resourceKey = context.GetResourceKeyEntry(resource);
+            var model = CreateResourceModel(resource);
+
+            context.ConcreteResourcesInNameOrder.Add(
+                new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, model)
+            );
+        }
+
+        private static RelationalResourceModel CreateResourceModel(QualifiedResourceName resource)
+        {
+            var schema = new DbSchemaName("edfi");
+            var rootScope = JsonPathExpressionCompiler.Compile("$");
+            var itemsScope = JsonPathExpressionCompiler.Compile("$.items[*]");
+
+            var rootKey = new TableKey(
+                new[]
+                {
+                    new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
+                }
+            );
+            var rootColumns = new[]
+            {
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            };
+            var rootTable = new DbTableModel(
+                new DbTableName(schema, ResourceName),
+                rootScope,
+                rootKey,
+                rootColumns,
+                Array.Empty<TableConstraint>()
+            );
+
+            var childKey = new TableKey(
+                new[]
+                {
+                    new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("ItemOrdinal"), ColumnKind.Ordinal),
+                }
+            );
+
+            var tableA = BuildItemsTable(
+                new DbTableName(schema, TableNameA),
+                itemsScope,
+                childKey,
+                "$.items[*].code",
+                "ItemCode"
+            );
+            var tableB = BuildItemsTable(
+                new DbTableName(schema, TableNameB),
+                itemsScope,
+                childKey,
+                "$.items[*].altCode",
+                "AltCode"
+            );
+
+            return new RelationalResourceModel(
+                resource,
+                schema,
+                ResourceStorageKind.RelationalTables,
+                rootTable,
+                new[] { rootTable, tableA, tableB },
+                Array.Empty<DocumentReferenceBinding>(),
+                Array.Empty<DescriptorEdgeSource>()
+            );
+        }
+
+        private static DbTableModel BuildItemsTable(
+            DbTableName tableName,
+            JsonPathExpression scope,
+            TableKey key,
+            string valuePath,
+            string valueColumnName
+        )
+        {
+            var columns = new[]
+            {
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("ItemOrdinal"),
+                    ColumnKind.Ordinal,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName(valueColumnName),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 20),
+                    IsNullable: true,
+                    SourceJsonPath: JsonPathExpressionCompiler.Compile(valuePath),
+                    TargetResource: null
+                ),
+            };
+
+            return new DbTableModel(tableName, scope, key, columns, Array.Empty<TableConstraint>());
+        }
+    }
+}
+
+[TestFixture]
 public class Given_Extension_Array_Uniqueness_Constraint_Alignment
 {
     private DbTableModel _periodTable = default!;
@@ -864,6 +1025,29 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    internal static JsonObject BuildArrayUniquenessMultipleCandidateProjectSchema()
+    {
+        JsonArray arrayUniquenessConstraints =
+        [
+            new JsonObject
+            {
+                ["basePath"] = "$.items[*]",
+                ["paths"] = new JsonArray { "$.missing" },
+            },
+        ];
+
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["samples"] = BuildArrayUniquenessMultipleCandidateSchema(arrayUniquenessConstraints),
+            },
+        };
+    }
+
     internal static JsonObject BuildExtensionArrayUniquenessCoreProjectSchema()
     {
         return new JsonObject
@@ -956,6 +1140,45 @@ internal static class ConstraintDerivationTestSchemaBuilder
                     },
                 },
             },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildArrayUniquenessMultipleCandidateSchema(
+        JsonArray arrayUniquenessConstraints
+    )
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["items"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["code"] = new JsonObject { ["type"] = "string" },
+                            ["altCode"] = new JsonObject { ["type"] = "string" },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Sample",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = arrayUniquenessConstraints,
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }
