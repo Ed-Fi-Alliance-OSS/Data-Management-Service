@@ -913,10 +913,10 @@ public class Given_Array_Uniqueness_Constraint_Derivation
             )
             .RelationalModel;
 
-        _addressTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+        _addressTable = busRouteModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "BusRouteAddress"
         );
-        _periodTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+        _periodTable = busRouteModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "BusRouteAddressPeriod"
         );
     }
@@ -993,10 +993,10 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
             )
             .RelationalModel;
 
-        _periodTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+        _periodTable = busRouteModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "BusRouteAddressPeriod"
         );
-        _sessionTable = busRouteModel.TablesInReadDependencyOrder.Single(table =>
+        _sessionTable = busRouteModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "BusRouteAddressPeriodSession"
         );
     }
@@ -1297,7 +1297,7 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
             )
             .RelationalModel;
 
-        _periodTable = contactModel.TablesInReadDependencyOrder.Single(table =>
+        _periodTable = contactModel.TablesInDependencyOrder.Single(table =>
             table.JsonScope.Canonical == "$.addresses[*].periods[*]"
         );
     }

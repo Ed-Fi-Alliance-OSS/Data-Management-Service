@@ -19,7 +19,7 @@ internal static class RelationalModelCanonicalization
         ArgumentNullException.ThrowIfNull(resourceModel);
 
         var canonicalTables = resourceModel
-            .TablesInReadDependencyOrder.Select(RelationalModelOrdering.CanonicalizeTable)
+            .TablesInDependencyOrder.Select(RelationalModelOrdering.CanonicalizeTable)
             .OrderBy(table => CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
@@ -61,7 +61,7 @@ internal static class RelationalModelCanonicalization
         return resourceModel with
         {
             Root = rootTable,
-            TablesInReadDependencyOrder = canonicalTables,
+            TablesInDependencyOrder = canonicalTables,
             DocumentReferenceBindings = orderedDocumentReferences,
             DescriptorEdgeSources = orderedDescriptorEdges,
         };

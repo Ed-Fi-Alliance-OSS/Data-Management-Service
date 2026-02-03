@@ -59,19 +59,19 @@ public class Given_Extension_Table_Derivation
             )
             .RelationalModel;
 
-        _schoolBaseRoot = _schoolModel.TablesInReadDependencyOrder.Single(table =>
+        _schoolBaseRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "edfi" && table.Table.Name == "School"
         );
-        _schoolBaseAddress = _schoolModel.TablesInReadDependencyOrder.Single(table =>
+        _schoolBaseAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "edfi" && table.Table.Name == "SchoolAddress"
         );
-        _schoolExtensionRoot = _schoolModel.TablesInReadDependencyOrder.Single(table =>
+        _schoolExtensionRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension"
         );
-        _schoolExtensionAddress = _schoolModel.TablesInReadDependencyOrder.Single(table =>
+        _schoolExtensionAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtensionAddress"
         );
-        _schoolExtensionSponsor = _schoolModel.TablesInReadDependencyOrder.Single(table =>
+        _schoolExtensionSponsor = _schoolModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample"
             && table.Table.Name == "SchoolExtensionAddressSponsorReference"
         );

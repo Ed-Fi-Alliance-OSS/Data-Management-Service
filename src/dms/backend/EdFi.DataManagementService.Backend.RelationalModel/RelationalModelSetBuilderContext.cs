@@ -474,7 +474,7 @@ public sealed class RelationalModelSetBuilderContext
         {
             var resourceLabel = FormatResource(resource.ResourceKey.Resource);
 
-            foreach (var table in resource.RelationalModel.TablesInReadDependencyOrder)
+            foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
                 detector.RegisterTable(
                     table.Table,

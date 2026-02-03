@@ -80,7 +80,7 @@ public static class RelationalModelManifestEmitter
         writer.WriteStartArray();
         if (resourceModel.StorageKind != ResourceStorageKind.SharedDescriptorTable)
         {
-            foreach (var table in resourceModel.TablesInReadDependencyOrder)
+            foreach (var table in resourceModel.TablesInDependencyOrder)
             {
                 WriteTable(writer, table);
             }

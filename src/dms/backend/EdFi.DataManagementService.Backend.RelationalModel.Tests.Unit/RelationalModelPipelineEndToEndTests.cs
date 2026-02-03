@@ -52,10 +52,10 @@ public class Given_A_Complete_Relational_Model_Pipeline
         _result = pipeline.Run(context);
         _resourceModel = _result.ResourceModel;
         _rootTable = _resourceModel.Root;
-        _addressTable = _resourceModel.TablesInReadDependencyOrder.Single(table =>
+        _addressTable = _resourceModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolAddress"
         );
-        _periodTable = _resourceModel.TablesInReadDependencyOrder.Single(table =>
+        _periodTable = _resourceModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolAddressPeriod"
         );
     }
@@ -68,7 +68,7 @@ public class Given_A_Complete_Relational_Model_Pipeline
     {
         _resourceModel.PhysicalSchema.Should().Be(new DbSchemaName("edfi"));
         _resourceModel
-            .TablesInReadDependencyOrder.Select(table => table.Table.Name)
+            .TablesInDependencyOrder.Select(table => table.Table.Name)
             .Should()
             .Equal("School", "SchoolAddress", "SchoolAddressPeriod");
     }

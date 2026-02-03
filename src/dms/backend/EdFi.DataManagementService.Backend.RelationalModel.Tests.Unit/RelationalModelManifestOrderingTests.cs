@@ -263,7 +263,7 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
     private static IReadOnlyList<string> CaptureTableSnapshot(RelationalResourceModel model)
     {
         return model
-            .TablesInReadDependencyOrder.Select(table =>
+            .TablesInDependencyOrder.Select(table =>
             {
                 var columnNames = string.Join(",", table.Columns.Select(column => column.ColumnName.Value));
                 var constraintNames = string.Join(",", table.Constraints.Select(GetConstraintName));

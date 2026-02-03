@@ -64,13 +64,11 @@ public class Given_Reference_Binding
             )
             .RelationalModel;
 
-        _rootTable = _studentModel.TablesInReadDependencyOrder.Single(table =>
-            table.JsonScope.Canonical == "$"
-        );
-        _periodTable = _studentModel.TablesInReadDependencyOrder.Single(table =>
+        _rootTable = _studentModel.TablesInDependencyOrder.Single(table => table.JsonScope.Canonical == "$");
+        _periodTable = _studentModel.TablesInDependencyOrder.Single(table =>
             table.JsonScope.Canonical == "$.addresses[*].periods[*]"
         );
-        _extensionRootTable = _studentModel.TablesInReadDependencyOrder.Single(table =>
+        _extensionRootTable = _studentModel.TablesInDependencyOrder.Single(table =>
             table.Table.Schema.Value == "sample" && table.Table.Name == "StudentExtension"
         );
 

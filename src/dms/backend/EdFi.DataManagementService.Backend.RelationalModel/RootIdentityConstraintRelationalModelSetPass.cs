@@ -149,7 +149,7 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
     )
     {
         var updatedTables = resourceModel
-            .TablesInReadDependencyOrder.Select(table =>
+            .TablesInDependencyOrder.Select(table =>
                 table.JsonScope.Canonical == updatedRoot.JsonScope.Canonical ? updatedRoot : table
             )
             .ToArray();
@@ -157,7 +157,7 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         return resourceModel with
         {
             Root = updatedRoot,
-            TablesInReadDependencyOrder = updatedTables,
+            TablesInDependencyOrder = updatedTables,
         };
     }
 

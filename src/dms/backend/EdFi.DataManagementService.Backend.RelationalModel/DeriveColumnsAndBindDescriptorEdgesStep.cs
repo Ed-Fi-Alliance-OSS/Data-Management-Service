@@ -70,7 +70,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
 
         var tableBuilders = resourceModel
-            .TablesInReadDependencyOrder.Select(table => new TableBuilder(table))
+            .TablesInDependencyOrder.Select(table => new TableBuilder(table))
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         if (!tableBuilders.TryGetValue("$", out var rootTable))
@@ -106,7 +106,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         EnsureAllDescriptorPathsUsed(context, usedDescriptorPaths);
 
         var updatedTables = resourceModel
-            .TablesInReadDependencyOrder.Select(table => tableBuilders[table.JsonScope.Canonical].Build())
+            .TablesInDependencyOrder.Select(table => tableBuilders[table.JsonScope.Canonical].Build())
             .ToArray();
 
         var updatedRoot = tableBuilders[resourceModel.Root.JsonScope.Canonical].Build();
@@ -114,7 +114,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         context.ResourceModel = resourceModel with
         {
             Root = updatedRoot,
-            TablesInReadDependencyOrder = updatedTables,
+            TablesInDependencyOrder = updatedTables,
             DescriptorEdgeSources = descriptorEdgeSources.ToArray(),
         };
     }

@@ -609,7 +609,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
     )
     {
         var candidates = resourceModel
-            .TablesInReadDependencyOrder.Where(table => table.Table.Equals(binding.Table))
+            .TablesInDependencyOrder.Where(table => table.Table.Equals(binding.Table))
             .ToArray();
 
         if (candidates.Length == 0)

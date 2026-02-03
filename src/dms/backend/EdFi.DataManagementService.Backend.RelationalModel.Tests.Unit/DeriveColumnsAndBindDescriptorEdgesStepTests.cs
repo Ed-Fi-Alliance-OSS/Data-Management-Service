@@ -266,7 +266,7 @@ public class Given_A_Descriptor_Scalar_Array
             }
         );
 
-        _table = context.ResourceModel!.TablesInReadDependencyOrder.Single(table =>
+        _table = context.ResourceModel!.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolGradeLevelDescriptor"
         );
         _edge = context.ResourceModel.DescriptorEdgeSources.Single();
@@ -379,7 +379,7 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
         );
 
         _rootTable = context.ResourceModel!.Root;
-        _descriptorTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+        _descriptorTable = context.ResourceModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolGradeLevelDescriptor"
         );
 
@@ -1044,7 +1044,7 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
 
         _rootTable = context.ResourceModel!.Root;
         _tableNames = context
-            .ResourceModel.TablesInReadDependencyOrder.Select(table => table.Table.Name)
+            .ResourceModel.TablesInDependencyOrder.Select(table => table.Table.Name)
             .ToArray();
     }
 

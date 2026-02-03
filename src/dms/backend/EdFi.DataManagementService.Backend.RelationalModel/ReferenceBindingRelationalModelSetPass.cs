@@ -96,7 +96,7 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
     )
     {
         var tableBuilders = resourceModel
-            .TablesInReadDependencyOrder.Select(table => new TableColumnAccumulator(table))
+            .TablesInDependencyOrder.Select(table => new TableColumnAccumulator(table))
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         var tableScopes = tableBuilders
@@ -262,14 +262,14 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         }
 
         var updatedTables = resourceModel
-            .TablesInReadDependencyOrder.Select(table => tableBuilders[table.JsonScope.Canonical].Build())
+            .TablesInDependencyOrder.Select(table => tableBuilders[table.JsonScope.Canonical].Build())
             .ToArray();
         var updatedRoot = tableBuilders[resourceModel.Root.JsonScope.Canonical].Build();
 
         return resourceModel with
         {
             Root = updatedRoot,
-            TablesInReadDependencyOrder = updatedTables,
+            TablesInDependencyOrder = updatedTables,
             DocumentReferenceBindings = documentReferenceBindings.ToArray(),
             DescriptorEdgeSources = descriptorEdgeSources.ToArray(),
         };

@@ -143,7 +143,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         var baseRootBaseName = RelationalNameConventions.ToPascalCase(baseModel.Resource.ResourceName);
         var extensionRootBaseName = $"{baseRootBaseName}Extension";
-        var baseTablesByScope = baseModel.TablesInReadDependencyOrder.ToDictionary(
+        var baseTablesByScope = baseModel.TablesInDependencyOrder.ToDictionary(
             table => table.JsonScope.Canonical,
             StringComparer.Ordinal
         );
@@ -199,7 +199,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         ExtensionDerivationResult extensionResult
     )
     {
-        var existingTables = baseModel.TablesInReadDependencyOrder;
+        var existingTables = baseModel.TablesInDependencyOrder;
         var updatedTables = existingTables.Concat(extensionResult.Tables).ToArray();
         var updatedEdges = baseModel
             .DescriptorEdgeSources.Concat(extensionResult.DescriptorEdgeSources)
@@ -207,7 +207,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         return baseModel with
         {
-            TablesInReadDependencyOrder = updatedTables,
+            TablesInDependencyOrder = updatedTables,
             DescriptorEdgeSources = updatedEdges,
         };
     }

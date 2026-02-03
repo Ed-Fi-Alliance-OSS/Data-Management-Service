@@ -82,7 +82,7 @@ public class Given_Schemas_With_Different_Property_Order
     public void It_should_place_descriptor_columns_before_scalars()
     {
         var rootColumns = _modelA
-            .TablesInReadDependencyOrder.Single(table =>
+            .TablesInDependencyOrder.Single(table =>
                 string.Equals(table.JsonScope.Canonical, "$", StringComparison.Ordinal)
             )
             .Columns.Select(column => column.ColumnName.Value);
@@ -409,7 +409,7 @@ internal static class CanonicalizeOrderingStepTestContext
     {
         List<string> snapshot = [];
 
-        foreach (var table in model.TablesInReadDependencyOrder)
+        foreach (var table in model.TablesInDependencyOrder)
         {
             var columnNames = string.Join(",", table.Columns.Select(column => column.ColumnName.Value));
             var constraintNames = string.Join(",", table.Constraints.Select(GetConstraintName));

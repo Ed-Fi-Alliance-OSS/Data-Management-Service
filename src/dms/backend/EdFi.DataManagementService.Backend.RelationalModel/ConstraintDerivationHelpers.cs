@@ -166,14 +166,14 @@ internal static class ConstraintDerivationHelpers
     )
     {
         var updatedTables = resourceModel
-            .TablesInReadDependencyOrder.Select(table => mutation.BuildTable(table))
+            .TablesInDependencyOrder.Select(table => mutation.BuildTable(table))
             .ToArray();
         var updatedRoot = updatedTables.Single(table => table.Table.Equals(resourceModel.Root.Table));
 
         return resourceModel with
         {
             Root = updatedRoot,
-            TablesInReadDependencyOrder = updatedTables,
+            TablesInDependencyOrder = updatedTables,
         };
     }
 
@@ -217,7 +217,7 @@ internal static class ConstraintDerivationHelpers
             Entry = entry;
             TableAccumulators = new Dictionary<TableKey, TableColumnAccumulator>();
 
-            foreach (var table in entry.Model.RelationalModel.TablesInReadDependencyOrder)
+            foreach (var table in entry.Model.RelationalModel.TablesInDependencyOrder)
             {
                 var key = new TableKey(table.Table, table.JsonScope.Canonical);
                 TableAccumulators.TryAdd(key, new TableColumnAccumulator(table));

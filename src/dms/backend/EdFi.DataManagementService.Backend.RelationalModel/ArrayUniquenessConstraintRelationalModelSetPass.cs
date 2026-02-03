@@ -107,7 +107,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
     )
     {
         var tablesByScope = resourceModel
-            .TablesInReadDependencyOrder.GroupBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .TablesInDependencyOrder.GroupBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ToDictionary(
                 group => group.Key,
                 group =>
@@ -119,7 +119,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
                 StringComparer.Ordinal
             );
         var tablesByName = resourceModel
-            .TablesInReadDependencyOrder.GroupBy(table => table.Table)
+            .TablesInDependencyOrder.GroupBy(table => table.Table)
             .ToDictionary(group => group.Key, group => (IReadOnlyList<DbTableModel>)group.ToArray());
         var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
             resourceModel.DocumentReferenceBindings,

@@ -44,10 +44,10 @@ public class Given_A_JsonSchema_With_Nested_Collections
 
         _schemaName = context.ResourceModel!.PhysicalSchema;
         _rootTable = context.ResourceModel.Root;
-        _addressTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+        _addressTable = context.ResourceModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolAddress"
         );
-        _periodTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+        _periodTable = context.ResourceModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolAddressPeriod"
         );
     }
@@ -301,9 +301,9 @@ public class Given_A_Descriptor_Resource
     [Test]
     public void It_should_not_create_per_descriptor_tables()
     {
-        _resourceModel.TablesInReadDependencyOrder.Should().ContainSingle();
+        _resourceModel.TablesInDependencyOrder.Should().ContainSingle();
         _resourceModel
-            .TablesInReadDependencyOrder.Select(table => table.Table.Name)
+            .TablesInDependencyOrder.Select(table => table.Table.Name)
             .Should()
             .NotContain("AcademicSubjectDescriptor");
     }

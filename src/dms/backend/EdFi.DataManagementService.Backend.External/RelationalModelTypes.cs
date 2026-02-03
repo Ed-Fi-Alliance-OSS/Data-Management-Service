@@ -191,9 +191,9 @@ public readonly record struct JsonPathExpression(string Canonical, IReadOnlyList
 /// </param>
 /// <param name="StorageKind">The storage strategy for the resource.</param>
 /// <param name="Root">The root table (<c>$</c>) for the resource.</param>
-/// <param name="TablesInReadDependencyOrder">
-/// Tables ordered for read reconstitution (root first, then child collection tables).
-/// This order is also used for write flattening; write order currently matches read order.
+/// <param name="TablesInDependencyOrder">
+/// Tables ordered in dependency order (root first, then child collection tables).
+/// This order is used for both read reconstitution and write flattening.
 /// </param>
 /// <param name="DocumentReferenceBindings">Document reference bindings derived from metadata.</param>
 /// <param name="DescriptorEdgeSources">Descriptor edge bindings derived from metadata.</param>
@@ -202,7 +202,7 @@ public sealed record RelationalResourceModel(
     DbSchemaName PhysicalSchema,
     ResourceStorageKind StorageKind,
     DbTableModel Root,
-    IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
+    IReadOnlyList<DbTableModel> TablesInDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
 );

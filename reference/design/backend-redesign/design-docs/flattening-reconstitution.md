@@ -391,7 +391,7 @@ public sealed class ResourceFlattener : IResourceFlattener
               resolved: resolved);
 
           // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
-          foreach (var tableModel in plan.Model.TablesInReadDependencyOrder)
+          foreach (var tableModel in plan.Model.TablesInDependencyOrder)
           {
               if (tableModel.Table.Equals(rootTable))
                   continue;
@@ -884,8 +884,8 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// <param name="Resource">Logical resource identity (ApiSchema project/resource).</param>
 /// <param name="PhysicalSchema">Physical DB schema where resource tables live (e.g. "edfi").</param>
 /// <param name="Root">The root table model (one row per document; key includes DocumentId).</param>
-/// <param name="TablesInReadDependencyOrder">
-/// Tables ordered for hydration (root first, then child tables, then nested child tables).
+/// <param name="TablesInDependencyOrder">
+/// Tables ordered in dependency order (root first, then child tables, then nested child tables).
 /// This order is used to emit SELECT result sets and to reconstitute efficiently without N+1 queries.
 /// It is also used for writes (root first, then child tables in depth-first order).
 /// </param>
@@ -901,7 +901,7 @@ public sealed record RelationalResourceModel(
     QualifiedResourceName Resource,
     DbSchemaName PhysicalSchema,
     DbTableModel Root,
-    IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
+    IReadOnlyList<DbTableModel> TablesInDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
 );
@@ -1724,7 +1724,7 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
 
     var documentMetadata = ReadDocumentRows(reader); // dms.Document JOIN page
 
-    foreach (var table in plan.Model.TablesInReadDependencyOrder)
+    foreach (var table in plan.Model.TablesInDependencyOrder)
     {
         await reader.NextResultAsync(ct);
         ReadTableRows(reader, table); // grouped by (parent key parts..., ordinal)

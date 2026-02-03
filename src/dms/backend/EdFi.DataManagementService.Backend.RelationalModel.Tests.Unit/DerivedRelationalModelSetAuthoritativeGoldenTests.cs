@@ -263,7 +263,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteStartArray();
         if (model.StorageKind != ResourceStorageKind.SharedDescriptorTable)
         {
-            foreach (var table in model.TablesInReadDependencyOrder)
+            foreach (var table in model.TablesInDependencyOrder)
             {
                 WriteTable(writer, table);
             }
