@@ -154,6 +154,7 @@ internal class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logge
 
     /// <summary>
     /// Checks for projectEndpointName collisions across all schemas.
+    /// Reports all collisions found, not just the first one.
     /// </summary>
     private ApiSchemaNormalizationResult? CheckForEndpointNameCollisions(
         JsonNode coreNode,
@@ -167,20 +168,26 @@ internal class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logge
             .Prepend((EndpointName: coreEndpointName, SchemaSource: "core"))
             .ToList();
 
-        var collision = allEndpoints.GroupBy(x => x.EndpointName).FirstOrDefault(g => g.Count() > 1);
+        var collisions = allEndpoints
+            .GroupBy(x => x.EndpointName)
+            .Where(g => g.Count() > 1)
+            .Select(g => new ApiSchemaNormalizationResult.EndpointNameCollision(
+                g.Key,
+                g.Select(x => x.SchemaSource).ToArray()
+            ))
+            .ToList();
 
-        if (collision != null)
+        if (collisions.Count > 0)
         {
-            var conflictingSources = collision.Select(x => x.SchemaSource).ToArray();
-            _logger.LogError(
-                "Duplicate projectEndpointName {EndpointName} found in: {Sources}",
-                SanitizeForLog(collision.Key),
-                string.Join(", ", conflictingSources.Select(SanitizeForLog))
-            );
-            return new ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult(
-                collision.Key,
-                conflictingSources
-            );
+            foreach (var collision in collisions)
+            {
+                _logger.LogError(
+                    "Duplicate projectEndpointName {EndpointName} found in: {Sources}",
+                    SanitizeForLog(collision.ProjectEndpointName),
+                    string.Join(", ", collision.ConflictingSources.Select(SanitizeForLog))
+                );
+            }
+            return new ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult(collisions);
         }
 
         return null;
@@ -195,7 +202,7 @@ internal class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logge
     /// </summary>
     private static JsonNode StripOpenApiPayloads(JsonNode node)
     {
-        var cloned = JsonNode.Parse(node.ToJsonString())!;
+        var cloned = node.DeepClone();
         var projectSchema = cloned["projectSchema"]?.AsObject();
 
         if (projectSchema != null)

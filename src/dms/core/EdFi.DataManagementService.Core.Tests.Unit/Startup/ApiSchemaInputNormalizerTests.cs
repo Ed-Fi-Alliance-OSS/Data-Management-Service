@@ -477,15 +477,16 @@ public class ApiSchemaInputNormalizerTests
         public void It_provides_conflicting_endpoint_name()
         {
             var failure = (ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult)_result;
-            failure.ProjectEndpointName.Should().Be("tpdm");
+            failure.Collisions.Should().HaveCount(1);
+            failure.Collisions[0].ProjectEndpointName.Should().Be("tpdm");
         }
 
         [Test]
         public void It_provides_conflicting_sources()
         {
             var failure = (ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult)_result;
-            failure.ConflictingSources.Should().Contain("extension[0]");
-            failure.ConflictingSources.Should().Contain("extension[1]");
+            failure.Collisions[0].ConflictingSources.Should().Contain("extension[0]");
+            failure.Collisions[0].ConflictingSources.Should().Contain("extension[1]");
         }
     }
 
@@ -519,7 +520,55 @@ public class ApiSchemaInputNormalizerTests
         public void It_includes_core_in_conflicting_sources()
         {
             var failure = (ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult)_result;
-            failure.ConflictingSources.Should().Contain("core");
+            failure.Collisions[0].ConflictingSources.Should().Contain("core");
+        }
+    }
+
+    [TestFixture]
+    public class Given_Multiple_ProjectEndpointName_Collisions : ApiSchemaInputNormalizerTests
+    {
+        private ApiSchemaInputNormalizer _normalizer = null!;
+        private ApiSchemaDocumentNodes _inputNodes = null!;
+        private ApiSchemaNormalizationResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _normalizer = new ApiSchemaInputNormalizer(NullLogger<ApiSchemaInputNormalizer>.Instance);
+
+            // Multiple distinct collisions: "tpdm" appears twice, "sample" appears twice
+            _inputNodes = new ApiSchemaDocumentNodes(
+                CreateValidCoreSchema(),
+                [
+                    CreateValidExtensionSchema("tpdm"),
+                    CreateValidExtensionSchema("sample"),
+                    CreateValidExtensionSchema("tpdm"),
+                    CreateValidExtensionSchema("sample"),
+                ]
+            );
+            _result = _normalizer.Normalize(_inputNodes);
+        }
+
+        [Test]
+        public void It_returns_collision_result()
+        {
+            _result.Should().BeOfType<ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult>();
+        }
+
+        [Test]
+        public void It_reports_all_collisions()
+        {
+            var failure = (ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult)_result;
+            failure.Collisions.Should().HaveCount(2);
+        }
+
+        [Test]
+        public void It_includes_both_conflicting_endpoint_names()
+        {
+            var failure = (ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult)_result;
+            var endpointNames = failure.Collisions.Select(c => c.ProjectEndpointName).ToList();
+            endpointNames.Should().Contain("tpdm");
+            endpointNames.Should().Contain("sample");
         }
     }
 

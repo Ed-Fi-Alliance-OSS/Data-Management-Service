@@ -93,7 +93,7 @@ internal class LoadAndBuildEffectiveSchemaTask(
                 ),
             ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult failure =>
                 throw new InvalidOperationException(
-                    $"Duplicate projectEndpointName '{failure.ProjectEndpointName}' found in: {string.Join(", ", failure.ConflictingSources)}"
+                    $"Duplicate projectEndpointName(s) found: {string.Join("; ", failure.Collisions.Select(c => $"'{c.ProjectEndpointName}' in [{string.Join(", ", c.ConflictingSources)}]"))}"
                 ),
             _ => throw new InvalidOperationException("Unknown normalization result"),
         };

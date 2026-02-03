@@ -37,9 +37,13 @@ public abstract record ApiSchemaNormalizationResult
 
     /// <summary>
     /// Multiple schemas have the same projectEndpointName, which must be unique.
+    /// Reports all collisions found, not just the first one.
     /// </summary>
-    public sealed record ProjectEndpointNameCollisionResult(
-        string ProjectEndpointName,
-        string[] ConflictingSources
-    ) : ApiSchemaNormalizationResult;
+    public sealed record ProjectEndpointNameCollisionResult(IReadOnlyList<EndpointNameCollision> Collisions)
+        : ApiSchemaNormalizationResult;
+
+    /// <summary>
+    /// Represents a single projectEndpointName collision.
+    /// </summary>
+    public sealed record EndpointNameCollision(string ProjectEndpointName, string[] ConflictingSources);
 }
