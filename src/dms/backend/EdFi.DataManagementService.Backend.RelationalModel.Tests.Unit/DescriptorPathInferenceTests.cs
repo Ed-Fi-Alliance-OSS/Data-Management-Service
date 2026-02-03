@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a multi project effective schema set with cross project descriptor propagation.
+/// </summary>
 [TestFixture]
 public class Given_A_MultiProject_EffectiveSchemaSet_With_CrossProject_Descriptor_Propagation
 {
@@ -17,6 +20,9 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_CrossProject_Descripto
     private QualifiedResourceName _schoolResource = default!;
     private QualifiedResourceName _sectionResource = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -30,6 +36,9 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_CrossProject_Descripto
         _sectionResource = new QualifiedResourceName("Sample", "Section");
     }
 
+    /// <summary>
+    /// It should propagate descriptor paths across projects.
+    /// </summary>
     [Test]
     public void It_should_propagate_descriptor_paths_across_projects()
     {
@@ -41,6 +50,9 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_CrossProject_Descripto
             .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
     }
 
+    /// <summary>
+    /// It should partition extension descriptor paths.
+    /// </summary>
     [Test]
     public void It_should_partition_extension_descriptor_paths()
     {
@@ -52,12 +64,18 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_CrossProject_Descripto
     }
 }
 
+/// <summary>
+/// Test fixture for descriptor path inference with reordered resource schemas and document paths mapping.
+/// </summary>
 [TestFixture]
 public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_DocumentPathsMapping
 {
     private IReadOnlyDictionary<string, DescriptorPathInfo> _ordered = default!;
     private IReadOnlyDictionary<string, DescriptorPathInfo> _reordered = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -86,12 +104,18 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         _reordered = reorderedContext.GetDescriptorPathsForResource(sectionResource);
     }
 
+    /// <summary>
+    /// It should build the same descriptor paths.
+    /// </summary>
     [Test]
     public void It_should_build_the_same_descriptor_paths()
     {
         _ordered.Should().BeEquivalentTo(_reordered);
     }
 
+    /// <summary>
+    /// Create effective schema set.
+    /// </summary>
     private static EffectiveSchemaSet CreateEffectiveSchemaSet(
         bool reverseResourceOrder,
         bool reverseMappingOrder
@@ -111,6 +135,9 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         return EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
     }
 
+    /// <summary>
+    /// Create project schema.
+    /// </summary>
     private static JsonObject CreateProjectSchema(bool reverseResourceOrder, bool reverseMappingOrder)
     {
         var schoolSchema = new JsonObject
@@ -185,6 +212,9 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         return new JsonObject { ["resourceSchemas"] = resourceSchemas };
     }
 
+    /// <summary>
+    /// Create section document paths mapping.
+    /// </summary>
     private static JsonObject CreateSectionDocumentPathsMapping(bool reverseMappingOrder)
     {
         var schoolReference = new JsonObject

@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for schemas with different property order.
+/// </summary>
 [TestFixture]
 public class Given_Schemas_With_Different_Property_Order
 {
@@ -18,6 +21,9 @@ public class Given_Schemas_With_Different_Property_Order
     private IReadOnlyList<string> _snapshotA = default!;
     private IReadOnlyList<string> _snapshotB = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -60,12 +66,18 @@ public class Given_Schemas_With_Different_Property_Order
         _snapshotB = CanonicalizeOrderingStepTestContext.CaptureSnapshot(_modelB);
     }
 
+    /// <summary>
+    /// It should produce identical ordered output.
+    /// </summary>
     [Test]
     public void It_should_produce_identical_ordered_output()
     {
         _snapshotA.Should().Equal(_snapshotB);
     }
 
+    /// <summary>
+    /// It should place descriptor columns before scalars.
+    /// </summary>
     [Test]
     public void It_should_place_descriptor_columns_before_scalars()
     {
@@ -78,6 +90,9 @@ public class Given_Schemas_With_Different_Property_Order
         rootColumns.Should().Equal("DocumentId", "ZetaDescriptor_DescriptorId", "Alpha");
     }
 
+    /// <summary>
+    /// Create schema.
+    /// </summary>
     private static JsonObject CreateSchema(bool descriptorFirst)
     {
         var descriptorSchema = new JsonObject { ["type"] = "string", ["maxLength"] = 306 };
@@ -114,12 +129,18 @@ public class Given_Schemas_With_Different_Property_Order
     }
 }
 
+/// <summary>
+/// Test fixture for descriptor path mappings with different order.
+/// </summary>
 [TestFixture]
 public class Given_Descriptor_Path_Mappings_With_Different_Order
 {
     private IReadOnlyList<string> _edgesFirst = default!;
     private IReadOnlyList<string> _edgesSecond = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -168,12 +189,18 @@ public class Given_Descriptor_Path_Mappings_With_Different_Order
         _edgesSecond = CanonicalizeOrderingStepTestContext.CaptureDescriptorEdges(modelB);
     }
 
+    /// <summary>
+    /// It should produce identical descriptor edge ordering.
+    /// </summary>
     [Test]
     public void It_should_produce_identical_descriptor_edge_ordering()
     {
         _edgesFirst.Should().Equal(_edgesSecond);
     }
 
+    /// <summary>
+    /// Create descriptor schema.
+    /// </summary>
     private static JsonObject CreateDescriptorSchema()
     {
         return new JsonObject
@@ -188,11 +215,17 @@ public class Given_Descriptor_Path_Mappings_With_Different_Order
     }
 }
 
+/// <summary>
+/// Test fixture for mixed constraint types.
+/// </summary>
 [TestFixture]
 public class Given_Mixed_Constraint_Types
 {
     private IReadOnlyList<string> _orderedConstraints = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -298,6 +331,9 @@ public class Given_Mixed_Constraint_Types
         _orderedConstraints = context.ResourceModel!.Root.Constraints.Select(GetConstraintName).ToArray();
     }
 
+    /// <summary>
+    /// It should order constraints by kind then name.
+    /// </summary>
     [Test]
     public void It_should_order_constraints_by_kind_then_name()
     {
@@ -313,6 +349,9 @@ public class Given_Mixed_Constraint_Types
             );
     }
 
+    /// <summary>
+    /// Get constraint name.
+    /// </summary>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch
@@ -325,8 +364,14 @@ public class Given_Mixed_Constraint_Types
     }
 }
 
+/// <summary>
+/// Test type canonicalize ordering step test context.
+/// </summary>
 internal static class CanonicalizeOrderingStepTestContext
 {
+    /// <summary>
+    /// Build model.
+    /// </summary>
     public static RelationalResourceModel BuildModel(
         JsonObject schema,
         Action<RelationalModelBuilderContext>? configure = null
@@ -357,6 +402,9 @@ internal static class CanonicalizeOrderingStepTestContext
             );
     }
 
+    /// <summary>
+    /// Capture snapshot.
+    /// </summary>
     public static IReadOnlyList<string> CaptureSnapshot(RelationalResourceModel model)
     {
         List<string> snapshot = [];
@@ -374,6 +422,9 @@ internal static class CanonicalizeOrderingStepTestContext
         return snapshot.ToArray();
     }
 
+    /// <summary>
+    /// Capture descriptor edges.
+    /// </summary>
     public static IReadOnlyList<string> CaptureDescriptorEdges(RelationalResourceModel model)
     {
         return model
@@ -383,6 +434,9 @@ internal static class CanonicalizeOrderingStepTestContext
             .ToArray();
     }
 
+    /// <summary>
+    /// Get constraint name.
+    /// </summary>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch

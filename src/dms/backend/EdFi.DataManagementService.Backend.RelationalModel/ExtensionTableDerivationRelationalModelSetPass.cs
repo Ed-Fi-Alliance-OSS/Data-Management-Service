@@ -84,6 +84,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         }
     }
 
+    /// <summary>
+    /// Builds a relational model builder context for a resource extension using the extension project's schema
+    /// and descriptor-path inventory.
+    /// </summary>
     private static RelationalModelBuilderContext BuildExtensionContext(
         RelationalModelSetBuilderContext context,
         ConcreteResourceSchemaContext resourceContext,
@@ -115,6 +119,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return builderContext;
     }
 
+    /// <summary>
+    /// Derives extension tables and descriptor edge sources from a resource extension schema.
+    /// </summary>
     private static ExtensionDerivationResult DeriveExtensionTables(
         RelationalModelBuilderContext extensionContext,
         RelationalResourceModel baseModel,
@@ -184,6 +191,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return new ExtensionDerivationResult(orderedTables, descriptorEdgeSources.ToArray());
     }
 
+    /// <summary>
+    /// Merges derived extension tables and descriptor edge sources into the base resource model.
+    /// </summary>
     private static RelationalResourceModel MergeExtensionTables(
         RelationalResourceModel baseModel,
         ExtensionDerivationResult extensionResult
@@ -202,6 +212,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         };
     }
 
+    /// <summary>
+    /// Walks a schema node and dispatches to object/array handlers during extension table derivation.
+    /// </summary>
     private static void WalkSchema(
         JsonObject schema,
         ExtensionTableBuilder? tableBuilder,
@@ -274,6 +287,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         }
     }
 
+    /// <summary>
+    /// Walks an object schema node, adding scalar/descriptor columns and recursing into nested objects/arrays.
+    /// </summary>
     private static void WalkObjectSchema(
         JsonObject schema,
         ExtensionTableBuilder? tableBuilder,
@@ -415,6 +431,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         }
     }
 
+    /// <summary>
+    /// Handles an <c>_ext</c> property by selecting the matching extension project subtree and walking it into
+    /// an extension table aligned to the owning base scope.
+    /// </summary>
     private static void HandleExtensionProperty(
         JsonObject extensionSchema,
         List<JsonPathSegment> owningScopeSegments,
@@ -524,6 +544,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Walks an array schema, deriving child extension tables for array-of-object shapes and handling
+    /// scalar/descriptor-array special cases.
+    /// </summary>
     private static void WalkArraySchema(
         JsonObject schema,
         ExtensionTableBuilder? tableBuilder,
@@ -682,6 +706,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         }
     }
 
+    /// <summary>
+    /// Gets an existing extension table builder for the given extension project scope or creates one aligned to
+    /// the corresponding base table scope.
+    /// </summary>
     private static ExtensionTableBuilder GetOrCreateExtensionTableBuilder(
         List<JsonPathSegment> owningScopeSegments,
         string projectKey,
@@ -743,6 +771,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return builder;
     }
 
+    /// <summary>
+    /// Creates a child extension table builder for an array-of-object extension property under a parent table.
+    /// </summary>
     private static ExtensionTableBuilder CreateChildTableBuilder(
         ExtensionTableBuilder parent,
         List<JsonPathSegment> propertySegments,
@@ -787,6 +818,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return new ExtensionTableBuilder(table, collectionBaseNames);
     }
 
+    /// <summary>
+    /// Builds the ordered collection base names for a table scope from its property/array segments.
+    /// </summary>
     private static IReadOnlyList<string> BuildCollectionBaseNames(IReadOnlyList<JsonPathSegment> segments)
     {
         List<string> baseNames = [];
@@ -805,6 +839,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return baseNames.ToArray();
     }
 
+    /// <summary>
+    /// Strips the leading <c>_ext.{project}</c> prefix from a scope segment list.
+    /// </summary>
     private static IReadOnlyList<JsonPathSegment> StripExtensionRootPrefix(
         IReadOnlyList<JsonPathSegment> segments,
         string projectKey
@@ -830,6 +867,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Trims a segment list down to the nearest owning table scope (through the last array wildcard segment).
+    /// </summary>
     private static IReadOnlyList<JsonPathSegment> TrimToTableScope(IReadOnlyList<JsonPathSegment> segments)
     {
         var lastArrayIndex = -1;
@@ -851,6 +891,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return segments.Take(lastArrayIndex + 1).ToArray();
     }
 
+    /// <summary>
+    /// Resolves which extension project key is present under an <c>_ext</c> object using endpoint name or
+    /// project name matching.
+    /// </summary>
     private static string ResolveExtensionProjectKey(
         JsonObject projectKeysObject,
         ProjectSchemaInfo extensionProject,
@@ -877,6 +921,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Finds a matching project key in a <c>_ext</c> object using ordinal string comparison.
+    /// </summary>
     private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match)
     {
         foreach (var entry in projectKeysObject)
@@ -890,6 +937,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return null;
     }
 
+    /// <summary>
+    /// Builds a set of canonical reference identity JSONPaths from <c>documentPathsMapping.referenceJsonPaths</c>.
+    /// </summary>
     private static HashSet<string> BuildReferenceIdentityPathSet(
         IReadOnlyList<DocumentReferenceMapping> mappings
     )
@@ -912,6 +962,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return referenceIdentityPaths;
     }
 
+    /// <summary>
+    /// Builds a set of canonical reference object JSONPaths from the document reference mappings.
+    /// </summary>
     private static HashSet<string> BuildReferenceObjectPathSet(
         IReadOnlyList<DocumentReferenceMapping> mappings
     )
@@ -931,6 +984,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return referenceObjectPaths;
     }
 
+    /// <summary>
+    /// Adds a descriptor FK column for an array whose items are scalar descriptor values.
+    /// </summary>
     private static void AddDescriptorArrayColumn(
         ExtensionTableBuilder tableBuilder,
         JsonObject itemsSchema,
@@ -969,6 +1025,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Returns true when the schema contains an <c>_ext</c> property under its properties object.
+    /// </summary>
     private static bool HasExtensionProperty(JsonObject schema)
     {
         if (!schema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is null)
@@ -984,6 +1043,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return propertiesObject.ContainsKey(ExtensionPropertyName);
     }
 
+    /// <summary>
+    /// Adds either a scalar column or a bound descriptor FK column for the given schema node at the source path.
+    /// </summary>
     private static void AddScalarOrDescriptorColumn(
         ExtensionTableBuilder tableBuilder,
         JsonObject schema,
@@ -1063,6 +1125,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         tableBuilder.AddColumn(scalarColumn);
     }
 
+    /// <summary>
+    /// Resolves the relational scalar type for an extension schema node at the supplied path.
+    /// </summary>
     private static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -1083,6 +1148,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         };
     }
 
+    /// <summary>
+    /// Resolves a string schema to a relational type, using format hints when present.
+    /// </summary>
     private static RelationalScalarType ResolveStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -1105,6 +1173,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return BuildStringType(schema, sourcePath, context);
     }
 
+    /// <summary>
+    /// Resolves an unformatted string schema to a relational string type, enforcing max length when required.
+    /// </summary>
     private static RelationalScalarType BuildStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -1142,6 +1213,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return new RelationalScalarType(ScalarKind.String, maxLength);
     }
 
+    /// <summary>
+    /// Returns true when maxLength may be omitted for the given string path.
+    /// </summary>
     private static bool IsMaxLengthOmissionAllowed(
         JsonPathExpression sourcePath,
         RelationalModelBuilderContext context
@@ -1150,6 +1224,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
     }
 
+    /// <summary>
+    /// Resolves an integer schema to a 32-bit or 64-bit relational type based on format.
+    /// </summary>
     private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)
     {
         var format = GetOptionalString(schema, "format", sourcePath.Canonical);
@@ -1161,6 +1238,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         };
     }
 
+    /// <summary>
+    /// Resolves a decimal schema to a relational decimal type using the required totalDigits/decimalPlaces
+    /// metadata.
+    /// </summary>
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
         RelationalModelBuilderContext context
@@ -1200,6 +1281,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Reads <c>x-nullable</c> (an OpenAPI extension commonly used in Ed-Fi schemas) as an override for
+    /// JSON Schema required-ness.
+    /// </summary>
     private static bool IsXNullable(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("x-nullable", out var nullableNode) || nullableNode is null)
@@ -1215,6 +1300,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return jsonValue.GetValue<bool>();
     }
 
+    /// <summary>
+    /// Returns the JSON Schema <c>type</c> for the node, throwing when missing or non-string.
+    /// </summary>
     private static string GetSchemaType(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
@@ -1229,6 +1317,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         };
     }
 
+    /// <summary>
+    /// Reads an optional string-valued schema property, returning null when absent.
+    /// </summary>
     private static string? GetOptionalString(JsonObject schema, string propertyName, string path)
     {
         if (!schema.TryGetPropertyValue(propertyName, out var valueNode) || valueNode is null)
@@ -1245,6 +1336,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         };
     }
 
+    /// <summary>
+    /// Builds a deterministic column base name by PascalCasing each segment.
+    /// </summary>
     private static string BuildColumnBaseName(IReadOnlyList<string> segments)
     {
         if (segments.Count == 0)
@@ -1262,6 +1356,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Builds column name segments for a descriptor array property.
+    /// </summary>
     private static List<string> BuildDescriptorArrayColumnSegments(
         IReadOnlyList<JsonPathSegment> propertySegments
     )
@@ -1277,6 +1374,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return columnSegments;
     }
 
+    /// <summary>
+    /// Builds a property path segment list by appending the property name to the current scope segments.
+    /// </summary>
     private static List<JsonPathSegment> BuildPropertySegments(
         List<JsonPathSegment> pathSegments,
         string propertyName
@@ -1291,6 +1391,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return propertySegments;
     }
 
+    /// <summary>
+    /// Builds column name segments by appending the property name to the current column segments.
+    /// </summary>
     private static List<string> BuildPropertyColumnSegments(List<string> columnSegments, string propertyName)
     {
         List<string> propertyColumnSegments = [.. columnSegments, propertyName];
@@ -1298,6 +1401,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return propertyColumnSegments;
     }
 
+    /// <summary>
+    /// Returns the required property name set for an object schema at the provided scope.
+    /// </summary>
     private static HashSet<string> GetRequiredProperties(
         JsonObject schema,
         List<JsonPathSegment> pathSegments
@@ -1347,6 +1453,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return requiredProperties;
     }
 
+    /// <summary>
+    /// Builds a canonical property JSONPath string for diagnostics.
+    /// </summary>
     private static string BuildPropertyPath(List<JsonPathSegment> scopeSegments, string propertyName)
     {
         List<JsonPathSegment> propertySegments =
@@ -1358,6 +1467,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
     }
 
+    /// <summary>
+    /// Validates that all descriptor paths were observed during schema traversal.
+    /// </summary>
     private static void EnsureAllDescriptorPathsUsed(
         RelationalModelBuilderContext context,
         HashSet<string> usedDescriptorPaths
@@ -1388,11 +1500,17 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Counts the number of wildcard array segments in a scope path.
+    /// </summary>
     private static int CountArrayDepth(JsonPathExpression scope)
     {
         return scope.Segments.Count(segment => segment is JsonPathSegment.AnyArrayElement);
     }
 
+    /// <summary>
+    /// Builds the root table key for an extension table aligned to the base root scope.
+    /// </summary>
     private static TableKey BuildRootTableKey()
     {
         return new TableKey(
@@ -1403,6 +1521,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         );
     }
 
+    /// <summary>
+    /// Builds a child table key for an extension collection table aligned to a base collection scope.
+    /// </summary>
     private static TableKey BuildChildTableKey(
         string baseRootBaseName,
         IReadOnlyList<string> collectionBaseNames
@@ -1431,6 +1552,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return new TableKey(keyColumns.ToArray());
     }
 
+    /// <summary>
+    /// Builds the parent key column name list for a child extension table FK to its parent table.
+    /// </summary>
     private static DbColumnName[] BuildParentKeyColumnNames(
         string baseRootBaseName,
         IReadOnlyList<string> parentCollectionBaseNames
@@ -1449,6 +1573,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return keyColumns.ToArray();
     }
 
+    /// <summary>
+    /// Builds physical column models for the table key columns.
+    /// </summary>
     private static DbColumnModel[] BuildKeyColumns(IReadOnlyList<DbKeyColumn> keyColumns)
     {
         DbColumnModel[] columns = new DbColumnModel[keyColumns.Count];
@@ -1471,6 +1598,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return columns;
     }
 
+    /// <summary>
+    /// Resolves the scalar type for a key column based on its kind and name.
+    /// </summary>
     private static RelationalScalarType ResolveKeyColumnScalarType(DbKeyColumn keyColumn)
     {
         return keyColumn.Kind switch
@@ -1486,6 +1616,9 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         };
     }
 
+    /// <summary>
+    /// Returns true when the column name represents a document id key part.
+    /// </summary>
     private static bool IsDocumentIdColumn(DbColumnName columnName)
     {
         if (
@@ -1502,37 +1635,64 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Captures the index and model for a base (non-extension) resource used when resolving extensions.
+    /// </summary>
     private sealed record BaseResourceEntry(int Index, ConcreteResourceModel Model);
 
+    /// <summary>
+    /// Captures the derived extension table models and descriptor edge sources for an extension resource.
+    /// </summary>
     private sealed record ExtensionDerivationResult(
         IReadOnlyList<DbTableModel> Tables,
         IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
     );
 
+    /// <summary>
+    /// Accumulates columns and constraints for a derived extension table.
+    /// </summary>
     private sealed class ExtensionTableBuilder
     {
         private readonly TableColumnAccumulator _accumulator;
 
+        /// <summary>
+        /// Creates a builder for the supplied table definition and collection scope.
+        /// </summary>
         public ExtensionTableBuilder(DbTableModel table, IReadOnlyList<string> collectionBaseNames)
         {
             _accumulator = new TableColumnAccumulator(table);
             CollectionBaseNames = collectionBaseNames;
         }
 
+        /// <summary>
+        /// The current table definition for this builder.
+        /// </summary>
         public DbTableModel Definition => _accumulator.Definition;
 
+        /// <summary>
+        /// The collection base name chain used when constructing nested extension table names.
+        /// </summary>
         public IReadOnlyList<string> CollectionBaseNames { get; }
 
+        /// <summary>
+        /// Adds a column to the table being built.
+        /// </summary>
         public void AddColumn(DbColumnModel column)
         {
             _accumulator.AddColumn(column);
         }
 
+        /// <summary>
+        /// Adds a constraint to the table being built.
+        /// </summary>
         public void AddConstraint(TableConstraint constraint)
         {
             _accumulator.AddConstraint(constraint);
         }
 
+        /// <summary>
+        /// Builds the final table model with accumulated columns and constraints.
+        /// </summary>
         public DbTableModel Build()
         {
             return _accumulator.Build();

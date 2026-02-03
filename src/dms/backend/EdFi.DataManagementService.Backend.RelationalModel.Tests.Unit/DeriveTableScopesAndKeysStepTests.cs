@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a json schema with nested collections.
+/// </summary>
 [TestFixture]
 public class Given_A_JsonSchema_With_Nested_Collections
 {
@@ -18,6 +21,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
     private DbTableModel _rootTable = default!;
     private DbSchemaName _schemaName = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -46,6 +52,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
         );
     }
 
+    /// <summary>
+    /// It should define root key as parent key part.
+    /// </summary>
     [Test]
     public void It_should_define_root_key_as_parent_key_part()
     {
@@ -55,6 +64,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .Equal((RelationalNameConventions.DocumentIdColumnName.Value, ColumnKind.ParentKeyPart));
     }
 
+    /// <summary>
+    /// It should create collection keys.
+    /// </summary>
     [Test]
     public void It_should_create_collection_keys()
     {
@@ -85,6 +97,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
             );
     }
 
+    /// <summary>
+    /// It should seed key columns in column inventory.
+    /// </summary>
     [Test]
     public void It_should_seed_key_columns_in_column_inventory()
     {
@@ -120,6 +135,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
             );
     }
 
+    /// <summary>
+    /// It should create parent child foreign keys.
+    /// </summary>
     [Test]
     public void It_should_create_parent_child_foreign_keys()
     {
@@ -160,6 +178,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
         addressFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
+    /// <summary>
+    /// It should create the root document foreign key.
+    /// </summary>
     [Test]
     public void It_should_create_the_root_document_foreign_key()
     {
@@ -179,6 +200,9 @@ public class Given_A_JsonSchema_With_Nested_Collections
         rootFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
+    /// <summary>
+    /// Create schema.
+    /// </summary>
     private static JsonObject CreateSchema()
     {
         return new JsonObject
@@ -211,11 +235,17 @@ public class Given_A_JsonSchema_With_Nested_Collections
     }
 }
 
+/// <summary>
+/// Test fixture for a descriptor resource.
+/// </summary>
 [TestFixture]
 public class Given_A_Descriptor_Resource
 {
     private RelationalResourceModel _resourceModel = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -235,18 +265,27 @@ public class Given_A_Descriptor_Resource
         _resourceModel = context.ResourceModel!;
     }
 
+    /// <summary>
+    /// It should mark storage kind as shared descriptor table.
+    /// </summary>
     [Test]
     public void It_should_mark_storage_kind_as_shared_descriptor_table()
     {
         _resourceModel.StorageKind.Should().Be(ResourceStorageKind.SharedDescriptorTable);
     }
 
+    /// <summary>
+    /// It should use the shared descriptor table as root.
+    /// </summary>
     [Test]
     public void It_should_use_the_shared_descriptor_table_as_root()
     {
         _resourceModel.Root.Table.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
     }
 
+    /// <summary>
+    /// It should preserve project schema ownership for shared descriptor storage.
+    /// </summary>
     [Test]
     public void It_should_preserve_project_schema_ownership_for_shared_descriptor_storage()
     {
@@ -256,6 +295,9 @@ public class Given_A_Descriptor_Resource
         _resourceModel.PhysicalSchema.Should().NotBe(_resourceModel.Root.Table.Schema);
     }
 
+    /// <summary>
+    /// It should not create per descriptor tables.
+    /// </summary>
     [Test]
     public void It_should_not_create_per_descriptor_tables()
     {
@@ -266,6 +308,9 @@ public class Given_A_Descriptor_Resource
             .NotContain("AcademicSubjectDescriptor");
     }
 
+    /// <summary>
+    /// Create descriptor schema.
+    /// </summary>
     private static JsonObject CreateDescriptorSchema()
     {
         return new JsonObject

@@ -7,6 +7,10 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Resolves relational scalar type metadata from a JSON Schema node and the precomputed validation metadata
+/// required for decimals and string lengths.
+/// </summary>
 internal static class RelationalScalarTypeResolver
 {
     private static readonly IReadOnlySet<string> EmptyStringMaxLengthOmissionPaths = new HashSet<string>(
@@ -18,6 +22,10 @@ internal static class RelationalScalarTypeResolver
         out DecimalPropertyValidationInfo validationInfo
     );
 
+    /// <summary>
+    /// Resolves the relational scalar type for a JSON Schema node using the builder context's validation
+    /// metadata.
+    /// </summary>
     public static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -34,6 +42,9 @@ internal static class RelationalScalarTypeResolver
         );
     }
 
+    /// <summary>
+    /// Resolves a string schema to a relational type, using format hints when present.
+    /// </summary>
     private static RelationalScalarType ResolveStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -56,6 +67,9 @@ internal static class RelationalScalarTypeResolver
         return BuildStringType(schema, sourcePath, stringMaxLengthOmissionPaths);
     }
 
+    /// <summary>
+    /// Resolves an unformatted string schema to a relational string type, enforcing max length when required.
+    /// </summary>
     private static RelationalScalarType BuildStringType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -93,6 +107,9 @@ internal static class RelationalScalarTypeResolver
         return new RelationalScalarType(ScalarKind.String, maxLength);
     }
 
+    /// <summary>
+    /// Returns true when maxLength may be omitted for the given string path.
+    /// </summary>
     private static bool IsMaxLengthOmissionAllowed(
         JsonPathExpression sourcePath,
         IReadOnlySet<string> stringMaxLengthOmissionPaths
@@ -101,6 +118,9 @@ internal static class RelationalScalarTypeResolver
         return stringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
     }
 
+    /// <summary>
+    /// Resolves an integer schema to a 32-bit or 64-bit relational type based on format.
+    /// </summary>
     private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)
     {
         var format = GetOptionalString(schema, "format", sourcePath.Canonical);
@@ -112,6 +132,10 @@ internal static class RelationalScalarTypeResolver
         };
     }
 
+    /// <summary>
+    /// Resolves a decimal schema to a relational decimal type using the required totalDigits/decimalPlaces
+    /// metadata.
+    /// </summary>
     private static RelationalScalarType ResolveDecimalType(
         JsonPathExpression sourcePath,
         TryGetDecimalPropertyValidationInfo tryGetDecimalPropertyValidationInfo
@@ -151,6 +175,9 @@ internal static class RelationalScalarTypeResolver
         );
     }
 
+    /// <summary>
+    /// Resolves the relational scalar type for a JSON Schema node using an explicit decimal validation map.
+    /// </summary>
     public static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -168,6 +195,10 @@ internal static class RelationalScalarTypeResolver
         );
     }
 
+    /// <summary>
+    /// Resolves the relational scalar type for a JSON Schema node using provided decimal and string-length
+    /// validators.
+    /// </summary>
     private static RelationalScalarType ResolveScalarType(
         JsonObject schema,
         JsonPathExpression sourcePath,
@@ -192,6 +223,9 @@ internal static class RelationalScalarTypeResolver
         };
     }
 
+    /// <summary>
+    /// Returns the JSON Schema <c>type</c> for the node, throwing when missing or non-string.
+    /// </summary>
     private static string GetSchemaType(JsonObject schema, string path)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
@@ -206,6 +240,9 @@ internal static class RelationalScalarTypeResolver
         };
     }
 
+    /// <summary>
+    /// Reads an optional string-valued schema property, returning null when absent.
+    /// </summary>
     private static string? GetOptionalString(JsonObject schema, string propertyName, string path)
     {
         if (!schema.TryGetPropertyValue(propertyName, out var valueNode) || valueNode is null)

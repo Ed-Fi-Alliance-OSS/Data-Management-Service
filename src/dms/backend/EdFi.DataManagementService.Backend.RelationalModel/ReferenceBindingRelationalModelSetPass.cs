@@ -84,6 +84,10 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         }
     }
 
+    /// <summary>
+    /// Applies the resource's document reference mappings by adding FK and propagated identity columns to the
+    /// owning tables and emitting <see cref="DocumentReferenceBinding"/> metadata for runtime use.
+    /// </summary>
     private static RelationalResourceModel ApplyReferenceMappings(
         RelationalModelSetBuilderContext context,
         RelationalResourceModel resourceModel,
@@ -271,6 +275,10 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         };
     }
 
+    /// <summary>
+    /// Resolves the table accumulator that owns the reference object path by selecting the deepest matching
+    /// table scope prefix.
+    /// </summary>
     private static TableColumnAccumulator ResolveOwningTableBuilder(
         JsonPathExpression referenceObjectPath,
         IReadOnlyList<TableScopeEntry> tableScopes,
@@ -338,6 +346,9 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         return bestMatch.Builder;
     }
 
+    /// <summary>
+    /// Resolves the reference base name, applying any supported <c>relational.nameOverrides</c> entry first.
+    /// </summary>
     private static string ResolveReferenceBaseName(
         DocumentReferenceMapping mapping,
         RelationalModelBuilderContext builderContext
@@ -356,6 +367,9 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         return RelationalNameConventions.ToPascalCase(mapping.MappingKey);
     }
 
+    /// <summary>
+    /// Builds the FK column name used to represent the reference object as a single referenced document id.
+    /// </summary>
     private static DbColumnName BuildReferenceDocumentIdColumnName(string referenceBaseName)
     {
         if (string.IsNullOrWhiteSpace(referenceBaseName))
@@ -366,6 +380,10 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         return new DbColumnName($"{referenceBaseName}_DocumentId");
     }
 
+    /// <summary>
+    /// Resolves descriptor identity metadata for a target resource identity path when the identity ends in a
+    /// descriptor segment.
+    /// </summary>
     private static bool TryResolveDescriptorIdentity(
         RelationalModelSetBuilderContext context,
         QualifiedResourceName targetResource,
@@ -392,6 +410,9 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         return false;
     }
 
+    /// <summary>
+    /// Returns true when an identity path appears to represent a descriptor URI identity component.
+    /// </summary>
     private static bool IsDescriptorIdentityPath(JsonPathExpression identityJsonPath)
     {
         return identityJsonPath.Segments.Count > 0
@@ -399,8 +420,14 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
             && property.Name.EndsWith("Descriptor", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Captures the index and model for a base (non-extension) resource used when resolving extensions.
+    /// </summary>
     private sealed record BaseResourceEntry(int Index, ConcreteResourceModel Model);
 
+    /// <summary>
+    /// Captures a table scope and its accumulator for prefix matching against reference object paths.
+    /// </summary>
     private sealed record TableScopeEntry(
         string Canonical,
         IReadOnlyList<JsonPathSegment> Segments,

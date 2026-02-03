@@ -472,6 +472,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Extracts and compiles array uniqueness constraints from a JSON array, recursively processing nested
+    /// constraints.
+    /// </summary>
     private static IReadOnlyList<ArrayUniquenessConstraintInput> ExtractArrayUniquenessConstraints(
         JsonArray constraintsArray,
         string projectName,
@@ -714,6 +718,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return overrides;
     }
 
+    /// <summary>
+    /// Validates and returns the <c>referenceJsonPaths</c> array for a document reference mapping entry.
+    /// </summary>
     private static JsonArray GetReferenceJsonPathsNode(
         string mappingKey,
         JsonObject mappingObject,
@@ -756,6 +763,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return referenceJsonPathsArray;
     }
 
+    /// <summary>
+    /// Extracts the identity/reference JSONPath bindings for a document reference mapping and returns the
+    /// compiled reference object path.
+    /// </summary>
     private static IReadOnlyList<ReferenceJsonPathBinding> ExtractReferenceJsonPaths(
         string mappingKey,
         JsonArray referenceJsonPathsArray,
@@ -833,6 +844,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return referenceJsonPaths.ToArray();
     }
 
+    /// <summary>
+    /// Extracts the reference object path prefix from a reference JSONPath by removing the terminal property
+    /// segment.
+    /// </summary>
     private static JsonPathExpression ExtractReferencePrefixPath(
         string mappingKey,
         string projectName,
@@ -852,6 +867,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return JsonPathExpressionCompiler.FromSegments(prefixSegments);
     }
 
+    /// <summary>
+    /// Resolves the effective <c>isPartOfIdentity</c> value for a reference mapping and validates it is
+    /// consistent with the derived identity-path classification.
+    /// </summary>
     private static bool ResolveIsPartOfIdentity(
         string mappingKey,
         string projectName,
@@ -888,6 +907,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return true;
     }
 
+    /// <summary>
+    /// Validates that all identity-component reference paths are present in the resource's
+    /// <c>identityJsonPaths</c>.
+    /// </summary>
     private static void ValidateReferenceIdentityCompleteness(
         string mappingKey,
         string projectName,
@@ -924,6 +947,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Validates that array uniqueness constraints referencing any identity path from a reference object include
+    /// all of that reference object's identity paths.
+    /// </summary>
     private static void ValidateArrayUniquenessReferenceIdentityCompleteness(
         IReadOnlyList<ArrayUniquenessConstraintInput> constraints,
         IReadOnlyList<DocumentReferenceMapping> referenceMappings,
@@ -954,6 +981,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Validates a single array uniqueness constraint (and nested constraints) for reference identity coverage
+    /// within each array scope.
+    /// </summary>
     private static void ValidateArrayUniquenessReferenceIdentityCompleteness(
         ArrayUniquenessConstraintInput constraint,
         IReadOnlyList<ReferenceIdentityGroup> referenceGroups,
@@ -1014,6 +1045,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Validates that when any reference identity path is included in a constraint scope, all identity paths for
+    /// that reference object are included.
+    /// </summary>
     private static bool ValidateArrayUniquenessReferenceIdentityCoverage(
         IReadOnlyList<JsonPathExpression> constraintPaths,
         IReadOnlyList<ReferenceIdentityGroup> referenceGroups,
@@ -1067,6 +1102,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return matchedAny;
     }
 
+    /// <summary>
+    /// Groups constraint paths by the canonical JSONPath of their owning array scope.
+    /// </summary>
     private static IReadOnlyDictionary<string, IReadOnlyList<JsonPathExpression>> GroupPathsByArrayScope(
         IReadOnlyList<JsonPathExpression> paths,
         string resourceKey
@@ -1100,6 +1138,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Returns the owning array scope for a path by taking the prefix through its last wildcard array segment.
+    /// </summary>
     private static JsonPathExpression GetArrayScope(JsonPathExpression path, string resourceKey)
     {
         var lastArrayIndex = -1;
@@ -1124,6 +1165,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return JsonPathExpressionCompiler.FromSegments(scopeSegments);
     }
 
+    /// <summary>
+    /// Resolves a constraint path relative to its optional base path.
+    /// </summary>
     private static JsonPathExpression ResolveConstraintPath(
         JsonPathExpression? basePath,
         JsonPathExpression path
@@ -1132,6 +1176,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return basePath is null ? path : ResolveRelativePath(basePath.Value, path);
     }
 
+    /// <summary>
+    /// Resolves a path relative to a base array path by concatenating JSONPath segments.
+    /// </summary>
     private static JsonPathExpression ResolveRelativePath(
         JsonPathExpression basePath,
         JsonPathExpression relativePath
@@ -1146,6 +1193,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return JsonPathExpressionCompiler.FromSegments(combinedSegments);
     }
 
+    /// <summary>
+    /// Attempts to strip a leading <c>._ext.{project}</c> prefix from an optional path.
+    /// </summary>
     private static bool TryStripExtensionRootPrefix(JsonPathExpression? path, out JsonPathExpression stripped)
     {
         if (path is null)
@@ -1157,6 +1207,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return TryStripExtensionRootPrefix(path.Value, out stripped);
     }
 
+    /// <summary>
+    /// Attempts to strip a leading <c>._ext.{project}</c> prefix from a path.
+    /// </summary>
     private static bool TryStripExtensionRootPrefix(JsonPathExpression path, out JsonPathExpression stripped)
     {
         if (
@@ -1174,6 +1227,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return false;
     }
 
+    /// <summary>
+    /// Attempts to strip a leading <c>._ext.{project}</c> prefix from all paths in the list.
+    /// </summary>
     private static bool TryStripExtensionRootPrefix(
         IReadOnlyList<JsonPathExpression> paths,
         out IReadOnlyList<JsonPathExpression> stripped
@@ -1254,6 +1310,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         };
     }
 
+    /// <summary>
+    /// Reads an optional boolean property from a JSON object.
+    /// </summary>
     private static bool? TryGetOptionalBoolean(JsonObject node, string propertyName)
     {
         if (!node.TryGetPropertyValue(propertyName, out var value))
@@ -1306,12 +1365,19 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         return value;
     }
 
+    /// <summary>
+    /// Holds the extracted document reference mappings and the derived path sets used by later derivation
+    /// steps.
+    /// </summary>
     private sealed record DocumentPathsMappingResult(
         IReadOnlyList<DocumentReferenceMapping> ReferenceMappings,
         IReadOnlySet<string> MappedIdentityPaths,
         IReadOnlySet<string> ReferenceObjectPaths
     )
     {
+        /// <summary>
+        /// An empty result used when <c>documentPathsMapping</c> is not present.
+        /// </summary>
         public static DocumentPathsMappingResult Empty { get; } =
             new(
                 Array.Empty<DocumentReferenceMapping>(),
@@ -1320,6 +1386,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             );
     }
 
+    /// <summary>
+    /// Captures a reference object path and its ordered set of identity path canonical strings.
+    /// </summary>
     private sealed record ReferenceIdentityGroup(
         JsonPathExpression ReferenceObjectPath,
         IReadOnlyList<string> ReferenceIdentityPaths

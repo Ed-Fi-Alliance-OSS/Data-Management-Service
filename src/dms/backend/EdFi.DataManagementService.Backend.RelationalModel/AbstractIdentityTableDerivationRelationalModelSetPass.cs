@@ -115,6 +115,10 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         }
     }
 
+    /// <summary>
+    /// Builds metadata for all concrete resources required to derive abstract identity tables, including
+    /// subclass/superclass linkage and scalar validation inputs.
+    /// </summary>
     private static Dictionary<QualifiedResourceName, ConcreteResourceMetadata> BuildConcreteMetadata(
         RelationalModelSetBuilderContext context,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteModelsByResource
@@ -197,6 +201,10 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return metadataByResource;
     }
 
+    /// <summary>
+    /// Builds the identity column set for an abstract identity table, validating that all concrete members map
+    /// each identity path to a consistent column signature.
+    /// </summary>
     private static IReadOnlyList<DbColumnModel> BuildIdentityColumns(
         IReadOnlyList<JsonPathExpression> identityJsonPaths,
         QualifiedResourceName abstractResource,
@@ -255,6 +263,10 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return columns;
     }
 
+    /// <summary>
+    /// Maps an abstract identity path to the corresponding identity path on a concrete member, honoring
+    /// <c>superclassIdentityJsonPath</c> when present.
+    /// </summary>
     private static JsonPathExpression MapIdentityPathForMember(
         ConcreteResourceMetadata member,
         JsonPathExpression abstractIdentityPath,
@@ -322,6 +334,10 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         );
     }
 
+    /// <summary>
+    /// Resolves the column signature for a member resource at the given identity path, consulting both the
+    /// derived table model and descriptor path maps.
+    /// </summary>
     private static ColumnSignature ResolveColumnSignature(
         ConcreteResourceMetadata member,
         JsonPathExpression mappedIdentityPath,
@@ -386,6 +402,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return new ColumnSignature(ColumnKind.Scalar, scalarType, null);
     }
 
+    /// <summary>
+    /// Builds the discriminator column used to record the concrete member type in the abstract identity table.
+    /// </summary>
     private static DbColumnModel BuildDiscriminatorColumn()
     {
         return new DbColumnModel(
@@ -398,6 +417,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         );
     }
 
+    /// <summary>
+    /// Builds the <c>DocumentId</c> key column used by abstract identity tables.
+    /// </summary>
     private static DbColumnModel BuildDocumentIdColumn()
     {
         return new DbColumnModel(
@@ -410,6 +432,10 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         );
     }
 
+    /// <summary>
+    /// Builds a deterministic physical column name from an identity JSONPath by PascalCasing its property
+    /// segments.
+    /// </summary>
     private static DbColumnName BuildColumnName(JsonPathExpression identityPath)
     {
         List<string> segments = [];
@@ -445,6 +471,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return new DbColumnName(builder.ToString());
     }
 
+    /// <summary>
+    /// Builds the unique and FK constraints for an abstract identity table.
+    /// </summary>
     private static IReadOnlyList<TableConstraint> BuildIdentityTableConstraints(
         DbTableName tableName,
         IReadOnlyList<DbColumnModel> identityColumns
@@ -473,6 +502,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         };
     }
 
+    /// <summary>
+    /// Extracts and compiles <c>identityJsonPaths</c> from an abstract resource schema, validating duplicates.
+    /// </summary>
     private static IReadOnlyList<JsonPathExpression> ExtractIdentityJsonPaths(
         JsonObject resourceSchema,
         QualifiedResourceName resource
@@ -520,6 +552,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return compiledPaths.ToArray();
     }
 
+    /// <summary>
+    /// Extracts <c>decimalPropertyValidationInfos</c> into a lookup keyed by canonical JSONPath.
+    /// </summary>
     private static Dictionary<string, DecimalPropertyValidationInfo> ExtractDecimalPropertyValidationInfos(
         JsonObject resourceSchema
     )
@@ -568,6 +603,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return decimalInfosByPath;
     }
 
+    /// <summary>
+    /// Reads a required boolean property from a schema node.
+    /// </summary>
     private static bool RequireBoolean(JsonObject node, string propertyName)
     {
         return node[propertyName] switch
@@ -582,6 +620,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         };
     }
 
+    /// <summary>
+    /// Formats a column signature for diagnostic error messages.
+    /// </summary>
     private static string FormatSignature(ColumnSignature signature)
     {
         var typeLabel = signature.Kind switch
@@ -596,6 +637,9 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         return $"{signature.Kind}:{typeLabel}";
     }
 
+    /// <summary>
+    /// Formats a scalar type for diagnostic error messages.
+    /// </summary>
     private static string FormatScalarType(RelationalScalarType scalarType)
     {
         return scalarType.Kind switch
@@ -608,12 +652,19 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         };
     }
 
+    /// <summary>
+    /// Represents the resolved kind and type metadata for an identity column across concrete members.
+    /// </summary>
     private sealed record ColumnSignature(
         ColumnKind Kind,
         RelationalScalarType ScalarType,
         QualifiedResourceName? TargetResource
     );
 
+    /// <summary>
+    /// Captures the derived model and schema metadata for a concrete resource used when deriving abstract
+    /// identity tables.
+    /// </summary>
     private sealed record ConcreteResourceMetadata(
         QualifiedResourceName Resource,
         RelationalResourceModel Model,

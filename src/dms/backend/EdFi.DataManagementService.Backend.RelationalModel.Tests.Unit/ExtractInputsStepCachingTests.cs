@@ -9,12 +9,18 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a relational model build with shared input extraction.
+/// </summary>
 [TestFixture]
 public class Given_A_Relational_Model_Build_With_Shared_Input_Extraction
 {
     private int _expectedExtractCount;
     private int _actualExtractCount;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -61,16 +67,25 @@ public class Given_A_Relational_Model_Build_With_Shared_Input_Extraction
         _ = context.BuildResult();
     }
 
+    /// <summary>
+    /// It should extract inputs once per resource.
+    /// </summary>
     [Test]
     public void It_should_extract_inputs_once_per_resource()
     {
         _actualExtractCount.Should().Be(_expectedExtractCount);
     }
 
+    /// <summary>
+    /// Test type counting extract inputs step.
+    /// </summary>
     private sealed class CountingExtractInputsStep : IRelationalModelBuilderStep
     {
         private readonly IRelationalModelBuilderStep _inner;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public CountingExtractInputsStep(IRelationalModelBuilderStep inner)
         {
             ArgumentNullException.ThrowIfNull(inner);
@@ -78,8 +93,14 @@ public class Given_A_Relational_Model_Build_With_Shared_Input_Extraction
             _inner = inner;
         }
 
+        /// <summary>
+        /// Gets call count.
+        /// </summary>
         public int CallCount { get; private set; }
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelBuilderContext context)
         {
             CallCount++;

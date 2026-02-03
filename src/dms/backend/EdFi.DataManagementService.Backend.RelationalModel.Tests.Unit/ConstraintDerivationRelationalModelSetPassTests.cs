@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for root unique constraint derivation.
+/// </summary>
 [TestFixture]
 public class Given_Root_Unique_Constraint_Derivation
 {
     private DbTableModel _rootTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -47,6 +53,9 @@ public class Given_Root_Unique_Constraint_Derivation
         _rootTable = enrollmentModel.Root;
     }
 
+    /// <summary>
+    /// It should create root unique using reference document ids.
+    /// </summary>
     [Test]
     public void It_should_create_root_unique_using_reference_document_ids()
     {
@@ -60,11 +69,17 @@ public class Given_Root_Unique_Constraint_Derivation
     }
 }
 
+/// <summary>
+/// Test fixture for descriptor unique constraint derivation.
+/// </summary>
 [TestFixture]
 public class Given_Descriptor_Unique_Constraint_Derivation
 {
     private DbTableModel _descriptorTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -95,6 +110,9 @@ public class Given_Descriptor_Unique_Constraint_Derivation
         _descriptorTable = descriptorModel.Root;
     }
 
+    /// <summary>
+    /// It should add uri and discriminator columns.
+    /// </summary>
     [Test]
     public void It_should_add_uri_and_discriminator_columns()
     {
@@ -112,6 +130,9 @@ public class Given_Descriptor_Unique_Constraint_Derivation
         discriminatorColumn.SourceJsonPath.Should().BeNull();
     }
 
+    /// <summary>
+    /// It should define unique on uri and discriminator.
+    /// </summary>
     [Test]
     public void It_should_define_unique_on_uri_and_discriminator()
     {
@@ -122,9 +143,15 @@ public class Given_Descriptor_Unique_Constraint_Derivation
     }
 }
 
+/// <summary>
+/// Test fixture for unmappable identity paths.
+/// </summary>
 [TestFixture]
 public class Given_Unmappable_Identity_Paths
 {
+    /// <summary>
+    /// It should fail fast when identity path cannot be mapped.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_when_identity_path_cannot_be_mapped()
     {
@@ -150,9 +177,15 @@ public class Given_Unmappable_Identity_Paths
     }
 }
 
+/// <summary>
+/// Test fixture for incomplete reference identity mapping.
+/// </summary>
 [TestFixture]
 public class Given_Incomplete_Reference_Identity_Mapping
 {
+    /// <summary>
+    /// It should fail fast when reference mapping is missing target identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_when_reference_mapping_is_missing_target_identity_paths()
     {
@@ -185,9 +218,15 @@ public class Given_Incomplete_Reference_Identity_Mapping
     }
 }
 
+/// <summary>
+/// Test fixture for incomplete abstract reference identity mapping.
+/// </summary>
 [TestFixture]
 public class Given_Incomplete_Abstract_Reference_Identity_Mapping
 {
+    /// <summary>
+    /// It should fail fast when abstract reference mapping is missing identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_when_abstract_reference_mapping_is_missing_identity_paths()
     {
@@ -221,12 +260,18 @@ public class Given_Incomplete_Abstract_Reference_Identity_Mapping
     }
 }
 
+/// <summary>
+/// Test fixture for duplicate source json path columns.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_SourceJsonPath_Columns
 {
     private IReadOnlyDictionary<string, DbColumnName> _lookup = default!;
     private string _sourcePath = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -265,6 +310,9 @@ public class Given_Duplicate_SourceJsonPath_Columns
         _lookup = ConstraintDerivationHelpers.BuildColumnNameLookupBySourceJsonPath(table, resource);
     }
 
+    /// <summary>
+    /// It should select the lexicographically first column name.
+    /// </summary>
     [Test]
     public void It_should_select_the_lexicographically_first_column_name()
     {
@@ -272,11 +320,17 @@ public class Given_Duplicate_SourceJsonPath_Columns
     }
 }
 
+/// <summary>
+/// Test fixture for duplicate source json path columns with mixed kinds.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_SourceJsonPath_Columns_With_Mixed_Kinds
 {
     private Action _action = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -314,6 +368,9 @@ public class Given_Duplicate_SourceJsonPath_Columns_With_Mixed_Kinds
         _action = () => ConstraintDerivationHelpers.BuildColumnNameLookupBySourceJsonPath(table, resource);
     }
 
+    /// <summary>
+    /// It should throw with diagnostic details.
+    /// </summary>
     [Test]
     public void It_should_throw_with_diagnostic_details()
     {
@@ -324,11 +381,17 @@ public class Given_Duplicate_SourceJsonPath_Columns_With_Mixed_Kinds
     }
 }
 
+/// <summary>
+/// Test fixture for duplicate reference path bindings.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_Reference_Path_Bindings
 {
     private DbTableModel _enrollmentTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -361,6 +424,9 @@ public class Given_Duplicate_Reference_Path_Bindings
         _enrollmentTable = enrollmentModel.Root;
     }
 
+    /// <summary>
+    /// It should include each identity column when reference path is shared.
+    /// </summary>
     [Test]
     public void It_should_include_each_identity_column_when_reference_path_is_shared()
     {
@@ -375,12 +441,18 @@ public class Given_Duplicate_Reference_Path_Bindings
     }
 }
 
+/// <summary>
+/// Test fixture for reference constraint derivation.
+/// </summary>
 [TestFixture]
 public class Given_Reference_Constraint_Derivation
 {
     private DbTableModel _enrollmentTable = default!;
     private DbTableModel _schoolTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -417,6 +489,9 @@ public class Given_Reference_Constraint_Derivation
         _schoolTable = schoolModel.Root;
     }
 
+    /// <summary>
+    /// It should order reference fk columns by target identity order.
+    /// </summary>
     [Test]
     public void It_should_order_reference_fk_columns_by_target_identity_order()
     {
@@ -435,6 +510,9 @@ public class Given_Reference_Constraint_Derivation
             .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
     }
 
+    /// <summary>
+    /// It should apply allow identity updates gating.
+    /// </summary>
     [Test]
     public void It_should_apply_allow_identity_updates_gating()
     {
@@ -449,6 +527,9 @@ public class Given_Reference_Constraint_Derivation
         studentFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
+    /// <summary>
+    /// It should add target side unique for reference fks.
+    /// </summary>
     [Test]
     public void It_should_add_target_side_unique_for_reference_fks()
     {
@@ -463,11 +544,17 @@ public class Given_Reference_Constraint_Derivation
     }
 }
 
+/// <summary>
+/// Test fixture for shuffled reference identity bindings.
+/// </summary>
 [TestFixture]
 public class Given_Shuffled_Reference_Identity_Bindings
 {
     private DbTableModel _enrollmentTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -503,6 +590,9 @@ public class Given_Shuffled_Reference_Identity_Bindings
         _enrollmentTable = enrollmentModel.Root;
     }
 
+    /// <summary>
+    /// It should resolve reference identity columns regardless of binding order.
+    /// </summary>
     [Test]
     public void It_should_resolve_reference_identity_columns_regardless_of_binding_order()
     {
@@ -521,11 +611,17 @@ public class Given_Shuffled_Reference_Identity_Bindings
             .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
     }
 
+    /// <summary>
+    /// Test type shuffle reference identity bindings relational model set pass.
+    /// </summary>
     private sealed class ShuffleReferenceIdentityBindingsRelationalModelSetPass : IRelationalModelSetPass
     {
         private readonly QualifiedResourceName _resource;
         private readonly string _referenceObjectPath;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public ShuffleReferenceIdentityBindingsRelationalModelSetPass(
             QualifiedResourceName resource,
             string referenceObjectPath
@@ -535,6 +631,9 @@ public class Given_Shuffled_Reference_Identity_Bindings
             _referenceObjectPath = referenceObjectPath;
         }
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -599,11 +698,17 @@ public class Given_Shuffled_Reference_Identity_Bindings
     }
 }
 
+/// <summary>
+/// Test fixture for target unique mutation from reference.
+/// </summary>
 [TestFixture]
 public class Given_Target_Unique_Mutation_From_Reference
 {
     private RelationalResourceModel _schoolModel = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -632,6 +737,9 @@ public class Given_Target_Unique_Mutation_From_Reference
             .RelationalModel;
     }
 
+    /// <summary>
+    /// It should add target unique constraint even when target has no references.
+    /// </summary>
     [Test]
     public void It_should_add_target_unique_constraint_even_when_target_has_no_references()
     {
@@ -648,11 +756,17 @@ public class Given_Target_Unique_Mutation_From_Reference
     }
 }
 
+/// <summary>
+/// Test fixture for multiple references to same target.
+/// </summary>
 [TestFixture]
 public class Given_Multiple_References_To_Same_Target
 {
     private DbTableModel _schoolTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -681,6 +795,9 @@ public class Given_Multiple_References_To_Same_Target
             .RelationalModel.Root;
     }
 
+    /// <summary>
+    /// It should add the target unique constraint only once.
+    /// </summary>
     [Test]
     public void It_should_add_the_target_unique_constraint_only_once()
     {
@@ -698,11 +815,17 @@ public class Given_Multiple_References_To_Same_Target
     }
 }
 
+/// <summary>
+/// Test fixture for abstract reference constraint derivation.
+/// </summary>
 [TestFixture]
 public class Given_Abstract_Reference_Constraint_Derivation
 {
     private DbTableModel _enrollmentTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -735,6 +858,9 @@ public class Given_Abstract_Reference_Constraint_Derivation
         _enrollmentTable = enrollmentModel.Root;
     }
 
+    /// <summary>
+    /// It should cascade updates for abstract targets.
+    /// </summary>
     [Test]
     public void It_should_cascade_updates_for_abstract_targets()
     {
@@ -747,12 +873,18 @@ public class Given_Abstract_Reference_Constraint_Derivation
     }
 }
 
+/// <summary>
+/// Test fixture for array uniqueness constraint derivation.
+/// </summary>
 [TestFixture]
 public class Given_Array_Uniqueness_Constraint_Derivation
 {
     private DbTableModel _addressTable = default!;
     private DbTableModel _periodTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -789,6 +921,9 @@ public class Given_Array_Uniqueness_Constraint_Derivation
         );
     }
 
+    /// <summary>
+    /// It should map reference identity paths to document id.
+    /// </summary>
     [Test]
     public void It_should_map_reference_identity_paths_to_document_id()
     {
@@ -801,6 +936,9 @@ public class Given_Array_Uniqueness_Constraint_Derivation
         uniqueConstraint.Columns.Should().NotContain(column => column.Value == "Ordinal");
     }
 
+    /// <summary>
+    /// It should include parent key parts for nested arrays.
+    /// </summary>
     [Test]
     public void It_should_include_parent_key_parts_for_nested_arrays()
     {
@@ -814,12 +952,18 @@ public class Given_Array_Uniqueness_Constraint_Derivation
     }
 }
 
+/// <summary>
+/// Test fixture for nested array uniqueness constraint derivation.
+/// </summary>
 [TestFixture]
 public class Given_Nested_Array_Uniqueness_Constraint_Derivation
 {
     private DbTableModel _periodTable = default!;
     private DbTableModel _sessionTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -857,6 +1001,9 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
         );
     }
 
+    /// <summary>
+    /// It should include parent key parts for nested constraints.
+    /// </summary>
     [Test]
     public void It_should_include_parent_key_parts_for_nested_constraints()
     {
@@ -868,6 +1015,9 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
             .Equal("BusRoute_DocumentId", "AddressOrdinal", "BeginDate");
     }
 
+    /// <summary>
+    /// It should include parent key parts for deeper nested constraints.
+    /// </summary>
     [Test]
     public void It_should_include_parent_key_parts_for_deeper_nested_constraints()
     {
@@ -880,9 +1030,15 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
     }
 }
 
+/// <summary>
+/// Test fixture for unmappable array uniqueness path.
+/// </summary>
 [TestFixture]
 public class Given_Unmappable_Array_Uniqueness_Path
 {
+    /// <summary>
+    /// It should fail fast when path does not map to column.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_when_path_does_not_map_to_column()
     {
@@ -910,6 +1066,9 @@ public class Given_Unmappable_Array_Uniqueness_Path
     }
 }
 
+/// <summary>
+/// Test fixture for array uniqueness constraint with multiple candidate tables.
+/// </summary>
 [TestFixture]
 public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
 {
@@ -919,6 +1078,9 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
     private const string TableNameB = "SampleItemsAlt";
     private Action _action = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -940,6 +1102,9 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
         _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
+    /// <summary>
+    /// It should include all candidate failures in the exception message.
+    /// </summary>
     [Test]
     public void It_should_include_all_candidate_failures_in_the_exception_message()
     {
@@ -950,8 +1115,14 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
         exception.Message.Should().Contain("did not map to a column");
     }
 
+    /// <summary>
+    /// Test type duplicate scope resource model pass.
+    /// </summary>
     private sealed class DuplicateScopeResourceModelPass : IRelationalModelSetPass
     {
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -965,6 +1136,9 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
             );
         }
 
+        /// <summary>
+        /// Create resource model.
+        /// </summary>
         private static RelationalResourceModel CreateResourceModel(QualifiedResourceName resource)
         {
             var schema = new DbSchemaName("edfi");
@@ -1030,6 +1204,9 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
             );
         }
 
+        /// <summary>
+        /// Build items table.
+        /// </summary>
         private static DbTableModel BuildItemsTable(
             DbTableName tableName,
             JsonPathExpression scope,
@@ -1071,11 +1248,17 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
     }
 }
 
+/// <summary>
+/// Test fixture for extension array uniqueness constraint alignment.
+/// </summary>
 [TestFixture]
 public class Given_Extension_Array_Uniqueness_Constraint_Alignment
 {
     private DbTableModel _periodTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -1119,6 +1302,9 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
         );
     }
 
+    /// <summary>
+    /// It should align extension scoped constraints to base tables.
+    /// </summary>
     [Test]
     public void It_should_align_extension_scoped_constraints_to_base_tables()
     {
@@ -1131,11 +1317,17 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
     }
 }
 
+/// <summary>
+/// Test fixture for extension array uniqueness constraint with missing base table.
+/// </summary>
 [TestFixture]
 public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
 {
     private Action _action = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -1168,6 +1360,9 @@ public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
         _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
+    /// <summary>
+    /// It should fail fast when extension alignment has no target table.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_when_extension_alignment_has_no_target_table()
     {
@@ -1178,8 +1373,14 @@ public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
     }
 }
 
+/// <summary>
+/// Test type constraint derivation test schema builder.
+/// </summary>
 internal static class ConstraintDerivationTestSchemaBuilder
 {
+    /// <summary>
+    /// Build reference constraint project schema.
+    /// </summary>
     internal static JsonObject BuildReferenceConstraintProjectSchema()
     {
         return new JsonObject
@@ -1196,6 +1397,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build target unique mutation project schema.
+    /// </summary>
     internal static JsonObject BuildTargetUniqueMutationProjectSchema()
     {
         return new JsonObject
@@ -1211,6 +1415,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build multiple target unique mutation project schema.
+    /// </summary>
     internal static JsonObject BuildMultipleTargetUniqueMutationProjectSchema()
     {
         return new JsonObject
@@ -1227,6 +1434,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build duplicate reference path project schema.
+    /// </summary>
     internal static JsonObject BuildDuplicateReferencePathProjectSchema()
     {
         return new JsonObject
@@ -1242,6 +1452,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build reference constraint missing identity project schema.
+    /// </summary>
     internal static JsonObject BuildReferenceConstraintMissingIdentityProjectSchema()
     {
         return new JsonObject
@@ -1257,6 +1470,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build abstract reference project schema.
+    /// </summary>
     internal static JsonObject BuildAbstractReferenceProjectSchema()
     {
         return new JsonObject
@@ -1279,6 +1495,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build abstract reference missing identity project schema.
+    /// </summary>
     internal static JsonObject BuildAbstractReferenceMissingIdentityProjectSchema()
     {
         return new JsonObject
@@ -1305,6 +1524,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build reference identity project schema.
+    /// </summary>
     internal static JsonObject BuildReferenceIdentityProjectSchema()
     {
         return new JsonObject
@@ -1321,6 +1543,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build descriptor project schema.
+    /// </summary>
     internal static JsonObject BuildDescriptorProjectSchema()
     {
         return new JsonObject
@@ -1332,6 +1557,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build array identity project schema.
+    /// </summary>
     internal static JsonObject BuildArrayIdentityProjectSchema()
     {
         return new JsonObject
@@ -1343,6 +1571,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build array uniqueness project schema.
+    /// </summary>
     internal static JsonObject BuildArrayUniquenessProjectSchema()
     {
         return new JsonObject
@@ -1358,6 +1589,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build nested array uniqueness project schema.
+    /// </summary>
     internal static JsonObject BuildNestedArrayUniquenessProjectSchema()
     {
         return new JsonObject
@@ -1374,6 +1608,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build array uniqueness unmappable project schema.
+    /// </summary>
     internal static JsonObject BuildArrayUniquenessUnmappableProjectSchema()
     {
         JsonArray arrayUniquenessConstraints =
@@ -1394,6 +1631,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build array uniqueness multiple candidate project schema.
+    /// </summary>
     internal static JsonObject BuildArrayUniquenessMultipleCandidateProjectSchema()
     {
         JsonArray arrayUniquenessConstraints =
@@ -1417,6 +1657,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build extension array uniqueness core project schema.
+    /// </summary>
     internal static JsonObject BuildExtensionArrayUniquenessCoreProjectSchema()
     {
         return new JsonObject
@@ -1428,6 +1671,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build extension array uniqueness extension project schema.
+    /// </summary>
     internal static JsonObject BuildExtensionArrayUniquenessExtensionProjectSchema()
     {
         return new JsonObject
@@ -1445,6 +1691,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build extension array uniqueness missing extension project schema.
+    /// </summary>
     internal static JsonObject BuildExtensionArrayUniquenessMissingExtensionProjectSchema()
     {
         return new JsonObject
@@ -1462,6 +1711,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build incomplete reference constraint enrollment schema.
+    /// </summary>
     private static JsonObject BuildIncompleteReferenceConstraintEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1513,6 +1765,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build array uniqueness multiple candidate schema.
+    /// </summary>
     private static JsonObject BuildArrayUniquenessMultipleCandidateSchema(
         JsonArray arrayUniquenessConstraints
     )
@@ -1552,6 +1807,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build duplicate reference path enrollment schema.
+    /// </summary>
     private static JsonObject BuildDuplicateReferencePathEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1608,6 +1866,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build reference constraint enrollment schema.
+    /// </summary>
     private static JsonObject BuildReferenceConstraintEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1688,6 +1949,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build single school reference schema.
+    /// </summary>
     private static JsonObject BuildSingleSchoolReferenceSchema(string resourceName)
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1744,6 +2008,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build bus route array uniqueness constraints.
+    /// </summary>
     private static JsonArray BuildBusRouteArrayUniquenessConstraints()
     {
         return new JsonArray
@@ -1767,6 +2034,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build bus route nested array uniqueness constraints.
+    /// </summary>
     private static JsonArray BuildBusRouteNestedArrayUniquenessConstraints()
     {
         return new JsonArray
@@ -1794,6 +2064,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build bus route array uniqueness schema.
+    /// </summary>
     private static JsonObject BuildBusRouteArrayUniquenessSchema(JsonArray arrayUniquenessConstraints)
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1879,6 +2152,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build bus route nested array uniqueness schema.
+    /// </summary>
     private static JsonObject BuildBusRouteNestedArrayUniquenessSchema(JsonArray arrayUniquenessConstraints)
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1947,6 +2223,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build contact schema.
+    /// </summary>
     private static JsonObject BuildContactSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -1999,6 +2278,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build contact extension schema.
+    /// </summary>
     private static JsonObject BuildContactExtensionSchema(
         JsonObject extensionProjectSchema,
         JsonArray arrayUniquenessConstraints
@@ -2031,6 +2313,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build contact extension addresses schema.
+    /// </summary>
     private static JsonObject BuildContactExtensionAddressesSchema()
     {
         var addressItems = new JsonObject
@@ -2078,6 +2363,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build contact extension missing schema.
+    /// </summary>
     private static JsonObject BuildContactExtensionMissingSchema()
     {
         var missingItems = new JsonObject
@@ -2114,6 +2402,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build contact extension array uniqueness constraints.
+    /// </summary>
     private static JsonArray BuildContactExtensionArrayUniquenessConstraints()
     {
         return
@@ -2126,6 +2417,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         ];
     }
 
+    /// <summary>
+    /// Build contact extension missing array uniqueness constraints.
+    /// </summary>
     private static JsonArray BuildContactExtensionMissingArrayUniquenessConstraints()
     {
         return
@@ -2138,6 +2432,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         ];
     }
 
+    /// <summary>
+    /// Build reference constraint school schema.
+    /// </summary>
     private static JsonObject BuildReferenceConstraintSchoolSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2172,6 +2469,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build abstract reference enrollment schema.
+    /// </summary>
     private static JsonObject BuildAbstractReferenceEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2223,6 +2523,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build abstract reference missing identity enrollment schema.
+    /// </summary>
     private static JsonObject BuildAbstractReferenceMissingIdentityEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2275,6 +2578,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build abstract reference school schema.
+    /// </summary>
     private static JsonObject BuildAbstractReferenceSchoolSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2310,6 +2616,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build abstract reference school with organization code schema.
+    /// </summary>
     private static JsonObject BuildAbstractReferenceSchoolWithOrganizationCodeSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2351,6 +2660,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build enrollment schema.
+    /// </summary>
     private static JsonObject BuildEnrollmentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2435,6 +2747,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build school schema.
+    /// </summary>
     private static JsonObject BuildSchoolSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2469,6 +2784,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build student schema.
+    /// </summary>
     private static JsonObject BuildStudentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2501,6 +2819,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build descriptor schema.
+    /// </summary>
     private static JsonObject BuildDescriptorSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -2526,6 +2847,9 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build array identity schema.
+    /// </summary>
     private static JsonObject BuildArrayIdentitySchema()
     {
         var jsonSchemaForInsert = new JsonObject

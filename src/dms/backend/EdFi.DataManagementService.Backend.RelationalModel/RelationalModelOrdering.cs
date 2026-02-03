@@ -5,8 +5,14 @@
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Provides canonical ordering rules for columns and constraints within derived relational tables.
+/// </summary>
 internal static class RelationalModelOrdering
 {
+    /// <summary>
+    /// Returns a copy of the table with columns and constraints ordered deterministically.
+    /// </summary>
     public static DbTableModel CanonicalizeTable(DbTableModel table)
     {
         var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
@@ -29,6 +35,9 @@ internal static class RelationalModelOrdering
         };
     }
 
+    /// <summary>
+    /// Builds a lookup that maps key-column names to their ordinal position within the primary key.
+    /// </summary>
     private static Dictionary<string, int> BuildKeyColumnOrder(IReadOnlyList<DbKeyColumn> keyColumns)
     {
         Dictionary<string, int> keyOrder = new(StringComparer.Ordinal);
@@ -41,6 +50,9 @@ internal static class RelationalModelOrdering
         return keyOrder;
     }
 
+    /// <summary>
+    /// Returns a grouping value used to order columns by key columns first, then descriptor FKs, then scalars.
+    /// </summary>
     private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
     {
         if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
@@ -56,6 +68,9 @@ internal static class RelationalModelOrdering
         };
     }
 
+    /// <summary>
+    /// Returns the primary-key ordinal index for key columns and <see cref="int.MaxValue"/> for others.
+    /// </summary>
     private static int GetColumnKeyIndex(
         DbColumnModel column,
         IReadOnlyDictionary<string, int> keyColumnOrder
@@ -64,6 +79,9 @@ internal static class RelationalModelOrdering
         return keyColumnOrder.TryGetValue(column.ColumnName.Value, out var index) ? index : int.MaxValue;
     }
 
+    /// <summary>
+    /// Returns a grouping value used to order constraints deterministically.
+    /// </summary>
     private static int GetConstraintGroup(TableConstraint constraint)
     {
         return constraint switch
@@ -75,6 +93,9 @@ internal static class RelationalModelOrdering
         };
     }
 
+    /// <summary>
+    /// Returns the constraint name used as a secondary ordering key.
+    /// </summary>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch

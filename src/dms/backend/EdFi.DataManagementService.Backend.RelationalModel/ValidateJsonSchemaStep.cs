@@ -214,6 +214,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Validates that each <c>identityJsonPaths</c> entry resolves to a scalar path in the JSON schema.
+    /// </summary>
     private static void ValidateIdentityJsonPaths(
         RelationalModelBuilderContext context,
         IReadOnlySet<string> scalarPaths
@@ -236,6 +239,10 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         );
     }
 
+    /// <summary>
+    /// Validates that each <c>arrayUniquenessConstraints</c> entry resolves to valid base and scalar paths in the
+    /// JSON schema.
+    /// </summary>
     private static void ValidateArrayUniquenessConstraints(
         RelationalModelBuilderContext context,
         IReadOnlySet<string> scalarPaths,
@@ -282,6 +289,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Validates a single array-uniqueness constraint entry, including recursively nested constraints.
+    /// </summary>
     private static void ValidateArrayUniquenessConstraint(
         ArrayUniquenessConstraintInput constraint,
         IReadOnlySet<string> scalarPaths,
@@ -319,6 +329,9 @@ public sealed class ValidateJsonSchemaStep : IRelationalModelBuilderStep
         }
     }
 
+    /// <summary>
+    /// Resolves a path relative to a base array path by concatenating JSONPath segments.
+    /// </summary>
     private static JsonPathExpression ResolveRelativePath(
         JsonPathExpression basePath,
         JsonPathExpression relativePath

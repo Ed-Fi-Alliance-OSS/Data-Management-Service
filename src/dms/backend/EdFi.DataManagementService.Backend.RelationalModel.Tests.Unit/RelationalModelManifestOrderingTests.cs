@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a canonicalized model when emitting a manifest.
+/// </summary>
 [TestFixture]
 public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
 {
@@ -20,6 +23,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
     private IReadOnlyList<string> _manifestDescriptorEdges = default!;
     private IReadOnlyList<string> _manifestExtensionSites = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -49,6 +55,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         _manifestExtensionSites = CaptureExtensionSiteSnapshot(manifestRoot);
     }
 
+    /// <summary>
+    /// It should emit manifest in canonical order.
+    /// </summary>
     [Test]
     public void It_should_emit_manifest_in_canonical_order()
     {
@@ -57,6 +66,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         _manifestExtensionSites.Should().Equal(_canonicalExtensionSites);
     }
 
+    /// <summary>
+    /// Build context with unsorted model.
+    /// </summary>
     private static RelationalModelBuilderContext BuildContextWithUnsortedModel()
     {
         var schema = new DbSchemaName("edfi");
@@ -80,6 +92,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         return context;
     }
 
+    /// <summary>
+    /// Build root table.
+    /// </summary>
     private static DbTableModel BuildRootTable(DbSchemaName schema)
     {
         var tableName = new DbTableName(schema, "School");
@@ -131,6 +146,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         return new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
     }
 
+    /// <summary>
+    /// Build address table.
+    /// </summary>
     private static DbTableModel BuildAddressTable(DbSchemaName schema)
     {
         var tableName = new DbTableName(schema, "SchoolAddress");
@@ -187,6 +205,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         return new DbTableModel(tableName, jsonScope, new TableKey(keyColumns), columns, constraints);
     }
 
+    /// <summary>
+    /// Build root descriptor edge.
+    /// </summary>
     private static DescriptorEdgeSource BuildRootDescriptorEdge(DbSchemaName schema)
     {
         return new DescriptorEdgeSource(
@@ -198,6 +219,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         );
     }
 
+    /// <summary>
+    /// Build address descriptor edge.
+    /// </summary>
     private static DescriptorEdgeSource BuildAddressDescriptorEdge(DbSchemaName schema)
     {
         return new DescriptorEdgeSource(
@@ -209,6 +233,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         );
     }
 
+    /// <summary>
+    /// Build root extension site.
+    /// </summary>
     private static ExtensionSite BuildRootExtensionSite()
     {
         return new ExtensionSite(
@@ -218,6 +245,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         );
     }
 
+    /// <summary>
+    /// Build address extension site.
+    /// </summary>
     private static ExtensionSite BuildAddressExtensionSite()
     {
         return new ExtensionSite(
@@ -227,6 +257,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         );
     }
 
+    /// <summary>
+    /// Capture table snapshot.
+    /// </summary>
     private static IReadOnlyList<string> CaptureTableSnapshot(RelationalResourceModel model)
     {
         return model
@@ -240,6 +273,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             .ToArray();
     }
 
+    /// <summary>
+    /// Capture descriptor edge snapshot.
+    /// </summary>
     private static IReadOnlyList<string> CaptureDescriptorEdgeSnapshot(RelationalResourceModel model)
     {
         return model
@@ -252,6 +288,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             .ToArray();
     }
 
+    /// <summary>
+    /// Capture extension site snapshot.
+    /// </summary>
     private static IReadOnlyList<string> CaptureExtensionSiteSnapshot(
         IReadOnlyList<ExtensionSite> extensionSites
     )
@@ -266,6 +305,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             .ToArray();
     }
 
+    /// <summary>
+    /// Capture table snapshot.
+    /// </summary>
     private static IReadOnlyList<string> CaptureTableSnapshot(JsonObject manifestRoot)
     {
         var tables =
@@ -308,6 +350,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             .ToArray();
     }
 
+    /// <summary>
+    /// Capture descriptor edge snapshot.
+    /// </summary>
     private static IReadOnlyList<string> CaptureDescriptorEdgeSnapshot(JsonObject manifestRoot)
     {
         var edges =
@@ -344,6 +389,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             .ToArray();
     }
 
+    /// <summary>
+    /// Capture extension site snapshot.
+    /// </summary>
     private static IReadOnlyList<string> CaptureExtensionSiteSnapshot(JsonObject manifestRoot)
     {
         var sites =
@@ -378,6 +426,9 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
             .ToArray();
     }
 
+    /// <summary>
+    /// Get constraint name.
+    /// </summary>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch

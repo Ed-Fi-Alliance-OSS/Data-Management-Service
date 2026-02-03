@@ -15,11 +15,17 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an authoritative api schema for ed fi.
+/// </summary>
 [TestFixture]
 public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
 {
     private string _diffOutput = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -55,6 +61,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         _diffOutput = RunGitDiff(expectedPath, actualPath);
     }
 
+    /// <summary>
+    /// It should match the authoritative manifest.
+    /// </summary>
     [Test]
     public void It_should_match_the_authoritative_manifest()
     {
@@ -64,6 +73,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         }
     }
 
+    /// <summary>
+    /// Load api schema root.
+    /// </summary>
     private static JsonNode LoadApiSchemaRoot(string path)
     {
         var root = JsonNode.Parse(File.ReadAllText(path));
@@ -71,6 +83,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         return root ?? throw new InvalidOperationException($"ApiSchema parsed null: {path}");
     }
 
+    /// <summary>
+    /// Build project manifest.
+    /// </summary>
     private static string BuildProjectManifest(JsonNode apiSchemaRoot)
     {
         if (apiSchemaRoot is not JsonObject rootObject)
@@ -132,6 +147,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         return json + "\n";
     }
 
+    /// <summary>
+    /// Create pipeline.
+    /// </summary>
     private static RelationalModelBuilderPipeline CreatePipeline()
     {
         return new RelationalModelBuilderPipeline(
@@ -147,6 +165,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         );
     }
 
+    /// <summary>
+    /// Run git diff.
+    /// </summary>
     private static string RunGitDiff(string expectedPath, string actualPath)
     {
         var startInfo = new ProcessStartInfo("git")
@@ -183,6 +204,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
     }
 
+    /// <summary>
+    /// Should update goldens.
+    /// </summary>
     private static bool ShouldUpdateGoldens()
     {
         var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
@@ -191,6 +215,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
             || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Find project root.
+    /// </summary>
     private static string FindProjectRoot(string startDirectory)
     {
         var directory = new DirectoryInfo(startDirectory);

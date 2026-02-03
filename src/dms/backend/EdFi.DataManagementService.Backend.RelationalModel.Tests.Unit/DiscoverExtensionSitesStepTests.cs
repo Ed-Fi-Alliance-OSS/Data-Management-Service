@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a json schema with extension sites.
+/// </summary>
 [TestFixture]
 public class Given_A_JsonSchema_With_Extension_Sites
 {
     private RelationalModelBuilderContext _context = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -26,6 +32,9 @@ public class Given_A_JsonSchema_With_Extension_Sites
         step.Execute(_context);
     }
 
+    /// <summary>
+    /// It should capture sites in deterministic order.
+    /// </summary>
     [Test]
     public void It_should_capture_sites_in_deterministic_order()
     {
@@ -35,6 +44,9 @@ public class Given_A_JsonSchema_With_Extension_Sites
             .Equal("$._ext", "$.addresses[*]._ext");
     }
 
+    /// <summary>
+    /// It should capture owning scopes and project keys.
+    /// </summary>
     [Test]
     public void It_should_capture_owning_scopes_and_project_keys()
     {
@@ -47,6 +59,9 @@ public class Given_A_JsonSchema_With_Extension_Sites
         nestedSite.ProjectKeys.Should().Equal("sample");
     }
 
+    /// <summary>
+    /// Create schema with root and collection extensions.
+    /// </summary>
     private static JsonObject CreateSchemaWithRootAndCollectionExtensions()
     {
         return new JsonObject
@@ -68,6 +83,9 @@ public class Given_A_JsonSchema_With_Extension_Sites
         };
     }
 
+    /// <summary>
+    /// Create extension schema.
+    /// </summary>
     private static JsonObject CreateExtensionSchema(params string[] projectKeys)
     {
         JsonObject projects = new();
@@ -81,11 +99,17 @@ public class Given_A_JsonSchema_With_Extension_Sites
     }
 }
 
+/// <summary>
+/// Test fixture for a json schema with extension scalars.
+/// </summary>
 [TestFixture]
 public class Given_A_JsonSchema_With_Extension_Scalars
 {
     private IReadOnlyList<string> _scalarPaths = Array.Empty<string>();
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -99,6 +123,9 @@ public class Given_A_JsonSchema_With_Extension_Scalars
         _scalarPaths = ScalarPathCollector.Collect(schema, context.ExtensionSites);
     }
 
+    /// <summary>
+    /// It should skip scalar paths under ext.
+    /// </summary>
     [Test]
     public void It_should_skip_scalar_paths_under_ext()
     {
@@ -106,6 +133,9 @@ public class Given_A_JsonSchema_With_Extension_Scalars
         _scalarPaths.Should().NotContain("$._ext.sample.customField");
     }
 
+    /// <summary>
+    /// Create schema with extension scalar.
+    /// </summary>
     private static JsonObject CreateSchemaWithExtensionScalar()
     {
         return new JsonObject
@@ -134,8 +164,14 @@ public class Given_A_JsonSchema_With_Extension_Scalars
     }
 }
 
+/// <summary>
+/// Test type scalar path collector.
+/// </summary>
 internal static class ScalarPathCollector
 {
+    /// <summary>
+    /// Collect.
+    /// </summary>
     public static IReadOnlyList<string> Collect(
         JsonObject schema,
         IReadOnlyList<ExtensionSite> extensionSites
@@ -151,6 +187,9 @@ internal static class ScalarPathCollector
         return scalarPaths.ToArray();
     }
 
+    /// <summary>
+    /// Collect schema.
+    /// </summary>
     private static void CollectSchema(
         JsonObject schema,
         List<JsonPathSegment> segments,
@@ -176,6 +215,9 @@ internal static class ScalarPathCollector
         }
     }
 
+    /// <summary>
+    /// Collect object schema.
+    /// </summary>
     private static void CollectObjectSchema(
         JsonObject schema,
         List<JsonPathSegment> segments,
@@ -217,6 +259,9 @@ internal static class ScalarPathCollector
         }
     }
 
+    /// <summary>
+    /// Collect array schema.
+    /// </summary>
     private static void CollectArraySchema(
         JsonObject schema,
         List<JsonPathSegment> segments,
@@ -239,6 +284,9 @@ internal static class ScalarPathCollector
         CollectSchema(itemsSchema, itemSegments, extensionPaths, scalarPaths);
     }
 
+    /// <summary>
+    /// Determine schema kind.
+    /// </summary>
     private static SchemaKind DetermineSchemaKind(JsonObject schema)
     {
         if (schema.TryGetPropertyValue("type", out var typeNode) && typeNode is JsonValue jsonValue)
@@ -266,6 +314,9 @@ internal static class ScalarPathCollector
         return SchemaKind.Scalar;
     }
 
+    /// <summary>
+    /// Test type schema kind.
+    /// </summary>
     private enum SchemaKind
     {
         Object,

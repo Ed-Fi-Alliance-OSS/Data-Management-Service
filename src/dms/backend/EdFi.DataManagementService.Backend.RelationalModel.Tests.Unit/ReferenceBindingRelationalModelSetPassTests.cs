@@ -11,6 +11,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for reference binding.
+/// </summary>
 [TestFixture]
 public class Given_Reference_Binding
 {
@@ -24,6 +27,9 @@ public class Given_Reference_Binding
     private DocumentReferenceBinding _programBinding = default!;
     private DocumentReferenceBinding _extensionBinding = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -85,6 +91,9 @@ public class Given_Reference_Binding
         );
     }
 
+    /// <summary>
+    /// It should bind nested references to child tables.
+    /// </summary>
     [Test]
     public void It_should_bind_nested_references_to_child_tables()
     {
@@ -94,6 +103,9 @@ public class Given_Reference_Binding
         _periodTable.Columns.Should().Contain(column => column.ColumnName.Value == "Calendar_DocumentId");
     }
 
+    /// <summary>
+    /// It should classify identity component references.
+    /// </summary>
     [Test]
     public void It_should_classify_identity_component_references()
     {
@@ -103,6 +115,9 @@ public class Given_Reference_Binding
         _programBinding.IsIdentityComponent.Should().BeFalse();
     }
 
+    /// <summary>
+    /// It should use expanded identity naming for nested paths.
+    /// </summary>
     [Test]
     public void It_should_use_expanded_identity_naming_for_nested_paths()
     {
@@ -115,6 +130,9 @@ public class Given_Reference_Binding
         _personBinding.IdentityBindings.Single().Column.Value.Should().Be("Person_NameFirstName");
     }
 
+    /// <summary>
+    /// It should bind descriptor identity columns inside reference objects.
+    /// </summary>
     [Test]
     public void It_should_bind_descriptor_identity_columns_inside_reference_objects()
     {
@@ -141,6 +159,9 @@ public class Given_Reference_Binding
         descriptorEdge.DescriptorResource.ResourceName.Should().Be("ProgramTypeDescriptor");
     }
 
+    /// <summary>
+    /// It should bind extension references to extension tables.
+    /// </summary>
     [Test]
     public void It_should_bind_extension_references_to_extension_tables()
     {
@@ -154,11 +175,17 @@ public class Given_Reference_Binding
     }
 }
 
+/// <summary>
+/// Test fixture for reference binding when descriptor path is missing.
+/// </summary>
 [TestFixture]
 public class Given_Reference_Binding_When_Descriptor_Path_Is_Missing
 {
     private Action _action = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -179,6 +206,9 @@ public class Given_Reference_Binding_When_Descriptor_Path_Is_Missing
         _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
+    /// <summary>
+    /// It should fail fast when descriptor identity path is missing from map.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_when_descriptor_identity_path_is_missing_from_map()
     {
@@ -189,8 +219,14 @@ public class Given_Reference_Binding_When_Descriptor_Path_Is_Missing
     }
 }
 
+/// <summary>
+/// Test type reference binding test schema builder.
+/// </summary>
 internal static class ReferenceBindingTestSchemaBuilder
 {
+    /// <summary>
+    /// Build core project schema.
+    /// </summary>
     internal static JsonObject BuildCoreProjectSchema()
     {
         return new JsonObject
@@ -210,6 +246,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build extension project schema.
+    /// </summary>
     internal static JsonObject BuildExtensionProjectSchema()
     {
         return new JsonObject
@@ -221,6 +260,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build student schema.
+    /// </summary>
     private static JsonObject BuildStudentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -380,6 +422,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build student extension schema.
+    /// </summary>
     private static JsonObject BuildStudentExtensionSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -443,6 +488,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build school schema.
+    /// </summary>
     private static JsonObject BuildSchoolSchema()
     {
         return new JsonObject
@@ -472,6 +520,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build person schema.
+    /// </summary>
     private static JsonObject BuildPersonSchema()
     {
         return new JsonObject
@@ -512,6 +563,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build program schema.
+    /// </summary>
     private static JsonObject BuildProgramSchema()
     {
         return new JsonObject
@@ -547,6 +601,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build calendar schema.
+    /// </summary>
     private static JsonObject BuildCalendarSchema()
     {
         return new JsonObject
@@ -579,6 +636,9 @@ internal static class ReferenceBindingTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build program type descriptor schema.
+    /// </summary>
     private static JsonObject BuildProgramTypeDescriptorSchema()
     {
         return new JsonObject
@@ -602,8 +662,14 @@ internal static class ReferenceBindingTestSchemaBuilder
     }
 }
 
+/// <summary>
+/// Test type reference binding missing descriptor path schema builder.
+/// </summary>
 internal static class ReferenceBindingMissingDescriptorPathSchemaBuilder
 {
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
     internal static JsonObject BuildProjectSchema()
     {
         return new JsonObject
@@ -619,6 +685,9 @@ internal static class ReferenceBindingMissingDescriptorPathSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build student schema.
+    /// </summary>
     private static JsonObject BuildStudentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -672,6 +741,9 @@ internal static class ReferenceBindingMissingDescriptorPathSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build program schema.
+    /// </summary>
     private static JsonObject BuildProgramSchema()
     {
         return new JsonObject

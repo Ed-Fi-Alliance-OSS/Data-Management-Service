@@ -18,6 +18,9 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
     private const int UriMaxLength = 306;
     private const int DiscriminatorMaxLength = 128;
 
+    /// <summary>
+    /// Applies root-table uniqueness constraints for each concrete resource model in the set.
+    /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -60,6 +63,10 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         }
     }
 
+    /// <summary>
+    /// Builds and attaches root-table unique constraints derived from <c>identityJsonPaths</c>, using FK columns
+    /// for identity components sourced from document references.
+    /// </summary>
     private static RelationalResourceModel ApplyRootConstraints(
         RelationalModelBuilderContext builderContext,
         RelationalResourceModel resourceModel,
@@ -133,6 +140,9 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         return UpdateResourceModel(resourceModel, updatedRootTable);
     }
 
+    /// <summary>
+    /// Updates the resource model by replacing the root table with an updated definition.
+    /// </summary>
     private static RelationalResourceModel UpdateResourceModel(
         RelationalResourceModel resourceModel,
         DbTableModel updatedRoot
@@ -151,6 +161,9 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         };
     }
 
+    /// <summary>
+    /// Builds the ordered set of root identity columns used by the natural-key unique constraint.
+    /// </summary>
     private static IReadOnlyList<DbColumnName> BuildRootIdentityColumns(
         RelationalResourceModel resourceModel,
         RelationalModelBuilderContext builderContext,
@@ -210,6 +223,9 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         return uniqueColumns.ToArray();
     }
 
+    /// <summary>
+    /// Ensures that a required descriptor-root column exists on the root table, adding it when missing.
+    /// </summary>
     private static bool EnsureDescriptorColumn(
         TableColumnAccumulator tableAccumulator,
         DbTableModel rootTable,
@@ -231,6 +247,9 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         return true;
     }
 
+    /// <summary>
+    /// Builds the descriptor URI column definition used by descriptor resources stored in the shared table.
+    /// </summary>
     private static DbColumnModel BuildUriColumn()
     {
         return new DbColumnModel(
@@ -243,6 +262,10 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         );
     }
 
+    /// <summary>
+    /// Builds the descriptor discriminator column definition used by descriptor resources stored in the shared
+    /// table.
+    /// </summary>
     private static DbColumnModel BuildDiscriminatorColumn()
     {
         return new DbColumnModel(

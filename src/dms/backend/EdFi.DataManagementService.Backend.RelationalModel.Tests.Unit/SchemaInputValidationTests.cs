@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a document reference without reference json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Document_Reference_Without_ReferenceJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -37,6 +43,9 @@ public class Given_A_Document_Reference_Without_ReferenceJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with missing reference json paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_reference_json_paths()
     {
@@ -46,11 +55,17 @@ public class Given_A_Document_Reference_Without_ReferenceJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for a document reference with inconsistent reference json paths prefix.
+/// </summary>
 [TestFixture]
 public class Given_A_Document_Reference_With_Inconsistent_ReferenceJsonPaths_Prefix
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -86,6 +101,9 @@ public class Given_A_Document_Reference_With_Inconsistent_ReferenceJsonPaths_Pre
         );
     }
 
+    /// <summary>
+    /// It should fail with inconsistent prefix.
+    /// </summary>
     [Test]
     public void It_should_fail_with_inconsistent_prefix()
     {
@@ -95,11 +113,17 @@ public class Given_A_Document_Reference_With_Inconsistent_ReferenceJsonPaths_Pre
     }
 }
 
+/// <summary>
+/// Test fixture for a document reference with duplicate identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Document_Reference_With_Duplicate_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -135,6 +159,9 @@ public class Given_A_Document_Reference_With_Duplicate_IdentityJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with duplicate identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_identity_paths()
     {
@@ -144,11 +171,17 @@ public class Given_A_Document_Reference_With_Duplicate_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for a document reference marked as identity with partial identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -186,6 +219,9 @@ public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_Identity
         );
     }
 
+    /// <summary>
+    /// It should fail with missing identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_identity_paths()
     {
@@ -196,11 +232,17 @@ public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_Identity
     }
 }
 
+/// <summary>
+/// Test fixture for a document reference marked as identity without identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -231,6 +273,9 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
         );
     }
 
+    /// <summary>
+    /// It should fail with missing identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_identity_paths()
     {
@@ -241,11 +286,17 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
     }
 }
 
+/// <summary>
+/// Test fixture for a document reference not marked as identity with identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -278,6 +329,9 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
         );
     }
 
+    /// <summary>
+    /// It should fail with identity paths present.
+    /// </summary>
     [Test]
     public void It_should_fail_with_identity_paths_present()
     {
@@ -287,11 +341,17 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
     }
 }
 
+/// <summary>
+/// Test fixture for an identity reference that is not required.
+/// </summary>
 [TestFixture]
 public class Given_An_Identity_Reference_That_Is_Not_Required
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -325,6 +385,9 @@ public class Given_An_Identity_Reference_That_Is_Not_Required
         );
     }
 
+    /// <summary>
+    /// It should fail with optional identity reference.
+    /// </summary>
     [Test]
     public void It_should_fail_with_optional_identity_reference()
     {
@@ -335,11 +398,17 @@ public class Given_An_Identity_Reference_That_Is_Not_Required
     }
 }
 
+/// <summary>
+/// Test fixture for a scalar marked as identity without identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -360,6 +429,9 @@ public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with missing identity path.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_identity_path()
     {
@@ -370,11 +442,17 @@ public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for a scalar not marked as identity with identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -395,6 +473,9 @@ public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with identity paths present.
+    /// </summary>
     [Test]
     public void It_should_fail_with_identity_paths_present()
     {
@@ -404,11 +485,17 @@ public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for a descriptor marked as identity without identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -430,6 +517,9 @@ public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with missing identity path.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_identity_path()
     {
@@ -440,11 +530,17 @@ public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for a descriptor not marked as identity with identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_A_Descriptor_Not_Marked_As_Identity_With_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -466,6 +562,9 @@ public class Given_A_Descriptor_Not_Marked_As_Identity_With_IdentityJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with identity paths present.
+    /// </summary>
     [Test]
     public void It_should_fail_with_identity_paths_present()
     {
@@ -475,11 +574,17 @@ public class Given_A_Descriptor_Not_Marked_As_Identity_With_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for identity json paths not mapped in document paths mapping.
+/// </summary>
 [TestFixture]
 public class Given_IdentityJsonPaths_Not_Mapped_In_DocumentPathsMapping
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -501,6 +606,9 @@ public class Given_IdentityJsonPaths_Not_Mapped_In_DocumentPathsMapping
         );
     }
 
+    /// <summary>
+    /// It should fail with unmapped identity json paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_unmapped_identity_json_paths()
     {
@@ -510,11 +618,17 @@ public class Given_IdentityJsonPaths_Not_Mapped_In_DocumentPathsMapping
     }
 }
 
+/// <summary>
+/// Test fixture for duplicate identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -536,6 +650,9 @@ public class Given_Duplicate_IdentityJsonPaths
         );
     }
 
+    /// <summary>
+    /// It should fail with duplicate identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_identity_paths()
     {
@@ -546,11 +663,17 @@ public class Given_Duplicate_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for nested array uniqueness constraint without base path.
+/// </summary>
 [TestFixture]
 public class Given_Nested_ArrayUniquenessConstraint_Without_BasePath
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -574,6 +697,9 @@ public class Given_Nested_ArrayUniquenessConstraint_Without_BasePath
         );
     }
 
+    /// <summary>
+    /// It should fail with missing base path.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_base_path()
     {
@@ -583,11 +709,17 @@ public class Given_Nested_ArrayUniquenessConstraint_Without_BasePath
     }
 }
 
+/// <summary>
+/// Test fixture for array uniqueness constraint with partial reference identity paths.
+/// </summary>
 [TestFixture]
 public class Given_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Paths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -629,6 +761,9 @@ public class Given_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Pat
         );
     }
 
+    /// <summary>
+    /// It should fail with missing reference identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_reference_identity_paths()
     {
@@ -639,11 +774,17 @@ public class Given_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Pat
     }
 }
 
+/// <summary>
+/// Test fixture for nested array uniqueness constraint with partial reference identity paths.
+/// </summary>
 [TestFixture]
 public class Given_Nested_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Paths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -696,6 +837,9 @@ public class Given_Nested_ArrayUniquenessConstraint_With_Partial_Reference_Ident
         );
     }
 
+    /// <summary>
+    /// It should fail with missing nested reference identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_nested_reference_identity_paths()
     {
@@ -707,11 +851,17 @@ public class Given_Nested_ArrayUniquenessConstraint_With_Partial_Reference_Ident
     }
 }
 
+/// <summary>
+/// Test fixture for array uniqueness constraint with unknown paths.
+/// </summary>
 [TestFixture]
 public class Given_ArrayUniquenessConstraint_With_Unknown_Paths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -745,6 +895,9 @@ public class Given_ArrayUniquenessConstraint_With_Unknown_Paths
         );
     }
 
+    /// <summary>
+    /// It should fail with unknown paths.
+    /// </summary>
     [Test]
     public void It_should_fail_with_unknown_paths()
     {
@@ -754,11 +907,17 @@ public class Given_ArrayUniquenessConstraint_With_Unknown_Paths
     }
 }
 
+/// <summary>
+/// Test fixture for array uniqueness constraint with unknown base path.
+/// </summary>
 [TestFixture]
 public class Given_ArrayUniquenessConstraint_With_Unknown_BasePath
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -796,6 +955,9 @@ public class Given_ArrayUniquenessConstraint_With_Unknown_BasePath
         );
     }
 
+    /// <summary>
+    /// It should fail with unknown base path.
+    /// </summary>
     [Test]
     public void It_should_fail_with_unknown_base_path()
     {
@@ -805,11 +967,17 @@ public class Given_ArrayUniquenessConstraint_With_Unknown_BasePath
     }
 }
 
+/// <summary>
+/// Test fixture for reference identity json path not in target identity json paths.
+/// </summary>
 [TestFixture]
 public class Given_Reference_IdentityJsonPath_Not_In_Target_IdentityJsonPaths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -876,6 +1044,9 @@ public class Given_Reference_IdentityJsonPath_Not_In_Target_IdentityJsonPaths
         }
     }
 
+    /// <summary>
+    /// It should fail with missing target identity path.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_target_identity_path()
     {
@@ -885,11 +1056,17 @@ public class Given_Reference_IdentityJsonPath_Not_In_Target_IdentityJsonPaths
     }
 }
 
+/// <summary>
+/// Test fixture for a relational name override with invalid json path.
+/// </summary>
 [TestFixture]
 public class Given_A_Relational_NameOverride_With_Invalid_JsonPath
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -906,6 +1083,9 @@ public class Given_A_Relational_NameOverride_With_Invalid_JsonPath
         );
     }
 
+    /// <summary>
+    /// It should fail with invalid json path.
+    /// </summary>
     [Test]
     public void It_should_fail_with_invalid_json_path()
     {
@@ -916,11 +1096,17 @@ public class Given_A_Relational_NameOverride_With_Invalid_JsonPath
     }
 }
 
+/// <summary>
+/// Test fixture for a relational name override for non reference path.
+/// </summary>
 [TestFixture]
 public class Given_A_Relational_NameOverride_For_NonReference_Path
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -954,6 +1140,9 @@ public class Given_A_Relational_NameOverride_For_NonReference_Path
         );
     }
 
+    /// <summary>
+    /// It should fail with unsupported override key.
+    /// </summary>
     [Test]
     public void It_should_fail_with_unsupported_override_key()
     {
@@ -964,11 +1153,17 @@ public class Given_A_Relational_NameOverride_For_NonReference_Path
     }
 }
 
+/// <summary>
+/// Test fixture for a relational name override for a reference path.
+/// </summary>
 [TestFixture]
 public class Given_A_Relational_NameOverride_For_A_Reference_Path
 {
     private RelationalModelBuilderContext? _context;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -1005,6 +1200,9 @@ public class Given_A_Relational_NameOverride_For_A_Reference_Path
         );
     }
 
+    /// <summary>
+    /// It should apply the override.
+    /// </summary>
     [Test]
     public void It_should_apply_the_override()
     {
@@ -1017,8 +1215,14 @@ public class Given_A_Relational_NameOverride_For_A_Reference_Path
     }
 }
 
+/// <summary>
+/// Test type schema input validation helpers.
+/// </summary>
 internal static class SchemaInputValidationHelpers
 {
+    /// <summary>
+    /// Capture extract inputs exception.
+    /// </summary>
     public static Exception CaptureExtractInputsException(
         JsonArray identityJsonPaths,
         JsonObject documentPathsMapping,
@@ -1064,6 +1268,9 @@ internal static class SchemaInputValidationHelpers
         throw new InvalidOperationException("Expected ExtractInputsStep to fail.");
     }
 
+    /// <summary>
+    /// Capture validation pipeline exception.
+    /// </summary>
     public static Exception CaptureValidationPipelineException(
         JsonArray identityJsonPaths,
         JsonObject documentPathsMapping,
@@ -1111,6 +1318,9 @@ internal static class SchemaInputValidationHelpers
         throw new InvalidOperationException("Expected pipeline to fail.");
     }
 
+    /// <summary>
+    /// Execute extract inputs.
+    /// </summary>
     public static RelationalModelBuilderContext ExecuteExtractInputs(
         JsonArray identityJsonPaths,
         JsonObject documentPathsMapping,
@@ -1148,6 +1358,9 @@ internal static class SchemaInputValidationHelpers
         return context;
     }
 
+    /// <summary>
+    /// Create api schema root.
+    /// </summary>
     private static JsonNode CreateApiSchemaRoot(JsonObject resourceSchema, string endpointName)
     {
         var projectSchema = new JsonObject

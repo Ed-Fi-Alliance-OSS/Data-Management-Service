@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for abstract identity table derivation.
+/// </summary>
 [TestFixture]
 public class Given_Abstract_Identity_Table_Derivation
 {
     private AbstractIdentityTableInfo _abstractIdentityTable = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -39,6 +45,9 @@ public class Given_Abstract_Identity_Table_Derivation
         );
     }
 
+    /// <summary>
+    /// It should order columns with document id identity and discriminator.
+    /// </summary>
     [Test]
     public void It_should_order_columns_with_document_id_identity_and_discriminator()
     {
@@ -49,6 +58,9 @@ public class Given_Abstract_Identity_Table_Derivation
         columns.Should().Equal("DocumentId", "EducationOrganizationId", "OrganizationName", "Discriminator");
     }
 
+    /// <summary>
+    /// It should define document id key and column.
+    /// </summary>
     [Test]
     public void It_should_define_document_id_key_and_column()
     {
@@ -67,6 +79,9 @@ public class Given_Abstract_Identity_Table_Derivation
         documentIdColumn.TargetResource.Should().BeNull();
     }
 
+    /// <summary>
+    /// It should include discriminator column.
+    /// </summary>
     [Test]
     public void It_should_include_discriminator_column()
     {
@@ -79,6 +94,9 @@ public class Given_Abstract_Identity_Table_Derivation
         discriminator.IsNullable.Should().BeFalse();
     }
 
+    /// <summary>
+    /// It should include composite unique constraint.
+    /// </summary>
     [Test]
     public void It_should_include_composite_unique_constraint()
     {
@@ -93,6 +111,9 @@ public class Given_Abstract_Identity_Table_Derivation
             .Be("UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId_OrganizationName");
     }
 
+    /// <summary>
+    /// It should use no action on update for document fk.
+    /// </summary>
     [Test]
     public void It_should_use_no_action_on_update_for_document_fk()
     {
@@ -106,17 +127,26 @@ public class Given_Abstract_Identity_Table_Derivation
         foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
     private static JsonObject BuildProjectSchema(bool mismatchMemberType)
     {
         return AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(mismatchMemberType);
     }
 }
 
+/// <summary>
+/// Test fixture for abstract identity table with mismatched types.
+/// </summary>
 [TestFixture]
 public class Given_Abstract_Identity_Table_With_Mismatched_Types
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -146,6 +176,9 @@ public class Given_Abstract_Identity_Table_With_Mismatched_Types
         }
     }
 
+    /// <summary>
+    /// It should fail fast on mismatched member types.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_on_mismatched_member_types()
     {
@@ -154,11 +187,17 @@ public class Given_Abstract_Identity_Table_With_Mismatched_Types
     }
 }
 
+/// <summary>
+/// Test fixture for abstract identity table with duplicate identity paths.
+/// </summary>
 [TestFixture]
 public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -194,6 +233,9 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
         }
     }
 
+    /// <summary>
+    /// It should fail fast on duplicate identity paths.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_on_duplicate_identity_paths()
     {
@@ -204,8 +246,14 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
     }
 }
 
+/// <summary>
+/// Test type abstract identity table test schema builder.
+/// </summary>
 internal static class AbstractIdentityTableTestSchemaBuilder
 {
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
     internal static JsonObject BuildProjectSchema(
         bool mismatchMemberType,
         JsonArray? abstractIdentityJsonPaths = null
@@ -246,6 +294,9 @@ internal static class AbstractIdentityTableTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build concrete resource schema.
+    /// </summary>
     private static JsonObject BuildConcreteResourceSchema(
         string resourceName,
         bool organizationNameIsString,

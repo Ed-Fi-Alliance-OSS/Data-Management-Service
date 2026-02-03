@@ -92,6 +92,9 @@ internal sealed class TableColumnAccumulator
         return Definition with { Columns = Columns.ToArray(), Constraints = Constraints.ToArray() };
     }
 
+    /// <summary>
+    /// Resolves a human-readable source JSONPath for diagnostics, defaulting to the table scope.
+    /// </summary>
     private string ResolveSourcePath(JsonPathExpression? sourcePath)
     {
         return (sourcePath ?? Definition.JsonScope).Canonical;

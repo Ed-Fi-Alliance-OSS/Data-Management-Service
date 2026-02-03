@@ -10,17 +10,26 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a project endpoint name with dashes.
+/// </summary>
 [TestFixture]
 public class Given_A_Project_Endpoint_Name_With_Dashes
 {
     private DbSchemaName _schemaName = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
         _schemaName = RelationalNameConventions.NormalizeSchemaName("ed-fi");
     }
 
+    /// <summary>
+    /// It should remove non alphanumerics and lowercase.
+    /// </summary>
     [Test]
     public void It_should_remove_non_alphanumerics_and_lowercase()
     {
@@ -28,17 +37,26 @@ public class Given_A_Project_Endpoint_Name_With_Dashes
     }
 }
 
+/// <summary>
+/// Test fixture for a collection name ending in ies.
+/// </summary>
 [TestFixture]
 public class Given_A_Collection_Name_Ending_In_Ies
 {
     private string _baseName = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
         _baseName = RelationalNameConventions.ToCollectionBaseName("categories");
     }
 
+    /// <summary>
+    /// It should singularize to a pascal base name.
+    /// </summary>
     [Test]
     public void It_should_singularize_to_a_pascal_base_name()
     {
@@ -46,17 +64,26 @@ public class Given_A_Collection_Name_Ending_In_Ies
     }
 }
 
+/// <summary>
+/// Test fixture for a collection name ending in ses.
+/// </summary>
 [TestFixture]
 public class Given_A_Collection_Name_Ending_In_Ses
 {
     private string _baseName = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
         _baseName = RelationalNameConventions.ToCollectionBaseName("addresses");
     }
 
+    /// <summary>
+    /// It should singularize to a pascal base name.
+    /// </summary>
     [Test]
     public void It_should_singularize_to_a_pascal_base_name()
     {
@@ -64,11 +91,17 @@ public class Given_A_Collection_Name_Ending_In_Ses
     }
 }
 
+/// <summary>
+/// Test fixture for a table and columns for a foreign key.
+/// </summary>
 [TestFixture]
 public class Given_A_Table_And_Columns_For_A_Foreign_Key
 {
     private string _foreignKeyName = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -78,6 +111,9 @@ public class Given_A_Table_And_Columns_For_A_Foreign_Key
         );
     }
 
+    /// <summary>
+    /// It should build the foreign key name.
+    /// </summary>
     [Test]
     public void It_should_build_the_foreign_key_name()
     {
@@ -85,11 +121,17 @@ public class Given_A_Table_And_Columns_For_A_Foreign_Key
     }
 }
 
+/// <summary>
+/// Test fixture for an empty foreign key column list.
+/// </summary>
 [TestFixture]
 public class Given_An_Empty_Foreign_Key_Column_List
 {
     private Action _action = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -97,6 +139,9 @@ public class Given_An_Empty_Foreign_Key_Column_List
             RelationalNameConventions.ForeignKeyName("SchoolAddress", Array.Empty<DbColumnName>());
     }
 
+    /// <summary>
+    /// It should throw.
+    /// </summary>
     [Test]
     public void It_should_throw()
     {

@@ -5,8 +5,15 @@
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// Canonicalizes ordering-sensitive collections within derived relational models to ensure deterministic
+/// output regardless of input dictionary iteration order.
+/// </summary>
 internal static class RelationalModelCanonicalization
 {
+    /// <summary>
+    /// Returns a copy of the resource model with tables, bindings, and descriptor edges ordered canonically.
+    /// </summary>
     internal static RelationalResourceModel CanonicalizeResourceModel(RelationalResourceModel resourceModel)
     {
         ArgumentNullException.ThrowIfNull(resourceModel);
@@ -60,6 +67,9 @@ internal static class RelationalModelCanonicalization
         };
     }
 
+    /// <summary>
+    /// Returns a copy of the extension sites list ordered canonically.
+    /// </summary>
     internal static IReadOnlyList<ExtensionSite> CanonicalizeExtensionSites(
         IReadOnlyList<ExtensionSite> extensionSites
     )
@@ -82,6 +92,9 @@ internal static class RelationalModelCanonicalization
             .ToArray();
     }
 
+    /// <summary>
+    /// Counts the number of array wildcard segments in the scope, used for depth-first ordering.
+    /// </summary>
     private static int CountArrayDepth(JsonPathExpression scope)
     {
         var depth = 0;

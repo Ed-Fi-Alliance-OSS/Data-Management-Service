@@ -12,12 +12,18 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a hand authored effective schema set with reordered inputs.
+/// </summary>
 [TestFixture]
 public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
 {
     private string _orderedManifest = default!;
     private string _unorderedManifest = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -62,12 +68,18 @@ public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
         _unorderedManifest = BuildDeterminismManifest(unorderedModelSet, unorderedExtensionSites);
     }
 
+    /// <summary>
+    /// It should produce identical determinism manifests.
+    /// </summary>
     [Test]
     public void It_should_produce_identical_determinism_manifests()
     {
         _orderedManifest.Should().Be(_unorderedManifest);
     }
 
+    /// <summary>
+    /// Build determinism manifest.
+    /// </summary>
     private static string BuildDeterminismManifest(
         DerivedRelationalModelSet modelSet,
         ExtensionSiteCapturePass extensionSiteCapture
@@ -117,11 +129,17 @@ public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
         return json + "\n";
     }
 
+    /// <summary>
+    /// Test type extension site capture pass.
+    /// </summary>
     private sealed class ExtensionSiteCapturePass : IRelationalModelSetPass
     {
         private readonly Dictionary<QualifiedResourceName, IReadOnlyList<ExtensionSite>> _sitesByResource =
             new();
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -134,6 +152,9 @@ public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
             }
         }
 
+        /// <summary>
+        /// Get extension sites.
+        /// </summary>
         public IReadOnlyList<ExtensionSite> GetExtensionSites(QualifiedResourceName resource)
         {
             return _sitesByResource.TryGetValue(resource, out var sites)

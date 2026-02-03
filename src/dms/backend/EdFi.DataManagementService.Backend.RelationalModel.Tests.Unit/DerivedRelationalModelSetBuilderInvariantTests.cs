@@ -9,11 +9,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for duplicate concrete resources in derived model set.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -32,6 +38,9 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
         }
     }
 
+    /// <summary>
+    /// It should fail with duplicate concrete resource entries.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_concrete_resource_entries()
     {
@@ -40,11 +49,17 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
         _exception.Message.Should().Contain("Ed-Fi:School");
     }
 
+    /// <summary>
+    /// Test type duplicate concrete resources pass.
+    /// </summary>
     private sealed class DuplicateConcreteResourcesPass : IRelationalModelSetPass
     {
         private readonly ResourceKeyEntry _resourceKey;
         private readonly RelationalResourceModel _model;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public DuplicateConcreteResourcesPass(EffectiveSchemaSet effectiveSchemaSet)
         {
             _resourceKey = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
@@ -55,6 +70,9 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
             _model = DerivedRelationalModelSetInvariantTestHelpers.CreateMinimalModel(_resourceKey.Resource);
         }
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -69,11 +87,17 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
     }
 }
 
+/// <summary>
+/// Test fixture for duplicate index names in derived model set.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_Index_Names_In_Derived_Model_Set
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -92,6 +116,9 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
         }
     }
 
+    /// <summary>
+    /// It should fail with duplicate index names per table.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_index_names_per_table()
     {
@@ -100,8 +127,14 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
         _exception.Message.Should().Contain("edfi.School:IX_School");
     }
 
+    /// <summary>
+    /// Test type duplicate index names pass.
+    /// </summary>
     private sealed class DuplicateIndexNamesPass : IRelationalModelSetPass
     {
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -119,11 +152,17 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
     }
 }
 
+/// <summary>
+/// Test fixture for duplicate trigger names in derived model set.
+/// </summary>
 [TestFixture]
 public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -142,6 +181,9 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
         }
     }
 
+    /// <summary>
+    /// It should fail with duplicate trigger names per table.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_trigger_names_per_table()
     {
@@ -150,8 +192,14 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
         _exception.Message.Should().Contain("edfi.School:TR_School");
     }
 
+    /// <summary>
+    /// Test type duplicate trigger names pass.
+    /// </summary>
     private sealed class DuplicateTriggerNamesPass : IRelationalModelSetPass
     {
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -169,8 +217,14 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
     }
 }
 
+/// <summary>
+/// Test type derived relational model set invariant test helpers.
+/// </summary>
 internal static class DerivedRelationalModelSetInvariantTestHelpers
 {
+    /// <summary>
+    /// Find resource key.
+    /// </summary>
     public static ResourceKeyEntry FindResourceKey(
         EffectiveSchemaSet effectiveSchemaSet,
         string projectName,
@@ -184,6 +238,9 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
         );
     }
 
+    /// <summary>
+    /// Create minimal model.
+    /// </summary>
     public static RelationalResourceModel CreateMinimalModel(QualifiedResourceName resource)
     {
         var schema = new DbSchemaName("edfi");

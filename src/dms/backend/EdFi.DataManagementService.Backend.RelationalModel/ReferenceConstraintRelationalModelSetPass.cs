@@ -13,6 +13,10 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </summary>
 public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModelSetPass
 {
+    /// <summary>
+    /// Applies reference foreign keys and all-or-none constraints for all concrete resources and resource
+    /// extensions.
+    /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -108,6 +112,10 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         }
     }
 
+    /// <summary>
+    /// Applies reference constraints for a single resource by attaching all-or-none checks and composite foreign
+    /// keys for each bound document reference.
+    /// </summary>
     private static void ApplyReferenceConstraintsForResource(
         ReferenceConstraintContext context,
         ResourceMutation mutation,
@@ -203,6 +211,10 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         }
     }
 
+    /// <summary>
+    /// Builds the local and target identity column sets required for a composite reference FK, validating that
+    /// mapping and binding identity paths align.
+    /// </summary>
     private static ReferenceIdentityColumnSet BuildReferenceIdentityColumns(
         DocumentReferenceMapping mapping,
         DocumentReferenceBinding binding,
@@ -413,6 +425,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return new ReferenceIdentityColumnSet(localColumns.ToArray(), targetColumns.ToArray());
     }
 
+    /// <summary>
+    /// Resolves the base reference name from a reference FK column by trimming the <c>_DocumentId</c> suffix.
+    /// </summary>
     private static string ResolveReferenceBaseName(
         DbColumnName fkColumn,
         DocumentReferenceMapping mapping,
@@ -432,11 +447,18 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return fkColumn.Value[..^DocumentIdSuffix.Length];
     }
 
+    /// <summary>
+    /// Formats a diagnostic summary for a reference path count mismatch.
+    /// </summary>
     private static string FormatReferencePathCount(string path, int expected, int actual)
     {
         return $"'{path}' (expected {expected}, found {actual})";
     }
 
+    /// <summary>
+    /// Attempts to resolve the binding column for a propagated identity part, allowing for descriptor FK column
+    /// naming.
+    /// </summary>
     private static bool TryResolveIdentityBindingColumn(
         IReadOnlyDictionary<string, ReferenceIdentityBinding> identityBindingsByColumnName,
         string identityColumnBaseName,
@@ -459,6 +481,10 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return false;
     }
 
+    /// <summary>
+    /// Ensures that a concrete target resource root has a unique constraint on its document id and identity
+    /// columns so referencing composite foreign keys are valid.
+    /// </summary>
     private static void EnsureTargetUnique(
         TargetIdentityInfo targetInfo,
         IReadOnlyList<DbColumnName> targetIdentityColumns,
@@ -500,6 +526,10 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         }
     }
 
+    /// <summary>
+    /// Gets identity metadata for a target resource, using an abstract identity table when the target is
+    /// abstract and caching results for reuse.
+    /// </summary>
     private static TargetIdentityInfo GetTargetIdentityInfo(
         QualifiedResourceName targetResource,
         ReferenceConstraintContext context
@@ -568,6 +598,10 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return info;
     }
 
+    /// <summary>
+    /// Resolves the concrete table model for a reference binding, selecting the best matching JSON scope when a
+    /// table name appears in multiple scopes (e.g., extensions).
+    /// </summary>
     private static DbTableModel ResolveReferenceBindingTable(
         DocumentReferenceBinding binding,
         RelationalResourceModel resourceModel,
@@ -638,6 +672,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return bestMatch;
     }
 
+    /// <summary>
+    /// Builds the ordered identity column list for a resource root table based on <c>identityJsonPaths</c>.
+    /// </summary>
     private static IReadOnlyList<DbColumnName> BuildIdentityValueColumns(
         RelationalResourceModel resourceModel,
         RelationalModelBuilderContext builderContext,
@@ -678,6 +715,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return identityColumns.ToArray();
     }
 
+    /// <summary>
+    /// Builds a lookup from qualified resource name to its concrete schema context (excluding extensions).
+    /// </summary>
     private static IReadOnlyDictionary<
         QualifiedResourceName,
         ConcreteResourceSchemaContext
@@ -703,6 +743,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         return lookup;
     }
 
+    /// <summary>
+    /// Holds shared lookups, caches, and mutation accumulators used during reference constraint derivation.
+    /// </summary>
     private sealed record ReferenceConstraintContext(
         RelationalModelSetBuilderContext SetContext,
         IReadOnlyDictionary<QualifiedResourceName, ResourceEntry> ResourcesByKey,
@@ -715,6 +758,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         IDictionary<QualifiedResourceName, ResourceMutation> Mutations
     );
 
+    /// <summary>
+    /// Captures the target table and identity metadata used to build composite reference foreign keys.
+    /// </summary>
     private sealed record TargetIdentityInfo(
         QualifiedResourceName Resource,
         DbTableName Table,
@@ -724,6 +770,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         bool IsAbstract
     );
 
+    /// <summary>
+    /// Captures the local and target column lists required to build a composite reference foreign key.
+    /// </summary>
     private sealed record ReferenceIdentityColumnSet(
         IReadOnlyList<DbColumnName> LocalColumns,
         IReadOnlyList<DbColumnName> TargetColumns

@@ -9,12 +9,18 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a multi project effective schema set with unordered inputs.
+/// </summary>
 [TestFixture]
 public class Given_A_MultiProject_EffectiveSchemaSet_With_Unordered_Inputs
 {
     private DerivedRelationalModelSet _orderedResult = default!;
     private DerivedRelationalModelSet _unorderedResult = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -36,6 +42,9 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_Unordered_Inputs
         );
     }
 
+    /// <summary>
+    /// It should produce consistent project ordering.
+    /// </summary>
     [Test]
     public void It_should_produce_consistent_project_ordering()
     {
@@ -50,6 +59,9 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_Unordered_Inputs
         orderedProjects.Should().Equal("ed-fi", "sample");
     }
 
+    /// <summary>
+    /// It should produce consistent resource ordering.
+    /// </summary>
     [Test]
     public void It_should_produce_consistent_resource_ordering()
     {
@@ -72,11 +84,17 @@ public class Given_A_MultiProject_EffectiveSchemaSet_With_Unordered_Inputs
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema set with a physical schema collision.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_A_Physical_Schema_Collision
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -102,6 +120,9 @@ public class Given_An_EffectiveSchemaSet_With_A_Physical_Schema_Collision
         }
     }
 
+    /// <summary>
+    /// It should fail with a physical schema name collision.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_physical_schema_name_collision()
     {

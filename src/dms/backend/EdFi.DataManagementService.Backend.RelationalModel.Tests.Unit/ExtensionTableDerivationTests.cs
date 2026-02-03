@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for extension table derivation.
+/// </summary>
 [TestFixture]
 public class Given_Extension_Table_Derivation
 {
@@ -20,6 +23,9 @@ public class Given_Extension_Table_Derivation
     private DbTableModel _schoolBaseRoot = default!;
     private DbTableModel _schoolBaseAddress = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -71,6 +77,9 @@ public class Given_Extension_Table_Derivation
         );
     }
 
+    /// <summary>
+    /// It should create extension tables with expected names.
+    /// </summary>
     [Test]
     public void It_should_create_extension_tables_with_expected_names()
     {
@@ -81,6 +90,9 @@ public class Given_Extension_Table_Derivation
             .Be("$._ext.sample.addresses[*]._ext.sample.sponsorReferences[*]");
     }
 
+    /// <summary>
+    /// It should align extension keys to base scopes.
+    /// </summary>
     [Test]
     public void It_should_align_extension_keys_to_base_scopes()
     {
@@ -100,6 +112,9 @@ public class Given_Extension_Table_Derivation
             .Equal("School_DocumentId", "AddressOrdinal", "Ordinal");
     }
 
+    /// <summary>
+    /// It should create fk to base tables with cascade.
+    /// </summary>
     [Test]
     public void It_should_create_fk_to_base_tables_with_cascade()
     {
@@ -120,6 +135,9 @@ public class Given_Extension_Table_Derivation
         addressFk.OnDelete.Should().Be(ReferentialAction.Cascade);
     }
 
+    /// <summary>
+    /// It should bind descriptor columns in extension tables.
+    /// </summary>
     [Test]
     public void It_should_bind_descriptor_columns_in_extension_tables()
     {
@@ -139,8 +157,14 @@ public class Given_Extension_Table_Derivation
     }
 }
 
+/// <summary>
+/// Test type extension table test schema builder.
+/// </summary>
 internal static class ExtensionTableTestSchemaBuilder
 {
+    /// <summary>
+    /// Build core project schema.
+    /// </summary>
     internal static JsonObject BuildCoreProjectSchema()
     {
         return new JsonObject
@@ -157,6 +181,9 @@ internal static class ExtensionTableTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build extension project schema.
+    /// </summary>
     internal static JsonObject BuildExtensionProjectSchema()
     {
         return new JsonObject
@@ -168,6 +195,9 @@ internal static class ExtensionTableTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build school schema.
+    /// </summary>
     private static JsonObject BuildSchoolSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -218,6 +248,9 @@ internal static class ExtensionTableTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build program schema.
+    /// </summary>
     private static JsonObject BuildProgramSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -254,6 +287,9 @@ internal static class ExtensionTableTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build descriptor schema.
+    /// </summary>
     private static JsonObject BuildDescriptorSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -282,6 +318,9 @@ internal static class ExtensionTableTestSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build school extension schema.
+    /// </summary>
     private static JsonObject BuildSchoolExtensionSchema()
     {
         var extensionAddressItems = new JsonObject

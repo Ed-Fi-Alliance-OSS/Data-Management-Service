@@ -10,12 +10,18 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for set level canonicalization when reference mappings are out of order.
+/// </summary>
 [TestFixture]
 public class Given_Set_Level_Canonicalization_When_Reference_Mappings_Are_Out_Of_Order
 {
     private IReadOnlyList<string> _referencePaths = default!;
     private IReadOnlyList<string> _descriptorPaths = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -48,12 +54,18 @@ public class Given_Set_Level_Canonicalization_When_Reference_Mappings_Are_Out_Of
             .ToArray();
     }
 
+    /// <summary>
+    /// It should canonicalize document reference bindings by reference object path.
+    /// </summary>
     [Test]
     public void It_should_canonicalize_document_reference_bindings_by_reference_object_path()
     {
         _referencePaths.Should().Equal("$.aReference", "$.zReference");
     }
 
+    /// <summary>
+    /// It should canonicalize descriptor edges by descriptor value path.
+    /// </summary>
     [Test]
     public void It_should_canonicalize_descriptor_edges_by_descriptor_value_path()
     {
@@ -61,8 +73,14 @@ public class Given_Set_Level_Canonicalization_When_Reference_Mappings_Are_Out_Of
     }
 }
 
+/// <summary>
+/// Test type canonicalize ordering set pass schema builder.
+/// </summary>
 internal static class CanonicalizeOrderingSetPassSchemaBuilder
 {
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
     internal static JsonObject BuildProjectSchema()
     {
         return new JsonObject
@@ -81,6 +99,9 @@ internal static class CanonicalizeOrderingSetPassSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build student schema.
+    /// </summary>
     private static JsonObject BuildStudentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -154,6 +175,9 @@ internal static class CanonicalizeOrderingSetPassSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build alpha schema.
+    /// </summary>
     private static JsonObject BuildAlphaSchema()
     {
         return new JsonObject
@@ -189,6 +213,9 @@ internal static class CanonicalizeOrderingSetPassSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build beta schema.
+    /// </summary>
     private static JsonObject BuildBetaSchema()
     {
         return new JsonObject
@@ -224,6 +251,9 @@ internal static class CanonicalizeOrderingSetPassSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build alpha descriptor schema.
+    /// </summary>
     private static JsonObject BuildAlphaDescriptorSchema()
     {
         return new JsonObject
@@ -239,6 +269,9 @@ internal static class CanonicalizeOrderingSetPassSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build beta descriptor schema.
+    /// </summary>
     private static JsonObject BuildBetaDescriptorSchema()
     {
         return new JsonObject
@@ -254,6 +287,9 @@ internal static class CanonicalizeOrderingSetPassSchemaBuilder
         };
     }
 
+    /// <summary>
+    /// Build descriptor insert schema.
+    /// </summary>
     private static JsonObject BuildDescriptorInsertSchema()
     {
         return new JsonObject

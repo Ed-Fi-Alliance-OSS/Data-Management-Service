@@ -15,6 +15,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an authoritative core and extension effective schema set.
+/// </summary>
 [TestFixture]
 public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
 {
@@ -25,6 +28,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
     ];
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -97,6 +103,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         _diffOutput = RunGitDiff(expectedPath, actualPath);
     }
 
+    /// <summary>
+    /// It should match the authoritative manifest.
+    /// </summary>
     [Test]
     public void It_should_match_the_authoritative_manifest()
     {
@@ -106,6 +115,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         }
     }
 
+    /// <summary>
+    /// Load project schema.
+    /// </summary>
     private static JsonObject LoadProjectSchema(string path)
     {
         var root = JsonNode.Parse(File.ReadAllText(path));
@@ -118,6 +130,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         return RequireObject(rootObject["projectSchema"], "projectSchema");
     }
 
+    /// <summary>
+    /// Build derived set manifest.
+    /// </summary>
     private static string BuildDerivedSetManifest(
         DerivedRelationalModelSet modelSet,
         ExtensionSiteCapturePass extensionSiteCapture
@@ -158,6 +173,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         return json + "\n";
     }
 
+    /// <summary>
+    /// Write projects.
+    /// </summary>
     private static void WriteProjects(Utf8JsonWriter writer, IReadOnlyList<ProjectSchemaInfo> projects)
     {
         writer.WritePropertyName("projects");
@@ -177,6 +195,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Write resources summary.
+    /// </summary>
     private static void WriteResourcesSummary(
         Utf8JsonWriter writer,
         IReadOnlyList<ConcreteResourceModel> resources
@@ -198,6 +219,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Write abstract identity tables.
+    /// </summary>
     private static void WriteAbstractIdentityTables(
         Utf8JsonWriter writer,
         IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTables
@@ -219,6 +243,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Write resource details.
+    /// </summary>
     private static void WriteResourceDetails(
         Utf8JsonWriter writer,
         ConcreteResourceModel resource,
@@ -270,6 +297,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Run git diff.
+    /// </summary>
     private static string RunGitDiff(string expectedPath, string actualPath)
     {
         var startInfo = new ProcessStartInfo("git")
@@ -306,6 +336,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
     }
 
+    /// <summary>
+    /// Write resource.
+    /// </summary>
     private static void WriteResource(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WritePropertyName("resource");
@@ -315,6 +348,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write table.
+    /// </summary>
     private static void WriteTable(Utf8JsonWriter writer, DbTableModel table)
     {
         writer.WriteStartObject();
@@ -349,6 +385,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write key column.
+    /// </summary>
     private static void WriteKeyColumn(Utf8JsonWriter writer, DbKeyColumn keyColumn)
     {
         writer.WriteStartObject();
@@ -357,6 +396,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write column.
+    /// </summary>
     private static void WriteColumn(Utf8JsonWriter writer, DbColumnModel column)
     {
         writer.WriteStartObject();
@@ -377,6 +419,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write scalar type.
+    /// </summary>
     private static void WriteScalarType(Utf8JsonWriter writer, RelationalScalarType? scalarType)
     {
         if (scalarType is null)
@@ -402,6 +447,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write constraint.
+    /// </summary>
     private static void WriteConstraint(Utf8JsonWriter writer, TableConstraint constraint)
     {
         writer.WriteStartObject();
@@ -444,6 +492,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write column name list.
+    /// </summary>
     private static void WriteColumnNameList(Utf8JsonWriter writer, IReadOnlyList<DbColumnName> columns)
     {
         writer.WriteStartArray();
@@ -454,6 +505,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Write document reference binding.
+    /// </summary>
     private static void WriteDocumentReferenceBinding(Utf8JsonWriter writer, DocumentReferenceBinding binding)
     {
         writer.WriteStartObject();
@@ -474,6 +528,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write reference identity binding.
+    /// </summary>
     private static void WriteReferenceIdentityBinding(
         Utf8JsonWriter writer,
         ReferenceIdentityBinding identityBinding
@@ -485,6 +542,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write descriptor edge.
+    /// </summary>
     private static void WriteDescriptorEdge(Utf8JsonWriter writer, DescriptorEdgeSource edge)
     {
         writer.WriteStartObject();
@@ -498,6 +558,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write extension site.
+    /// </summary>
     private static void WriteExtensionSite(Utf8JsonWriter writer, ExtensionSite site)
     {
         writer.WriteStartObject();
@@ -513,6 +576,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write table reference.
+    /// </summary>
     private static void WriteTableReference(Utf8JsonWriter writer, DbTableName tableName)
     {
         writer.WriteStartObject();
@@ -521,6 +587,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Write resource reference.
+    /// </summary>
     private static void WriteResourceReference(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WriteStartObject();
@@ -529,11 +598,17 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Test type extension site capture pass.
+    /// </summary>
     private sealed class ExtensionSiteCapturePass : IRelationalModelSetPass
     {
         private readonly Dictionary<QualifiedResourceName, IReadOnlyList<ExtensionSite>> _sitesByResource =
             new();
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -546,6 +621,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             }
         }
 
+        /// <summary>
+        /// Get extension sites.
+        /// </summary>
         public IReadOnlyList<ExtensionSite> GetExtensionSites(QualifiedResourceName resource)
         {
             return _sitesByResource.TryGetValue(resource, out var sites)
@@ -554,6 +632,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         }
     }
 
+    /// <summary>
+    /// Should update goldens.
+    /// </summary>
     private static bool ShouldUpdateGoldens()
     {
         var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
@@ -562,6 +643,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Find project root.
+    /// </summary>
     private static string FindProjectRoot(string startDirectory)
     {
         var directory = new DirectoryInfo(startDirectory);

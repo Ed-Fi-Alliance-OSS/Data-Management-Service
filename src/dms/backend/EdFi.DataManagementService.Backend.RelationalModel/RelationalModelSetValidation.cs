@@ -453,6 +453,11 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Validates that each <c>documentPathsMapping.referenceJsonPaths[*].identityJsonPath</c> entry references an
+    /// identity path that exists on the effective target resource schemas for all resource schema entries in the
+    /// supplied object.
+    /// </summary>
     private static void ValidateReferenceIdentityJsonPathsForResourceSchemas(
         string projectName,
         JsonObject resourceSchemas,
@@ -481,6 +486,10 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Validates that each reference mapping's identity path exists on the referenced resource when the
+    /// referenced resource is present in the effective schema set.
+    /// </summary>
     private static void ValidateReferenceIdentityJsonPathsForResource(
         string projectName,
         string resourceName,
@@ -605,6 +614,9 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Builds an index of all resource schemas keyed by qualified resource name.
+    /// </summary>
     private static IReadOnlyDictionary<QualifiedResourceName, JsonObject> BuildResourceSchemaIndex(
         EffectiveSchemaSet effectiveSchemaSet
     )
@@ -649,6 +661,9 @@ internal static class RelationalModelSetValidation
         return index;
     }
 
+    /// <summary>
+    /// Adds resource schema entries to a schema index, throwing when required structure is missing.
+    /// </summary>
     private static void AddResourceSchemaEntries(
         IDictionary<QualifiedResourceName, JsonObject> index,
         JsonObject resourceSchemas,
@@ -665,6 +680,9 @@ internal static class RelationalModelSetValidation
         }
     }
 
+    /// <summary>
+    /// Returns the compiled identity path set for a resource, caching results for reuse across validations.
+    /// </summary>
     private static HashSet<string> GetIdentityPathsForResource(
         QualifiedResourceName resource,
         IReadOnlyDictionary<QualifiedResourceName, JsonObject> resourceSchemaIndex,

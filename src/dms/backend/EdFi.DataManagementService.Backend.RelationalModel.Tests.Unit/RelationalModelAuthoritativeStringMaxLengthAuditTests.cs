@@ -12,12 +12,18 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an authoritative api schema for ed fi string max length rules.
+/// </summary>
 [TestFixture]
 public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
 {
     private const string ExtensionPropertyName = "_ext";
     private IReadOnlyList<OffendingString> _offendingStrings = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -89,6 +95,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
             .ToArray();
     }
 
+    /// <summary>
+    /// It should not have unexpected missing max length strings.
+    /// </summary>
     [Test]
     public void It_should_not_have_unexpected_missing_maxLength_strings()
     {
@@ -100,6 +109,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         Assert.Fail(BuildFailureMessage(_offendingStrings));
     }
 
+    /// <summary>
+    /// Collect missing max length strings.
+    /// </summary>
     private static void CollectMissingMaxLengthStrings(
         JsonObject schema,
         List<JsonPathSegment> pathSegments,
@@ -197,6 +209,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         }
     }
 
+    /// <summary>
+    /// Validate string schema.
+    /// </summary>
     private static void ValidateStringSchema(
         JsonObject schema,
         string currentPath,
@@ -241,6 +256,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         offenders.Add(new OffendingString(resourceEndpointName, currentPath));
     }
 
+    /// <summary>
+    /// Is date or time format.
+    /// </summary>
     private static bool IsDateOrTimeFormat(JsonObject schema, string currentPath)
     {
         if (!schema.TryGetPropertyValue("format", out var formatNode) || formatNode is null)
@@ -262,6 +280,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         };
     }
 
+    /// <summary>
+    /// Has enum.
+    /// </summary>
     private static bool HasEnum(JsonObject schema)
     {
         if (!schema.TryGetPropertyValue("enum", out var enumNode) || enumNode is null)
@@ -272,6 +293,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         return enumNode is JsonArray;
     }
 
+    /// <summary>
+    /// Determine schema kind.
+    /// </summary>
     private static SchemaKind DetermineSchemaKind(JsonObject schema, string currentPath)
     {
         var schemaType = TryGetSchemaType(schema, currentPath);
@@ -299,6 +323,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         return SchemaKind.Scalar;
     }
 
+    /// <summary>
+    /// Try get schema type.
+    /// </summary>
     private static string? TryGetSchemaType(JsonObject schema, string currentPath)
     {
         if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
@@ -316,6 +343,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         return schemaType;
     }
 
+    /// <summary>
+    /// Build property path.
+    /// </summary>
     private static string BuildPropertyPath(List<JsonPathSegment> pathSegments, string propertyName)
     {
         List<JsonPathSegment> propertySegments =
@@ -326,6 +356,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         return JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
     }
 
+    /// <summary>
+    /// Build failure message.
+    /// </summary>
     private static string BuildFailureMessage(IReadOnlyList<OffendingString> offenders)
     {
         var builder = new StringBuilder();
@@ -343,6 +376,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         return builder.ToString().TrimEnd();
     }
 
+    /// <summary>
+    /// Load api schema root.
+    /// </summary>
     private static JsonNode LoadApiSchemaRoot(string path)
     {
         var root = JsonNode.Parse(File.ReadAllText(path));
@@ -350,6 +386,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         return root ?? throw new InvalidOperationException($"ApiSchema parsed null: {path}");
     }
 
+    /// <summary>
+    /// Find project root.
+    /// </summary>
     private static string FindProjectRoot(string startDirectory)
     {
         var directory = new DirectoryInfo(startDirectory);
@@ -373,8 +412,14 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         );
     }
 
+    /// <summary>
+    /// Test type offending string.
+    /// </summary>
     private sealed record OffendingString(string ResourceEndpointName, string JsonPath);
 
+    /// <summary>
+    /// Test type schema kind.
+    /// </summary>
     private enum SchemaKind
     {
         Object,

@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a reference identity foreign key.
+/// </summary>
 [TestFixture]
 public class Given_A_Reference_Identity_Foreign_Key
 {
     private string _manifest = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -85,6 +91,9 @@ public class Given_A_Reference_Identity_Foreign_Key
         _manifest = RelationalModelManifestEmitter.Emit(buildResult);
     }
 
+    /// <summary>
+    /// It should emit update cascade for reference identity foreign keys.
+    /// </summary>
     [Test]
     public void It_should_emit_update_cascade_for_reference_identity_foreign_keys()
     {

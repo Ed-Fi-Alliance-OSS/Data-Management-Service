@@ -13,6 +13,10 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </summary>
 public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationalModelSetPass
 {
+    /// <summary>
+    /// Applies child-table unique constraints derived from <c>arrayUniquenessConstraints</c> for all concrete
+    /// resources and resource extensions.
+    /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -92,6 +96,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         }
     }
 
+    /// <summary>
+    /// Applies array uniqueness constraints for a single resource model, recording table mutations.
+    /// </summary>
     private static void ApplyArrayUniquenessConstraintsForResource(
         ResourceMutation mutation,
         RelationalResourceModel resourceModel,
@@ -134,6 +141,10 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         }
     }
 
+    /// <summary>
+    /// Applies an array uniqueness constraint by resolving its paths to a child-table scope and creating a
+    /// deterministic unique constraint (including nested constraints).
+    /// </summary>
     private static void ApplyArrayUniquenessConstraint(
         ArrayUniquenessConstraintInput constraint,
         ResourceMutation mutation,
@@ -238,6 +249,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         }
     }
 
+    /// <summary>
+    /// Groups constraint paths by the canonical JSONPath of their owning array scope.
+    /// </summary>
     private static IReadOnlyDictionary<string, IReadOnlyList<JsonPathExpression>> GroupPathsByArrayScope(
         IReadOnlyList<JsonPathExpression> paths,
         QualifiedResourceName resource
@@ -271,6 +285,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         );
     }
 
+    /// <summary>
+    /// Returns the owning array scope for a path by taking the prefix through its last wildcard array segment.
+    /// </summary>
     private static JsonPathExpression GetArrayScope(JsonPathExpression path, QualifiedResourceName resource)
     {
         var lastArrayIndex = -1;
@@ -295,6 +312,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return JsonPathExpressionCompiler.FromSegments(scopeSegments);
     }
 
+    /// <summary>
+    /// Adds the derived unique constraint to the table if it is not already present.
+    /// </summary>
     private static void AddArrayUniquenessConstraint(
         ResourceMutation mutation,
         DbTableModel table,
@@ -311,6 +331,10 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         }
     }
 
+    /// <summary>
+    /// Attempts to resolve the single table that matches an array uniqueness scope by mapping all constraint
+    /// paths to columns for each candidate table.
+    /// </summary>
     private static bool TryResolveArrayUniquenessTable(
         IReadOnlyList<DbTableModel> candidates,
         IReadOnlyList<JsonPathExpression> paths,
@@ -384,6 +408,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return false;
     }
 
+    /// <summary>
+    /// Combines multiple candidate-table failures into a single exception with aggregate details.
+    /// </summary>
     private static Exception? CombineArrayUniquenessFailures(IReadOnlyList<Exception> failures)
     {
         if (failures.Count == 0)
@@ -402,6 +429,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return new InvalidOperationException(combinedMessage, aggregate);
     }
 
+    /// <summary>
+    /// Attempts to resolve the single matching child table for the provided scope string.
+    /// </summary>
     private static bool TryResolveArrayUniquenessTableForScope(
         string scope,
         IReadOnlyList<JsonPathExpression> paths,
@@ -437,6 +467,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         );
     }
 
+    /// <summary>
+    /// Strips a leading <c>._ext.{project}</c> prefix from a scope path when present.
+    /// </summary>
     private static bool TryStripExtensionRootPrefix(JsonPathExpression path, out JsonPathExpression stripped)
     {
         if (
@@ -454,6 +487,10 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return false;
     }
 
+    /// <summary>
+    /// Strips a leading <c>._ext.{project}</c> prefix from each path, throwing when any path does not match the
+    /// expected extension-aligned form.
+    /// </summary>
     private static IReadOnlyList<JsonPathExpression> StripExtensionRootPrefix(
         IReadOnlyList<JsonPathExpression> paths,
         QualifiedResourceName resource
@@ -477,6 +514,10 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return stripped.ToArray();
     }
 
+    /// <summary>
+    /// Builds the deterministic unique column list for an array uniqueness constraint: parent key parts first,
+    /// then resolved constraint columns.
+    /// </summary>
     private static DbColumnName[] BuildArrayUniquenessColumns(
         DbTableModel table,
         IReadOnlyList<JsonPathExpression> paths,
@@ -515,6 +556,10 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return uniqueColumns.ToArray();
     }
 
+    /// <summary>
+    /// Resolves the physical column used for an array uniqueness path, binding to the reference FK column when
+    /// the path matches a reference identity component.
+    /// </summary>
     private static DbColumnName ResolveArrayUniquenessColumn(
         DbTableModel table,
         JsonPathExpression path,
@@ -568,6 +613,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return columnName;
     }
 
+    /// <summary>
+    /// Resolves a constraint path relative to its optional base path.
+    /// </summary>
     private static JsonPathExpression ResolveConstraintPath(
         JsonPathExpression? basePath,
         JsonPathExpression path
@@ -576,6 +624,9 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         return basePath is null ? path : ResolveRelativePath(basePath.Value, path);
     }
 
+    /// <summary>
+    /// Resolves a path relative to a base array path by concatenating JSONPath segments.
+    /// </summary>
     private static JsonPathExpression ResolveRelativePath(
         JsonPathExpression basePath,
         JsonPathExpression relativePath

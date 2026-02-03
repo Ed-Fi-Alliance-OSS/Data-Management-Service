@@ -11,6 +11,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a complete relational model pipeline.
+/// </summary>
 [TestFixture]
 public class Given_A_Complete_Relational_Model_Pipeline
 {
@@ -20,6 +23,9 @@ public class Given_A_Complete_Relational_Model_Pipeline
     private DbTableModel _rootTable = default!;
     private RelationalResourceModel _resourceModel = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -54,6 +60,9 @@ public class Given_A_Complete_Relational_Model_Pipeline
         );
     }
 
+    /// <summary>
+    /// It should create tables for root and collections.
+    /// </summary>
     [Test]
     public void It_should_create_tables_for_root_and_collections()
     {
@@ -64,6 +73,9 @@ public class Given_A_Complete_Relational_Model_Pipeline
             .Equal("School", "SchoolAddress", "SchoolAddressPeriod");
     }
 
+    /// <summary>
+    /// It should inline scalar columns.
+    /// </summary>
     [Test]
     public void It_should_inline_scalar_columns()
     {
@@ -76,6 +88,9 @@ public class Given_A_Complete_Relational_Model_Pipeline
         periodColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Date));
     }
 
+    /// <summary>
+    /// It should map descriptor columns and edges.
+    /// </summary>
     [Test]
     public void It_should_map_descriptor_columns_and_edges()
     {
@@ -97,6 +112,9 @@ public class Given_A_Complete_Relational_Model_Pipeline
         edge.DescriptorResource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
     }
 
+    /// <summary>
+    /// It should capture extension sites.
+    /// </summary>
     [Test]
     public void It_should_capture_extension_sites()
     {
@@ -108,6 +126,9 @@ public class Given_A_Complete_Relational_Model_Pipeline
         site.ProjectKeys.Should().Equal("sample");
     }
 
+    /// <summary>
+    /// Load api schema.
+    /// </summary>
     private static JsonNode LoadApiSchema(string fileName)
     {
         var path = Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", fileName);

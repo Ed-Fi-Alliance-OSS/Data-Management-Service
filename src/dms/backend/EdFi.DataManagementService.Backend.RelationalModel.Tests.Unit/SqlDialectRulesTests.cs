@@ -9,12 +9,18 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for pgsql dialect rules with identifier at the limit.
+/// </summary>
 [TestFixture]
 public class Given_PgsqlDialectRules_With_Identifier_At_The_Limit
 {
     private string _identifier = default!;
     private string _result = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -23,6 +29,9 @@ public class Given_PgsqlDialectRules_With_Identifier_At_The_Limit
         _result = rules.ShortenIdentifier(_identifier);
     }
 
+    /// <summary>
+    /// It should leave the identifier unchanged.
+    /// </summary>
     [Test]
     public void It_should_leave_the_identifier_unchanged()
     {
@@ -30,6 +39,9 @@ public class Given_PgsqlDialectRules_With_Identifier_At_The_Limit
     }
 }
 
+/// <summary>
+/// Test fixture for pgsql dialect rules with identifier above the limit.
+/// </summary>
 [TestFixture]
 public class Given_PgsqlDialectRules_With_Identifier_Above_The_Limit
 {
@@ -38,6 +50,9 @@ public class Given_PgsqlDialectRules_With_Identifier_Above_The_Limit
     private string _secondResult = default!;
     private int _maxLength;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -48,18 +63,27 @@ public class Given_PgsqlDialectRules_With_Identifier_Above_The_Limit
         _secondResult = rules.ShortenIdentifier(_identifier);
     }
 
+    /// <summary>
+    /// It should shorten deterministically.
+    /// </summary>
     [Test]
     public void It_should_shorten_deterministically()
     {
         _result.Should().Be(_secondResult);
     }
 
+    /// <summary>
+    /// It should produce an identifier within the byte limit.
+    /// </summary>
     [Test]
     public void It_should_produce_an_identifier_within_the_byte_limit()
     {
         Encoding.UTF8.GetByteCount(_result).Should().BeLessOrEqualTo(_maxLength);
     }
 
+    /// <summary>
+    /// It should change the identifier.
+    /// </summary>
     [Test]
     public void It_should_change_the_identifier()
     {
@@ -67,6 +91,9 @@ public class Given_PgsqlDialectRules_With_Identifier_Above_The_Limit
     }
 }
 
+/// <summary>
+/// Test fixture for pgsql dialect rules with a multibyte identifier above the byte limit.
+/// </summary>
 [TestFixture]
 public class Given_PgsqlDialectRules_With_A_Multibyte_Identifier_Above_The_Byte_Limit
 {
@@ -76,6 +103,9 @@ public class Given_PgsqlDialectRules_With_A_Multibyte_Identifier_Above_The_Byte_
     private int _byteCount;
     private int _characterCount;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -87,6 +117,9 @@ public class Given_PgsqlDialectRules_With_A_Multibyte_Identifier_Above_The_Byte_
         _result = rules.ShortenIdentifier(_identifier);
     }
 
+    /// <summary>
+    /// It should consider utf8 byte length.
+    /// </summary>
     [Test]
     public void It_should_consider_utf8_byte_length()
     {
@@ -95,6 +128,9 @@ public class Given_PgsqlDialectRules_With_A_Multibyte_Identifier_Above_The_Byte_
         _result.Should().NotBe(_identifier);
     }
 
+    /// <summary>
+    /// It should produce an identifier within the byte limit.
+    /// </summary>
     [Test]
     public void It_should_produce_an_identifier_within_the_byte_limit()
     {
@@ -102,12 +138,18 @@ public class Given_PgsqlDialectRules_With_A_Multibyte_Identifier_Above_The_Byte_
     }
 }
 
+/// <summary>
+/// Test fixture for mssql dialect rules with identifier at the limit.
+/// </summary>
 [TestFixture]
 public class Given_MssqlDialectRules_With_Identifier_At_The_Limit
 {
     private string _identifier = default!;
     private string _result = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -116,6 +158,9 @@ public class Given_MssqlDialectRules_With_Identifier_At_The_Limit
         _result = rules.ShortenIdentifier(_identifier);
     }
 
+    /// <summary>
+    /// It should leave the identifier unchanged.
+    /// </summary>
     [Test]
     public void It_should_leave_the_identifier_unchanged()
     {
@@ -123,6 +168,9 @@ public class Given_MssqlDialectRules_With_Identifier_At_The_Limit
     }
 }
 
+/// <summary>
+/// Test fixture for mssql dialect rules with identifier above the limit.
+/// </summary>
 [TestFixture]
 public class Given_MssqlDialectRules_With_Identifier_Above_The_Limit
 {
@@ -131,6 +179,9 @@ public class Given_MssqlDialectRules_With_Identifier_Above_The_Limit
     private string _secondResult = default!;
     private int _maxLength;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -141,18 +192,27 @@ public class Given_MssqlDialectRules_With_Identifier_Above_The_Limit
         _secondResult = rules.ShortenIdentifier(_identifier);
     }
 
+    /// <summary>
+    /// It should shorten deterministically.
+    /// </summary>
     [Test]
     public void It_should_shorten_deterministically()
     {
         _result.Should().Be(_secondResult);
     }
 
+    /// <summary>
+    /// It should produce an identifier within the character limit.
+    /// </summary>
     [Test]
     public void It_should_produce_an_identifier_within_the_character_limit()
     {
         _result.Length.Should().BeLessOrEqualTo(_maxLength);
     }
 
+    /// <summary>
+    /// It should change the identifier.
+    /// </summary>
     [Test]
     public void It_should_change_the_identifier()
     {
@@ -160,6 +220,9 @@ public class Given_MssqlDialectRules_With_Identifier_Above_The_Limit
     }
 }
 
+/// <summary>
+/// Test fixture for mssql dialect rules with a multibyte identifier within the character limit.
+/// </summary>
 [TestFixture]
 public class Given_MssqlDialectRules_With_A_Multibyte_Identifier_Within_The_Character_Limit
 {
@@ -169,6 +232,9 @@ public class Given_MssqlDialectRules_With_A_Multibyte_Identifier_Within_The_Char
     private int _byteCount;
     private int _characterCount;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -180,6 +246,9 @@ public class Given_MssqlDialectRules_With_A_Multibyte_Identifier_Within_The_Char
         _result = rules.ShortenIdentifier(_identifier);
     }
 
+    /// <summary>
+    /// It should consider character length.
+    /// </summary>
     [Test]
     public void It_should_consider_character_length()
     {

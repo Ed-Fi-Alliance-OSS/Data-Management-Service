@@ -9,11 +9,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for unordered derived collections.
+/// </summary>
 [TestFixture]
 public class Given_Unordered_Derived_Collections
 {
     private DerivedRelationalModelSet _derivedModelSet = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -25,6 +31,9 @@ public class Given_Unordered_Derived_Collections
         _derivedModelSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
+    /// <summary>
+    /// It should order abstract identity tables by project then resource.
+    /// </summary>
     [Test]
     public void It_should_order_abstract_identity_tables_by_project_then_resource()
     {
@@ -41,6 +50,9 @@ public class Given_Unordered_Derived_Collections
             );
     }
 
+    /// <summary>
+    /// It should order abstract union views by project then resource.
+    /// </summary>
     [Test]
     public void It_should_order_abstract_union_views_by_project_then_resource()
     {
@@ -57,6 +69,9 @@ public class Given_Unordered_Derived_Collections
             );
     }
 
+    /// <summary>
+    /// It should order indexes by table then name.
+    /// </summary>
     [Test]
     public void It_should_order_indexes_by_table_then_name()
     {
@@ -76,6 +91,9 @@ public class Given_Unordered_Derived_Collections
             );
     }
 
+    /// <summary>
+    /// It should order triggers by table then name.
+    /// </summary>
     [Test]
     public void It_should_order_triggers_by_table_then_name()
     {
@@ -95,12 +113,18 @@ public class Given_Unordered_Derived_Collections
             );
     }
 
+    /// <summary>
+    /// Test type populate unordered collections pass.
+    /// </summary>
     private sealed class PopulateUnorderedCollectionsPass : IRelationalModelSetPass
     {
         private readonly ResourceKeyEntry _school;
         private readonly ResourceKeyEntry _schoolTypeDescriptor;
         private readonly ResourceKeyEntry _section;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public PopulateUnorderedCollectionsPass(EffectiveSchemaSet effectiveSchemaSet)
         {
             _school = FindResourceKey(effectiveSchemaSet, "Ed-Fi", "School");
@@ -108,6 +132,9 @@ public class Given_Unordered_Derived_Collections
             _section = FindResourceKey(effectiveSchemaSet, "Sample", "Section");
         }
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -210,6 +237,9 @@ public class Given_Unordered_Derived_Collections
             );
         }
 
+        /// <summary>
+        /// Build abstract identity table.
+        /// </summary>
         private static AbstractIdentityTableInfo BuildAbstractIdentityTable(
             ResourceKeyEntry resourceKey,
             DbSchemaName schema,
@@ -246,6 +276,9 @@ public class Given_Unordered_Derived_Collections
             return new AbstractIdentityTableInfo(resourceKey, table);
         }
 
+        /// <summary>
+        /// Find resource key.
+        /// </summary>
         private static ResourceKeyEntry FindResourceKey(
             EffectiveSchemaSet effectiveSchemaSet,
             string projectName,

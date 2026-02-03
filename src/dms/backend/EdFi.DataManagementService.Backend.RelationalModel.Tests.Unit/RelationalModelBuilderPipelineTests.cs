@@ -9,6 +9,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a relational model pipeline with two steps.
+/// </summary>
 [TestFixture]
 public class Given_A_Relational_Model_Pipeline_With_Two_Steps
 {
@@ -16,6 +19,9 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
     private RelationalModelBuildResult _result = default!;
     private RelationalResourceModel _resourceModel = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -34,18 +40,27 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
         _result = pipeline.Run(context);
     }
 
+    /// <summary>
+    /// It should run steps in order.
+    /// </summary>
     [Test]
     public void It_should_run_steps_in_order()
     {
         _executionOrder.Should().Equal(1, 2);
     }
 
+    /// <summary>
+    /// It should return the resource model.
+    /// </summary>
     [Test]
     public void It_should_return_the_resource_model()
     {
         _result.ResourceModel.Should().BeSameAs(_resourceModel);
     }
 
+    /// <summary>
+    /// Create minimal model.
+    /// </summary>
     private static RelationalResourceModel CreateMinimalModel()
     {
         var schema = new DbSchemaName("edfi");
@@ -83,8 +98,14 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
         );
     }
 
+    /// <summary>
+    /// Test type tracking step.
+    /// </summary>
     private sealed class TrackingStep(int order, List<int> executionOrder) : IRelationalModelBuilderStep
     {
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelBuilderContext context)
         {
             executionOrder.Add(order);

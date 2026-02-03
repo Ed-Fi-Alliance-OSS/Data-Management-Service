@@ -359,6 +359,9 @@ internal static class RelationalModelSetSchemaHelpers
         return true;
     }
 
+    /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag from a resource schema node.
+    /// </summary>
     private static bool IsResourceExtension(JsonObject resourceSchema, string resourceLabel)
     {
         if (
@@ -382,6 +385,10 @@ internal static class RelationalModelSetSchemaHelpers
         };
     }
 
+    /// <summary>
+    /// Deep-clones a project schema into a detached JSON object so subsequent derivation passes may safely
+    /// traverse and validate it.
+    /// </summary>
     private static JsonObject CloneProjectSchema(JsonObject projectSchema)
     {
         var detachedSchema = projectSchema.DeepClone();

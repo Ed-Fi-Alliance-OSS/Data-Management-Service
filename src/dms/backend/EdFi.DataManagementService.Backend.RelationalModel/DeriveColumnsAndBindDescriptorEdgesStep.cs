@@ -508,6 +508,9 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         tableBuilder.AddColumn(scalarColumn);
     }
 
+    /// <summary>
+    /// Builds a set of canonical reference identity JSONPaths from <c>documentPathsMapping.referenceJsonPaths</c>.
+    /// </summary>
     private static HashSet<string> BuildReferenceIdentityPathSet(
         IReadOnlyList<DocumentReferenceMapping> mappings
     )
@@ -530,6 +533,9 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         return referenceIdentityPaths;
     }
 
+    /// <summary>
+    /// Builds a set of canonical reference-object JSONPaths from the document reference mappings.
+    /// </summary>
     private static HashSet<string> BuildReferenceObjectPathSet(
         IReadOnlyList<DocumentReferenceMapping> mappings
     )
