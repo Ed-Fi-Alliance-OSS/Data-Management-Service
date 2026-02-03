@@ -118,5 +118,27 @@
       "Update `./reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md` to match the chosen pass order (and explain the dependency if abstract identity must precede reference constraints)."
     ],
     "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "BuildColumnNameLookupBySourceJsonPath silently picks first column on SourceJsonPath collisions. In ConstraintDerivationHelpers.cs:86-98, when multiple columns share the same SourceJsonPath, the method silently picks the first by ordinal column name via GroupBy + OrderBy + First(). This could mask a real bug where two distinct columns (e.g., a scalar column and a reference identity propagation column added by different passes) collide on the same source path, causing a constraint to reference the wrong column. Acceptance: (1) When two columns with different ColumnKind values share the same SourceJsonPath, the method throws with a message identifying the table, path, and both column names; (2) When two columns with the same ColumnKind share the same SourceJsonPath (legitimate dedup), the method deterministically selects the first by ordinal column name (current behavior); (3) Add a unit test constructing a DbTableModel with two columns of different ColumnKind sharing a SourceJsonPath and assert it throws; (4) Add a unit test with same-kind duplicates asserting deterministic selection; (5) All existing unit tests pass.",
+    "steps-to-verify": [
+      "Update BuildColumnNameLookupBySourceJsonPath in ConstraintDerivationHelpers.cs to detect mixed-kind duplicates and throw.",
+      "Add unit test: two columns (Scalar + DocumentFk) sharing the same SourceJsonPath -> assert InvalidOperationException with diagnostic message.",
+      "Add unit test: two Scalar columns sharing the same SourceJsonPath -> assert deterministic selection by ordinal name.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Correctness",
+    "description": "EnsureTargetUnique cross-resource mutation needs explicit test coverage and documentation. ReferenceConstraintRelationalModelSetPass.EnsureTargetUnique (lines 314-352) modifies the target resource's model by adding a (DocumentId, IdentityParts...) unique constraint needed for composite FK targets. This mutation happens as a side effect when processing a *different* resource's references, and is batched/applied at the end of the pass (lines 96-108). The final target model's constraint list depends on which other resources reference it. This ordering dependency is fragile and undocumented. Acceptance: (1) Add a dedicated unit test that constructs two resources A and B where A references B, and verifies that after the ReferenceConstraintRelationalModelSetPass runs, resource B's root table contains the (DocumentId, IdentityColumn) unique constraint even though B itself has no references; (2) Add a second test where two resources C and D both reference B with the same identity projection, and verify the constraint is added exactly once (idempotent); (3) Add an inline comment on EnsureTargetUnique documenting this cross-resource mutation contract; (4) All existing tests pass.",
+    "steps-to-verify": [
+      "Add test: resource A references resource B -> verify B's root table gains UX_(B)_DocumentId_(identity) constraint.",
+      "Add test: resources C and D both reference B with same identity -> verify constraint appears exactly once on B.",
+      "Add inline doc comment on EnsureTargetUnique explaining the cross-resource side-effect contract.",
+      "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/"
+    ],
+    "completed": false
   }
 ]
