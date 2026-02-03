@@ -171,5 +171,26 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Validate that any constraint path set that includes reference-identity fields is complete before collapsing to `..._DocumentId`. Today, root identity and array uniqueness derivation collapse reference identity paths to the reference FK column (stable key). This is only semantics-preserving when the constraint includes the full referenced identity. Acceptance: (1) If a `documentPathsMapping` reference entry is part of identity (via `identityJsonPaths` / `isPartOfIdentity`), then `identityJsonPaths` must include *all* `referenceJsonPaths[*].referenceJsonPath` for that entry; otherwise fail fast with an error that includes the mapping key, reference object path, and the missing canonical JSONPaths; (2) For each `arrayUniquenessConstraints` scope group, if any path is a reference identity path under a reference object, then that scope's uniqueness path set must include *all* identity paths for that same reference object; otherwise fail fast with an error that includes the scope/basePath (including extension-aligned variants), reference object path, and missing canonical JSONPaths; (3) Add unit tests covering partial reference identity in `identityJsonPaths` and partial reference identity in `arrayUniquenessConstraints` (including a nested constraint case); (4) All existing unit tests pass.",
+    "steps-to-verify": [
+      "Add a validation step (likely during inputs extraction/validation) that enforces full reference-identity coverage for identity-bearing references (`identityJsonPaths` contains all `referenceJsonPaths[*].referenceJsonPath` for that mapping).",
+      "Add a validation step that enforces full reference-identity coverage for each `arrayUniquenessConstraints` scope group when any reference identity path is present (consider nested constraints and extension-aligned `_ext.{project}` paths).",
+      "Add failing unit tests demonstrating: (a) identityJsonPaths includes only one identity field under a reference object; (b) arrayUniquenessConstraints includes only one identity field under a reference object; (c) nestedConstraints partial mapping.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Refactor `ReferenceConstraintRelationalModelSetPass.BuildReferenceIdentityColumns` to be order-independent. The current implementation assumes `DocumentReferenceMapping.ReferenceJsonPaths` and `DocumentReferenceBinding.IdentityBindings` are aligned by index; this is brittle if bindings are ever canonicalized/sorted independently. Acceptance: (1) Join mapping/reference bindings by canonical `referenceJsonPath` (and/or canonical identity path keys) rather than list index; (2) Fail fast with actionable errors if the mapping and binding sets disagree (missing/extra paths), without relying on list ordering; (3) Add a unit test that exercises a binding list in a different order than the mapping (or otherwise proves ordering is irrelevant) while still producing the same derived FK column sets ordered by target identity order; (4) All existing unit tests pass.",
+    "steps-to-verify": [
+      "Update `BuildReferenceIdentityColumns` to build a dictionary keyed by `ReferenceJsonPath.Canonical` from `DocumentReferenceBinding.IdentityBindings`, then resolve each `DocumentReferenceMapping.ReferenceJsonPaths` entry via that lookup (no index coupling).",
+      "Add a unit test that constructs a resource model with `DocumentReferenceBinding.IdentityBindings` in a different order than the source mapping (e.g., by mutating the binding in a test or by building the model directly) and asserts `ReferenceConstraintRelationalModelSetPass` still derives the correct composite FK column ordering (target identity order) and all-or-none constraint behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
