@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -149,6 +150,46 @@ internal static class RelationalModelSetSchemaHelpers
     internal static string FormatResource(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}:{resource.ResourceName}";
+    }
+
+    /// <summary>
+    /// Builds the base name for an identity path by concatenating Pascal-cased segments.
+    /// </summary>
+    /// <param name="identityJsonPath">The identity JSON path.</param>
+    /// <returns>The base name for identity column naming.</returns>
+    internal static string BuildIdentityPartBaseName(JsonPathExpression identityJsonPath)
+    {
+        List<string> segments = [];
+
+        foreach (var segment in identityJsonPath.Segments)
+        {
+            switch (segment)
+            {
+                case JsonPathSegment.Property property:
+                    segments.Add(property.Name);
+                    break;
+                case JsonPathSegment.AnyArrayElement:
+                    throw new InvalidOperationException(
+                        $"Identity path '{identityJsonPath.Canonical}' must not include array segments."
+                    );
+            }
+        }
+
+        if (segments.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{identityJsonPath.Canonical}' must include at least one property segment."
+            );
+        }
+
+        StringBuilder builder = new();
+
+        foreach (var segment in segments)
+        {
+            builder.Append(RelationalNameConventions.ToPascalCase(segment));
+        }
+
+        return builder.ToString();
     }
 
     /// <summary>

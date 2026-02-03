@@ -464,6 +464,142 @@ public class Given_Reference_Constraint_Derivation
 }
 
 [TestFixture]
+public class Given_Shuffled_Reference_Identity_Bindings
+{
+    private DbTableModel _enrollmentTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new ShuffleReferenceIdentityBindingsRelationalModelSetPass(
+                    new QualifiedResourceName("Ed-Fi", "Enrollment"),
+                    "$.schoolReference"
+                ),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var enrollmentModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+
+        _enrollmentTable = enrollmentModel.Root;
+    }
+
+    [Test]
+    public void It_should_resolve_reference_identity_columns_regardless_of_binding_order()
+    {
+        var schoolFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+
+        schoolFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId", "School_EducationOrganizationId", "School_SchoolId");
+
+        schoolFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+    }
+
+    private sealed class ShuffleReferenceIdentityBindingsRelationalModelSetPass : IRelationalModelSetPass
+    {
+        private readonly QualifiedResourceName _resource;
+        private readonly string _referenceObjectPath;
+
+        public ShuffleReferenceIdentityBindingsRelationalModelSetPass(
+            QualifiedResourceName resource,
+            string referenceObjectPath
+        )
+        {
+            _resource = resource;
+            _referenceObjectPath = referenceObjectPath;
+        }
+
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+            {
+                var resourceEntry = context.ConcreteResourcesInNameOrder[index];
+
+                if (resourceEntry.ResourceKey.Resource != _resource)
+                {
+                    continue;
+                }
+
+                var bindings = resourceEntry.RelationalModel.DocumentReferenceBindings.ToArray();
+                var bindingIndex = Array.FindIndex(
+                    bindings,
+                    binding =>
+                        string.Equals(
+                            binding.ReferenceObjectPath.Canonical,
+                            _referenceObjectPath,
+                            StringComparison.Ordinal
+                        )
+                );
+
+                if (bindingIndex < 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Reference object path '{_referenceObjectPath}' was not found for shuffle."
+                    );
+                }
+
+                var binding = bindings[bindingIndex];
+
+                if (binding.IdentityBindings.Count < 2)
+                {
+                    throw new InvalidOperationException(
+                        $"Reference object path '{_referenceObjectPath}' does not have multiple identity bindings."
+                    );
+                }
+
+                bindings[bindingIndex] = binding with
+                {
+                    IdentityBindings = binding.IdentityBindings.Reverse().ToArray(),
+                };
+
+                var updatedModel = resourceEntry.RelationalModel with
+                {
+                    DocumentReferenceBindings = bindings,
+                };
+
+                context.ConcreteResourcesInNameOrder[index] = resourceEntry with
+                {
+                    RelationalModel = updatedModel,
+                };
+                return;
+            }
+
+            throw new InvalidOperationException(
+                $"Resource '{_resource.ProjectName}:{_resource.ResourceName}' was not found for shuffle."
+            );
+        }
+    }
+}
+
+[TestFixture]
 public class Given_Target_Unique_Mutation_From_Reference
 {
     private RelationalResourceModel _schoolModel = default!;

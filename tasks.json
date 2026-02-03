@@ -191,6 +191,6 @@
       "Add a unit test that constructs a resource model with `DocumentReferenceBinding.IdentityBindings` in a different order than the source mapping (e.g., by mutating the binding in a test or by building the model directly) and asserts `ReferenceConstraintRelationalModelSetPass` still derives the correct composite FK column ordering (target identity order) and all-or-none constraint behavior.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

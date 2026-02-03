@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
 using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -365,41 +364,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         }
 
         return new DbColumnName($"{referenceBaseName}_DocumentId");
-    }
-
-    private static string BuildIdentityPartBaseName(JsonPathExpression identityJsonPath)
-    {
-        List<string> segments = [];
-
-        foreach (var segment in identityJsonPath.Segments)
-        {
-            switch (segment)
-            {
-                case JsonPathSegment.Property property:
-                    segments.Add(property.Name);
-                    break;
-                case JsonPathSegment.AnyArrayElement:
-                    throw new InvalidOperationException(
-                        $"Identity path '{identityJsonPath.Canonical}' must not include array segments."
-                    );
-            }
-        }
-
-        if (segments.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Identity path '{identityJsonPath.Canonical}' must include at least one property segment."
-            );
-        }
-
-        StringBuilder builder = new();
-
-        foreach (var segment in segments)
-        {
-            builder.Append(RelationalNameConventions.ToPascalCase(segment));
-        }
-
-        return builder.ToString();
     }
 
     private static bool TryResolveDescriptorIdentity(

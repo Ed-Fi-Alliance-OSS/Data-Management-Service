@@ -210,34 +210,136 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         QualifiedResourceName resource
     )
     {
-        Dictionary<string, JsonPathExpression> referencePathsByIdentityPath = new(StringComparer.Ordinal);
-        Dictionary<string, DbColumnName> localColumnsByIdentityPath = new(StringComparer.Ordinal);
+        var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn, mapping, resource);
 
-        if (mapping.ReferenceJsonPaths.Count != binding.IdentityBindings.Count)
+        Dictionary<string, ReferenceIdentityBinding> identityBindingsByColumnName = new(
+            StringComparer.Ordinal
+        );
+        Dictionary<string, int> bindingCountsByReferencePath = new(StringComparer.Ordinal);
+
+        foreach (var identityBinding in binding.IdentityBindings)
         {
+            if (!identityBindingsByColumnName.TryAdd(identityBinding.Column.Value, identityBinding))
+            {
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"contains duplicate identity binding column '{identityBinding.Column.Value}'."
+                );
+            }
+
+            var referencePath = identityBinding.ReferenceJsonPath.Canonical;
+            bindingCountsByReferencePath[referencePath] = bindingCountsByReferencePath.TryGetValue(
+                referencePath,
+                out var count
+            )
+                ? count + 1
+                : 1;
+        }
+
+        Dictionary<string, int> mappingCountsByReferencePath = new(StringComparer.Ordinal);
+
+        foreach (var path in mapping.ReferenceJsonPaths)
+        {
+            var referencePath = path.ReferenceJsonPath.Canonical;
+            mappingCountsByReferencePath[referencePath] = mappingCountsByReferencePath.TryGetValue(
+                referencePath,
+                out var count
+            )
+                ? count + 1
+                : 1;
+        }
+
+        List<string> missingReferencePaths = new();
+        List<string> extraReferencePaths = new();
+
+        foreach (var entry in mappingCountsByReferencePath)
+        {
+            if (!bindingCountsByReferencePath.TryGetValue(entry.Key, out var bindingCount))
+            {
+                missingReferencePaths.Add(FormatReferencePathCount(entry.Key, entry.Value, 0));
+                continue;
+            }
+
+            if (bindingCount < entry.Value)
+            {
+                missingReferencePaths.Add(FormatReferencePathCount(entry.Key, entry.Value, bindingCount));
+            }
+            else if (bindingCount > entry.Value)
+            {
+                extraReferencePaths.Add(FormatReferencePathCount(entry.Key, entry.Value, bindingCount));
+            }
+        }
+
+        foreach (var entry in bindingCountsByReferencePath)
+        {
+            if (!mappingCountsByReferencePath.ContainsKey(entry.Key))
+            {
+                extraReferencePaths.Add(FormatReferencePathCount(entry.Key, 0, entry.Value));
+            }
+        }
+
+        if (missingReferencePaths.Count > 0 || extraReferencePaths.Count > 0)
+        {
+            var missingSummary =
+                missingReferencePaths.Count > 0
+                    ? $"missing bindings for {string.Join(
+                        ", ",
+                        missingReferencePaths.OrderBy(path => path, StringComparer.Ordinal)
+                    )}"
+                    : null;
+            var extraSummary =
+                extraReferencePaths.Count > 0
+                    ? $"extra bindings for {string.Join(
+                        ", ",
+                        extraReferencePaths.OrderBy(path => path, StringComparer.Ordinal)
+                    )}"
+                    : null;
+            var details = string.Join(
+                "; ",
+                new[] { missingSummary, extraSummary }.Where(entry => entry is not null)
+            );
+
             throw new InvalidOperationException(
                 $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                    + "did not align referenceJsonPaths with identity bindings."
+                    + $"did not align referenceJsonPaths with identity bindings: {details}."
             );
         }
 
-        for (var index = 0; index < mapping.ReferenceJsonPaths.Count; index++)
+        Dictionary<string, JsonPathExpression> referencePathsByIdentityPath = new(StringComparer.Ordinal);
+        Dictionary<string, DbColumnName> localColumnsByIdentityPath = new(StringComparer.Ordinal);
+
+        foreach (var path in mapping.ReferenceJsonPaths)
         {
-            var path = mapping.ReferenceJsonPaths[index];
-            var identityBinding = binding.IdentityBindings[index];
+            var identityPartBaseName = BuildIdentityPartBaseName(path.IdentityJsonPath);
+            var identityColumnBaseName = $"{referenceBaseName}_{identityPartBaseName}";
+
+            if (
+                !TryResolveIdentityBindingColumn(
+                    identityBindingsByColumnName,
+                    identityColumnBaseName,
+                    out var identityBinding
+                ) || identityBinding is null
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"did not resolve identity column for path '{path.IdentityJsonPath.Canonical}' "
+                        + $"under reference path '{path.ReferenceJsonPath.Canonical}'."
+                );
+            }
 
             if (
                 !string.Equals(
-                    path.ReferenceJsonPath.Canonical,
                     identityBinding.ReferenceJsonPath.Canonical,
+                    path.ReferenceJsonPath.Canonical,
                     StringComparison.Ordinal
                 )
             )
             {
                 throw new InvalidOperationException(
                     $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                        + $"did not align reference path '{path.ReferenceJsonPath.Canonical}' with "
-                        + $"binding '{identityBinding.ReferenceJsonPath.Canonical}'."
+                        + $"did not align identity column '{identityBinding.Column.Value}' with "
+                        + $"reference path '{path.ReferenceJsonPath.Canonical}'."
                 );
             }
 
@@ -309,6 +411,52 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         }
 
         return new ReferenceIdentityColumnSet(localColumns.ToArray(), targetColumns.ToArray());
+    }
+
+    private static string ResolveReferenceBaseName(
+        DbColumnName fkColumn,
+        DocumentReferenceMapping mapping,
+        QualifiedResourceName resource
+    )
+    {
+        const string DocumentIdSuffix = "_DocumentId";
+
+        if (!fkColumn.Value.EndsWith(DocumentIdSuffix, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + $"expected FK column '{fkColumn.Value}' to end with '{DocumentIdSuffix}'."
+            );
+        }
+
+        return fkColumn.Value[..^DocumentIdSuffix.Length];
+    }
+
+    private static string FormatReferencePathCount(string path, int expected, int actual)
+    {
+        return $"'{path}' (expected {expected}, found {actual})";
+    }
+
+    private static bool TryResolveIdentityBindingColumn(
+        IReadOnlyDictionary<string, ReferenceIdentityBinding> identityBindingsByColumnName,
+        string identityColumnBaseName,
+        out ReferenceIdentityBinding? identityBinding
+    )
+    {
+        if (identityBindingsByColumnName.TryGetValue(identityColumnBaseName, out identityBinding))
+        {
+            return true;
+        }
+
+        var descriptorColumnName = RelationalNameConventions.DescriptorIdColumnName(identityColumnBaseName);
+
+        if (identityBindingsByColumnName.TryGetValue(descriptorColumnName.Value, out identityBinding))
+        {
+            return true;
+        }
+
+        identityBinding = default!;
+        return false;
     }
 
     private static void EnsureTargetUnique(
