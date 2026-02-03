@@ -46,3 +46,7 @@
   Decisions: Added target-unique mutation tests for single/multiple references; asserted target has no reference bindings but gains unique constraint; documented cross-resource mutation side-effect in EnsureTargetUnique.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceConstraintRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
+- Task: Document implicit contracts (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Documented required identity references and array uniqueness reference identity path binding to DocumentId; noted enforcement points and rationale.
+  Files: reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md; tasks.json; progress.txt
+  Notes: Docs-only change; no build/test run.

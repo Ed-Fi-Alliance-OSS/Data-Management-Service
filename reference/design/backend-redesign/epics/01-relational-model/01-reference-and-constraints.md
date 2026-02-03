@@ -23,6 +23,26 @@ Key rules:
 Descriptor binding (`*_DescriptorId` columns + descriptor edge metadata) is handled in the base traversal pass
 (`DMS-929`).
 
+### Implicit contracts enforced by DMS-930
+
+These rules are consistent with the `flattening-reconstitution.md` semantics, but they are currently enforced by
+implementation code rather than spelled out in the design docs:
+
+- Identity-component document references must be required.
+  - If a document reference participates in `identityJsonPaths`, the mapping entry must have `isRequired=true`.
+  - Enforced in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` when
+    extracting documentPathsMapping (the "Identity references must be required" guard).
+  - Rationale: identityJsonPaths represent required natural-key parts; optional references would allow null identity
+    components and undermine uniqueness guarantees.
+- Array-uniqueness paths that resolve to reference identity fields bind to the reference FK column.
+  - When an `arrayUniquenessConstraints` path matches a reference identity path, the derived UNIQUE constraint uses
+    the reference `..._DocumentId` column rather than the propagated identity columns.
+  - Enforced in
+    `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ArrayUniquenessConstraintRelationalModelSetPass.cs`
+    (`ResolveArrayUniquenessColumn` uses `DocumentReferenceBinding.FkColumn` for identity-path matches).
+  - Rationale: the FK `..._DocumentId` is the stable key for the referenced document; using it preserves determinism
+    and aligns with the root-identity rule above.
+
 ## Integration (ordered passes)
 
 - Per-resource: derive reference columns and constraints for a single resource using its `documentPathsMapping`,
