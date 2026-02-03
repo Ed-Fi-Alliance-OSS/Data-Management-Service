@@ -149,7 +149,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
             .ToArray();
         var pathsByScope = GroupPathsByArrayScope(resolvedPaths, resource);
 
-        foreach (var scopeGroup in pathsByScope)
+        foreach (var scopeGroup in pathsByScope.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
             var constraintPaths = scopeGroup.Value;
             var scopePath = GetArrayScope(constraintPaths[0], resource);
