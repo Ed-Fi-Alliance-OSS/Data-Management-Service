@@ -263,167 +263,311 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         IReadOnlySet<string> identityJsonPaths
     )
     {
-        JsonObject documentPathsMapping = new();
-
-        if (resourceSchema.TryGetPropertyValue("documentPathsMapping", out var documentPathsMappingNode))
-        {
-            if (documentPathsMappingNode is null)
-            {
-                documentPathsMapping = new JsonObject();
-            }
-            else if (documentPathsMappingNode is JsonObject mappingObject)
-            {
-                documentPathsMapping = mappingObject;
-            }
-            else
-            {
-                throw new InvalidOperationException(
-                    "Expected documentPathsMapping to be an object, invalid ApiSchema."
-                );
-            }
-        }
-
-        List<DocumentReferenceMapping> referenceMappings = [];
-        HashSet<string> mappedIdentityPaths = new(StringComparer.Ordinal);
-        HashSet<string> referenceObjectPaths = new(StringComparer.Ordinal);
+        var documentPathsMapping = GetDocumentPathsMappingOrEmpty(resourceSchema);
+        var state = new DocumentReferenceMappingExtractionState();
 
         foreach (var mapping in documentPathsMapping.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
-            if (mapping.Value is null)
-            {
-                throw new InvalidOperationException(
-                    "Expected documentPathsMapping entries to be non-null, invalid ApiSchema."
-                );
-            }
-
-            if (mapping.Value is not JsonObject mappingObject)
-            {
-                throw new InvalidOperationException(
-                    "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            var isReference =
-                mappingObject["isReference"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
-                    "Expected isReference to be on documentPathsMapping entry, invalid ApiSchema."
-                );
-            var isPartOfIdentity = TryGetOptionalBoolean(mappingObject, "isPartOfIdentity");
-
-            if (!isReference)
-            {
-                var path = RequireString(mappingObject, "path");
-                var pathExpression = JsonPathExpressionCompiler.Compile(path);
-                var pathIsPartOfIdentity = identityJsonPaths.Contains(pathExpression.Canonical);
-                _ = ResolveIsPartOfIdentity(
-                    mapping.Key,
-                    projectName,
-                    resourceName,
-                    isPartOfIdentity,
-                    pathIsPartOfIdentity,
-                    new[] { pathExpression.Canonical },
-                    pathExpression.Segments.Count > 1
-                );
-
-                mappedIdentityPaths.Add(pathExpression.Canonical);
-                continue;
-            }
-
-            var isDescriptor =
-                mappingObject["isDescriptor"]?.GetValue<bool>()
-                ?? throw new InvalidOperationException(
-                    "Expected isDescriptor to be on documentPathsMapping entry, invalid ApiSchema."
-                );
-
-            if (isDescriptor)
-            {
-                var path = RequireString(mappingObject, "path");
-                var pathExpression = JsonPathExpressionCompiler.Compile(path);
-                var descriptorIsPartOfIdentity = identityJsonPaths.Contains(pathExpression.Canonical);
-                _ = ResolveIsPartOfIdentity(
-                    mapping.Key,
-                    projectName,
-                    resourceName,
-                    isPartOfIdentity,
-                    descriptorIsPartOfIdentity,
-                    new[] { pathExpression.Canonical },
-                    pathExpression.Segments.Count > 1
-                );
-
-                mappedIdentityPaths.Add(pathExpression.Canonical);
-                continue;
-            }
-
-            var referenceJsonPathsNode = GetReferenceJsonPathsNode(
+            ProcessDocumentPathsMappingEntry(
                 mapping.Key,
-                mappingObject,
-                projectName,
-                resourceName
-            );
-            var referenceJsonPaths = ExtractReferenceJsonPaths(
-                mapping.Key,
-                referenceJsonPathsNode,
+                mapping.Value,
                 projectName,
                 resourceName,
-                out var referenceObjectPath
-            );
-
-            foreach (var referenceJsonPath in referenceJsonPaths)
-            {
-                mappedIdentityPaths.Add(referenceJsonPath.ReferenceJsonPath.Canonical);
-            }
-
-            var referencePaths = referenceJsonPaths
-                .Select(binding => binding.ReferenceJsonPath.Canonical)
-                .ToArray();
-            var referenceIsPartOfIdentity = referencePaths.Any(identityJsonPaths.Contains);
-            var effectiveIsPartOfIdentity = ResolveIsPartOfIdentity(
-                mapping.Key,
-                projectName,
-                resourceName,
-                isPartOfIdentity,
-                referenceIsPartOfIdentity,
-                referencePaths,
-                referenceObjectPath.Segments.Count > 1
-            );
-            ValidateReferenceIdentityCompleteness(
-                mapping.Key,
-                projectName,
-                resourceName,
-                referenceObjectPath,
-                referenceIsPartOfIdentity,
-                referenceJsonPaths,
-                identityJsonPaths
-            );
-
-            var targetProjectName = RequireString(mappingObject, "projectName");
-            var targetResourceName = RequireString(mappingObject, "resourceName");
-            var isRequired = mappingObject["isRequired"]?.GetValue<bool>() ?? false;
-
-            if (effectiveIsPartOfIdentity && !isRequired)
-            {
-                throw new InvalidOperationException(
-                    $"documentPathsMapping entry '{mapping.Key}' on resource '{projectName}:{resourceName}' is "
-                        + "marked as isPartOfIdentity but isRequired is false. "
-                        + "Identity references must be required."
-                );
-            }
-
-            referenceObjectPaths.Add(referenceObjectPath.Canonical);
-            referenceMappings.Add(
-                new DocumentReferenceMapping(
-                    mapping.Key,
-                    new QualifiedResourceName(targetProjectName, targetResourceName),
-                    isRequired,
-                    effectiveIsPartOfIdentity,
-                    referenceObjectPath,
-                    referenceJsonPaths
-                )
+                identityJsonPaths,
+                state
             );
         }
 
+        ValidateIdentityJsonPathsCovered(projectName, resourceName, identityJsonPaths, state);
+        return state.ToResult();
+    }
+
+    /// <summary>
+    /// Accumulates extracted document reference mappings and derived path sets while iterating
+    /// <c>documentPathsMapping</c> entries.
+    /// </summary>
+    private sealed class DocumentReferenceMappingExtractionState
+    {
+        public List<DocumentReferenceMapping> ReferenceMappings { get; } = [];
+
+        public HashSet<string> MappedIdentityPaths { get; } = new(StringComparer.Ordinal);
+
+        public HashSet<string> ReferenceObjectPaths { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>
+        /// Builds the final <see cref="DocumentPathsMappingResult"/> for the caller.
+        /// </summary>
+        public DocumentPathsMappingResult ToResult()
+        {
+            return new DocumentPathsMappingResult(
+                ReferenceMappings.ToArray(),
+                MappedIdentityPaths,
+                ReferenceObjectPaths
+            );
+        }
+    }
+
+    /// <summary>
+    /// Reads <c>documentPathsMapping</c> from the resource schema, returning an empty object when the
+    /// property is missing or null, and throwing when the property is not an object.
+    /// </summary>
+    private static JsonObject GetDocumentPathsMappingOrEmpty(JsonObject resourceSchema)
+    {
+        if (!resourceSchema.TryGetPropertyValue("documentPathsMapping", out var documentPathsMappingNode))
+        {
+            return new JsonObject();
+        }
+
+        return documentPathsMappingNode switch
+        {
+            null => new JsonObject(),
+            JsonObject mappingObject => mappingObject,
+            _ => throw new InvalidOperationException(
+                "Expected documentPathsMapping to be an object, invalid ApiSchema."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Validates and processes a single <c>documentPathsMapping</c> entry, updating the extraction state.
+    /// </summary>
+    private static void ProcessDocumentPathsMappingEntry(
+        string mappingKey,
+        JsonNode? mappingNode,
+        string projectName,
+        string resourceName,
+        IReadOnlySet<string> identityJsonPaths,
+        DocumentReferenceMappingExtractionState state
+    )
+    {
+        var mappingObject = RequireDocumentPathsMappingEntryObject(mappingNode);
+        var isPartOfIdentity = TryGetOptionalBoolean(mappingObject, "isPartOfIdentity");
+
+        var isReference =
+            mappingObject["isReference"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected isReference to be on documentPathsMapping entry, invalid ApiSchema."
+            );
+
+        if (!isReference)
+        {
+            ProcessDocumentPathsMappingPathEntry(
+                mappingKey,
+                mappingObject,
+                projectName,
+                resourceName,
+                identityJsonPaths,
+                isPartOfIdentity,
+                state
+            );
+            return;
+        }
+
+        var isDescriptor =
+            mappingObject["isDescriptor"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException(
+                "Expected isDescriptor to be on documentPathsMapping entry, invalid ApiSchema."
+            );
+
+        if (isDescriptor)
+        {
+            ProcessDocumentPathsMappingDescriptorEntry(
+                mappingKey,
+                mappingObject,
+                projectName,
+                resourceName,
+                identityJsonPaths,
+                isPartOfIdentity,
+                state
+            );
+            return;
+        }
+
+        ProcessDocumentPathsMappingReferenceEntry(
+            mappingKey,
+            mappingObject,
+            projectName,
+            resourceName,
+            identityJsonPaths,
+            isPartOfIdentity,
+            state
+        );
+    }
+
+    /// <summary>
+    /// Ensures the mapping value for a <c>documentPathsMapping</c> entry is a non-null object, and
+    /// throws a schema validation exception otherwise.
+    /// </summary>
+    private static JsonObject RequireDocumentPathsMappingEntryObject(JsonNode? mappingNode)
+    {
+        return mappingNode switch
+        {
+            null => throw new InvalidOperationException(
+                "Expected documentPathsMapping entries to be non-null, invalid ApiSchema."
+            ),
+            JsonObject mappingObject => mappingObject,
+            _ => throw new InvalidOperationException(
+                "Expected documentPathsMapping entries to be objects, invalid ApiSchema."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Processes a non-reference <c>documentPathsMapping</c> entry with a single <c>path</c> property.
+    /// </summary>
+    private static void ProcessDocumentPathsMappingPathEntry(
+        string mappingKey,
+        JsonObject mappingObject,
+        string projectName,
+        string resourceName,
+        IReadOnlySet<string> identityJsonPaths,
+        bool? isPartOfIdentity,
+        DocumentReferenceMappingExtractionState state
+    )
+    {
+        var path = RequireString(mappingObject, "path");
+        var pathExpression = JsonPathExpressionCompiler.Compile(path);
+        var pathIsPartOfIdentity = identityJsonPaths.Contains(pathExpression.Canonical);
+
+        _ = ResolveIsPartOfIdentity(
+            mappingKey,
+            projectName,
+            resourceName,
+            isPartOfIdentity,
+            pathIsPartOfIdentity,
+            new[] { pathExpression.Canonical },
+            pathExpression.Segments.Count > 1
+        );
+
+        state.MappedIdentityPaths.Add(pathExpression.Canonical);
+    }
+
+    /// <summary>
+    /// Processes a descriptor <c>documentPathsMapping</c> entry with a single <c>path</c> property.
+    /// </summary>
+    private static void ProcessDocumentPathsMappingDescriptorEntry(
+        string mappingKey,
+        JsonObject mappingObject,
+        string projectName,
+        string resourceName,
+        IReadOnlySet<string> identityJsonPaths,
+        bool? isPartOfIdentity,
+        DocumentReferenceMappingExtractionState state
+    )
+    {
+        var path = RequireString(mappingObject, "path");
+        var pathExpression = JsonPathExpressionCompiler.Compile(path);
+        var descriptorIsPartOfIdentity = identityJsonPaths.Contains(pathExpression.Canonical);
+
+        _ = ResolveIsPartOfIdentity(
+            mappingKey,
+            projectName,
+            resourceName,
+            isPartOfIdentity,
+            descriptorIsPartOfIdentity,
+            new[] { pathExpression.Canonical },
+            pathExpression.Segments.Count > 1
+        );
+
+        state.MappedIdentityPaths.Add(pathExpression.Canonical);
+    }
+
+    /// <summary>
+    /// Processes a reference <c>documentPathsMapping</c> entry, extracting JSONPath bindings, validating
+    /// identity component completeness, and adding the resulting <see cref="DocumentReferenceMapping"/> to
+    /// the extraction state.
+    /// </summary>
+    private static void ProcessDocumentPathsMappingReferenceEntry(
+        string mappingKey,
+        JsonObject mappingObject,
+        string projectName,
+        string resourceName,
+        IReadOnlySet<string> identityJsonPaths,
+        bool? isPartOfIdentity,
+        DocumentReferenceMappingExtractionState state
+    )
+    {
+        var referenceJsonPathsNode = GetReferenceJsonPathsNode(
+            mappingKey,
+            mappingObject,
+            projectName,
+            resourceName
+        );
+        var referenceJsonPaths = ExtractReferenceJsonPaths(
+            mappingKey,
+            referenceJsonPathsNode,
+            projectName,
+            resourceName,
+            out var referenceObjectPath
+        );
+
+        foreach (var referenceJsonPath in referenceJsonPaths)
+        {
+            state.MappedIdentityPaths.Add(referenceJsonPath.ReferenceJsonPath.Canonical);
+        }
+
+        var referencePaths = referenceJsonPaths
+            .Select(binding => binding.ReferenceJsonPath.Canonical)
+            .ToArray();
+        var referenceIsPartOfIdentity = referencePaths.Any(identityJsonPaths.Contains);
+        var effectiveIsPartOfIdentity = ResolveIsPartOfIdentity(
+            mappingKey,
+            projectName,
+            resourceName,
+            isPartOfIdentity,
+            referenceIsPartOfIdentity,
+            referencePaths,
+            referenceObjectPath.Segments.Count > 1
+        );
+        ValidateReferenceIdentityCompleteness(
+            mappingKey,
+            projectName,
+            resourceName,
+            referenceObjectPath,
+            referenceIsPartOfIdentity,
+            referenceJsonPaths,
+            identityJsonPaths
+        );
+
+        var targetProjectName = RequireString(mappingObject, "projectName");
+        var targetResourceName = RequireString(mappingObject, "resourceName");
+        var isRequired = mappingObject["isRequired"]?.GetValue<bool>() ?? false;
+
+        if (effectiveIsPartOfIdentity && !isRequired)
+        {
+            throw new InvalidOperationException(
+                $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
+                    + "marked as isPartOfIdentity but isRequired is false. "
+                    + "Identity references must be required."
+            );
+        }
+
+        state.ReferenceObjectPaths.Add(referenceObjectPath.Canonical);
+        state.ReferenceMappings.Add(
+            new DocumentReferenceMapping(
+                mappingKey,
+                new QualifiedResourceName(targetProjectName, targetResourceName),
+                isRequired,
+                effectiveIsPartOfIdentity,
+                referenceObjectPath,
+                referenceJsonPaths
+            )
+        );
+    }
+
+    /// <summary>
+    /// Validates that every identity JSONPath defined by <c>identityJsonPaths</c> is represented by at least
+    /// one <c>documentPathsMapping</c> entry.
+    /// </summary>
+    private static void ValidateIdentityJsonPathsCovered(
+        string projectName,
+        string resourceName,
+        IReadOnlySet<string> identityJsonPaths,
+        DocumentReferenceMappingExtractionState state
+    )
+    {
         var missingIdentityPaths = identityJsonPaths
-            .Where(path => !mappedIdentityPaths.Contains(path))
+            .Where(path => !state.MappedIdentityPaths.Contains(path))
             .OrderBy(path => path, StringComparer.Ordinal)
             .ToArray();
 
@@ -434,12 +578,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                     + $"documentPathsMapping: {string.Join(", ", missingIdentityPaths)}."
             );
         }
-
-        return new DocumentPathsMappingResult(
-            referenceMappings.ToArray(),
-            mappedIdentityPaths,
-            referenceObjectPaths
-        );
     }
 
     /// <summary>
