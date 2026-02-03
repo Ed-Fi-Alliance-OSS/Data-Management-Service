@@ -292,5 +292,46 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
     ],
     "completed": false
+  },
+  {
+    "category": "Determinism",
+    "description": "Make array uniqueness constraint derivation independent of dictionary enumeration order. `ConstraintDerivationRelationalModelSetPass.ApplyArrayUniquenessConstraint` iterates `pathsByScope` (a Dictionary) directly, which can vary by runtime and violates the design rule that derivation must not depend on dictionary iteration order. Acceptance: (1) Scope groups are processed in `StringComparer.Ordinal` sorted order by canonical scope string; (2) When multiple scopes exist, derived constraints and thrown diagnostics are stable across runs; (3) No behavioral change to which tables/columns receive constraints; (4) All unit tests (including determinism/golden tests) pass.",
+    "steps-to-verify": [
+      "Update `ApplyArrayUniquenessConstraint` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` to iterate `pathsByScope` in sorted order (e.g., `OrderBy(kvp => kvp.Key, StringComparer.Ordinal)`).",
+      "If any exception messages include multiple scopes, ensure the scope list is emitted in sorted order for deterministic diagnostics.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Correctness",
+    "description": "Remove nondeterministic `group.First()` selection when mapping identityJsonPaths to columns. `ConstraintDerivationRelationalModelSetPass.BuildRootIdentityColumns` and `BuildIdentityValueColumns` build a `SourceJsonPath -> ColumnName` map using `GroupBy(...).ToDictionary(... group => group.First().ColumnName)`, which becomes order-dependent if duplicates ever occur. Acceptance: (1) SourceJsonPath-to-column resolution is deterministic (e.g., select `OrderBy(ColumnName).First()`) and/or fails fast when a single JSONPath maps to multiple columns; (2) If failing fast, the error message includes resource, table, canonical path, and colliding column names; (3) Add a targeted unit test that constructs a table with duplicate `SourceJsonPath` values and asserts the deterministic selection or fail-fast behavior; (4) All unit tests pass.",
+    "steps-to-verify": [
+      "Introduce a shared helper (prefer `internal` so it can be unit tested) for building a deterministic `SourceJsonPath -> DbColumnName` lookup from a `DbTableModel`.",
+      "Update `BuildRootIdentityColumns` and `BuildIdentityValueColumns` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationRelationalModelSetPass.cs` to use the helper instead of `group.First()`.",
+      "Add a unit test that creates a `DbTableModel` with two columns sharing the same `SourceJsonPath` and asserts the new deterministic behavior (or fail-fast message).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "Share/cached per-resource `ExtractInputsStep` output across set-level passes and avoid repeated descriptor inference. Multiple set-level passes build their own `RelationalModelBuilderContext` caches and `RelationalModelSetSchemaHelpers.BuildResourceContext` runs `ExtractInputsStep` with default `DescriptorPathSource.InferFromSchema`, which can redo descriptor inference even though `RelationalModelSetBuilderContext` already computed descriptor path maps. Acceptance: (1) `RelationalModelSetBuilderContext` provides a shared `GetOrCreateResourceBuilderContext` cache keyed by `QualifiedResourceName`; (2) All passes use the shared cache (no per-pass duplicate `ExtractInputsStep` work); (3) Cached builder contexts used by passes are configured with `DescriptorPathSource.Precomputed` and `DescriptorPathsByJsonPath` populated from the set-level descriptor path map; (4) No behavior change; (5) All unit tests pass and `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` succeeds.",
+    "steps-to-verify": [
+      "Add a `Dictionary<QualifiedResourceName, RelationalModelBuilderContext>` cache and `GetOrCreateResourceBuilderContext(...)` method to `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelSetBuilderContext.cs`.",
+      "Ensure `GetOrCreateResourceBuilderContext(...)` sets `DescriptorPathSource=Precomputed` and provides `DescriptorPathsByJsonPath` from `RelationalModelSetBuilderContext.GetAllDescriptorPathsForResource(...)` before executing `ExtractInputsStep`.",
+      "Refactor set-level passes that currently build local `builderContextsByResource` (e.g., `ReferenceBindingRelationalModelSetPass`, `ConstraintDerivationRelationalModelSetPass`, and any `BuildResourceContext` call sites) to use the shared cache.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Design",
+    "description": "Reconcile default set-level pass ordering with the DMS-1033 design doc. `RelationalModelSetPasses.CreateDefault()` currently runs abstract identity table derivation before reference binding/constraint derivation, but `reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md` suggests references/constraints before abstract artifacts. Acceptance: Update the design doc pass-order section to match the implemented dependency (with rationale)",
+    "steps-to-verify": [
+      "Update `./reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md` to match the chosen pass order (and explain the dependency if abstract identity must precede reference constraints)."
+    ],
+    "completed": false
   }
 ]
