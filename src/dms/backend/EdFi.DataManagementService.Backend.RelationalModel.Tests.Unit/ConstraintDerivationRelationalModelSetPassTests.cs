@@ -222,6 +222,56 @@ public class Given_Incomplete_Abstract_Reference_Identity_Mapping
 }
 
 [TestFixture]
+public class Given_Duplicate_SourceJsonPath_Columns
+{
+    private IReadOnlyDictionary<string, DbColumnName> _lookup = default!;
+    private string _sourcePath = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var tableName = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var sourcePath = JsonPathExpressionCompiler.Compile("$.studentUniqueId");
+        _sourcePath = sourcePath.Canonical;
+        var columns = new[]
+        {
+            new DbColumnModel(
+                new DbColumnName("StudentUniqueId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, 32),
+                false,
+                sourcePath,
+                null
+            ),
+            new DbColumnModel(
+                new DbColumnName("StudentUniqueId2"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, 32),
+                false,
+                sourcePath,
+                null
+            ),
+        };
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey(Array.Empty<DbKeyColumn>()),
+            columns,
+            Array.Empty<TableConstraint>()
+        );
+
+        _lookup = ConstraintDerivationHelpers.BuildColumnNameLookupBySourceJsonPath(table);
+    }
+
+    [Test]
+    public void It_should_select_the_lexicographically_first_column_name()
+    {
+        _lookup[_sourcePath].Value.Should().Be("StudentUniqueId");
+    }
+}
+
+[TestFixture]
 public class Given_Duplicate_Reference_Path_Bindings
 {
     private DbTableModel _enrollmentTable = default!;

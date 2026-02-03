@@ -76,6 +76,28 @@ internal static class ConstraintDerivationHelpers
         return lookup;
     }
 
+    internal static IReadOnlyDictionary<string, DbColumnName> BuildColumnNameLookupBySourceJsonPath(
+        DbTableModel table
+    )
+    {
+        Dictionary<string, DbColumnName> lookup = new(StringComparer.Ordinal);
+
+        foreach (
+            var group in table
+                .Columns.Where(column => column.SourceJsonPath is not null)
+                .GroupBy(column => column.SourceJsonPath!.Value.Canonical, StringComparer.Ordinal)
+        )
+        {
+            var column = group
+                .OrderBy(candidate => candidate.ColumnName.Value, StringComparer.Ordinal)
+                .First();
+
+            lookup[group.Key] = column.ColumnName;
+        }
+
+        return lookup;
+    }
+
     internal static void AddUniqueColumn(
         DbColumnName columnName,
         ICollection<DbColumnName> columns,
