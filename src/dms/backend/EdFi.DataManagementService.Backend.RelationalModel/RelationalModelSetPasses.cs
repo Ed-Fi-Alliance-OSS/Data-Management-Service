@@ -22,7 +22,9 @@ public static class RelationalModelSetPasses
             new ExtensionTableDerivationRelationalModelSetPass(),
             new AbstractIdentityTableDerivationRelationalModelSetPass(),
             new ReferenceBindingRelationalModelSetPass(),
-            new ConstraintDerivationRelationalModelSetPass(),
+            new RootIdentityConstraintRelationalModelSetPass(),
+            new ReferenceConstraintRelationalModelSetPass(),
+            new ArrayUniquenessConstraintRelationalModelSetPass(),
         ];
 
         return passes;

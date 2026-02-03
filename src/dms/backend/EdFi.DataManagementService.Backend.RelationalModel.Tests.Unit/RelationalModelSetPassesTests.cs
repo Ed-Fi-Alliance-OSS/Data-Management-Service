@@ -32,7 +32,9 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(ExtensionTableDerivationRelationalModelSetPass),
                 typeof(AbstractIdentityTableDerivationRelationalModelSetPass),
                 typeof(ReferenceBindingRelationalModelSetPass),
-                typeof(ConstraintDerivationRelationalModelSetPass)
+                typeof(RootIdentityConstraintRelationalModelSetPass),
+                typeof(ReferenceConstraintRelationalModelSetPass),
+                typeof(ArrayUniquenessConstraintRelationalModelSetPass)
             );
     }
 

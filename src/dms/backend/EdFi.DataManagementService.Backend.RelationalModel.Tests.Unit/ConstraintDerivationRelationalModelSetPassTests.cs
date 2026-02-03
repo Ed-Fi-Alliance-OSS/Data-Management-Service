@@ -30,7 +30,9 @@ public class Given_Root_Unique_Constraint_Derivation
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ExtensionTableDerivationRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -76,7 +78,9 @@ public class Given_Descriptor_Unique_Constraint_Derivation
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -134,7 +138,9 @@ public class Given_Unmappable_Identity_Paths
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -162,7 +168,9 @@ public class Given_Incomplete_Reference_Identity_Mapping
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -196,7 +204,9 @@ public class Given_Incomplete_Abstract_Reference_Identity_Mapping
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new AbstractIdentityTableDerivationRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -231,7 +241,9 @@ public class Given_Duplicate_Reference_Path_Bindings
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -280,7 +292,9 @@ public class Given_Reference_Constraint_Derivation
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -366,7 +380,9 @@ public class Given_Abstract_Reference_Constraint_Derivation
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new AbstractIdentityTableDerivationRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -413,7 +429,9 @@ public class Given_Array_Uniqueness_Constraint_Derivation
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -479,7 +497,9 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -540,7 +560,9 @@ public class Given_Unmappable_Array_Uniqueness_Path
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -578,7 +600,9 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
@@ -636,7 +660,9 @@ public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
             {
                 new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
                 new ReferenceBindingRelationalModelSetPass(),
-                new ConstraintDerivationRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
             }
         );
 
