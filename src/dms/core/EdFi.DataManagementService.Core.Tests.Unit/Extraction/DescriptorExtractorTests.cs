@@ -23,9 +23,11 @@ public class DescriptorExtractorTests
         return new ApiSchemaBuilder()
             .WithStartProject()
             .WithStartResource("SlimCourse")
-            .WithIdentityJsonPaths(
-                ["$.courseTitle", "$.careerPathwayDescriptor", "$.gradingPeriodDescriptor"]
-            )
+            .WithIdentityJsonPaths([
+                "$.courseTitle",
+                "$.careerPathwayDescriptor",
+                "$.gradingPeriodDescriptor",
+            ])
             .WithStartDocumentPathsMapping()
             .WithDocumentPathScalar("CourseTitle", "$.courseTitle")
             .WithDocumentPathDescriptor("CareerPathwayDescriptor", "$.careerPathwayDescriptor")

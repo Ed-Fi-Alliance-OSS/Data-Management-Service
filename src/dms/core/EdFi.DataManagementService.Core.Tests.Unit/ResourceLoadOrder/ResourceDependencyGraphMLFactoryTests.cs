@@ -78,19 +78,17 @@ public class ResourceDependencyGraphMLFactoryTests
 
         nodeIds
             .Should()
-            .Contain(
-                [
-                    "/ed-fi/students",
-                    "/ed-fi/students#Retry",
-                    "/ed-fi/staffs",
-                    "/ed-fi/staffs#Retry",
-                    "/ed-fi/parents",
-                    "/ed-fi/parents#Retry",
-                    "/ed-fi/contacts",
-                    "/ed-fi/contacts#Retry",
-                    "/ed-fi/schools",
-                ]
-            );
+            .Contain([
+                "/ed-fi/students",
+                "/ed-fi/students#Retry",
+                "/ed-fi/staffs",
+                "/ed-fi/staffs#Retry",
+                "/ed-fi/parents",
+                "/ed-fi/parents#Retry",
+                "/ed-fi/contacts",
+                "/ed-fi/contacts#Retry",
+                "/ed-fi/schools",
+            ]);
 
         // Only person types have retry nodes
         nodeIds.Count(id => id.EndsWith("#Retry", StringComparison.Ordinal)).Should().Be(4);

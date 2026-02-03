@@ -78,9 +78,11 @@ public class PipelineProviderTests
         [SetUp]
         public async Task Setup()
         {
-            var pipeline = new PipelineProvider(
-                [new PipelineStep(1), new PipelineStep(2), new PipelineStep(3)]
-            );
+            var pipeline = new PipelineProvider([
+                new PipelineStep(1),
+                new PipelineStep(2),
+                new PipelineStep(3),
+            ]);
             await pipeline.Run(requestInfo);
         }
 
@@ -120,9 +122,11 @@ public class PipelineProviderTests
         [SetUp]
         public async Task Setup()
         {
-            var pipeline = new PipelineProvider(
-                [new NextingPipelineStep(1), new NonNextingPipelineStep(2), new NextingPipelineStep(3)]
-            );
+            var pipeline = new PipelineProvider([
+                new NextingPipelineStep(1),
+                new NonNextingPipelineStep(2),
+                new NextingPipelineStep(3),
+            ]);
             await pipeline.Run(requestInfo);
         }
 

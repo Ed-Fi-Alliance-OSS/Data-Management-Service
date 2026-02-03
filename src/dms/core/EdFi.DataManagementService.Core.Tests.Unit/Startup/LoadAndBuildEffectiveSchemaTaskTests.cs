@@ -59,7 +59,9 @@ public class LoadAndBuildEffectiveSchemaTaskTests
 
             _mockNormalizer = A.Fake<IApiSchemaInputNormalizer>();
             A.CallTo(() => _mockNormalizer.Normalize(A<ApiSchemaDocumentNodes>._))
-                .ReturnsLazily((ApiSchemaDocumentNodes nodes) => nodes);
+                .ReturnsLazily(
+                    (ApiSchemaDocumentNodes nodes) => new ApiSchemaNormalizationResult.SuccessResult(nodes)
+                );
 
             _mockHashProvider = A.Fake<IEffectiveSchemaHashProvider>();
             A.CallTo(() => _mockHashProvider.ComputeHash(A<ApiSchemaDocumentNodes>._)).Returns(string.Empty);

@@ -73,6 +73,8 @@ public static class LoggingSanitizer
     }
 
     // Explicitly reject control characters for defense in depth
+    // Includes backslash for Windows file paths
     private static bool IsAllowedChar(char c) =>
-        !char.IsControl(c) && (char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/');
+        !char.IsControl(c)
+        && (char.IsLetterOrDigit(c) || c is ' ' or '_' or '-' or '.' or ':' or '/' or '\\');
 }

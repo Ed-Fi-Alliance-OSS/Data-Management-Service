@@ -34,21 +34,19 @@ public class ResourceActionAuthorizationMiddlewareTests
         var expectedAuthStrategy = "NoFurtherAuthorizationRequired";
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
-            .Returns(
-                [
-                    new ClaimSet(
-                        Name: "SIS-Vendor",
-                        ResourceClaims:
-                        [
-                            new ResourceClaim(
-                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
-                                "Create",
-                                [new AuthorizationStrategy(expectedAuthStrategy)]
-                            ),
-                        ]
-                    ),
-                ]
-            );
+            .Returns([
+                new ClaimSet(
+                    Name: "SIS-Vendor",
+                    ResourceClaims:
+                    [
+                        new ResourceClaim(
+                            $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                            "Create",
+                            [new AuthorizationStrategy(expectedAuthStrategy)]
+                        ),
+                    ]
+                ),
+            ]);
         return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
@@ -67,21 +65,19 @@ public class ResourceActionAuthorizationMiddlewareTests
     {
         var claimSetProvider = A.Fake<IClaimSetProvider>();
         A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
-            .Returns(
-                [
-                    new ClaimSet(
-                        Name: "SIS-Vendor",
-                        ResourceClaims:
-                        [
-                            new ResourceClaim(
-                                $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
-                                "Create",
-                                []
-                            ),
-                        ]
-                    ),
-                ]
-            );
+            .Returns([
+                new ClaimSet(
+                    Name: "SIS-Vendor",
+                    ResourceClaims:
+                    [
+                        new ResourceClaim(
+                            $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school",
+                            "Create",
+                            []
+                        ),
+                    ]
+                ),
+            ]);
         return new ResourceActionAuthorizationMiddleware(claimSetProvider, NullLogger.Instance);
     }
 
@@ -337,9 +333,9 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             var claimSetProvider = A.Fake<IClaimSetProvider>();
             A.CallTo(() => claimSetProvider.GetAllClaimSets(A<string?>.Ignored))
-                .Returns(
-                    [new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])])]
-                );
+                .Returns([
+                    new ClaimSet(Name: "SIS-Vendor", ResourceClaims: [new ResourceClaim("schools", "", [])]),
+                ]);
             var authMiddleware = new ResourceActionAuthorizationMiddleware(
                 claimSetProvider,
                 NullLogger.Instance

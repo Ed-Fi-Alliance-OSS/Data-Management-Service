@@ -18,6 +18,6 @@ public interface IApiSchemaInputNormalizer
     /// Normalizes the provided API schema nodes to a canonical form.
     /// </summary>
     /// <param name="nodes">The raw API schema nodes to normalize.</param>
-    /// <returns>The normalized API schema nodes.</returns>
-    ApiSchemaDocumentNodes Normalize(ApiSchemaDocumentNodes nodes);
+    /// <returns>A result indicating success with normalized nodes, or failure with details.</returns>
+    ApiSchemaNormalizationResult Normalize(ApiSchemaDocumentNodes nodes);
 }
