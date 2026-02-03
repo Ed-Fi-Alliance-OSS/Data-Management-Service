@@ -140,5 +140,36 @@
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/"
     ],
     "completed": false
+  },
+  {
+    "category": "Determinism",
+    "description": "Canonicalize ordering after set-level reference binding/constraint passes. Today, `CanonicalizeOrderingStep` canonicalizes tables + edges within the per-resource pipeline, but `ReferenceBindingRelationalModelSetPass` appends `DocumentReferenceBindings`/`DescriptorEdgeSources` without applying the same ordering rules. This creates hidden coupling to `documentPathsMapping` key order and can cause drift between pipelines/passes. Acceptance: (1) Introduce a set-level canonicalization pass that, for every concrete resource model, applies the same canonical ordering rules as `CanonicalizeOrderingStep` for: `TablesInReadDependencyOrder`, `DocumentReferenceBindings`, and `DescriptorEdgeSources`; (2) Ensure all tables are canonicalized via `RelationalModelOrdering.CanonicalizeTable` regardless of whether later passes touched the table; (3) Add/extend a unit test fixture where `documentPathsMapping` entries are intentionally out-of-order relative to `ReferenceObjectPath` and assert the resulting `DocumentReferenceBindings` and `DescriptorEdgeSources` are in canonical order; (4) Existing determinism and authoritative golden tests still pass.",
+    "steps-to-verify": [
+      "Add `CanonicalizeOrderingRelationalModelSetPass` (or equivalent) that reorders `TablesInReadDependencyOrder`, `DocumentReferenceBindings`, and `DescriptorEdgeSources` for each concrete resource after reference binding/constraint derivation.",
+      "Add/extend unit test(s) asserting `DocumentReferenceBindings` ordering matches the rules in `CanonicalizeOrderingStep` (by `ReferenceObjectPath`, then table/schema/name, FK column, target resource, identity flag).",
+      "Add/extend unit test(s) asserting `DescriptorEdgeSources` ordering matches the rules in `CanonicalizeOrderingStep` (by table/schema/name, descriptor path, FK column, descriptor resource, identity flag).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Document two implicit contracts currently enforced by DMS-930 implementation: (1) identity-component document references must be required (`isRequired=true`) when they participate in `identityJsonPaths`; (2) when `arrayUniquenessConstraints` paths point to reference identity fields, the derived unique constraint uses the reference `..._DocumentId` column (stable key) rather than the propagated identity columns. Acceptance: (1) Update `reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md` to explicitly state both rules and their rationale; (2) Add a short note pointing to the enforcement points in code (`ExtractInputsStep` requiredness check and `ArrayUniquenessConstraintRelationalModelSetPass` reference-path resolution); (3) Ensure doc wording matches the implementation behavior (no ambiguity about which column is used).",
+    "steps-to-verify": [
+      "Update `reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md` to include explicit bullets for: identity references must be required; array uniqueness reference identity paths map to the reference FK column.",
+      "Verify the doc references the concrete enforcement points: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ArrayUniquenessConstraintRelationalModelSetPass.cs`.",
+      "Confirm the doc still aligns with `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` semantics."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "Reduce duplicate schema-input extraction work across passes. `ExtractInputsStep` runs during base traversal per-resource pipelines, and then runs again when later set-level passes call `RelationalModelSetBuilderContext.GetOrCreateResourceBuilderContext`. This duplicates JSON parsing/path compilation for the same resource. Acceptance: (1) Refactor set-level derivation so `ExtractInputsStep` executes at most once per concrete resource per `DerivedRelationalModelSetBuilder.Build` run (excluding resource-extension schemas if they require separate inputs); (2) Add a unit test using a counting/wrapping `ExtractInputsStep` (or an injectable extractor) to assert call counts are exactly 1 per resource; (3) All existing unit tests pass and derived manifests are unchanged.",
+    "steps-to-verify": [
+      "Introduce a shared per-resource extracted-input cache in `RelationalModelSetBuilderContext` and populate it during base traversal so later passes reuse it instead of re-running `ExtractInputsStep`.",
+      "Add unit test that builds a small effective schema set with N resources and asserts the extractor is invoked exactly N times per build (not 2N).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
