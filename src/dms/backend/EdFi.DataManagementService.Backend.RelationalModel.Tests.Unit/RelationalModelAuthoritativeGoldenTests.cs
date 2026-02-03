@@ -32,12 +32,16 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
         var inputPath = Path.Combine(fixtureRoot, "inputs", "ds-5.2-api-schema-authoritative.json");
-        var expectedPath = Path.Combine(fixtureRoot, "expected", "dms-929-relational-model.manifest.json");
+        var expectedPath = Path.Combine(
+            fixtureRoot,
+            "expected",
+            "authoritative-relational-model.manifest.json"
+        );
         var actualPath = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
             "authoritative",
             "ds-5.2",
-            "dms-929-relational-model.manifest.json"
+            "authoritative-relational-model.manifest.json"
         );
 
         File.Exists(inputPath).Should().BeTrue($"fixture missing at {inputPath}");

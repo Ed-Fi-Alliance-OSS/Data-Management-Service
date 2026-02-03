@@ -52,13 +52,13 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             fixtureRoot,
             "sample",
             "expected",
-            "dms-1033-derived-relational-model-set.json"
+            "authoritative-derived-relational-model-set.json"
         );
         var actualPath = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
             "authoritative",
             "sample",
-            "dms-1033-derived-relational-model-set.json"
+            "authoritative-derived-relational-model-set.json"
         );
 
         File.Exists(coreInputPath).Should().BeTrue($"fixture missing at {coreInputPath}");
