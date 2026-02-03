@@ -51,6 +51,13 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName,
         IReadOnlyDictionary<string, DescriptorPathInfo>
     > _allDescriptorPathsByResource = new();
+    private readonly Dictionary<string, JsonObject> _apiSchemaRootsByProjectEndpoint = new(
+        StringComparer.Ordinal
+    );
+    private readonly Dictionary<
+        QualifiedResourceName,
+        RelationalModelBuilderContext
+    > _builderContextsByResource = new();
     private readonly IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> _resourceKeysByResource;
     private readonly Dictionary<
         QualifiedResourceName,
@@ -238,6 +245,48 @@ public sealed class RelationalModelSetBuilderContext
 
         _allDescriptorPathsByResource[resource] = combined;
         return combined;
+    }
+
+    /// <summary>
+    /// Builds or retrieves a cached builder context for the supplied resource.
+    /// </summary>
+    /// <param name="resourceContext">The resource schema context.</param>
+    /// <returns>The initialized builder context.</returns>
+    public RelationalModelBuilderContext GetOrCreateResourceBuilderContext(
+        ConcreteResourceSchemaContext resourceContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(resourceContext);
+
+        var projectSchema = resourceContext.Project.ProjectSchema;
+        var resource = new QualifiedResourceName(projectSchema.ProjectName, resourceContext.ResourceName);
+
+        if (_builderContextsByResource.TryGetValue(resource, out var cached))
+        {
+            return cached;
+        }
+
+        var apiSchemaRoot = GetApiSchemaRoot(
+            _apiSchemaRootsByProjectEndpoint,
+            projectSchema.ProjectEndpointName,
+            resourceContext.Project.EffectiveProject.ProjectSchema,
+            cloneProjectSchema: true
+        );
+        var descriptorPaths = GetAllDescriptorPathsForResource(resource);
+
+        var builderContext = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = resourceContext.ResourceEndpointName,
+            DescriptorPathSource = DescriptorPathSource.Precomputed,
+            DescriptorPathsByJsonPath = descriptorPaths,
+        };
+
+        new ExtractInputsStep().Execute(builderContext);
+
+        _builderContextsByResource[resource] = builderContext;
+
+        return builderContext;
     }
 
     /// <summary>

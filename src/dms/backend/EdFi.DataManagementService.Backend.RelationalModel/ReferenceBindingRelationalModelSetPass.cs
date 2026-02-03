@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
-using System.Text.Json.Nodes;
 using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -35,21 +34,13 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                 (resource, index) => new { resource.ResourceKey.Resource, Index = index }
             )
             .ToDictionary(entry => entry.Resource, entry => entry.Index);
-        Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
-        Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = new();
-
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
             var resource = new QualifiedResourceName(
                 resourceContext.Project.ProjectSchema.ProjectName,
                 resourceContext.ResourceName
             );
-            var builderContext = GetOrCreateBuilderContext(
-                resourceContext,
-                apiSchemaRootsByProjectEndpoint,
-                builderContextsByResource,
-                cloneProjectSchema: true
-            );
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
             if (builderContext.DocumentReferenceMappings.Count == 0)
             {

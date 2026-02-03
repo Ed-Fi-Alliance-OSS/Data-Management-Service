@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using static EdFi.DataManagementService.Backend.RelationalModel.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
@@ -29,17 +28,14 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
             table.AbstractResourceKey.Resource
         );
         var resourceContextsByResource = BuildResourceContextLookup(context);
-        Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
-        Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = new();
         Dictionary<QualifiedResourceName, TargetIdentityInfo> targetIdentityCache = new();
         Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
 
         var passContext = new ReferenceConstraintContext(
+            context,
             resourcesByKey,
             abstractIdentityTablesByResource,
             resourceContextsByResource,
-            apiSchemaRootsByProjectEndpoint,
-            builderContextsByResource,
             targetIdentityCache,
             mutations
         );
@@ -50,12 +46,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
                 resourceContext.Project.ProjectSchema.ProjectName,
                 resourceContext.ResourceName
             );
-            var builderContext = GetOrCreateBuilderContext(
-                resourceContext,
-                apiSchemaRootsByProjectEndpoint,
-                builderContextsByResource,
-                cloneProjectSchema: true
-            );
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
             if (builderContext.DocumentReferenceMappings.Count == 0)
             {
@@ -426,12 +417,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
             );
         }
 
-        var builderContext = GetOrCreateBuilderContext(
-            resourceContext,
-            context.ApiSchemaRootsByProjectEndpoint,
-            context.BuilderContextsByResource,
-            cloneProjectSchema: true
-        );
+        var builderContext = context.SetContext.GetOrCreateResourceBuilderContext(resourceContext);
         var identityColumns = BuildIdentityValueColumns(
             entry.Model.RelationalModel,
             builderContext,
@@ -589,14 +575,13 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
     }
 
     private sealed record ReferenceConstraintContext(
+        RelationalModelSetBuilderContext SetContext,
         IReadOnlyDictionary<QualifiedResourceName, ResourceEntry> ResourcesByKey,
         IReadOnlyDictionary<
             QualifiedResourceName,
             AbstractIdentityTableInfo
         > AbstractIdentityTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> ResourceContextsByResource,
-        IDictionary<string, JsonObject> ApiSchemaRootsByProjectEndpoint,
-        IDictionary<QualifiedResourceName, RelationalModelBuilderContext> BuilderContextsByResource,
         IDictionary<QualifiedResourceName, TargetIdentityInfo> TargetIdentityCache,
         IDictionary<QualifiedResourceName, ResourceMutation> Mutations
     );

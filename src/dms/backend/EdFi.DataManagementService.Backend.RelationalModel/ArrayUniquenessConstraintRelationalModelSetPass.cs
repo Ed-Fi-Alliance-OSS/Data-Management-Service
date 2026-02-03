@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using static EdFi.DataManagementService.Backend.RelationalModel.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
@@ -25,8 +24,6 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
             context.ConcreteResourcesInNameOrder,
             static (index, model) => new ResourceEntry(index, model)
         );
-        Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
-        Dictionary<QualifiedResourceName, RelationalModelBuilderContext> builderContextsByResource = new();
         Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
@@ -35,12 +32,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
                 resourceContext.Project.ProjectSchema.ProjectName,
                 resourceContext.ResourceName
             );
-            var builderContext = GetOrCreateBuilderContext(
-                resourceContext,
-                apiSchemaRootsByProjectEndpoint,
-                builderContextsByResource,
-                cloneProjectSchema: true
-            );
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
             if (builderContext.ArrayUniquenessConstraints.Count == 0)
             {

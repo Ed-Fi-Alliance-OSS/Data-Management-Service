@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text.Json.Nodes;
 using static EdFi.DataManagementService.Backend.RelationalModel.ConstraintDerivationHelpers;
 using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
@@ -27,8 +26,6 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
             .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
             .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
 
-        Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
-
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
             if (IsResourceExtension(resourceContext))
@@ -48,11 +45,7 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
                 );
             }
 
-            var builderContext = BuildResourceContext(
-                resourceContext,
-                apiSchemaRootsByProjectEndpoint,
-                cloneProjectSchema: true
-            );
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
             var updatedModel = ApplyRootConstraints(builderContext, entry.Model.RelationalModel, resource);
 
             if (ReferenceEquals(updatedModel, entry.Model.RelationalModel))
