@@ -19,7 +19,7 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// - Sorting extensions by projectEndpointName (ordinal) for determinism
 /// - Validating inputs and failing fast with actionable errors
 /// </summary>
-internal class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger) : IApiSchemaInputNormalizer
+public class ApiSchemaInputNormalizer(ILogger<ApiSchemaInputNormalizer> _logger) : IApiSchemaInputNormalizer
 {
     /// <inheritdoc />
     public ApiSchemaNormalizationResult Normalize(ApiSchemaDocumentNodes nodes)
