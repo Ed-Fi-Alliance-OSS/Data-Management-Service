@@ -117,6 +117,6 @@
     "steps-to-verify": [
       "Update `./reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md` to match the chosen pass order (and explain the dependency if abstract identity must precede reference constraints)."
     ],
-    "completed": false
+    "completed": true
   }
 ]

@@ -26,3 +26,7 @@
   Decisions: Iterate pathsByScope ordered by canonical scope StringComparer.Ordinal to remove dictionary order nondeterminism; no behavior change besides deterministic traversal.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ArrayUniquenessConstraintRelationalModelSetPass.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
+- Task: Pass order doc reconciliation (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Updated DMS-1033 pass ordering list to match current RelationalModelSetPasses order; noted abstract identity tables must precede reference constraints for abstract FK targets.
+  Files: reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md; tasks.json; progress.txt
+  Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests feature warning.

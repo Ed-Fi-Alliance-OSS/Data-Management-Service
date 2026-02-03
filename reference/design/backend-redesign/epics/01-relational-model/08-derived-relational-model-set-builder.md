@@ -37,17 +37,20 @@ Clarification: the per-resource derivation pipeline in this epic builds a model 
 
 Implementation note (ordered passes): implement this story as an ordered set-level pipeline of **passes**, where each pass performs a single iterative scan over the full effective schema set (projects/resources) and is allowed to consult other resources/projects as needed. Cross-resource derivation logic should live with the pass/story that needs it (e.g., reference/descriptor inference in DMS-930, abstract hierarchy discovery in DMS-933), rather than being forced into a single shared registry for performance. Determinism is still required: every pass must iterate projects/resources in canonical ordinal order and must not depend on dictionary iteration order.
 
-### Proposed pass ordering (initial)
+### Proposed pass ordering (current)
 
 This list is intentionally “high level”; exact pass boundaries can be adjusted as the implementations land:
 
-1. **Base traversal pass** (DMS-929): derive root/collection tables + scalar columns and discover `_ext` sites.
+1. **Base traversal + descriptor binding pass** (DMS-929): derive root/collection tables + scalar columns and bind descriptor edges while discovering `_ext` sites.
 2. **Extension pass** (DMS-932): derive extension tables for discovered `_ext` sites (including project-key resolution).
-3. **Reference/descriptor/constraint pass** (DMS-930): bind document references + descriptor edges and derive unique/FK/CHECK constraints, consulting the full effective schema set as needed.
-4. **Abstract artifact pass** (DMS-933): derive abstract identity tables and optional union views by scanning all resources in the hierarchy.
-5. **Descriptor storage-kind pass** (DMS-942): detect/validate descriptor resources and apply the `SharedDescriptorTable` storage kind rules.
-6. **Naming/override pass** (DMS-931): apply naming rules, overrides, dialect shortening, and whole-set collision detection.
-7. **Index/trigger inventory pass** (DMS-945): derive index/trigger intent inventories and any dialect-conditional cascade-fallback requirements.
+3. **Abstract artifact pass** (DMS-933): derive abstract identity tables (and optional union views) by scanning all resources in the hierarchy. This must run before reference constraint derivation so FK targets for abstract references can resolve to identity tables.
+4. **Reference binding pass** (DMS-930): bind document references into tables by adding FK/identity columns and emitting `DocumentReferenceBinding` metadata.
+5. **Root identity constraint pass** (DMS-930): derive unique constraints for root identity columns.
+6. **Reference constraint pass** (DMS-930): derive FK and all-or-none constraints using the bound reference metadata and abstract identity tables.
+7. **Array uniqueness constraint pass** (DMS-930): derive array uniqueness constraints after all table/constraint prerequisites exist.
+8. **Descriptor storage-kind pass** (DMS-942): detect/validate descriptor resources and apply the `SharedDescriptorTable` storage kind rules.
+9. **Naming/override pass** (DMS-931): apply naming rules, overrides, dialect shortening, and whole-set collision detection.
+10. **Index/trigger inventory pass** (DMS-945): derive index/trigger intent inventories and any dialect-conditional cascade-fallback requirements.
 
 `DMS-934` (manifest emission) should serialize the final `DerivedRelationalModelSet` inventories and should not re-derive anything independently.
 
