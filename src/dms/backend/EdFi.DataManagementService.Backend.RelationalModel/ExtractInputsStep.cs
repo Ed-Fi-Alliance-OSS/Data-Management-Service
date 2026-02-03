@@ -88,6 +88,12 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             projectName,
             resourceName
         );
+        ValidateArrayUniquenessReferenceIdentityCompleteness(
+            arrayUniquenessConstraints,
+            documentPathsMapping.ReferenceMappings,
+            projectName,
+            resourceName
+        );
         var referenceNameOverrides = ExtractReferenceNameOverrides(
             resourceSchema,
             documentPathsMapping.ReferenceObjectPaths,
@@ -380,6 +386,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 mapping.Key,
                 projectName,
                 resourceName,
+                referenceObjectPath,
                 referenceIsPartOfIdentity,
                 referenceJsonPaths,
                 identityJsonPaths
@@ -885,6 +892,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         string mappingKey,
         string projectName,
         string resourceName,
+        JsonPathExpression referenceObjectPath,
         bool derivedIsPartOfIdentity,
         IReadOnlyList<ReferenceJsonPathBinding> referenceJsonPaths,
         IReadOnlySet<string> identityJsonPaths
@@ -910,9 +918,282 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 
         throw new InvalidOperationException(
             $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                + "marked isPartOfIdentity but identityJsonPaths is missing reference path(s): "
+                + $"marked isPartOfIdentity for reference '{referenceObjectPath.Canonical}' but "
+                + "identityJsonPaths is missing reference path(s): "
                 + string.Join(", ", missing)
         );
+    }
+
+    private static void ValidateArrayUniquenessReferenceIdentityCompleteness(
+        IReadOnlyList<ArrayUniquenessConstraintInput> constraints,
+        IReadOnlyList<DocumentReferenceMapping> referenceMappings,
+        string projectName,
+        string resourceName
+    )
+    {
+        if (constraints.Count == 0 || referenceMappings.Count == 0)
+        {
+            return;
+        }
+
+        var referenceGroups = referenceMappings
+            .Select(mapping => new ReferenceIdentityGroup(
+                mapping.ReferenceObjectPath,
+                mapping
+                    .ReferenceJsonPaths.Select(binding => binding.ReferenceJsonPath.Canonical)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(path => path, StringComparer.Ordinal)
+                    .ToArray()
+            ))
+            .ToArray();
+        var resourceKey = $"{projectName}:{resourceName}";
+
+        foreach (var constraint in constraints)
+        {
+            ValidateArrayUniquenessReferenceIdentityCompleteness(constraint, referenceGroups, resourceKey);
+        }
+    }
+
+    private static void ValidateArrayUniquenessReferenceIdentityCompleteness(
+        ArrayUniquenessConstraintInput constraint,
+        IReadOnlyList<ReferenceIdentityGroup> referenceGroups,
+        string resourceKey
+    )
+    {
+        var resolvedPaths = constraint
+            .Paths.Select(path => ResolveConstraintPath(constraint.BasePath, path))
+            .ToArray();
+        var pathsByScope = GroupPathsByArrayScope(resolvedPaths, resourceKey);
+        var basePath = constraint.BasePath?.Canonical;
+
+        foreach (var scopeGroup in pathsByScope.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+        {
+            var scope = scopeGroup.Key;
+            var scopePaths = scopeGroup.Value;
+            var scopePath = GetArrayScope(scopePaths[0], resourceKey);
+            var matched = ValidateArrayUniquenessReferenceIdentityCoverage(
+                scopePaths,
+                referenceGroups,
+                resourceKey,
+                scope,
+                basePath,
+                alignedScope: null,
+                alignedBasePath: null
+            );
+
+            if (!matched)
+            {
+                if (
+                    TryStripExtensionRootPrefix(scopePath, out var alignedScope)
+                    && TryStripExtensionRootPrefix(scopePaths, out var alignedPaths)
+                )
+                {
+                    var alignedBasePath = TryStripExtensionRootPrefix(
+                        constraint.BasePath,
+                        out var alignedBase
+                    )
+                        ? alignedBase.Canonical
+                        : null;
+
+                    _ = ValidateArrayUniquenessReferenceIdentityCoverage(
+                        alignedPaths,
+                        referenceGroups,
+                        resourceKey,
+                        scope,
+                        basePath,
+                        alignedScope.Canonical,
+                        alignedBasePath
+                    );
+                }
+            }
+        }
+
+        foreach (var nested in constraint.NestedConstraints)
+        {
+            ValidateArrayUniquenessReferenceIdentityCompleteness(nested, referenceGroups, resourceKey);
+        }
+    }
+
+    private static bool ValidateArrayUniquenessReferenceIdentityCoverage(
+        IReadOnlyList<JsonPathExpression> constraintPaths,
+        IReadOnlyList<ReferenceIdentityGroup> referenceGroups,
+        string resourceKey,
+        string scope,
+        string? basePath,
+        string? alignedScope,
+        string? alignedBasePath
+    )
+    {
+        HashSet<string> constraintPathSet = new(
+            constraintPaths.Select(path => path.Canonical),
+            StringComparer.Ordinal
+        );
+        var matchedAny = false;
+
+        foreach (var referenceGroup in referenceGroups)
+        {
+            if (!referenceGroup.ReferenceIdentityPaths.Any(constraintPathSet.Contains))
+            {
+                continue;
+            }
+
+            matchedAny = true;
+            var missing = referenceGroup
+                .ReferenceIdentityPaths.Where(path => !constraintPathSet.Contains(path))
+                .OrderBy(path => path, StringComparer.Ordinal)
+                .ToArray();
+
+            if (missing.Length == 0)
+            {
+                continue;
+            }
+
+            var basePathMessage = basePath is null ? string.Empty : $" basePath '{basePath}'";
+            var alignedMessage =
+                alignedScope is null ? string.Empty
+                : alignedBasePath is null ? $" alignedScope '{alignedScope}'"
+                : $" alignedScope '{alignedScope}' basePath '{alignedBasePath}'";
+
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints scope '{scope}' on resource '{resourceKey}'"
+                    + basePathMessage
+                    + alignedMessage
+                    + $" includes reference identity path(s) under '{referenceGroup.ReferenceObjectPath.Canonical}' "
+                    + "but is missing reference identity path(s): "
+                    + string.Join(", ", missing)
+            );
+        }
+
+        return matchedAny;
+    }
+
+    private static IReadOnlyDictionary<string, IReadOnlyList<JsonPathExpression>> GroupPathsByArrayScope(
+        IReadOnlyList<JsonPathExpression> paths,
+        string resourceKey
+    )
+    {
+        if (paths.Count == 0)
+        {
+            throw new InvalidOperationException("arrayUniquenessConstraints must include at least one path.");
+        }
+
+        Dictionary<string, List<JsonPathExpression>> grouped = new(StringComparer.Ordinal);
+
+        foreach (var path in paths)
+        {
+            var arrayScope = GetArrayScope(path, resourceKey);
+            var scope = arrayScope.Canonical;
+
+            if (!grouped.TryGetValue(scope, out var scopePaths))
+            {
+                scopePaths = [];
+                grouped.Add(scope, scopePaths);
+            }
+
+            scopePaths.Add(path);
+        }
+
+        return grouped.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<JsonPathExpression>)entry.Value,
+            StringComparer.Ordinal
+        );
+    }
+
+    private static JsonPathExpression GetArrayScope(JsonPathExpression path, string resourceKey)
+    {
+        var lastArrayIndex = -1;
+
+        for (var index = 0; index < path.Segments.Count; index++)
+        {
+            if (path.Segments[index] is JsonPathSegment.AnyArrayElement)
+            {
+                lastArrayIndex = index;
+            }
+        }
+
+        if (lastArrayIndex < 0)
+        {
+            throw new InvalidOperationException(
+                $"arrayUniquenessConstraints path '{path.Canonical}' on resource '{resourceKey}' "
+                    + "must include an array wildcard segment."
+            );
+        }
+
+        var scopeSegments = path.Segments.Take(lastArrayIndex + 1).ToArray();
+        return JsonPathExpressionCompiler.FromSegments(scopeSegments);
+    }
+
+    private static JsonPathExpression ResolveConstraintPath(
+        JsonPathExpression? basePath,
+        JsonPathExpression path
+    )
+    {
+        return basePath is null ? path : ResolveRelativePath(basePath.Value, path);
+    }
+
+    private static JsonPathExpression ResolveRelativePath(
+        JsonPathExpression basePath,
+        JsonPathExpression relativePath
+    )
+    {
+        if (relativePath.Segments.Count == 0)
+        {
+            return basePath;
+        }
+
+        var combinedSegments = basePath.Segments.Concat(relativePath.Segments).ToArray();
+        return JsonPathExpressionCompiler.FromSegments(combinedSegments);
+    }
+
+    private static bool TryStripExtensionRootPrefix(JsonPathExpression? path, out JsonPathExpression stripped)
+    {
+        if (path is null)
+        {
+            stripped = default;
+            return false;
+        }
+
+        return TryStripExtensionRootPrefix(path.Value, out stripped);
+    }
+
+    private static bool TryStripExtensionRootPrefix(JsonPathExpression path, out JsonPathExpression stripped)
+    {
+        if (
+            path.Segments.Count >= 2
+            && path.Segments[0] is JsonPathSegment.Property { Name: "_ext" }
+            && path.Segments[1] is JsonPathSegment.Property
+        )
+        {
+            var remainingSegments = path.Segments.Skip(2).ToArray();
+            stripped = JsonPathExpressionCompiler.FromSegments(remainingSegments);
+            return true;
+        }
+
+        stripped = default;
+        return false;
+    }
+
+    private static bool TryStripExtensionRootPrefix(
+        IReadOnlyList<JsonPathExpression> paths,
+        out IReadOnlyList<JsonPathExpression> stripped
+    )
+    {
+        List<JsonPathExpression> strippedPaths = new(paths.Count);
+
+        foreach (var path in paths)
+        {
+            if (!TryStripExtensionRootPrefix(path, out var strippedPath))
+            {
+                stripped = Array.Empty<JsonPathExpression>();
+                return false;
+            }
+
+            strippedPaths.Add(strippedPath);
+        }
+
+        stripped = strippedPaths.ToArray();
+        return true;
     }
 
     /// <summary>
@@ -1038,4 +1319,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 new HashSet<string>(StringComparer.Ordinal)
             );
     }
+
+    private sealed record ReferenceIdentityGroup(
+        JsonPathExpression ReferenceObjectPath,
+        IReadOnlyList<string> ReferenceIdentityPaths
+    );
 }

@@ -50,3 +50,7 @@
   Decisions: Documented required identity references and array uniqueness reference identity path binding to DocumentId; noted enforcement points and rationale.
   Files: reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md; tasks.json; progress.txt
   Notes: Docs-only change; no build/test run.
+- Task: Validate reference identity completeness in array uniqueness constraints (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Added ExtractInputsStep validation to require full reference identity path coverage per array uniqueness scope (including extension-aligned paths) and include reference object path in identity mapping errors; added tests for partial array uniqueness paths and nested constraint cases.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs; tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.

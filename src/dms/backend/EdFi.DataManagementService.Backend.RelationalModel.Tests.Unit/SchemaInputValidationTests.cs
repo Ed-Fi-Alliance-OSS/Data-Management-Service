@@ -192,6 +192,7 @@ public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_Identity
         _exception.Should().BeOfType<InvalidOperationException>();
         _exception!.Message.Should().Contain("isPartOfIdentity");
         _exception.Message.Should().Contain("missing reference path");
+        _exception.Message.Should().Contain("$.schoolReference");
     }
 }
 
@@ -579,6 +580,130 @@ public class Given_Nested_ArrayUniquenessConstraint_Without_BasePath
         _exception.Should().BeOfType<InvalidOperationException>();
         _exception!.Message.Should().Contain("nestedConstraints");
         _exception.Message.Should().Contain("basePath");
+    }
+}
+
+[TestFixture]
+public class Given_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Paths
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schools[*].schoolReference.schoolId",
+                    },
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolYear",
+                        ["referenceJsonPath"] = "$.schools[*].schoolReference.schoolYear",
+                    },
+                },
+            },
+        };
+
+        var arrayUniquenessConstraints = new JsonArray
+        {
+            new JsonObject { ["paths"] = new JsonArray { "$.schools[*].schoolReference.schoolId" } },
+        };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject(),
+            arrayUniquenessConstraints: arrayUniquenessConstraints
+        );
+    }
+
+    [Test]
+    public void It_should_fail_with_missing_reference_identity_paths()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("arrayUniquenessConstraints scope");
+        _exception.Message.Should().Contain("$.schools[*].schoolReference");
+        _exception.Message.Should().Contain("$.schools[*].schoolReference.schoolYear");
+    }
+}
+
+[TestFixture]
+public class Given_Nested_ArrayUniquenessConstraint_With_Partial_Reference_Identity_Paths
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schools[*].assignments[*].schoolReference.schoolId",
+                    },
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolYear",
+                        ["referenceJsonPath"] = "$.schools[*].assignments[*].schoolReference.schoolYear",
+                    },
+                },
+            },
+        };
+
+        var arrayUniquenessConstraints = new JsonArray
+        {
+            new JsonObject
+            {
+                ["paths"] = new JsonArray { "$.schools[*].id" },
+                ["nestedConstraints"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["basePath"] = "$.schools[*].assignments[*]",
+                        ["paths"] = new JsonArray { "$.schoolReference.schoolId" },
+                    },
+                },
+            },
+        };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject(),
+            arrayUniquenessConstraints: arrayUniquenessConstraints
+        );
+    }
+
+    [Test]
+    public void It_should_fail_with_missing_nested_reference_identity_paths()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("arrayUniquenessConstraints scope");
+        _exception.Message.Should().Contain("basePath '$.schools[*].assignments[*]'");
+        _exception.Message.Should().Contain("$.schools[*].assignments[*].schoolReference");
+        _exception.Message.Should().Contain("$.schools[*].assignments[*].schoolReference.schoolYear");
     }
 }
 

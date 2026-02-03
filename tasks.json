@@ -181,7 +181,7 @@
       "Add failing unit tests demonstrating: (a) identityJsonPaths includes only one identity field under a reference object; (b) arrayUniquenessConstraints includes only one identity field under a reference object; (c) nestedConstraints partial mapping.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Maintainability",
