@@ -30,3 +30,7 @@
   Decisions: Updated DMS-1033 pass ordering list to match current RelationalModelSetPasses order; noted abstract identity tables must precede reference constraints for abstract FK targets.
   Files: reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md; tasks.json; progress.txt
   Notes: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests feature warning.
+- Task: Mixed-kind SourceJsonPath collision guard (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: BuildColumnNameLookupBySourceJsonPath now throws when a source path maps to columns with different ColumnKind; same-kind duplicates still resolve deterministically by column name.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintDerivationHelpers.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RootIdentityConstraintRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceConstraintRelationalModelSetPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs; tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.

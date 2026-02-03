@@ -501,7 +501,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         }
 
         var rootTable = resourceModel.Root;
-        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable);
+        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable, resource);
 
         List<DbColumnName> identityColumns = new(builderContext.IdentityJsonPaths.Count);
 

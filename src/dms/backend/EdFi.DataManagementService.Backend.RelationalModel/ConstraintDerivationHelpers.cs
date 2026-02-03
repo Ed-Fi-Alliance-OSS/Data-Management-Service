@@ -77,7 +77,8 @@ internal static class ConstraintDerivationHelpers
     }
 
     internal static IReadOnlyDictionary<string, DbColumnName> BuildColumnNameLookupBySourceJsonPath(
-        DbTableModel table
+        DbTableModel table,
+        QualifiedResourceName resource
     )
     {
         Dictionary<string, DbColumnName> lookup = new(StringComparer.Ordinal);
@@ -88,11 +89,24 @@ internal static class ConstraintDerivationHelpers
                 .GroupBy(column => column.SourceJsonPath!.Value.Canonical, StringComparer.Ordinal)
         )
         {
-            var column = group
+            var ordered = group
                 .OrderBy(candidate => candidate.ColumnName.Value, StringComparer.Ordinal)
-                .First();
+                .ToArray();
 
-            lookup[group.Key] = column.ColumnName;
+            if (ordered.Select(column => column.Kind).Distinct().Skip(1).Any())
+            {
+                var columnDetails = string.Join(
+                    ", ",
+                    ordered.Select(column => $"{column.ColumnName.Value} ({column.Kind})")
+                );
+
+                throw new InvalidOperationException(
+                    $"Table '{table.Table}' on resource '{FormatResource(resource)}' has multiple column "
+                        + $"kinds for source path '{group.Key}': {columnDetails}."
+                );
+            }
+
+            lookup[group.Key] = ordered[0].ColumnName;
         }
 
         return lookup;

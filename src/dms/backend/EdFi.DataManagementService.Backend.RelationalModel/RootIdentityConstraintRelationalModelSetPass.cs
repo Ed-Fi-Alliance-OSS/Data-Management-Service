@@ -163,7 +163,7 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
         }
 
         var rootTable = resourceModel.Root;
-        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable);
+        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable, resource);
         var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
             resourceModel.DocumentReferenceBindings,
             resource

@@ -234,6 +234,7 @@ public class Given_Duplicate_SourceJsonPath_Columns
         var jsonScope = JsonPathExpressionCompiler.Compile("$");
         var sourcePath = JsonPathExpressionCompiler.Compile("$.studentUniqueId");
         _sourcePath = sourcePath.Canonical;
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
         var columns = new[]
         {
             new DbColumnModel(
@@ -261,13 +262,65 @@ public class Given_Duplicate_SourceJsonPath_Columns
             Array.Empty<TableConstraint>()
         );
 
-        _lookup = ConstraintDerivationHelpers.BuildColumnNameLookupBySourceJsonPath(table);
+        _lookup = ConstraintDerivationHelpers.BuildColumnNameLookupBySourceJsonPath(table, resource);
     }
 
     [Test]
     public void It_should_select_the_lexicographically_first_column_name()
     {
         _lookup[_sourcePath].Value.Should().Be("StudentUniqueId");
+    }
+}
+
+[TestFixture]
+public class Given_Duplicate_SourceJsonPath_Columns_With_Mixed_Kinds
+{
+    private Action _action = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var tableName = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var sourcePath = JsonPathExpressionCompiler.Compile("$.studentUniqueId");
+        var resource = new QualifiedResourceName("Ed-Fi", "Student");
+        var columns = new[]
+        {
+            new DbColumnModel(
+                new DbColumnName("StudentUniqueId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, 32),
+                false,
+                sourcePath,
+                null
+            ),
+            new DbColumnModel(
+                new DbColumnName("Student_DocumentId"),
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                false,
+                sourcePath,
+                resource
+            ),
+        };
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey(Array.Empty<DbKeyColumn>()),
+            columns,
+            Array.Empty<TableConstraint>()
+        );
+
+        _action = () => ConstraintDerivationHelpers.BuildColumnNameLookupBySourceJsonPath(table, resource);
+    }
+
+    [Test]
+    public void It_should_throw_with_diagnostic_details()
+    {
+        _action
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*edfi.Student*Ed-Fi:Student*$.studentUniqueId*StudentUniqueId*Student_DocumentId*");
     }
 }
 

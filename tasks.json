@@ -128,7 +128,7 @@
       "Add unit test: two Scalar columns sharing the same SourceJsonPath -> assert deterministic selection by ordinal name.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Correctness",
