@@ -331,6 +331,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
             );
         }
 
+        // Cross-resource side effect: ensure target root has a unique constraint when another resource references it.
         var mutation = GetOrCreateMutation(targetInfo.Resource, entry, mutations);
         var tableAccumulator = mutation.GetTableAccumulator(
             entry.Model.RelationalModel.Root,

@@ -464,6 +464,105 @@ public class Given_Reference_Constraint_Derivation
 }
 
 [TestFixture]
+public class Given_Target_Unique_Mutation_From_Reference
+{
+    private RelationalResourceModel _schoolModel = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildTargetUniqueMutationProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model => model.ResourceKey.Resource.ResourceName == "School")
+            .RelationalModel;
+    }
+
+    [Test]
+    public void It_should_add_target_unique_constraint_even_when_target_has_no_references()
+    {
+        _schoolModel.DocumentReferenceBindings.Should().BeEmpty();
+
+        var uniqueConstraint = _schoolModel
+            .Root.Constraints.OfType<TableConstraint.Unique>()
+            .Single(constraint => constraint.Name == "UX_School_DocumentId_EducationOrganizationId_SchoolId");
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+    }
+}
+
+[TestFixture]
+public class Given_Multiple_References_To_Same_Target
+{
+    private DbTableModel _schoolTable = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildMultipleTargetUniqueMutationProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+                new RootIdentityConstraintRelationalModelSetPass(),
+                new ReferenceConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _schoolTable = result
+            .ConcreteResourcesInNameOrder.Single(model => model.ResourceKey.Resource.ResourceName == "School")
+            .RelationalModel.Root;
+    }
+
+    [Test]
+    public void It_should_add_the_target_unique_constraint_only_once()
+    {
+        var constraints = _schoolTable
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Where(constraint => constraint.Name == "UX_School_DocumentId_EducationOrganizationId_SchoolId");
+
+        constraints.Should().ContainSingle();
+
+        constraints
+            .Single()
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId", "EducationOrganizationId", "SchoolId");
+    }
+}
+
+[TestFixture]
 public class Given_Abstract_Reference_Constraint_Derivation
 {
     private DbTableModel _enrollmentTable = default!;
@@ -961,6 +1060,37 @@ internal static class ConstraintDerivationTestSchemaBuilder
         };
     }
 
+    internal static JsonObject BuildTargetUniqueMutationProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["assignments"] = BuildSingleSchoolReferenceSchema("Assignment"),
+                ["schools"] = BuildReferenceConstraintSchoolSchema(),
+            },
+        };
+    }
+
+    internal static JsonObject BuildMultipleTargetUniqueMutationProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["assignments"] = BuildSingleSchoolReferenceSchema("Assignment"),
+                ["transfers"] = BuildSingleSchoolReferenceSchema("Transfer"),
+                ["schools"] = BuildReferenceConstraintSchoolSchema(),
+            },
+        };
+    }
+
     internal static JsonObject BuildDuplicateReferencePathProjectSchema()
     {
         return new JsonObject
@@ -1414,6 +1544,62 @@ internal static class ConstraintDerivationTestSchemaBuilder
                         {
                             ["identityJsonPath"] = "$.studentUniqueId",
                             ["referenceJsonPath"] = "$.studentReference.studentUniqueId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildSingleSchoolReferenceSchema(string resourceName)
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.schoolReference.educationOrganizationId",
+                        },
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
                         },
                     },
                 },

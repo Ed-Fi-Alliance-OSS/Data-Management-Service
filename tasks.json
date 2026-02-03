@@ -139,7 +139,7 @@
       "Add inline doc comment on EnsureTargetUnique explaining the cross-resource side-effect contract.",
       "Run: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Determinism",
