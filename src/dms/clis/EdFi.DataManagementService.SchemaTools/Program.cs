@@ -15,6 +15,7 @@ var serviceProvider = serviceCollection.BuildServiceProvider();
 
 var logger = serviceProvider.GetRequiredService<ILogger<Program>>();
 var fileLoader = serviceProvider.GetRequiredService<IApiSchemaFileLoader>();
+var hashProvider = serviceProvider.GetRequiredService<IEffectiveSchemaHashProvider>();
 
 try
 {
@@ -79,7 +80,12 @@ int HandleSuccess(ApiSchemaFileLoadResult.SuccessResult success)
         );
     }
 
+    // Compute and display the effective schema hash
+    var effectiveSchemaHash = hashProvider.ComputeHash(nodes);
+    logger.LogInformation("Effective schema hash: {Hash}", effectiveSchemaHash);
+
     Console.WriteLine("Schema normalization successful.");
+    Console.WriteLine($"Effective schema hash: {effectiveSchemaHash}");
     return 0;
 }
 
@@ -184,4 +190,5 @@ void ConfigureServices(IServiceCollection services)
     services.AddSingleton(typeof(ILogger<>), typeof(Logger<>));
     services.AddSingleton<IApiSchemaInputNormalizer, ApiSchemaInputNormalizer>();
     services.AddSingleton<IApiSchemaFileLoader, ApiSchemaFileLoader>();
+    services.AddSingleton<IEffectiveSchemaHashProvider, EffectiveSchemaHashProvider>();
 }
