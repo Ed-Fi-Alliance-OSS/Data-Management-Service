@@ -2741,29 +2741,6 @@
       ],
       "document_reference_bindings": [
         {
-          "is_identity_component": true,
-          "reference_object_path": "$.assessmentReference",
-          "table": {
-            "schema": "edfi",
-            "name": "AssessmentAdministration"
-          },
-          "fk_column": "Assessment_DocumentId",
-          "target_resource": {
-            "project_name": "Ed-Fi",
-            "resource_name": "Assessment"
-          },
-          "identity_bindings": [
-            {
-              "reference_json_path": "$.assessmentReference.assessmentIdentifier",
-              "column": "Assessment_AssessmentIdentifier"
-            },
-            {
-              "reference_json_path": "$.assessmentReference.namespace",
-              "column": "Assessment_Namespace"
-            }
-          ]
-        },
-        {
           "is_identity_component": false,
           "reference_object_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
           "table": {
@@ -2787,6 +2764,29 @@
             {
               "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
               "column": "AssessmentBatteryPart_AssessmentReferenceNamespace"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.assessmentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministration"
+          },
+          "fk_column": "Assessment_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Assessment"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assessmentReference.assessmentIdentifier",
+              "column": "Assessment_AssessmentIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentReference.namespace",
+              "column": "Assessment_Namespace"
             }
           ]
         },
@@ -3538,6 +3538,71 @@
           ]
         },
         {
+          "schema": "sample",
+          "name": "StudentSchoolAssociationExtension",
+          "scope": "$._ext.sample",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "MembershipTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$._ext.sample.membershipTypeDescriptor"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_MembershipTypeDescriptor_DescriptorId",
+              "columns": [
+                "MembershipTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
           "schema": "edfi",
           "name": "StudentSchoolAssociationAlternativeGraduationPlan",
           "scope": "$.alternativeGraduationPlans[*]",
@@ -3756,71 +3821,6 @@
                 "DocumentId"
               ],
               "on_delete": "Cascade",
-              "on_update": "NoAction"
-            }
-          ]
-        },
-        {
-          "schema": "sample",
-          "name": "StudentSchoolAssociationExtension",
-          "scope": "$._ext.sample",
-          "key_columns": [
-            {
-              "name": "DocumentId",
-              "kind": "ParentKeyPart"
-            }
-          ],
-          "columns": [
-            {
-              "name": "DocumentId",
-              "kind": "ParentKeyPart",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": false,
-              "source_path": null
-            },
-            {
-              "name": "MembershipTypeDescriptor_DescriptorId",
-              "kind": "DescriptorFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$._ext.sample.membershipTypeDescriptor"
-            }
-          ],
-          "constraints": [
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationExtension_DocumentId",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "edfi",
-                "name": "StudentSchoolAssociation"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationExtension_MembershipTypeDescriptor_DescriptorId",
-              "columns": [
-                "MembershipTypeDescriptor_DescriptorId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Descriptor"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "NoAction",
               "on_update": "NoAction"
             }
           ]
@@ -4072,6 +4072,19 @@
         },
         {
           "is_identity_component": false,
+          "descriptor_value_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlanTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
           "descriptor_value_path": "$.nextYearGradeLevelDescriptor",
           "table": {
             "schema": "edfi",
@@ -4111,6 +4124,19 @@
         },
         {
           "is_identity_component": false,
+          "descriptor_value_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+          },
+          "fk_column": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlanTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
           "descriptor_value_path": "$.educationPlans[*].educationPlanDescriptor",
           "table": {
             "schema": "edfi",
@@ -4133,32 +4159,6 @@
           "descriptor_resource": {
             "project_name": "Sample",
             "resource_name": "MembershipTypeDescriptor"
-          }
-        },
-        {
-          "is_identity_component": false,
-          "descriptor_value_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
-          "table": {
-            "schema": "edfi",
-            "name": "StudentSchoolAssociationAlternativeGraduationPlan"
-          },
-          "fk_column": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-          "descriptor_resource": {
-            "project_name": "Ed-Fi",
-            "resource_name": "GraduationPlanTypeDescriptor"
-          }
-        },
-        {
-          "is_identity_component": false,
-          "descriptor_value_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
-          "table": {
-            "schema": "edfi",
-            "name": "StudentSchoolAssociation"
-          },
-          "fk_column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-          "descriptor_resource": {
-            "project_name": "Ed-Fi",
-            "resource_name": "GraduationPlanTypeDescriptor"
           }
         }
       ],

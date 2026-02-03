@@ -25,6 +25,7 @@ public static class RelationalModelSetPasses
             new RootIdentityConstraintRelationalModelSetPass(),
             new ReferenceConstraintRelationalModelSetPass(),
             new ArrayUniquenessConstraintRelationalModelSetPass(),
+            new CanonicalizeOrderingRelationalModelSetPass(),
         ];
 
         return passes;

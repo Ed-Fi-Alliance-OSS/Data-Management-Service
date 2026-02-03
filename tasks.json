@@ -150,7 +150,7 @@
       "Add/extend unit test(s) asserting `DescriptorEdgeSources` ordering matches the rules in `CanonicalizeOrderingStep` (by table/schema/name, descriptor path, FK column, descriptor resource, identity flag).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs",

@@ -34,7 +34,8 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(ReferenceBindingRelationalModelSetPass),
                 typeof(RootIdentityConstraintRelationalModelSetPass),
                 typeof(ReferenceConstraintRelationalModelSetPass),
-                typeof(ArrayUniquenessConstraintRelationalModelSetPass)
+                typeof(ArrayUniquenessConstraintRelationalModelSetPass),
+                typeof(CanonicalizeOrderingRelationalModelSetPass)
             );
     }
 
