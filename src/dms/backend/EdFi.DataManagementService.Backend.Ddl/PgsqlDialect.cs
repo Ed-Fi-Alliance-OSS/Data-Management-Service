@@ -182,6 +182,8 @@ public sealed class PgsqlDialect : ISqlDialect
         var targetColumnList = string.Join(", ", targetColumns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
+        var escapedSchema = table.Schema.Value.Replace("'", "''");
+        var escapedTable = table.Name.Replace("'", "''");
 
         // Use DO block to check if constraint exists before adding
         return $"""
@@ -190,7 +192,7 @@ public sealed class PgsqlDialect : ISqlDialect
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = '{table.Schema.Value}.{table.Name}'::regclass
+                    AND conrelid = '{escapedSchema}.{escapedTable}'::regclass
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -225,6 +227,8 @@ public sealed class PgsqlDialect : ISqlDialect
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
+        var escapedSchema = table.Schema.Value.Replace("'", "''");
+        var escapedTable = table.Name.Replace("'", "''");
 
         return $"""
             DO $$
@@ -232,7 +236,7 @@ public sealed class PgsqlDialect : ISqlDialect
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = '{table.Schema.Value}.{table.Name}'::regclass
+                    AND conrelid = '{escapedSchema}.{escapedTable}'::regclass
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -250,6 +254,8 @@ public sealed class PgsqlDialect : ISqlDialect
 
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
+        var escapedSchema = table.Schema.Value.Replace("'", "''");
+        var escapedTable = table.Name.Replace("'", "''");
 
         return $"""
             DO $$
@@ -257,7 +263,7 @@ public sealed class PgsqlDialect : ISqlDialect
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = '{table.Schema.Value}.{table.Name}'::regclass
+                    AND conrelid = '{escapedSchema}.{escapedTable}'::regclass
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
