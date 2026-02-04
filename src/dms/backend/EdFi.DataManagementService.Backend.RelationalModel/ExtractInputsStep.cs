@@ -65,6 +65,11 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             ?? throw new InvalidOperationException(
                 "Expected isDescriptor to be on ResourceSchema, invalid ApiSchema."
             );
+        var isResourceExtension = TryGetOptionalBoolean(
+            resourceSchema,
+            "isResourceExtension",
+            defaultValue: false
+        );
         var jsonSchemaForInsert =
             resourceSchema["jsonSchemaForInsert"]
             ?? throw new InvalidOperationException(
@@ -94,8 +99,15 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             projectName,
             resourceName
         );
+        var relationalObject = GetRelationalObject(resourceSchema, projectName, resourceName, isDescriptor);
+        var rootTableNameOverride = ExtractRootTableNameOverride(
+            relationalObject,
+            isResourceExtension,
+            projectName,
+            resourceName
+        );
         var nameOverrides = ExtractNameOverrides(
-            resourceSchema,
+            relationalObject,
             documentPathsMapping.ReferenceObjectPaths,
             projectName,
             resourceName
@@ -112,6 +124,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         context.ProjectEndpointName = projectEndpointName;
         context.ProjectVersion = projectVersion;
         context.ResourceName = resourceName;
+        context.RootTableNameOverride = rootTableNameOverride;
         context.IsDescriptorResource = isDescriptor;
         context.JsonSchemaForInsert = jsonSchemaForInsert;
         context.IdentityJsonPaths = identityJsonPaths;
@@ -710,35 +723,131 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     );
 
     /// <summary>
-    /// Extracts reference base-name overrides from <c>resourceSchema.relational.nameOverrides</c>.
+    /// Resolves the <c>relational</c> block for a resource, validating descriptor restrictions.
     /// </summary>
-    private static NameOverridesExtractionResult ExtractNameOverrides(
+    private static JsonObject? GetRelationalObject(
         JsonObject resourceSchema,
-        IReadOnlySet<string> referenceObjectPaths,
         string projectName,
-        string resourceName
+        string resourceName,
+        bool isDescriptor
     )
     {
         if (!resourceSchema.TryGetPropertyValue("relational", out var relationalNode))
         {
-            return new NameOverridesExtractionResult(
-                new Dictionary<string, string>(StringComparer.Ordinal),
-                new Dictionary<string, string>(StringComparer.Ordinal)
+            return null;
+        }
+
+        if (isDescriptor)
+        {
+            throw new InvalidOperationException(
+                $"Descriptor resource '{projectName}:{resourceName}' must not define relational overrides."
             );
         }
 
         if (relationalNode is null)
         {
-            return new NameOverridesExtractionResult(
-                new Dictionary<string, string>(StringComparer.Ordinal),
-                new Dictionary<string, string>(StringComparer.Ordinal)
-            );
+            return null;
         }
 
         if (relationalNode is not JsonObject relationalObject)
         {
             throw new InvalidOperationException(
                 $"Expected relational to be an object for resource '{projectName}:{resourceName}'."
+            );
+        }
+
+        return relationalObject;
+    }
+
+    /// <summary>
+    /// Extracts and normalizes <c>rootTableNameOverride</c> from the relational block.
+    /// </summary>
+    private static string? ExtractRootTableNameOverride(
+        JsonObject? relationalObject,
+        bool isResourceExtension,
+        string projectName,
+        string resourceName
+    )
+    {
+        if (relationalObject is null)
+        {
+            return null;
+        }
+
+        if (!relationalObject.TryGetPropertyValue("rootTableNameOverride", out var overrideNode))
+        {
+            return null;
+        }
+
+        if (overrideNode is null)
+        {
+            throw new InvalidOperationException(
+                $"relational.rootTableNameOverride must be non-empty on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        if (overrideNode is not JsonValue overrideValue)
+        {
+            throw new InvalidOperationException(
+                $"relational.rootTableNameOverride must be a string on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        var overrideText = overrideValue.GetValue<string>();
+
+        if (string.IsNullOrWhiteSpace(overrideText))
+        {
+            throw new InvalidOperationException(
+                $"relational.rootTableNameOverride must be non-empty on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        var normalized = RelationalNameConventions.ToPascalCase(overrideText);
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException(
+                $"relational.rootTableNameOverride must normalize to a non-empty name on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        if (isResourceExtension)
+        {
+            var expectedExtensionName = $"{RelationalNameConventions.ToPascalCase(resourceName)}Extension";
+
+            if (!string.Equals(normalized, expectedExtensionName, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"relational.rootTableNameOverride is not supported for resource extension "
+                        + $"'{projectName}:{resourceName}'."
+                );
+            }
+
+            return null;
+        }
+
+        return normalized;
+    }
+
+    /// <summary>
+    /// Extracts reference base-name overrides from <c>resourceSchema.relational.nameOverrides</c>.
+    /// </summary>
+    private static NameOverridesExtractionResult ExtractNameOverrides(
+        JsonObject? relationalObject,
+        IReadOnlySet<string> referenceObjectPaths,
+        string projectName,
+        string resourceName
+    )
+    {
+        if (relationalObject is null)
+        {
+            return new NameOverridesExtractionResult(
+                new Dictionary<string, string>(StringComparer.Ordinal),
+                new Dictionary<string, string>(StringComparer.Ordinal)
             );
         }
 
@@ -1377,6 +1486,25 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             null => throw new InvalidOperationException(
                 $"Expected {propertyName} to be present, invalid ApiSchema."
             ),
+            _ => throw new InvalidOperationException(
+                $"Expected {propertyName} to be a boolean, invalid ApiSchema."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Reads a named optional boolean property with a default when absent.
+    /// </summary>
+    private static bool TryGetOptionalBoolean(JsonObject node, string propertyName, bool defaultValue)
+    {
+        if (!node.TryGetPropertyValue(propertyName, out var value) || value is null)
+        {
+            return defaultValue;
+        }
+
+        return value switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
             _ => throw new InvalidOperationException(
                 $"Expected {propertyName} to be a boolean, invalid ApiSchema."
             ),

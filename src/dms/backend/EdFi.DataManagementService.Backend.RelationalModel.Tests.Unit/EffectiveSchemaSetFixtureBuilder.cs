@@ -45,6 +45,21 @@ internal static class EffectiveSchemaSetFixtureBuilder
     }
 
     /// <summary>
+    /// Create an effective schema set from a single fixture file.
+    /// </summary>
+    public static EffectiveSchemaSet CreateEffectiveSchemaSetFromFixture(
+        string fileName,
+        bool isExtensionProject = false,
+        bool reverseResourceOrder = false
+    )
+    {
+        var projectSchema = LoadProjectSchema(fileName, reverseResourceOrder);
+        var project = CreateEffectiveProjectSchema(projectSchema, isExtensionProject);
+
+        return CreateEffectiveSchemaSet(new[] { project });
+    }
+
+    /// <summary>
     /// Create effective schema set.
     /// </summary>
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(IReadOnlyList<EffectiveProjectSchema> projects)

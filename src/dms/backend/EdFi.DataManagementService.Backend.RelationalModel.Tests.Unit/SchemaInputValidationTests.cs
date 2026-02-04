@@ -1215,6 +1215,150 @@ public class Given_A_Relational_NameOverride_For_A_Reference_Path
 }
 
 /// <summary>
+/// Test fixture for a descriptor resource with a relational block.
+/// </summary>
+[TestFixture]
+public class Given_A_Descriptor_With_A_Relational_Block
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var resourceSchema = new JsonObject
+        {
+            ["resourceName"] = "Descriptor",
+            ["isDescriptor"] = true,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = new JsonObject(),
+            ["relational"] = new JsonObject { ["rootTableNameOverride"] = "Descriptor" },
+        };
+
+        var projectSchema = new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectVersion"] = "5.0.0",
+            ["projectEndpointName"] = "ed-fi",
+            ["resourceSchemas"] = new JsonObject { ["descriptors"] = resourceSchema },
+        };
+
+        var apiSchemaRoot = new JsonObject
+        {
+            ["apiSchemaVersion"] = "1.0.0",
+            ["projectSchema"] = projectSchema,
+        };
+
+        var context = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = "descriptors",
+        };
+
+        var step = new ExtractInputsStep();
+
+        try
+        {
+            step.Execute(context);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast with a descriptor relational override.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_with_descriptor_relational_override()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Descriptor resource");
+        _exception.Message.Should().Contain("Ed-Fi:Descriptor");
+    }
+}
+
+/// <summary>
+/// Test fixture for a root table name override on a resource extension.
+/// </summary>
+[TestFixture]
+public class Given_A_Relational_RootTableNameOverride_On_A_Resource_Extension
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var resourceSchema = new JsonObject
+        {
+            ["resourceName"] = "Section",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = new JsonObject(),
+            ["relational"] = new JsonObject { ["rootTableNameOverride"] = "SectionOverride" },
+        };
+
+        var projectSchema = new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectVersion"] = "5.0.0",
+            ["projectEndpointName"] = "ed-fi",
+            ["resourceSchemas"] = new JsonObject { ["sectionExtensions"] = resourceSchema },
+        };
+
+        var apiSchemaRoot = new JsonObject
+        {
+            ["apiSchemaVersion"] = "1.0.0",
+            ["projectSchema"] = projectSchema,
+        };
+
+        var context = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = "sectionExtensions",
+        };
+
+        var step = new ExtractInputsStep();
+
+        try
+        {
+            step.Execute(context);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast with a root table name override on a resource extension.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_with_resource_extension_root_override()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("rootTableNameOverride");
+        _exception.Message.Should().Contain("Ed-Fi:Section");
+    }
+}
+
+/// <summary>
 /// Test type schema input validation helpers.
 /// </summary>
 internal static class SchemaInputValidationHelpers

@@ -141,7 +141,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
 
-        var baseRootBaseName = RelationalNameConventions.ToPascalCase(baseModel.Resource.ResourceName);
+        var baseRootBaseName = baseModel.Root.Table.Name;
         var extensionRootBaseName = $"{baseRootBaseName}Extension";
         var baseTablesByScope = baseModel.TablesInDependencyOrder.ToDictionary(
             table => table.JsonScope.Canonical,
