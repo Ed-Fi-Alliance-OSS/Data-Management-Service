@@ -21,5 +21,18 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
+  },
+  {
+    "category": "Naming",
+    "description": "DMS-931: Replace verbose constraint naming (`UX_{Table}_{Col1}_{Col2}_...`, `FK_{Table}_{Col1}_{Col2}_...`) with purpose-based names that avoid repeating shared reference prefixes, and append `_{h10}` (first 10 hex of SHA-256 of a canonical constraint signature) only when the resulting name would exceed the target dialect identifier limit (Pgsql 63 bytes, Mssql 128 chars). Acceptance: (1) FK/UK/CK names are derived from the owning table plus stable role tokens (e.g., reference base name, `NK`, `RefKey`, `AllNone`) instead of concatenating the full physical column list; (2) composite reference FKs use a single reference token (no `ReferenceBaseName_` duplication per column); (3) `h10` is present only when required by the dialect max length; otherwise the name contains no hash suffix; (4) hashing uses a canonical signature string that includes at least kind, owning table, ordered local columns, target table, ordered target columns, and referential actions so it is deterministic and collision-resistant; (5) names are deterministic and stable across runs; (6) names are unique post-shortening (collisions fail fast with actionable diagnostics); (7) update the authoritative golden manifest so the unique constraint currently at `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/sample/expected/authoritative-derived-relational-model-set.json:2456` and the FK at `...:2630` no longer contain duplicated reference prefixes and are within the Pgsql limit; (8) unit tests cover within-limit (no hash) and over-limit (hash) cases for both FK and UK naming.",
+    "steps-to-verify": [
+      "Introduce a constraint naming service/helper that generates a short, semantic base name per constraint kind/purpose and only appends `_{h10}` when the dialect max identifier length would be exceeded.",
+      "Update all constraint derivation code to use the new naming strategy (e.g., `RelationalNameConventions.ForeignKeyName(...)`, `ConstraintDerivationHelpers.BuildUniqueConstraintName(...)`, and any check-constraint naming helpers).",
+      "Update `reference/design/backend-redesign/design-docs/data-model.md` constraint naming section to match the implemented strategy (purpose tokens + optional length-driven `h10`).",
+      "Update the authoritative golden fixture and add unit tests asserting the example constraints no longer repeat reference prefixes and that `h10` is absent when the base name is within the dialect limit.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
