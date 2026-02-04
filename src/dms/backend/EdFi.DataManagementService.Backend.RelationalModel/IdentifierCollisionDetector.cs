@@ -15,28 +15,34 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 internal sealed class IdentifierCollisionDetector
 {
     private readonly ISqlDialectRules _dialectRules;
-    private readonly Dictionary<IdentifierScope, Dictionary<string, List<IdentifierSource>>> _sources = new();
+    private readonly IdentifierCollisionStage _stage;
+    private readonly Dictionary<
+        IdentifierCollisionScope,
+        Dictionary<string, List<IdentifierCollisionSource>>
+    > _sources = new();
 
     /// <summary>
     /// Creates a new collision detector for the specified dialect rules.
     /// </summary>
     /// <param name="dialectRules">The dialect rules used to shorten identifiers.</param>
-    public IdentifierCollisionDetector(ISqlDialectRules dialectRules)
+    /// <param name="stage">The collision stage used for diagnostics.</param>
+    public IdentifierCollisionDetector(ISqlDialectRules dialectRules, IdentifierCollisionStage stage)
     {
         _dialectRules = dialectRules ?? throw new ArgumentNullException(nameof(dialectRules));
+        _stage = stage;
     }
 
     /// <summary>
     /// Registers a table identifier for collision detection.
     /// </summary>
     /// <param name="table">The table name.</param>
-    /// <param name="description">A human-readable description for diagnostics.</param>
-    public void RegisterTable(DbTableName table, string description)
+    /// <param name="origin">The collision origin details.</param>
+    public void RegisterTable(DbTableName table, IdentifierCollisionOrigin origin)
     {
         Register(
-            new IdentifierScope(IdentifierScopeKind.Table, table.Schema.Value),
+            new IdentifierCollisionScope(IdentifierCollisionKind.Table, table.Schema.Value, string.Empty),
             table.Name,
-            new IdentifierSource(table.Name, description)
+            origin
         );
     }
 
@@ -45,13 +51,13 @@ internal sealed class IdentifierCollisionDetector
     /// </summary>
     /// <param name="table">The owning table.</param>
     /// <param name="column">The column name.</param>
-    /// <param name="description">A human-readable description for diagnostics.</param>
-    public void RegisterColumn(DbTableName table, DbColumnName column, string description)
+    /// <param name="origin">The collision origin details.</param>
+    public void RegisterColumn(DbTableName table, DbColumnName column, IdentifierCollisionOrigin origin)
     {
         Register(
-            new IdentifierScope(IdentifierScopeKind.Column, table.Schema.Value, table.Name),
+            new IdentifierCollisionScope(IdentifierCollisionKind.Column, table.Schema.Value, table.Name),
             column.Value,
-            new IdentifierSource(column.Value, description)
+            origin
         );
     }
 
@@ -60,13 +66,17 @@ internal sealed class IdentifierCollisionDetector
     /// </summary>
     /// <param name="table">The table hosting the constraint.</param>
     /// <param name="constraintName">The constraint name.</param>
-    /// <param name="description">A human-readable description for diagnostics.</param>
-    public void RegisterConstraint(DbTableName table, string constraintName, string description)
+    /// <param name="origin">The collision origin details.</param>
+    public void RegisterConstraint(DbTableName table, string constraintName, IdentifierCollisionOrigin origin)
     {
         Register(
-            new IdentifierScope(IdentifierScopeKind.Constraint, table.Schema.Value),
+            new IdentifierCollisionScope(
+                IdentifierCollisionKind.Constraint,
+                table.Schema.Value,
+                string.Empty
+            ),
             constraintName,
-            new IdentifierSource(constraintName, description)
+            origin
         );
     }
 
@@ -75,13 +85,13 @@ internal sealed class IdentifierCollisionDetector
     /// </summary>
     /// <param name="table">The table hosting the index.</param>
     /// <param name="indexName">The index name.</param>
-    /// <param name="description">A human-readable description for diagnostics.</param>
-    public void RegisterIndex(DbTableName table, DbIndexName indexName, string description)
+    /// <param name="origin">The collision origin details.</param>
+    public void RegisterIndex(DbTableName table, DbIndexName indexName, IdentifierCollisionOrigin origin)
     {
         Register(
-            new IdentifierScope(IdentifierScopeKind.Index, table.Schema.Value),
+            new IdentifierCollisionScope(IdentifierCollisionKind.Index, table.Schema.Value, string.Empty),
             indexName.Value,
-            new IdentifierSource(indexName.Value, description)
+            origin
         );
     }
 
@@ -90,13 +100,17 @@ internal sealed class IdentifierCollisionDetector
     /// </summary>
     /// <param name="table">The table hosting the trigger.</param>
     /// <param name="triggerName">The trigger name.</param>
-    /// <param name="description">A human-readable description for diagnostics.</param>
-    public void RegisterTrigger(DbTableName table, DbTriggerName triggerName, string description)
+    /// <param name="origin">The collision origin details.</param>
+    public void RegisterTrigger(
+        DbTableName table,
+        DbTriggerName triggerName,
+        IdentifierCollisionOrigin origin
+    )
     {
         Register(
-            new IdentifierScope(IdentifierScopeKind.Trigger, table.Schema.Value),
+            new IdentifierCollisionScope(IdentifierCollisionKind.Trigger, table.Schema.Value, string.Empty),
             triggerName.Value,
-            new IdentifierSource(triggerName.Value, description)
+            origin
         );
     }
 
@@ -105,7 +119,7 @@ internal sealed class IdentifierCollisionDetector
     /// </summary>
     public void ThrowIfCollisions()
     {
-        List<IdentifierCollision> collisions = [];
+        List<IdentifierCollisionRecord> collisions = [];
 
         var orderedScopes = _sources
             .Keys.OrderBy(scope => scope.Kind)
@@ -120,16 +134,23 @@ internal sealed class IdentifierCollisionDetector
             foreach (var shortenedName in names.Keys.OrderBy(name => name, StringComparer.Ordinal))
             {
                 var sources = names[shortenedName]
-                    .GroupBy(source => source.Name, StringComparer.Ordinal)
+                    .GroupBy(source => source.OriginalIdentifier, StringComparer.Ordinal)
                     .OrderBy(group => group.Key, StringComparer.Ordinal)
                     .Select(group =>
-                        group.OrderBy(source => source.Description, StringComparer.Ordinal).First()
+                        group
+                            .OrderBy(source => source.Origin.Description, StringComparer.Ordinal)
+                            .ThenBy(
+                                source => source.Origin.ResourceLabel ?? string.Empty,
+                                StringComparer.Ordinal
+                            )
+                            .ThenBy(source => source.Origin.JsonPath ?? string.Empty, StringComparer.Ordinal)
+                            .First()
                     )
                     .ToArray();
 
                 if (sources.Length > 1)
                 {
-                    collisions.Add(new IdentifierCollision(scope, shortenedName, sources));
+                    collisions.Add(new IdentifierCollisionRecord(_stage, scope, sources));
                 }
             }
         }
@@ -148,13 +169,17 @@ internal sealed class IdentifierCollisionDetector
     /// <summary>
     /// Registers a single identifier in the detector, tracking both the original and shortened forms.
     /// </summary>
-    private void Register(IdentifierScope scope, string originalName, IdentifierSource source)
+    private void Register(
+        IdentifierCollisionScope scope,
+        string originalName,
+        IdentifierCollisionOrigin origin
+    )
     {
         var shortenedName = _dialectRules.ShortenIdentifier(originalName);
 
         if (!_sources.TryGetValue(scope, out var entries))
         {
-            entries = new Dictionary<string, List<IdentifierSource>>(StringComparer.Ordinal);
+            entries = new Dictionary<string, List<IdentifierCollisionSource>>(StringComparer.Ordinal);
             _sources[scope] = entries;
         }
 
@@ -164,79 +189,6 @@ internal sealed class IdentifierCollisionDetector
             entries[shortenedName] = sources;
         }
 
-        sources.Add(source);
-    }
-
-    /// <summary>
-    /// Classifies the namespace in which an identifier must be unique.
-    /// </summary>
-    private enum IdentifierScopeKind
-    {
-        Table,
-        Column,
-        Constraint,
-        Index,
-        Trigger,
-    }
-
-    /// <summary>
-    /// Identifies the scope (schema and optional table) in which collisions are evaluated.
-    /// </summary>
-    private readonly record struct IdentifierScope(
-        IdentifierScopeKind Kind,
-        string Schema,
-        string Table = ""
-    );
-
-    /// <summary>
-    /// Represents an identifier occurrence and its human-readable description.
-    /// </summary>
-    private readonly record struct IdentifierSource(string Name, string Description)
-    {
-        /// <summary>
-        /// Formats the identifier source for diagnostics.
-        /// </summary>
-        /// <returns>A formatted label.</returns>
-        public string Format()
-        {
-            return Description;
-        }
-    }
-
-    /// <summary>
-    /// Represents a collision where multiple original identifiers shorten to the same value.
-    /// </summary>
-    private sealed record IdentifierCollision(
-        IdentifierScope Scope,
-        string ShortenedName,
-        IReadOnlyList<IdentifierSource> Sources
-    )
-    {
-        /// <summary>
-        /// Formats the collision for diagnostics.
-        /// </summary>
-        /// <returns>A formatted collision message.</returns>
-        public string Format()
-        {
-            var category = Scope.Kind switch
-            {
-                IdentifierScopeKind.Table => "table name",
-                IdentifierScopeKind.Column => "column name",
-                IdentifierScopeKind.Constraint => "constraint name",
-                IdentifierScopeKind.Index => "index name",
-                IdentifierScopeKind.Trigger => "trigger name",
-                _ => "identifier",
-            };
-
-            var scope = Scope.Kind switch
-            {
-                IdentifierScopeKind.Column => $"in table '{Scope.Schema}.{Scope.Table}'",
-                _ => $"in schema '{Scope.Schema}'",
-            };
-
-            var sources = string.Join(", ", Sources.Select(source => source.Format()));
-
-            return $"{category} '{ShortenedName}' {scope}: {sources}";
-        }
+        sources.Add(new IdentifierCollisionSource(originalName, shortenedName, origin));
     }
 }
