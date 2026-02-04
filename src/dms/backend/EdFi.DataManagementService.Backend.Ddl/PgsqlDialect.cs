@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <summary>
 /// PostgreSQL-specific SQL dialect implementation.
 /// </summary>
-public sealed class PgsqlDialect : ISqlDialect
+public sealed class PgsqlDialect : SqlDialectBase
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="PgsqlDialect"/> class.
@@ -30,25 +30,25 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public ISqlDialectRules Rules { get; }
+    public override ISqlDialectRules Rules { get; }
 
     /// <inheritdoc />
-    public string DocumentIdColumnType => "bigint";
+    public override string DocumentIdColumnType => "bigint";
 
     /// <inheritdoc />
-    public string OrdinalColumnType => "integer";
+    public override string OrdinalColumnType => "integer";
 
     /// <inheritdoc />
-    public DdlPattern TriggerCreationPattern => DdlPattern.DropThenCreate;
+    public override DdlPattern TriggerCreationPattern => DdlPattern.DropThenCreate;
 
     /// <inheritdoc />
-    public DdlPattern FunctionCreationPattern => DdlPattern.CreateOrReplace;
+    public override DdlPattern FunctionCreationPattern => DdlPattern.CreateOrReplace;
 
     /// <inheritdoc />
-    public DdlPattern ViewCreationPattern => DdlPattern.CreateOrReplace;
+    public override DdlPattern ViewCreationPattern => DdlPattern.CreateOrReplace;
 
     /// <inheritdoc />
-    public string QuoteIdentifier(string identifier)
+    public override string QuoteIdentifier(string identifier)
     {
         ArgumentNullException.ThrowIfNull(identifier);
 
@@ -58,57 +58,25 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string QualifyTable(DbTableName table)
+    public override string QualifyTable(DbTableName table)
     {
         return $"{QuoteIdentifier(table.Schema.Value)}.{QuoteIdentifier(table.Name)}";
     }
 
     /// <inheritdoc />
-    public string RenderColumnType(RelationalScalarType scalarType)
-    {
-        ArgumentNullException.ThrowIfNull(scalarType);
-
-        var defaults = Rules.ScalarTypeDefaults;
-
-        return scalarType.Kind switch
-        {
-            ScalarKind.String when scalarType.MaxLength.HasValue =>
-                $"{defaults.StringType}({scalarType.MaxLength.Value})",
-            ScalarKind.String => defaults.StringType,
-
-            ScalarKind.Int32 => defaults.Int32Type,
-            ScalarKind.Int64 => defaults.Int64Type,
-            ScalarKind.Boolean => defaults.BooleanType,
-            ScalarKind.Date => defaults.DateType,
-            ScalarKind.DateTime => defaults.DateTimeType,
-            ScalarKind.Time => defaults.TimeType,
-
-            ScalarKind.Decimal when scalarType.Decimal.HasValue =>
-                $"{defaults.DecimalType}({scalarType.Decimal.Value.Precision},{scalarType.Decimal.Value.Scale})",
-            ScalarKind.Decimal => defaults.DecimalType,
-
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(scalarType),
-                scalarType.Kind,
-                "Unsupported scalar kind."
-            ),
-        };
-    }
-
-    /// <inheritdoc />
-    public string CreateSchemaIfNotExists(DbSchemaName schema)
+    public override string CreateSchemaIfNotExists(DbSchemaName schema)
     {
         return $"CREATE SCHEMA IF NOT EXISTS {QuoteIdentifier(schema.Value)};";
     }
 
     /// <inheritdoc />
-    public string CreateTableHeader(DbTableName table)
+    public override string CreateTableHeader(DbTableName table)
     {
         return $"CREATE TABLE IF NOT EXISTS {QualifyTable(table)}";
     }
 
     /// <inheritdoc />
-    public string DropTriggerIfExists(DbTableName table, string triggerName)
+    public override string DropTriggerIfExists(DbTableName table, string triggerName)
     {
         ArgumentNullException.ThrowIfNull(triggerName);
 
@@ -116,7 +84,11 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string CreateSequenceIfNotExists(DbSchemaName schema, string sequenceName, long startWith = 1)
+    public override string CreateSequenceIfNotExists(
+        DbSchemaName schema,
+        string sequenceName,
+        long startWith = 1
+    )
     {
         ArgumentNullException.ThrowIfNull(sequenceName);
 
@@ -125,7 +97,7 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string CreateIndexIfNotExists(
+    public override string CreateIndexIfNotExists(
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
@@ -148,7 +120,7 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string AddForeignKeyConstraint(
+    public override string AddForeignKeyConstraint(
         DbTableName table,
         string constraintName,
         IReadOnlyList<DbColumnName> columns,
@@ -207,7 +179,7 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string AddUniqueConstraint(
+    public override string AddUniqueConstraint(
         DbTableName table,
         string constraintName,
         IReadOnlyList<DbColumnName> columns
@@ -247,7 +219,11 @@ public sealed class PgsqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string AddCheckConstraint(DbTableName table, string constraintName, string checkExpression)
+    public override string AddCheckConstraint(
+        DbTableName table,
+        string constraintName,
+        string checkExpression
+    )
     {
         ArgumentNullException.ThrowIfNull(constraintName);
         ArgumentNullException.ThrowIfNull(checkExpression);
@@ -271,53 +247,5 @@ public sealed class PgsqlDialect : ISqlDialect
                 END IF;
             END $$;
             """;
-    }
-
-    /// <inheritdoc />
-    public string RenderColumnDefinition(
-        DbColumnName columnName,
-        string sqlType,
-        bool isNullable,
-        string? defaultExpression = null
-    )
-    {
-        ArgumentNullException.ThrowIfNull(sqlType);
-
-        var nullability = isNullable ? "NULL" : "NOT NULL";
-        var defaultClause = defaultExpression is not null ? $" DEFAULT {defaultExpression}" : "";
-
-        return $"{QuoteIdentifier(columnName.Value)} {sqlType} {nullability}{defaultClause}";
-    }
-
-    /// <inheritdoc />
-    public string RenderPrimaryKeyClause(IReadOnlyList<DbColumnName> columns)
-    {
-        ArgumentNullException.ThrowIfNull(columns);
-
-        if (columns.Count == 0)
-        {
-            throw new ArgumentException(
-                "At least one column is required for a primary key.",
-                nameof(columns)
-            );
-        }
-
-        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
-        return $"PRIMARY KEY ({columnList})";
-    }
-
-    /// <inheritdoc />
-    public string RenderReferentialAction(ReferentialAction action)
-    {
-        return action switch
-        {
-            ReferentialAction.NoAction => "NO ACTION",
-            ReferentialAction.Cascade => "CASCADE",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(action),
-                action,
-                "Unsupported referential action."
-            ),
-        };
     }
 }

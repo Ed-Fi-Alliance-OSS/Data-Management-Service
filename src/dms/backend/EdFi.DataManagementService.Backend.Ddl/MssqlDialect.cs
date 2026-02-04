@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <summary>
 /// SQL Server-specific SQL dialect implementation.
 /// </summary>
-public sealed class MssqlDialect : ISqlDialect
+public sealed class MssqlDialect : SqlDialectBase
 {
     /// <summary>
     /// Initializes a new instance of the <see cref="MssqlDialect"/> class.
@@ -30,25 +30,25 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public ISqlDialectRules Rules { get; }
+    public override ISqlDialectRules Rules { get; }
 
     /// <inheritdoc />
-    public string DocumentIdColumnType => "bigint";
+    public override string DocumentIdColumnType => "bigint";
 
     /// <inheritdoc />
-    public string OrdinalColumnType => "int";
+    public override string OrdinalColumnType => "int";
 
     /// <inheritdoc />
-    public DdlPattern TriggerCreationPattern => DdlPattern.CreateOrAlter;
+    public override DdlPattern TriggerCreationPattern => DdlPattern.CreateOrAlter;
 
     /// <inheritdoc />
-    public DdlPattern FunctionCreationPattern => DdlPattern.CreateOrAlter;
+    public override DdlPattern FunctionCreationPattern => DdlPattern.CreateOrAlter;
 
     /// <inheritdoc />
-    public DdlPattern ViewCreationPattern => DdlPattern.CreateOrAlter;
+    public override DdlPattern ViewCreationPattern => DdlPattern.CreateOrAlter;
 
     /// <inheritdoc />
-    public string QuoteIdentifier(string identifier)
+    public override string QuoteIdentifier(string identifier)
     {
         ArgumentNullException.ThrowIfNull(identifier);
 
@@ -58,57 +58,28 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string QualifyTable(DbTableName table)
+    public override string QualifyTable(DbTableName table)
     {
         return $"{QuoteIdentifier(table.Schema.Value)}.{QuoteIdentifier(table.Name)}";
     }
 
     /// <inheritdoc />
-    public string RenderColumnType(RelationalScalarType scalarType)
-    {
-        ArgumentNullException.ThrowIfNull(scalarType);
-
-        var defaults = Rules.ScalarTypeDefaults;
-
-        return scalarType.Kind switch
-        {
-            ScalarKind.String when scalarType.MaxLength.HasValue =>
-                $"{defaults.StringType}({scalarType.MaxLength.Value})",
-            ScalarKind.String => defaults.StringType,
-
-            ScalarKind.Int32 => defaults.Int32Type,
-            ScalarKind.Int64 => defaults.Int64Type,
-            ScalarKind.Boolean => defaults.BooleanType,
-            ScalarKind.Date => defaults.DateType,
-            ScalarKind.DateTime => defaults.DateTimeType,
-            ScalarKind.Time => defaults.TimeType,
-
-            ScalarKind.Decimal when scalarType.Decimal.HasValue =>
-                $"{defaults.DecimalType}({scalarType.Decimal.Value.Precision},{scalarType.Decimal.Value.Scale})",
-            ScalarKind.Decimal => defaults.DecimalType,
-
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(scalarType),
-                scalarType.Kind,
-                "Unsupported scalar kind."
-            ),
-        };
-    }
-
-    /// <inheritdoc />
-    public string CreateSchemaIfNotExists(DbSchemaName schema)
+    public override string CreateSchemaIfNotExists(DbSchemaName schema)
     {
         // SQL Server does not support IF NOT EXISTS for CREATE SCHEMA,
         // so we use a catalog check pattern.
         var quotedSchema = QuoteIdentifier(schema.Value);
         var escapedSchemaForLiteral = schema.Value.Replace("'", "''");
 
+        // Escape single quotes in the bracket-quoted identifier for embedding in EXEC string
+        var quotedSchemaForExec = quotedSchema.Replace("'", "''");
+
         return $"IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'{escapedSchemaForLiteral}')\n"
-            + $"    EXEC('CREATE SCHEMA {quotedSchema}');";
+            + $"    EXEC('CREATE SCHEMA {quotedSchemaForExec}');";
     }
 
     /// <inheritdoc />
-    public string CreateTableHeader(DbTableName table)
+    public override string CreateTableHeader(DbTableName table)
     {
         // SQL Server does not support IF NOT EXISTS for CREATE TABLE directly,
         // so we use an OBJECT_ID check pattern.
@@ -120,7 +91,7 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string DropTriggerIfExists(DbTableName table, string triggerName)
+    public override string DropTriggerIfExists(DbTableName table, string triggerName)
     {
         ArgumentNullException.ThrowIfNull(triggerName);
 
@@ -129,7 +100,11 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string CreateSequenceIfNotExists(DbSchemaName schema, string sequenceName, long startWith = 1)
+    public override string CreateSequenceIfNotExists(
+        DbSchemaName schema,
+        string sequenceName,
+        long startWith = 1
+    )
     {
         ArgumentNullException.ThrowIfNull(sequenceName);
 
@@ -148,7 +123,7 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string CreateIndexIfNotExists(
+    public override string CreateIndexIfNotExists(
         DbTableName table,
         string indexName,
         IReadOnlyList<DbColumnName> columns,
@@ -182,7 +157,7 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string AddForeignKeyConstraint(
+    public override string AddForeignKeyConstraint(
         DbTableName table,
         string constraintName,
         IReadOnlyList<DbColumnName> columns,
@@ -216,11 +191,12 @@ public sealed class MssqlDialect : ISqlDialect
         var targetColumnList = string.Join(", ", targetColumns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
+        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
 
         return $"""
             IF NOT EXISTS (
                 SELECT 1 FROM sys.foreign_keys
-                WHERE name = N'{escapedConstraint}'
+                WHERE name = N'{escapedConstraint}' AND parent_object_id = OBJECT_ID(N'{escapedTableForObjectId}')
             )
             ALTER TABLE {QualifyTable(table)}
             ADD CONSTRAINT {quotedConstraint}
@@ -232,7 +208,7 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string AddUniqueConstraint(
+    public override string AddUniqueConstraint(
         DbTableName table,
         string constraintName,
         IReadOnlyList<DbColumnName> columns
@@ -252,11 +228,12 @@ public sealed class MssqlDialect : ISqlDialect
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
+        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
 
         return $"""
             IF NOT EXISTS (
                 SELECT 1 FROM sys.key_constraints
-                WHERE name = N'{escapedConstraint}' AND type = 'UQ'
+                WHERE name = N'{escapedConstraint}' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'{escapedTableForObjectId}')
             )
             ALTER TABLE {QualifyTable(table)}
             ADD CONSTRAINT {quotedConstraint} UNIQUE ({columnList});
@@ -264,69 +241,26 @@ public sealed class MssqlDialect : ISqlDialect
     }
 
     /// <inheritdoc />
-    public string AddCheckConstraint(DbTableName table, string constraintName, string checkExpression)
+    public override string AddCheckConstraint(
+        DbTableName table,
+        string constraintName,
+        string checkExpression
+    )
     {
         ArgumentNullException.ThrowIfNull(constraintName);
         ArgumentNullException.ThrowIfNull(checkExpression);
 
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
+        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
 
         return $"""
             IF NOT EXISTS (
                 SELECT 1 FROM sys.check_constraints
-                WHERE name = N'{escapedConstraint}'
+                WHERE name = N'{escapedConstraint}' AND parent_object_id = OBJECT_ID(N'{escapedTableForObjectId}')
             )
             ALTER TABLE {QualifyTable(table)}
             ADD CONSTRAINT {quotedConstraint} CHECK ({checkExpression});
             """;
-    }
-
-    /// <inheritdoc />
-    public string RenderColumnDefinition(
-        DbColumnName columnName,
-        string sqlType,
-        bool isNullable,
-        string? defaultExpression = null
-    )
-    {
-        ArgumentNullException.ThrowIfNull(sqlType);
-
-        var nullability = isNullable ? "NULL" : "NOT NULL";
-        var defaultClause = defaultExpression is not null ? $" DEFAULT {defaultExpression}" : "";
-
-        return $"{QuoteIdentifier(columnName.Value)} {sqlType} {nullability}{defaultClause}";
-    }
-
-    /// <inheritdoc />
-    public string RenderPrimaryKeyClause(IReadOnlyList<DbColumnName> columns)
-    {
-        ArgumentNullException.ThrowIfNull(columns);
-
-        if (columns.Count == 0)
-        {
-            throw new ArgumentException(
-                "At least one column is required for a primary key.",
-                nameof(columns)
-            );
-        }
-
-        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
-        return $"PRIMARY KEY ({columnList})";
-    }
-
-    /// <inheritdoc />
-    public string RenderReferentialAction(ReferentialAction action)
-    {
-        return action switch
-        {
-            ReferentialAction.NoAction => "NO ACTION",
-            ReferentialAction.Cascade => "CASCADE",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(action),
-                action,
-                "Unsupported referential action."
-            ),
-        };
     }
 }
