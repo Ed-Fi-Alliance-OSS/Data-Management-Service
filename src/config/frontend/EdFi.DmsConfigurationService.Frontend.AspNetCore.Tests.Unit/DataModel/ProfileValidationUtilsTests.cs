@@ -97,7 +97,7 @@ public class ProfileValidationUtilsTests
                 "<Profile name=\"TestProfile\"><Resource name=\"School\"><ReadContentType memberSelection=\"IncludeAll\" /></Resource></Profile>";
 
             // Act
-            bool result = ProfileValidationUtils.IsValidProfileXml(xml);
+            bool result = ProfileValidationUtils.ValidateProfileXml(xml).IsValid;
 
             // Assert
             result.Should().BeTrue();
@@ -110,7 +110,7 @@ public class ProfileValidationUtilsTests
             string xml = "<Profile name=\"TestProfile\"><Resource name=\"School\">";
 
             // Act
-            bool result = ProfileValidationUtils.IsValidProfileXml(xml);
+            bool result = ProfileValidationUtils.ValidateProfileXml(xml).IsValid;
 
             // Assert
             result.Should().BeFalse();
@@ -123,7 +123,7 @@ public class ProfileValidationUtilsTests
             string xml = "<Profile><Resource name=\"School\"></Resource></Profile>";
 
             // Act
-            bool result = ProfileValidationUtils.IsValidProfileXml(xml);
+            bool result = ProfileValidationUtils.ValidateProfileXml(xml).IsValid;
 
             // Assert
             result.Should().BeFalse();
@@ -145,7 +145,7 @@ public class ProfileValidationUtilsTests
             </Profile>";
 
             // Act
-            bool result = ProfileValidationUtils.IsValidProfileXml(xml);
+            bool result = ProfileValidationUtils.ValidateProfileXml(xml).IsValid;
 
             // Assert
             result.Should().BeTrue();
@@ -158,10 +158,51 @@ public class ProfileValidationUtilsTests
             string xml = "";
 
             // Act
-            bool result = ProfileValidationUtils.IsValidProfileXml(xml);
+            bool result = ProfileValidationUtils.ValidateProfileXml(xml).IsValid;
 
             // Assert
             result.Should().BeFalse();
+        }
+
+        [Test]
+        public void Should_Provide_Detailed_Error_Message_For_Malformed_Xml()
+        {
+            // Arrange
+            string xml = "<Profile name=\"TestProfile\"><Resource name=\"School\">";
+
+            // Act
+            var validationResult = ProfileValidationUtils.ValidateProfileXml(xml);
+
+            // Assert
+            validationResult.IsValid.Should().BeFalse();
+            validationResult.Errors.Should().NotBeEmpty();
+            // For malformed XML, we get XML parsing errors with detailed messages
+            validationResult
+                .Errors.Should()
+                .Contain(error =>
+                    error.StartsWith("XML parsing error: ")
+                    && error.Length > "XML parsing error: ".Length
+                    && error.Contains("Line") // XML parsing errors often include line info
+                );
+        }
+
+        [Test]
+        public void Should_Provide_Detailed_Error_Message_For_Schema_Violation()
+        {
+            // Arrange - Missing required name attribute on Profile
+            string xml = "<Profile><Resource name=\"School\"></Resource></Profile>";
+
+            // Act
+            var validationResult = ProfileValidationUtils.ValidateProfileXml(xml);
+
+            // Assert
+            validationResult.IsValid.Should().BeFalse();
+            validationResult.Errors.Should().NotBeEmpty();
+            validationResult
+                .Errors.Should()
+                .Contain(error =>
+                    error.StartsWith("Line 1, Column 2: The required attribute 'name' is missing.")
+                );
         }
     }
 

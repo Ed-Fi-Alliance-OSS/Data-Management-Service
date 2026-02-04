@@ -29,7 +29,7 @@ public class ProfileUpdateCommand
                 .WithMessage("Profile definition is required.")
                 .Must((cmd, xml) => ProfileValidationUtils.XmlProfileNameMatches(cmd.Name, xml))
                 .WithMessage("Name must match the name attribute in the XML definition.")
-                .Must(ProfileValidationUtils.IsValidProfileXml)
+                .Must(xml => ProfileValidationUtils.ValidateProfileXml(xml).IsValid)
                 .WithMessage("Profile definition XML is invalid or does not match the XSD.")
                 .Must(ProfileValidationUtils.HasAtLeastOneResource)
                 .WithMessage("Profile XML must contain at least one <Resource> element.")

@@ -27,15 +27,37 @@ public class ProfileModule : IEndpointModule
         endpoints.MapSecuredDelete($"/v2/profiles/{{id}}", Delete);
     }
 
+    private static bool IsProfileValid(
+        ProfileResponse profile,
+        ILogger<ProfileModule> logger,
+        string contextMessage = ""
+    )
+    {
+        var validationResult = ProfileValidationUtils.ValidateProfileXml(profile.Definition);
+        if (!validationResult.IsValid)
+        {
+            logger.LogWarning(
+                $"Profile definition failed XSD validation{contextMessage}. ProfileId: {{ProfileId}}, Name: {{Name}}, ValidationErrors: {{ValidationErrors}}",
+                profile.Id,
+                profile.Name,
+                string.Join("; ", validationResult.Errors)
+            );
+            return false;
+        }
+        return true;
+    }
+
     private static async Task<IResult> GetAll(
         IProfileRepository repository,
         [AsParameters] PagingQuery query,
-        HttpContext httpContext
+        HttpContext httpContext,
+        ILogger<ProfileModule> logger
     )
     {
         var results = await repository.QueryProfiles(query);
         var profiles = results
             .OfType<ProfileGetResult.Success>()
+            .Where(r => IsProfileValid(r.Profile, logger, " and will be excluded from results"))
             .Select(r => new ProfileListResponse { Id = r.Profile.Id, Name = r.Profile.Name })
             .ToList();
         if (profiles.Count > 0)
@@ -86,14 +108,20 @@ public class ProfileModule : IEndpointModule
     )
     {
         var result = await repository.GetProfile(id);
+
         return result switch
         {
-            ProfileGetResult.Success success => Results.Ok(success.Profile),
+            ProfileGetResult.Success success => IsProfileValid(success.Profile, logger)
+                ? Results.Ok(success.Profile)
+                : Results.Json(
+                    FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
+                    statusCode: (int)HttpStatusCode.NotFound
+                ),
             ProfileGetResult.FailureNotFound => Results.Json(
                 FailureResponse.ForNotFound($"Profile {id} not found.", httpContext.TraceIdentifier),
                 statusCode: (int)HttpStatusCode.NotFound
             ),
-            ProfileGetResult.FailureUnknown _ => FailureResults.Unknown(httpContext.TraceIdentifier),
+            ProfileGetResult.FailureUnknown => FailureResults.Unknown(httpContext.TraceIdentifier),
             _ => FailureResults.Unknown(httpContext.TraceIdentifier),
         };
     }
