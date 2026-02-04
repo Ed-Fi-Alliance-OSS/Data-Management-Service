@@ -92,13 +92,13 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
                 new(UriColumnLabel),
                 new(DiscriminatorColumnLabel),
             };
-            var descriptorUniqueName = BuildUniqueConstraintName(
-                rootTable.Table.Name,
-                descriptorUniqueColumns
-            );
 
-            if (!ContainsUniqueConstraint(rootTable.Constraints, descriptorUniqueName))
+            if (!ContainsUniqueConstraint(rootTable.Constraints, rootTable.Table, descriptorUniqueColumns))
             {
+                var descriptorUniqueName = BuildUniqueConstraintName(
+                    rootTable.Table.Name,
+                    descriptorUniqueColumns
+                );
                 tableAccumulator.AddConstraint(
                     new TableConstraint.Unique(descriptorUniqueName, descriptorUniqueColumns)
                 );
@@ -122,10 +122,9 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
             return resourceModel;
         }
 
-        var rootUniqueName = BuildUniqueConstraintName(rootTable.Table.Name, identityColumns);
-
-        if (!ContainsUniqueConstraint(rootTable.Constraints, rootUniqueName))
+        if (!ContainsUniqueConstraint(rootTable.Constraints, rootTable.Table, identityColumns))
         {
+            var rootUniqueName = BuildUniqueConstraintName(rootTable.Table.Name, identityColumns);
             tableAccumulator.AddConstraint(new TableConstraint.Unique(rootUniqueName, identityColumns));
             mutated = true;
         }

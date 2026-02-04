@@ -35,34 +35,81 @@ internal static class ConstraintDerivationHelpers
     }
 
     /// <summary>
-    /// Returns true when the constraint set already contains a unique constraint with the given name.
+    /// Returns true when the constraint set already contains a unique constraint with the same semantic
+    /// identity.
     /// </summary>
-    internal static bool ContainsUniqueConstraint(IReadOnlyList<TableConstraint> constraints, string name)
+    internal static bool ContainsUniqueConstraint(
+        IReadOnlyList<TableConstraint> constraints,
+        DbTableName table,
+        IReadOnlyList<DbColumnName> columns
+    )
     {
+        var identity = ConstraintIdentity.ForUnique(table, columns);
+
         return constraints
             .OfType<TableConstraint.Unique>()
-            .Any(constraint => string.Equals(constraint.Name, name, StringComparison.Ordinal));
+            .Any(constraint => ConstraintIdentity.ForUnique(table, constraint.Columns).Equals(identity));
     }
 
     /// <summary>
-    /// Returns true when the constraint set already contains a foreign-key constraint with the given name.
+    /// Returns true when the constraint set already contains a foreign-key constraint with the same semantic
+    /// identity.
     /// </summary>
-    internal static bool ContainsForeignKeyConstraint(IReadOnlyList<TableConstraint> constraints, string name)
+    internal static bool ContainsForeignKeyConstraint(
+        IReadOnlyList<TableConstraint> constraints,
+        DbTableName table,
+        IReadOnlyList<DbColumnName> localColumns,
+        DbTableName targetTable,
+        IReadOnlyList<DbColumnName> targetColumns,
+        ReferentialAction onDelete,
+        ReferentialAction onUpdate
+    )
     {
+        var identity = ConstraintIdentity.ForForeignKey(
+            table,
+            localColumns,
+            targetTable,
+            targetColumns,
+            onDelete,
+            onUpdate
+        );
+
         return constraints
             .OfType<TableConstraint.ForeignKey>()
-            .Any(constraint => string.Equals(constraint.Name, name, StringComparison.Ordinal));
+            .Any(constraint =>
+                ConstraintIdentity
+                    .ForForeignKey(
+                        table,
+                        constraint.Columns,
+                        constraint.TargetTable,
+                        constraint.TargetColumns,
+                        constraint.OnDelete,
+                        constraint.OnUpdate
+                    )
+                    .Equals(identity)
+            );
     }
 
     /// <summary>
-    /// Returns true when the constraint set already contains an all-or-none nullability check with the given
-    /// name.
+    /// Returns true when the constraint set already contains an all-or-none nullability check with the same
+    /// semantic identity.
     /// </summary>
-    internal static bool ContainsAllOrNoneConstraint(IReadOnlyList<TableConstraint> constraints, string name)
+    internal static bool ContainsAllOrNoneConstraint(
+        IReadOnlyList<TableConstraint> constraints,
+        DbTableName table,
+        DbColumnName fkColumn,
+        IReadOnlyList<DbColumnName> dependentColumns
+    )
     {
+        var identity = ConstraintIdentity.ForAllOrNone(table, fkColumn, dependentColumns);
+
         return constraints
             .OfType<TableConstraint.AllOrNoneNullability>()
-            .Any(constraint => string.Equals(constraint.Name, name, StringComparison.Ordinal));
+            .Any(constraint =>
+                ConstraintIdentity
+                    .ForAllOrNone(table, constraint.FkColumn, constraint.DependentColumns)
+                    .Equals(identity)
+            );
     }
 
     /// <summary>
