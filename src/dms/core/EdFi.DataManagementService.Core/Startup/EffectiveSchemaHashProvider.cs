@@ -107,7 +107,9 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
             projectSchema["projectVersion"]?.GetValue<string>()
             ?? throw new InvalidOperationException("projectSchema missing 'projectVersion'");
 
-        var isExtensionProject = projectSchema["isExtensionProject"]?.GetValue<bool>() ?? false;
+        var isExtensionProject =
+            projectSchema["isExtensionProject"]?.GetValue<bool>()
+            ?? throw new InvalidOperationException("projectSchema missing 'isExtensionProject'");
 
         // Compute per-project hash using canonical JSON serialization
         // Note: OpenAPI payloads have already been stripped by ApiSchemaInputNormalizer
@@ -171,5 +173,6 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
     /// Extracts the apiSchemaVersion from a schema root node.
     /// </summary>
     private static string GetApiSchemaVersion(JsonNode node) =>
-        node["apiSchemaVersion"]?.GetValue<string>() ?? string.Empty;
+        node["apiSchemaVersion"]?.GetValue<string>()
+        ?? throw new InvalidOperationException("Schema node missing 'apiSchemaVersion'");
 }
