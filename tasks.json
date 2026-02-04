@@ -209,6 +209,6 @@
       "Update `reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md` to add an explicit note under inputs/validation about `identityJsonPaths` authority and `isPartOfIdentity` non-authority.",
       "Sanity-check the updated docs against `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` to ensure the identity-component rules are consistent."
     ],
-    "completed": false
+    "completed": true
   }
 ]

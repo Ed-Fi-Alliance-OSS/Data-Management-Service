@@ -66,3 +66,7 @@
   Decisions: SchemaInputValidationTests assert DocumentReferenceMappings identity classification derives from identityJsonPaths (ignores isPartOfIdentity); identity-reference requiredness guard test now uses isPartOfIdentity=false to prove identityJsonPaths drives requirement.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
+- Task: Docs identityJsonPaths authority (DMS-930 story 01-reference-and-constraints.md)
+  Decisions: Documented identityJsonPaths as sole authority for natural-key membership; clarified isPartOfIdentity is a superset not cross-validated and does not drive relational identity derivation; referenced ExtractInputsStep enforcement.
+  Files: reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md; tasks.json; progress.txt
+  Notes: Docs-only change; no build/test run.

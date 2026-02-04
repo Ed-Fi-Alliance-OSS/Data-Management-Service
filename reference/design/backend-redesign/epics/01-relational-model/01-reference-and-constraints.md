@@ -28,6 +28,13 @@ Descriptor binding (`*_DescriptorId` columns + descriptor edge metadata) is hand
 These rules are consistent with the `flattening-reconstitution.md` semantics, but they are currently enforced by
 implementation code rather than spelled out in the design docs:
 
+- Natural-key membership is derived only from `identityJsonPaths`.
+  - `documentPathsMapping[*].isPartOfIdentity` is allowed to be a superset and must not be cross-validated against
+    `identityJsonPaths`; it exists for other flattening/reconstitution semantics and does not drive relational identity
+    derivation.
+  - Enforced in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` by deriving
+    identity-component classification strictly from `identityJsonPaths` membership for scalar, descriptor, and
+    reference mappings.
 - Identity-component document references must be required.
   - If a document reference participates in `identityJsonPaths`, the mapping entry must have `isRequired=true`.
   - Enforced in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` when
