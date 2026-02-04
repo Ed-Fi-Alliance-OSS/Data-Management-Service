@@ -55,7 +55,7 @@
       "Add unit tests that assert collision diagnostics include kind + location + stage + pre→post mapping and are deterministically ordered.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Naming",

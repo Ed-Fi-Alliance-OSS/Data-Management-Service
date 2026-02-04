@@ -468,7 +468,21 @@ public sealed class RelationalModelSetBuilderContext
         IReadOnlyList<DbTriggerInfo> canonicalTriggers
     )
     {
-        var detector = new IdentifierCollisionDetector(DialectRules);
+        var detector = new IdentifierCollisionDetector(
+            DialectRules,
+            IdentifierCollisionStage.AfterDialectShortening(DialectRules)
+        );
+
+        static IdentifierCollisionOrigin BuildOrigin(
+            string description,
+            string? resourceLabel,
+            JsonPathExpression? sourcePath,
+            JsonPathExpression? fallbackScope = null
+        )
+        {
+            var resolvedPath = sourcePath ?? fallbackScope;
+            return new IdentifierCollisionOrigin(description, resourceLabel, resolvedPath?.Canonical);
+        }
 
         foreach (var resource in orderedConcreteResources)
         {
@@ -478,7 +492,7 @@ public sealed class RelationalModelSetBuilderContext
             {
                 detector.RegisterTable(
                     table.Table,
-                    $"table {FormatTable(table.Table)} (resource {resourceLabel})"
+                    BuildOrigin($"table {FormatTable(table.Table)}", resourceLabel, table.JsonScope)
                 );
 
                 foreach (var column in table.Columns)
@@ -486,8 +500,12 @@ public sealed class RelationalModelSetBuilderContext
                     detector.RegisterColumn(
                         table.Table,
                         column.ColumnName,
-                        $"column {FormatColumn(table.Table, column.ColumnName)} "
-                            + $"(resource {resourceLabel})"
+                        BuildOrigin(
+                            $"column {FormatColumn(table.Table, column.ColumnName)}",
+                            resourceLabel,
+                            column.SourceJsonPath,
+                            table.JsonScope
+                        )
                     );
                 }
 
@@ -498,8 +516,11 @@ public sealed class RelationalModelSetBuilderContext
                     detector.RegisterConstraint(
                         table.Table,
                         constraintName,
-                        $"constraint {constraintName} on {FormatTable(table.Table)} "
-                            + $"(resource {resourceLabel})"
+                        BuildOrigin(
+                            $"constraint {constraintName} on {FormatTable(table.Table)}",
+                            resourceLabel,
+                            null
+                        )
                     );
                 }
             }
@@ -512,7 +533,11 @@ public sealed class RelationalModelSetBuilderContext
 
             detector.RegisterTable(
                 tableModel.Table,
-                $"table {FormatTable(tableModel.Table)} (abstract identity for {resourceLabel})"
+                BuildOrigin(
+                    $"table {FormatTable(tableModel.Table)} (abstract identity)",
+                    resourceLabel,
+                    tableModel.JsonScope
+                )
             );
 
             foreach (var column in tableModel.Columns)
@@ -520,8 +545,12 @@ public sealed class RelationalModelSetBuilderContext
                 detector.RegisterColumn(
                     tableModel.Table,
                     column.ColumnName,
-                    $"column {FormatColumn(tableModel.Table, column.ColumnName)} "
-                        + $"(abstract identity for {resourceLabel})"
+                    BuildOrigin(
+                        $"column {FormatColumn(tableModel.Table, column.ColumnName)} (abstract identity)",
+                        resourceLabel,
+                        column.SourceJsonPath,
+                        tableModel.JsonScope
+                    )
                 );
             }
 
@@ -532,8 +561,11 @@ public sealed class RelationalModelSetBuilderContext
                 detector.RegisterConstraint(
                     tableModel.Table,
                     constraintName,
-                    $"constraint {constraintName} on {FormatTable(tableModel.Table)} "
-                        + $"(abstract identity for {resourceLabel})"
+                    BuildOrigin(
+                        $"constraint {constraintName} on {FormatTable(tableModel.Table)} (abstract identity)",
+                        resourceLabel,
+                        null
+                    )
                 );
             }
         }
@@ -544,7 +576,7 @@ public sealed class RelationalModelSetBuilderContext
 
             detector.RegisterTable(
                 view.ViewName,
-                $"view {FormatTable(view.ViewName)} (abstract union for {resourceLabel})"
+                BuildOrigin($"view {FormatTable(view.ViewName)} (abstract union)", resourceLabel, null)
             );
 
             foreach (var column in view.ColumnsInIdentityOrder)
@@ -552,8 +584,11 @@ public sealed class RelationalModelSetBuilderContext
                 detector.RegisterColumn(
                     view.ViewName,
                     column.ColumnName,
-                    $"column {FormatColumn(view.ViewName, column.ColumnName)} "
-                        + $"(abstract union for {resourceLabel})"
+                    BuildOrigin(
+                        $"column {FormatColumn(view.ViewName, column.ColumnName)} (abstract union)",
+                        resourceLabel,
+                        column.SourceJsonPath
+                    )
                 );
             }
         }
@@ -563,7 +598,7 @@ public sealed class RelationalModelSetBuilderContext
             detector.RegisterIndex(
                 index.Table,
                 index.Name,
-                $"index {index.Name.Value} on {FormatTable(index.Table)}"
+                BuildOrigin($"index {index.Name.Value} on {FormatTable(index.Table)}", null, null)
             );
         }
 
@@ -572,7 +607,7 @@ public sealed class RelationalModelSetBuilderContext
             detector.RegisterTrigger(
                 trigger.Table,
                 trigger.Name,
-                $"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}"
+                BuildOrigin($"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}", null, null)
             );
         }
 

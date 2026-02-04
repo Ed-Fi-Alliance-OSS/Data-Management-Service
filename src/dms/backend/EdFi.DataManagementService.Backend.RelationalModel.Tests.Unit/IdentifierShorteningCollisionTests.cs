@@ -45,10 +45,16 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
     public void It_should_fail_with_identifier_shortening_collision()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("Identifier shortening collisions detected");
-        _exception.Message.Should().Contain("CollisionName");
-        _exception.Message.Should().Contain("LongTableNameAlpha");
-        _exception.Message.Should().Contain("LongTableNameBeta");
+        _exception!
+            .Message.Should()
+            .Be(
+                "Identifier shortening collisions detected: "
+                    + "table name collision AfterDialectShortening(Pgsql:8-bytes) in schema 'edfi': "
+                    + "LongTableNameAlpha -> CollisionName "
+                    + "(table edfi.LongTableNameAlpha, resource 'Ed-Fi:School', path '$'), "
+                    + "LongTableNameBeta -> CollisionName "
+                    + "(table edfi.LongTableNameBeta, resource 'Ed-Fi:SchoolTypeDescriptor', path '$')"
+            );
     }
 
     /// <summary>
