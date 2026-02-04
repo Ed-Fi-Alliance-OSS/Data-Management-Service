@@ -1,0 +1,15 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectVersion": "5.0.0",
+    "projectEndpointName": "ed-fi",
+    "isExtensionProject": false,
+    "resourceSchemas": {
+      "students": {
+        "resourceName": "Student",
+        "isDescriptor": false
+      }
+    }
+  }
+}
