@@ -183,20 +183,69 @@ public sealed class SqlWriter
 
     /// <summary>
     /// Applies canonicalization rules to the raw SQL text.
+    /// Single-pass algorithm that normalizes line endings and removes trailing whitespace
+    /// without intermediate array allocations.
     /// </summary>
     private static string Canonicalize(string raw)
     {
-        // Normalize line endings to Unix-style LF
-        var normalized = raw.Replace("\r\n", "\n").Replace("\r", "\n");
-
-        // Remove trailing whitespace from each line
-        var lines = normalized.Split('\n');
-        for (var i = 0; i < lines.Length; i++)
+        if (string.IsNullOrEmpty(raw))
         {
-            lines[i] = lines[i].TrimEnd();
+            return raw ?? string.Empty;
         }
 
-        return string.Join("\n", lines);
+        var builder = new StringBuilder(raw.Length);
+        var lineStart = 0;
+        var lastNonWhitespaceInLine = -1;
+
+        for (var i = 0; i < raw.Length; i++)
+        {
+            var c = raw[i];
+
+            if (c == '\r')
+            {
+                // End of line - append content up to last non-whitespace
+                if (lastNonWhitespaceInLine >= lineStart)
+                {
+                    builder.Append(raw, lineStart, lastNonWhitespaceInLine - lineStart + 1);
+                }
+
+                builder.Append('\n');
+
+                // Skip \n if this is \r\n
+                if (i + 1 < raw.Length && raw[i + 1] == '\n')
+                {
+                    i++;
+                }
+
+                lineStart = i + 1;
+                lastNonWhitespaceInLine = -1;
+            }
+            else if (c == '\n')
+            {
+                // End of line - append content up to last non-whitespace
+                if (lastNonWhitespaceInLine >= lineStart)
+                {
+                    builder.Append(raw, lineStart, lastNonWhitespaceInLine - lineStart + 1);
+                }
+
+                builder.Append('\n');
+                lineStart = i + 1;
+                lastNonWhitespaceInLine = -1;
+            }
+            else if (c != ' ' && c != '\t')
+            {
+                // Track position of last non-whitespace character on current line
+                lastNonWhitespaceInLine = i;
+            }
+        }
+
+        // Handle final line (if no trailing newline)
+        if (lastNonWhitespaceInLine >= lineStart)
+        {
+            builder.Append(raw, lineStart, lastNonWhitespaceInLine - lineStart + 1);
+        }
+
+        return builder.ToString();
     }
 }
 
