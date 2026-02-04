@@ -64,6 +64,11 @@ public sealed class RelationalModelBuilderContext
     public string? ResourceName { get; set; }
 
     /// <summary>
+    /// Optional override for the root table base name (<c>resourceSchema.relational.rootTableNameOverride</c>).
+    /// </summary>
+    public string? RootTableNameOverride { get; set; }
+
+    /// <summary>
     /// Whether the resource is a descriptor resource.
     /// </summary>
     public bool IsDescriptorResource { get; set; }

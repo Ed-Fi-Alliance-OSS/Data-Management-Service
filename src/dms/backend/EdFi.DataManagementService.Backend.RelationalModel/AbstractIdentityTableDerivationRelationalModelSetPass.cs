@@ -90,9 +90,10 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
                 columns.AddRange(identityColumns);
                 columns.Add(BuildDiscriminatorColumn());
 
+                var rootBaseName = ResolveRootBaseName(abstractEntry.ResourceSchema, abstractResource);
                 var tableName = new DbTableName(
                     project.ProjectSchema.PhysicalSchema,
-                    $"{RelationalNameConventions.ToPascalCase(abstractEntry.ResourceName)}Identity"
+                    $"{rootBaseName}Identity"
                 );
                 var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
                 var key = new TableKey(
@@ -496,6 +497,73 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
                 OnDelete: ReferentialAction.Cascade
             ),
         };
+    }
+
+    /// <summary>
+    /// Resolves the root base name for an abstract resource, applying <c>relational.rootTableNameOverride</c>
+    /// when present.
+    /// </summary>
+    private static string ResolveRootBaseName(JsonObject resourceSchema, QualifiedResourceName resource)
+    {
+        if (!resourceSchema.TryGetPropertyValue("relational", out var relationalNode))
+        {
+            return RelationalNameConventions.ToPascalCase(resource.ResourceName);
+        }
+
+        if (relationalNode is null)
+        {
+            return RelationalNameConventions.ToPascalCase(resource.ResourceName);
+        }
+
+        if (relationalNode is not JsonObject relationalObject)
+        {
+            throw new InvalidOperationException(
+                $"Expected relational to be an object for abstract resource '{FormatResource(resource)}'."
+            );
+        }
+
+        if (!relationalObject.TryGetPropertyValue("rootTableNameOverride", out var overrideNode))
+        {
+            return RelationalNameConventions.ToPascalCase(resource.ResourceName);
+        }
+
+        if (overrideNode is null)
+        {
+            throw new InvalidOperationException(
+                "relational.rootTableNameOverride must be non-empty on abstract resource "
+                    + $"'{FormatResource(resource)}'."
+            );
+        }
+
+        if (overrideNode is not JsonValue overrideValue)
+        {
+            throw new InvalidOperationException(
+                "relational.rootTableNameOverride must be a string on abstract resource "
+                    + $"'{FormatResource(resource)}'."
+            );
+        }
+
+        var overrideText = overrideValue.GetValue<string>();
+
+        if (string.IsNullOrWhiteSpace(overrideText))
+        {
+            throw new InvalidOperationException(
+                "relational.rootTableNameOverride must be non-empty on abstract resource "
+                    + $"'{FormatResource(resource)}'."
+            );
+        }
+
+        var normalized = RelationalNameConventions.ToPascalCase(overrideText);
+
+        if (string.IsNullOrWhiteSpace(normalized))
+        {
+            throw new InvalidOperationException(
+                "relational.rootTableNameOverride must normalize to a non-empty name on abstract resource "
+                    + $"'{FormatResource(resource)}'."
+            );
+        }
+
+        return normalized;
     }
 
     /// <summary>

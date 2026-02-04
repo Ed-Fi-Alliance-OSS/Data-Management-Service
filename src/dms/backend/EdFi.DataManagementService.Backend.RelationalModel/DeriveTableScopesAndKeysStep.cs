@@ -62,7 +62,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
 
         var physicalSchema = RelationalNameConventions.NormalizeSchemaName(projectEndpointName);
-        var rootBaseName = RelationalNameConventions.ToPascalCase(resourceName);
+        var rootBaseName =
+            context.RootTableNameOverride ?? RelationalNameConventions.ToPascalCase(resourceName);
         var storageKind = context.IsDescriptorResource
             ? ResourceStorageKind.SharedDescriptorTable
             : ResourceStorageKind.RelationalTables;
