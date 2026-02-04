@@ -80,10 +80,8 @@
         "isResourceExtension": false,
         "isSubclass": false,
         "allowIdentityUpdates": false,
-        "arrayUniquenessConstraints": [
-        ],
-        "identityJsonPaths": [
-        ],
+        "arrayUniquenessConstraints": [],
+        "identityJsonPaths": [],
         "documentPathsMapping": {},
         "jsonSchemaForInsert": {
           "type": "object",
@@ -91,14 +89,32 @@
             "schoolTypeDescriptorId": {
               "type": "integer"
             },
+            "namespace": {
+              "type": "string",
+              "maxLength": 255
+            },
             "codeValue": {
               "type": "string",
               "maxLength": 50
+            },
+            "shortDescription": {
+              "type": "string",
+              "maxLength": 75
+            },
+            "description": {
+              "type": "string",
+              "maxLength": 1024
+            },
+            "effectiveBeginDate": {
+              "type": "string",
+              "format": "date"
+            },
+            "effectiveEndDate": {
+              "type": "string",
+              "format": "date"
             }
           },
-          "required": [
-            "schoolTypeDescriptorId"
-          ]
+          "required": ["schoolTypeDescriptorId", "namespace", "codeValue", "shortDescription"]
         }
       }
     }
