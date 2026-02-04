@@ -331,7 +331,7 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
             )
         )
         {
-            var uniqueName = BuildUniqueConstraintName(table.Table.Name, uniqueColumns);
+            var uniqueName = ConstraintNaming.BuildArrayUniquenessName(table.Table, uniqueColumns);
             tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns));
             mutation.MarkTableMutated(table);
         }

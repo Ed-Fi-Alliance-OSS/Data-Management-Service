@@ -65,7 +65,7 @@ public class Given_Root_Unique_Constraint_Derivation
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("School_DocumentId", "Student_DocumentId");
-        uniqueConstraint.Name.Should().Be("UX_Enrollment_School_DocumentId_Student_DocumentId");
+        uniqueConstraint.Name.Should().Be("UX_Enrollment_NK");
     }
 }
 
@@ -139,7 +139,7 @@ public class Given_Descriptor_Unique_Constraint_Derivation
         var uniqueConstraint = _descriptorTable.Constraints.OfType<TableConstraint.Unique>().Single();
 
         uniqueConstraint.Columns.Select(column => column.Value).Should().Equal("Uri", "Discriminator");
-        uniqueConstraint.Name.Should().Be("UX_Descriptor_Uri_Discriminator");
+        uniqueConstraint.Name.Should().Be("UX_Descriptor_NK");
     }
 }
 
@@ -535,7 +535,7 @@ public class Given_Reference_Constraint_Derivation
     {
         var uniqueConstraint = _schoolTable
             .Constraints.OfType<TableConstraint.Unique>()
-            .Single(constraint => constraint.Name == "UX_School_DocumentId_EducationOrganizationId_SchoolId");
+            .Single(constraint => constraint.Name == "UX_School_RefKey");
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -747,7 +747,7 @@ public class Given_Target_Unique_Mutation_From_Reference
 
         var uniqueConstraint = _schoolModel
             .Root.Constraints.OfType<TableConstraint.Unique>()
-            .Single(constraint => constraint.Name == "UX_School_DocumentId_EducationOrganizationId_SchoolId");
+            .Single(constraint => constraint.Name == "UX_School_RefKey");
 
         uniqueConstraint
             .Columns.Select(column => column.Value)
@@ -803,7 +803,7 @@ public class Given_Multiple_References_To_Same_Target
     {
         var constraints = _schoolTable
             .Constraints.OfType<TableConstraint.Unique>()
-            .Where(constraint => constraint.Name == "UX_School_DocumentId_EducationOrganizationId_SchoolId");
+            .Where(constraint => constraint.Name == "UX_School_RefKey");
 
         constraints.Should().ContainSingle();
 

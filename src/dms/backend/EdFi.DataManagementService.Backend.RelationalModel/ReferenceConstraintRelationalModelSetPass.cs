@@ -141,6 +141,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
 
             var targetInfo = GetTargetIdentityInfo(mapping.TargetResource, context);
             var identityColumns = BuildReferenceIdentityColumns(mapping, binding, targetInfo, resource);
+            var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn, mapping, resource);
 
             EnsureTargetUnique(
                 targetInfo,
@@ -163,9 +164,9 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
                     )
                 )
                 {
-                    var allOrNoneName = BuildAllOrNoneConstraintName(
-                        tableAccumulator.Definition.Table.Name,
-                        binding.FkColumn
+                    var allOrNoneName = ConstraintNaming.BuildAllOrNoneName(
+                        tableAccumulator.Definition.Table,
+                        referenceBaseName
                     );
                     tableAccumulator.AddConstraint(
                         new TableConstraint.AllOrNoneNullability(
@@ -207,9 +208,10 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
                 )
             )
             {
-                var fkName = RelationalNameConventions.ForeignKeyName(
-                    tableAccumulator.Definition.Table.Name,
-                    localColumns
+                var fkName = ConstraintNaming.BuildReferenceForeignKeyName(
+                    tableAccumulator.Definition.Table,
+                    referenceBaseName,
+                    localColumns.Count > 1
                 );
 
                 tableAccumulator.AddConstraint(
@@ -541,7 +543,7 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
             )
         )
         {
-            var uniqueName = BuildUniqueConstraintName(tableAccumulator.Definition.Table.Name, uniqueColumns);
+            var uniqueName = ConstraintNaming.BuildReferenceKeyUniqueName(tableAccumulator.Definition.Table);
             tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns.ToArray()));
             mutation.MarkTableMutated(entry.Model.RelationalModel.Root);
         }

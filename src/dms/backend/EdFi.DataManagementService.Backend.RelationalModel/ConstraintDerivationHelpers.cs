@@ -8,32 +8,11 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Helper methods used by set-level constraint derivation passes to build deterministic constraint names,
-/// look up column bindings, and apply resource-level mutations.
+/// Helper methods used by set-level constraint derivation passes to look up column bindings and apply
+/// resource-level mutations.
 /// </summary>
 internal static class ConstraintDerivationHelpers
 {
-    /// <summary>
-    /// Builds a deterministic unique-constraint name for a table from the supplied column list.
-    /// </summary>
-    internal static string BuildUniqueConstraintName(string tableName, IReadOnlyList<DbColumnName> columns)
-    {
-        if (columns.Count == 0)
-        {
-            throw new InvalidOperationException("Unique constraint must include at least one column.");
-        }
-
-        return $"UX_{tableName}_{string.Join("_", columns.Select(column => column.Value))}";
-    }
-
-    /// <summary>
-    /// Builds a deterministic "all-or-none" check-constraint name for a reference FK column.
-    /// </summary>
-    internal static string BuildAllOrNoneConstraintName(string tableName, DbColumnName fkColumn)
-    {
-        return $"CK_{tableName}_{fkColumn.Value}_AllOrNone";
-    }
-
     /// <summary>
     /// Returns true when the constraint set already contains a unique constraint with the same semantic
     /// identity.

@@ -121,10 +121,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var columns = BuildKeyColumns(key.Columns);
 
-        var fkName = RelationalNameConventions.ForeignKeyName(
-            tableName.Name,
-            new[] { RelationalNameConventions.DocumentIdColumnName }
-        );
+        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
 
         TableConstraint[] constraints =
         [
@@ -158,9 +155,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var columns = BuildKeyColumns(key.Columns);
 
-        var fkName = RelationalNameConventions.ForeignKeyName(
-            _descriptorTableName.Name,
-            new[] { RelationalNameConventions.DocumentIdColumnName }
+        var fkName = ConstraintNaming.BuildForeignKeyName(
+            _descriptorTableName,
+            ConstraintNaming.DocumentToken
         );
 
         TableConstraint[] constraints =
@@ -370,7 +367,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var key = BuildChildTableKey(rootBaseName, collectionBaseNames);
         var parentKeyColumns = BuildParentKeyColumnNames(rootBaseName, parentTable.CollectionBaseNames);
 
-        var fkName = RelationalNameConventions.ForeignKeyName(tableName.Name, parentKeyColumns);
+        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parentTable.Table.Table.Name);
 
         TableConstraint[] constraints =
         [

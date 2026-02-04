@@ -106,9 +106,7 @@ public class Given_Abstract_Identity_Table_Derivation
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("DocumentId", "EducationOrganizationId", "OrganizationName");
-        unique
-            .Name.Should()
-            .Be("UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId_OrganizationName");
+        unique.Name.Should().Be("UX_EducationOrganizationIdentity_NK");
     }
 
     /// <summary>

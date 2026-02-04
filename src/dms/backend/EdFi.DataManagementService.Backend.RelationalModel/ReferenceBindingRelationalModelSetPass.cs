@@ -176,9 +176,9 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                     tableBuilder.AddColumn(descriptorColumn);
                     tableBuilder.AddConstraint(
                         new TableConstraint.ForeignKey(
-                            RelationalNameConventions.ForeignKeyName(
-                                tableBuilder.Definition.Table.Name,
-                                new[] { descriptorColumnName }
+                            ConstraintNaming.BuildDescriptorForeignKeyName(
+                                tableBuilder.Definition.Table,
+                                descriptorColumnName
                             ),
                             new[] { descriptorColumnName },
                             _descriptorTableName,

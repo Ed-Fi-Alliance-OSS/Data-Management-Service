@@ -21,7 +21,7 @@
       "Update the authoritative expected fixture outputs and add unit tests asserting the example constraints no longer repeat reference prefixes and that `h10` is absent when the base name is within the dialect limit.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Naming",
