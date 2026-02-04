@@ -47,13 +47,25 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName,
         IReadOnlyDictionary<string, DescriptorPathInfo>
     > _extensionDescriptorPathsByResource;
+    private readonly Dictionary<
+        QualifiedResourceName,
+        IReadOnlyDictionary<string, DescriptorPathInfo>
+    > _allDescriptorPathsByResource = new();
+    private readonly Dictionary<string, JsonObject> _apiSchemaRootsByProjectEndpoint = new(
+        StringComparer.Ordinal
+    );
+    private readonly Dictionary<
+        QualifiedResourceName,
+        RelationalModelBuilderContext
+    > _builderContextsByResource = new();
+    private readonly IRelationalModelBuilderStep _extractInputsStep;
     private readonly IReadOnlyDictionary<QualifiedResourceName, ResourceKeyEntry> _resourceKeysByResource;
     private readonly Dictionary<
         QualifiedResourceName,
         IReadOnlyList<ExtensionSite>
     > _extensionSitesByResource = new();
     private readonly Dictionary<string, ProjectSchemaInfo> _extensionProjectsByKey = new(
-        StringComparer.OrdinalIgnoreCase
+        StringComparer.Ordinal
     );
     private static readonly IReadOnlyList<ExtensionSite> _emptyExtensionSites = Array.Empty<ExtensionSite>();
     private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> _emptyDescriptorPaths =
@@ -65,10 +77,12 @@ public sealed class RelationalModelSetBuilderContext
     /// <param name="effectiveSchemaSet">The normalized effective schema set payload.</param>
     /// <param name="dialect">The target SQL dialect.</param>
     /// <param name="dialectRules">The shared dialect rules used during derivation.</param>
+    /// <param name="extractInputsStep">Optional extractor to populate per-resource inputs.</param>
     public RelationalModelSetBuilderContext(
         EffectiveSchemaSet effectiveSchemaSet,
         SqlDialect dialect,
-        ISqlDialectRules dialectRules
+        ISqlDialectRules dialectRules,
+        IRelationalModelBuilderStep? extractInputsStep = null
     )
     {
         ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
@@ -77,12 +91,17 @@ public sealed class RelationalModelSetBuilderContext
         EffectiveSchemaSet = effectiveSchemaSet;
         Dialect = dialect;
         DialectRules = dialectRules;
+        _extractInputsStep = extractInputsStep ?? new ExtractInputsStep();
 
         var effectiveResources = RelationalModelSetValidation.BuildEffectiveSchemaResourceIndex(
             effectiveSchemaSet
         );
         RelationalModelSetValidation.ValidateEffectiveSchemaInfo(effectiveSchemaSet, effectiveResources);
         RelationalModelSetValidation.ValidateDocumentPathsMappingTargets(
+            effectiveSchemaSet,
+            effectiveResources.Resources
+        );
+        RelationalModelSetValidation.ValidateReferenceIdentityJsonPaths(
             effectiveSchemaSet,
             effectiveResources.Resources
         );
@@ -196,16 +215,23 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName resource
     )
     {
+        if (_allDescriptorPathsByResource.TryGetValue(resource, out var cached))
+        {
+            return cached;
+        }
+
         var basePaths = GetDescriptorPathsForResource(resource);
         var extensionPaths = GetExtensionDescriptorPathsForResource(resource);
 
         if (extensionPaths.Count == 0)
         {
+            _allDescriptorPathsByResource[resource] = basePaths;
             return basePaths;
         }
 
         if (basePaths.Count == 0)
         {
+            _allDescriptorPathsByResource[resource] = extensionPaths;
             return extensionPaths;
         }
 
@@ -221,7 +247,72 @@ public sealed class RelationalModelSetBuilderContext
             combined[entry.Key] = entry.Value;
         }
 
+        _allDescriptorPathsByResource[resource] = combined;
         return combined;
+    }
+
+    /// <summary>
+    /// Builds or retrieves a cached builder context for the supplied resource.
+    /// </summary>
+    /// <param name="resourceContext">The resource schema context.</param>
+    /// <returns>The initialized builder context.</returns>
+    public RelationalModelBuilderContext GetOrCreateResourceBuilderContext(
+        ConcreteResourceSchemaContext resourceContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(resourceContext);
+
+        var projectSchema = resourceContext.Project.ProjectSchema;
+        var resource = new QualifiedResourceName(projectSchema.ProjectName, resourceContext.ResourceName);
+
+        if (_builderContextsByResource.TryGetValue(resource, out var cached))
+        {
+            return cached;
+        }
+
+        var apiSchemaRoot = GetApiSchemaRoot(
+            _apiSchemaRootsByProjectEndpoint,
+            projectSchema.ProjectEndpointName,
+            resourceContext.Project.EffectiveProject.ProjectSchema,
+            cloneProjectSchema: true
+        );
+        var descriptorPaths = GetAllDescriptorPathsForResource(resource);
+
+        var builderContext = new RelationalModelBuilderContext
+        {
+            ApiSchemaRoot = apiSchemaRoot,
+            ResourceEndpointName = resourceContext.ResourceEndpointName,
+            DescriptorPathSource = DescriptorPathSource.Precomputed,
+            DescriptorPathsByJsonPath = descriptorPaths,
+        };
+
+        _extractInputsStep.Execute(builderContext);
+
+        _builderContextsByResource[resource] = builderContext;
+
+        return builderContext;
+    }
+
+    /// <summary>
+    /// Registers a prebuilt builder context for the supplied resource.
+    /// </summary>
+    /// <param name="resource">The resource identifier.</param>
+    /// <param name="builderContext">The builder context to cache.</param>
+    public void RegisterResourceBuilderContext(
+        QualifiedResourceName resource,
+        RelationalModelBuilderContext builderContext
+    )
+    {
+        ArgumentNullException.ThrowIfNull(builderContext);
+
+        if (_builderContextsByResource.ContainsKey(resource))
+        {
+            throw new InvalidOperationException(
+                $"Builder context already registered for resource '{FormatResource(resource)}'."
+            );
+        }
+
+        _builderContextsByResource[resource] = builderContext;
     }
 
     /// <summary>
@@ -383,7 +474,7 @@ public sealed class RelationalModelSetBuilderContext
         {
             var resourceLabel = FormatResource(resource.ResourceKey.Resource);
 
-            foreach (var table in resource.RelationalModel.TablesInReadDependencyOrder)
+            foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
                 detector.RegisterTable(
                     table.Table,
@@ -417,30 +508,31 @@ public sealed class RelationalModelSetBuilderContext
         foreach (var table in orderedAbstractIdentityTables)
         {
             var resourceLabel = FormatResource(table.AbstractResourceKey.Resource);
+            var tableModel = table.TableModel;
 
             detector.RegisterTable(
-                table.Table,
-                $"table {FormatTable(table.Table)} (abstract identity for {resourceLabel})"
+                tableModel.Table,
+                $"table {FormatTable(tableModel.Table)} (abstract identity for {resourceLabel})"
             );
 
-            foreach (var column in table.ColumnsInIdentityOrder)
+            foreach (var column in tableModel.Columns)
             {
                 detector.RegisterColumn(
-                    table.Table,
+                    tableModel.Table,
                     column.ColumnName,
-                    $"column {FormatColumn(table.Table, column.ColumnName)} "
+                    $"column {FormatColumn(tableModel.Table, column.ColumnName)} "
                         + $"(abstract identity for {resourceLabel})"
                 );
             }
 
-            foreach (var constraint in table.Constraints)
+            foreach (var constraint in tableModel.Constraints)
             {
                 var constraintName = GetConstraintName(constraint);
 
                 detector.RegisterConstraint(
-                    table.Table,
+                    tableModel.Table,
                     constraintName,
-                    $"constraint {constraintName} on {FormatTable(table.Table)} "
+                    $"constraint {constraintName} on {FormatTable(tableModel.Table)} "
                         + $"(abstract identity for {resourceLabel})"
                 );
             }
@@ -604,6 +696,7 @@ public sealed class RelationalModelSetBuilderContext
         {
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
             _ => throw new InvalidOperationException(
                 $"Unsupported constraint type '{constraint.GetType().Name}'."
             ),
@@ -748,7 +841,7 @@ public sealed class RelationalModelSetBuilderContext
 
         var endpointMatches = ProjectSchemasInEndpointOrder
             .Where(project =>
-                string.Equals(project.ProjectEndpointName, projectKey, StringComparison.OrdinalIgnoreCase)
+                string.Equals(project.ProjectEndpointName, projectKey, StringComparison.Ordinal)
             )
             .ToArray();
 
@@ -767,9 +860,7 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         var projectNameMatches = ProjectSchemasInEndpointOrder
-            .Where(project =>
-                string.Equals(project.ProjectName, projectKey, StringComparison.OrdinalIgnoreCase)
-            )
+            .Where(project => string.Equals(project.ProjectName, projectKey, StringComparison.Ordinal))
             .ToArray();
 
         if (projectNameMatches.Length > 1)

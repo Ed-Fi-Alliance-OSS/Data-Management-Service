@@ -191,11 +191,9 @@ public readonly record struct JsonPathExpression(string Canonical, IReadOnlyList
 /// </param>
 /// <param name="StorageKind">The storage strategy for the resource.</param>
 /// <param name="Root">The root table (<c>$</c>) for the resource.</param>
-/// <param name="TablesInReadDependencyOrder">
-/// Tables ordered for read reconstitution (root first, then child collection tables).
-/// </param>
-/// <param name="TablesInWriteDependencyOrder">
-/// Tables ordered for write flattening (typically aligned with read order for the base traversal).
+/// <param name="TablesInDependencyOrder">
+/// Tables ordered in dependency order (root first, then child collection tables).
+/// This order is used for both read reconstitution and write flattening.
 /// </param>
 /// <param name="DocumentReferenceBindings">Document reference bindings derived from metadata.</param>
 /// <param name="DescriptorEdgeSources">Descriptor edge bindings derived from metadata.</param>
@@ -204,8 +202,7 @@ public sealed record RelationalResourceModel(
     DbSchemaName PhysicalSchema,
     ResourceStorageKind StorageKind,
     DbTableModel Root,
-    IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
-    IReadOnlyList<DbTableModel> TablesInWriteDependencyOrder,
+    IReadOnlyList<DbTableModel> TablesInDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
 );
@@ -288,6 +285,20 @@ public abstract record TableConstraint
         IReadOnlyList<DbColumnName> TargetColumns,
         ReferentialAction OnDelete = ReferentialAction.NoAction,
         ReferentialAction OnUpdate = ReferentialAction.NoAction
+    ) : TableConstraint;
+
+    /// <summary>
+    /// A check constraint that enforces all-or-none nullability for a document reference group.
+    /// </summary>
+    /// <param name="Name">The physical constraint name.</param>
+    /// <param name="FkColumn">The <c>..._DocumentId</c> FK column for the reference.</param>
+    /// <param name="DependentColumns">
+    /// The identity columns that must be populated when the FK column is populated.
+    /// </param>
+    public sealed record AllOrNoneNullability(
+        string Name,
+        DbColumnName FkColumn,
+        IReadOnlyList<DbColumnName> DependentColumns
     ) : TableConstraint;
 }
 

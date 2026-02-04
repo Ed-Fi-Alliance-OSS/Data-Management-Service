@@ -80,6 +80,38 @@ public sealed class RelationalModelBuilderContext
         Array.Empty<JsonPathExpression>();
 
     /// <summary>
+    /// Whether identity updates are allowed for the resource.
+    /// </summary>
+    public bool AllowIdentityUpdates { get; set; }
+
+    /// <summary>
+    /// Document reference mappings derived from <c>documentPathsMapping.referenceJsonPaths</c>.
+    /// </summary>
+    public IReadOnlyList<DocumentReferenceMapping> DocumentReferenceMappings { get; set; } =
+        Array.Empty<DocumentReferenceMapping>();
+
+    /// <summary>
+    /// Uniqueness constraints defined for array scopes.
+    /// </summary>
+    public IReadOnlyList<ArrayUniquenessConstraintInput> ArrayUniquenessConstraints { get; set; } =
+        Array.Empty<ArrayUniquenessConstraintInput>();
+
+    /// <summary>
+    /// Reference base-name overrides keyed by canonical JSONPath.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> ReferenceNameOverridesByPath { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Captures <c>relational.nameOverrides</c> entries that are not yet supported by the relational model builder.
+    ///
+    /// DMS-931 must apply these overrides when non-reference paths (for example, array/table scopes) become
+    /// supported.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> NameOverridesDeferredToNextStory { get; set; } =
+        new Dictionary<string, string>(StringComparer.Ordinal);
+
+    /// <summary>
     /// Descriptor value paths keyed by canonical JSONPath, used to derive descriptor FK columns instead of
     /// storing raw descriptor strings.
     /// </summary>

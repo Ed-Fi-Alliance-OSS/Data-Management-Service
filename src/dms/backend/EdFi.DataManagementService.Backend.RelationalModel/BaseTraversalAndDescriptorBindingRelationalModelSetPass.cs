@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
@@ -33,11 +34,6 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
     }
 
     /// <summary>
-    /// The explicit order for the base traversal + descriptor binding pass.
-    /// </summary>
-    public int Order { get; } = 0;
-
-    /// <summary>
     /// Executes the base traversal + descriptor binding across all concrete, non-extension resources.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>
@@ -63,7 +59,8 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
             var apiSchemaRoot = GetApiSchemaRoot(
                 apiSchemaRootsByProjectEndpoint,
                 projectSchema.ProjectEndpointName,
-                resourceContext.Project.EffectiveProject.ProjectSchema
+                resourceContext.Project.EffectiveProject.ProjectSchema,
+                cloneProjectSchema: false
             );
 
             var builderContext = new RelationalModelBuilderContext
@@ -75,6 +72,7 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
             };
 
             var result = _pipeline.Run(builderContext);
+            context.RegisterResourceBuilderContext(resourceKey, builderContext);
             var resourceKeyEntry = context.GetResourceKeyEntry(resourceKey);
 
             context.ConcreteResourcesInNameOrder.Add(
@@ -86,62 +84,6 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
             );
             context.RegisterExtensionSitesForResource(resourceKey, result.ExtensionSites);
         }
-    }
-
-    /// <summary>
-    /// Reads the <c>isResourceExtension</c> flag to determine whether the schema entry represents a
-    /// resource-extension document rather than a concrete base resource.
-    /// </summary>
-    private static bool IsResourceExtension(ConcreteResourceSchemaContext resourceContext)
-    {
-        if (
-            !resourceContext.ResourceSchema.TryGetPropertyValue(
-                "isResourceExtension",
-                out var resourceExtensionNode
-            ) || resourceExtensionNode is null
-        )
-        {
-            throw new InvalidOperationException(
-                $"Expected isResourceExtension to be on ResourceSchema for resource "
-                    + $"'{resourceContext.Project.ProjectSchema.ProjectName}:{resourceContext.ResourceName}', "
-                    + "invalid ApiSchema."
-            );
-        }
-
-        return resourceExtensionNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<bool>(),
-            _ => throw new InvalidOperationException(
-                $"Expected isResourceExtension to be a boolean for resource "
-                    + $"'{resourceContext.Project.ProjectSchema.ProjectName}:{resourceContext.ResourceName}', "
-                    + "invalid ApiSchema."
-            ),
-        };
-    }
-
-    /// <summary>
-    /// Builds (and caches) a minimal <c>ApiSchema.json</c>-shaped root node for the per-resource pipeline.
-    /// </summary>
-    /// <param name="apiSchemaRootsByProjectEndpoint">Cache of root nodes by project endpoint name.</param>
-    /// <param name="projectEndpointName">The project endpoint name for the resource.</param>
-    /// <param name="projectSchema">The project schema node.</param>
-    /// <returns>A root object containing the <c>projectSchema</c> property.</returns>
-    private static JsonObject GetApiSchemaRoot(
-        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
-        string projectEndpointName,
-        JsonObject projectSchema
-    )
-    {
-        if (apiSchemaRootsByProjectEndpoint.TryGetValue(projectEndpointName, out var apiSchemaRoot))
-        {
-            return apiSchemaRoot;
-        }
-
-        apiSchemaRoot = new JsonObject { ["projectSchema"] = projectSchema };
-
-        apiSchemaRootsByProjectEndpoint[projectEndpointName] = apiSchemaRoot;
-
-        return apiSchemaRoot;
     }
 
     /// <summary>

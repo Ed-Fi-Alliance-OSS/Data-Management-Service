@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an inlined object property.
+/// </summary>
 [TestFixture]
 public class Given_An_Inlined_Object_Property
 {
     private DbColumnModel _column = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -49,6 +55,9 @@ public class Given_An_Inlined_Object_Property
         _column = rootTable.Columns.Single(column => column.ColumnName.Value == "ABC");
     }
 
+    /// <summary>
+    /// It should inline object properties with a prefixed name.
+    /// </summary>
     [Test]
     public void It_should_inline_object_properties_with_a_prefixed_name()
     {
@@ -63,11 +72,17 @@ public class Given_An_Inlined_Object_Property
     }
 }
 
+/// <summary>
+/// Test fixture for colliding column names.
+/// </summary>
 [TestFixture]
 public class Given_Colliding_Column_Names
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -91,6 +106,9 @@ public class Given_Colliding_Column_Names
         }
     }
 
+    /// <summary>
+    /// It should include collision details in the error message.
+    /// </summary>
     [Test]
     public void It_should_include_collision_details_in_the_error_message()
     {
@@ -103,6 +121,9 @@ public class Given_Colliding_Column_Names
     }
 }
 
+/// <summary>
+/// Test fixture for a descriptor path.
+/// </summary>
 [TestFixture]
 public class Given_A_Descriptor_Path
 {
@@ -110,6 +131,9 @@ public class Given_A_Descriptor_Path
     private DescriptorEdgeSource _edge = default!;
     private TableConstraint.ForeignKey _foreignKey = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -151,6 +175,9 @@ public class Given_A_Descriptor_Path
             .Single(fk => fk.TargetTable.Name == "Descriptor");
     }
 
+    /// <summary>
+    /// It should create descriptor fk columns.
+    /// </summary>
     [Test]
     public void It_should_create_descriptor_fk_columns()
     {
@@ -165,6 +192,9 @@ public class Given_A_Descriptor_Path
         _column.TargetResource.Should().Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
     }
 
+    /// <summary>
+    /// It should create descriptor foreign keys.
+    /// </summary>
     [Test]
     public void It_should_create_descriptor_foreign_keys()
     {
@@ -175,6 +205,9 @@ public class Given_A_Descriptor_Path
         _foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
+    /// <summary>
+    /// It should record descriptor edges.
+    /// </summary>
     [Test]
     public void It_should_record_descriptor_edges()
     {
@@ -186,12 +219,18 @@ public class Given_A_Descriptor_Path
     }
 }
 
+/// <summary>
+/// Test fixture for a descriptor scalar array.
+/// </summary>
 [TestFixture]
 public class Given_A_Descriptor_Scalar_Array
 {
     private DescriptorEdgeSource _edge = default!;
     private DbTableModel _table = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -227,12 +266,15 @@ public class Given_A_Descriptor_Scalar_Array
             }
         );
 
-        _table = context.ResourceModel!.TablesInReadDependencyOrder.Single(table =>
+        _table = context.ResourceModel!.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolGradeLevelDescriptor"
         );
         _edge = context.ResourceModel.DescriptorEdgeSources.Single();
     }
 
+    /// <summary>
+    /// It should create a descriptor fk column in the child table.
+    /// </summary>
     [Test]
     public void It_should_create_a_descriptor_fk_column_in_the_child_table()
     {
@@ -247,6 +289,9 @@ public class Given_A_Descriptor_Scalar_Array
         descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
     }
 
+    /// <summary>
+    /// It should record a descriptor edge source for the array element path.
+    /// </summary>
     [Test]
     public void It_should_record_a_descriptor_edge_source_for_the_array_element_path()
     {
@@ -259,6 +304,9 @@ public class Given_A_Descriptor_Scalar_Array
     }
 }
 
+/// <summary>
+/// Test fixture for descriptor uri strings without max length.
+/// </summary>
 [TestFixture]
 public class Given_Descriptor_Uri_Strings_Without_MaxLength
 {
@@ -269,6 +317,9 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
     private JsonPathExpression _referenceDescriptorPath = default!;
     private JsonPathExpression _arrayDescriptorPath = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -328,7 +379,7 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
         );
 
         _rootTable = context.ResourceModel!.Root;
-        _descriptorTable = context.ResourceModel.TablesInReadDependencyOrder.Single(table =>
+        _descriptorTable = context.ResourceModel.TablesInDependencyOrder.Single(table =>
             table.Table.Name == "SchoolGradeLevelDescriptor"
         );
 
@@ -340,6 +391,9 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
         );
     }
 
+    /// <summary>
+    /// It should create descriptor fk columns instead of string scalars.
+    /// </summary>
     [Test]
     public void It_should_create_descriptor_fk_columns_instead_of_string_scalars()
     {
@@ -365,11 +419,136 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
     }
 }
 
+/// <summary>
+/// Test fixture for a reference identity field.
+/// </summary>
+[TestFixture]
+public class Given_A_Reference_Identity_Field
+{
+    private DbTableModel _rootTable = default!;
+    private IReadOnlyList<DescriptorEdgeSource> _descriptorEdges = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["programReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["programName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
+                        ["programTypeDescriptor"] = new JsonObject
+                        {
+                            ["type"] = "string",
+                            ["maxLength"] = 306,
+                        },
+                        ["link"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["href"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
+                            },
+                        },
+                    },
+                    ["required"] = new JsonArray("programName", "programTypeDescriptor"),
+                },
+                ["name"] = new JsonObject { ["type"] = "string", ["maxLength"] = 60 },
+            },
+            ["required"] = new JsonArray("programReference", "name"),
+        };
+
+        var referenceObjectPath = JsonPathExpressionCompiler.Compile("$.programReference");
+        var programNamePath = JsonPathExpressionCompiler.Compile("$.programReference.programName");
+        var programTypeDescriptorPath = JsonPathExpressionCompiler.Compile(
+            "$.programReference.programTypeDescriptor"
+        );
+
+        var descriptorInfo = new DescriptorPathInfo(
+            programTypeDescriptorPath,
+            new QualifiedResourceName("Ed-Fi", "ProgramTypeDescriptor")
+        );
+
+        var context = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
+            schema,
+            builderContext =>
+            {
+                builderContext.DescriptorPathsByJsonPath = new Dictionary<string, DescriptorPathInfo>(
+                    StringComparer.Ordinal
+                )
+                {
+                    [programTypeDescriptorPath.Canonical] = descriptorInfo,
+                };
+                builderContext.DocumentReferenceMappings =
+                [
+                    new DocumentReferenceMapping(
+                        "programReference",
+                        new QualifiedResourceName("Ed-Fi", "Program"),
+                        true,
+                        false,
+                        referenceObjectPath,
+                        new[]
+                        {
+                            new ReferenceJsonPathBinding(
+                                JsonPathExpressionCompiler.Compile("$.programName"),
+                                programNamePath
+                            ),
+                            new ReferenceJsonPathBinding(
+                                JsonPathExpressionCompiler.Compile("$.programTypeDescriptor"),
+                                programTypeDescriptorPath
+                            ),
+                        }
+                    ),
+                ];
+            }
+        );
+
+        _rootTable = context.ResourceModel!.Root;
+        _descriptorEdges = context.ResourceModel.DescriptorEdgeSources;
+    }
+
+    /// <summary>
+    /// It should suppress reference identity columns.
+    /// </summary>
+    [Test]
+    public void It_should_suppress_reference_identity_columns()
+    {
+        var columnNames = _rootTable.Columns.Select(column => column.ColumnName.Value).ToArray();
+
+        columnNames.Should().NotContain("ProgramReferenceProgramName");
+        columnNames.Should().NotContain("ProgramReferenceProgramTypeDescriptor_DescriptorId");
+        columnNames.Should().NotContain("ProgramReferenceLinkHref");
+    }
+
+    /// <summary>
+    /// It should not emit descriptor edges for reference identity fields.
+    /// </summary>
+    [Test]
+    public void It_should_not_emit_descriptor_edges_for_reference_identity_fields()
+    {
+        _descriptorEdges.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// Test fixture for a property with x nullable.
+/// </summary>
 [TestFixture]
 public class Given_A_Property_With_XNullable
 {
     private DbColumnModel _column = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -388,6 +567,9 @@ public class Given_A_Property_With_XNullable
         _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Value");
     }
 
+    /// <summary>
+    /// It should override requiredness for nullability.
+    /// </summary>
     [Test]
     public void It_should_override_requiredness_for_nullability()
     {
@@ -395,11 +577,78 @@ public class Given_A_Property_With_XNullable
     }
 }
 
+/// <summary>
+/// Test fixture for a nullable identity property.
+/// </summary>
+[TestFixture]
+public class Given_A_Nullable_Identity_Property
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolId"] = new JsonObject
+                {
+                    ["type"] = "string",
+                    ["maxLength"] = 10,
+                    ["x-nullable"] = true,
+                },
+            },
+            ["required"] = new JsonArray("schoolId"),
+        };
+
+        var identityPath = JsonPathExpressionCompiler.Compile("$.schoolId");
+
+        try
+        {
+            _ = DeriveColumnsAndBindDescriptorEdgesStepTestContext.BuildContext(
+                schema,
+                builderContext =>
+                {
+                    builderContext.IdentityJsonPaths = new[] { identityPath };
+                }
+            );
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast for nullable identity.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_for_nullable_identity()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Identity path");
+        _exception.Message.Should().Contain("$.schoolId");
+        _exception.Message.Should().Contain("nullable");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+    }
+}
+
+/// <summary>
+/// Test fixture for a string property without max length.
+/// </summary>
 [TestFixture]
 public class Given_A_String_Property_Without_MaxLength
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -420,6 +669,9 @@ public class Given_A_String_Property_Without_MaxLength
         }
     }
 
+    /// <summary>
+    /// It should throw when max length is missing.
+    /// </summary>
     [Test]
     public void It_should_throw_when_max_length_is_missing()
     {
@@ -429,6 +681,9 @@ public class Given_A_String_Property_Without_MaxLength
     }
 }
 
+/// <summary>
+/// Test fixture for string properties with format and no max length.
+/// </summary>
 [TestFixture]
 public class Given_String_Properties_With_Format_And_No_MaxLength
 {
@@ -436,6 +691,9 @@ public class Given_String_Properties_With_Format_And_No_MaxLength
     private DbColumnModel _dateTimeColumn = default!;
     private DbColumnModel _timeColumn = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -461,6 +719,9 @@ public class Given_String_Properties_With_Format_And_No_MaxLength
         _timeColumn = rootTable.Columns.Single(column => column.ColumnName.Value == "StartTime");
     }
 
+    /// <summary>
+    /// It should map formatted strings to temporal types.
+    /// </summary>
     [Test]
     public void It_should_map_formatted_strings_to_temporal_types()
     {
@@ -470,11 +731,17 @@ public class Given_String_Properties_With_Format_And_No_MaxLength
     }
 }
 
+/// <summary>
+/// Test fixture for a duration string without max length.
+/// </summary>
 [TestFixture]
 public class Given_A_Duration_String_Without_MaxLength
 {
     private DbColumnModel _column = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -501,6 +768,9 @@ public class Given_A_Duration_String_Without_MaxLength
         _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Duration");
     }
 
+    /// <summary>
+    /// It should allow missing max length for duration strings.
+    /// </summary>
     [Test]
     public void It_should_allow_missing_max_length_for_duration_strings()
     {
@@ -509,11 +779,17 @@ public class Given_A_Duration_String_Without_MaxLength
     }
 }
 
+/// <summary>
+/// Test fixture for an enumeration string without max length.
+/// </summary>
 [TestFixture]
 public class Given_An_Enumeration_String_Without_MaxLength
 {
     private DbColumnModel _column = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -545,6 +821,9 @@ public class Given_An_Enumeration_String_Without_MaxLength
         );
     }
 
+    /// <summary>
+    /// It should allow missing max length for enumeration strings.
+    /// </summary>
     [Test]
     public void It_should_allow_missing_max_length_for_enumeration_strings()
     {
@@ -553,11 +832,17 @@ public class Given_An_Enumeration_String_Without_MaxLength
     }
 }
 
+/// <summary>
+/// Test fixture for a number property with decimal validation.
+/// </summary>
 [TestFixture]
 public class Given_A_Number_Property_With_Decimal_Validation
 {
     private DbColumnModel _column = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -588,6 +873,9 @@ public class Given_A_Number_Property_With_Decimal_Validation
         _column = context.ResourceModel!.Root.Columns.Single(column => column.ColumnName.Value == "Amount");
     }
 
+    /// <summary>
+    /// It should map decimals using validation info.
+    /// </summary>
     [Test]
     public void It_should_map_decimals_using_validation_info()
     {
@@ -596,11 +884,17 @@ public class Given_A_Number_Property_With_Decimal_Validation
     }
 }
 
+/// <summary>
+/// Test fixture for a number property without decimal validation.
+/// </summary>
 [TestFixture]
 public class Given_A_Number_Property_Without_Decimal_Validation
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -621,6 +915,9 @@ public class Given_A_Number_Property_Without_Decimal_Validation
         }
     }
 
+    /// <summary>
+    /// It should fail with a schema compilation error.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_schema_compilation_error()
     {
@@ -629,11 +926,17 @@ public class Given_A_Number_Property_Without_Decimal_Validation
     }
 }
 
+/// <summary>
+/// Test fixture for a number property with incomplete decimal validation.
+/// </summary>
 [TestFixture]
 public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -669,6 +972,9 @@ public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
         }
     }
 
+    /// <summary>
+    /// It should fail with a schema compilation error.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_schema_compilation_error()
     {
@@ -677,12 +983,18 @@ public class Given_A_Number_Property_With_Incomplete_Decimal_Validation
     }
 }
 
+/// <summary>
+/// Test fixture for a json schema with additional properties schema.
+/// </summary>
 [TestFixture]
 public class Given_A_JsonSchema_With_AdditionalProperties_Schema
 {
     private DbTableModel _rootTable = default!;
     private string[] _tableNames = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -732,16 +1044,22 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
 
         _rootTable = context.ResourceModel!.Root;
         _tableNames = context
-            .ResourceModel.TablesInReadDependencyOrder.Select(table => table.Table.Name)
+            .ResourceModel.TablesInDependencyOrder.Select(table => table.Table.Name)
             .ToArray();
     }
 
+    /// <summary>
+    /// It should ignore additional properties when deriving columns.
+    /// </summary>
     [Test]
     public void It_should_ignore_additional_properties_when_deriving_columns()
     {
         _rootTable.Columns.Select(column => column.ColumnName.Value).Should().Equal("DocumentId", "Name");
     }
 
+    /// <summary>
+    /// It should ignore additional properties when deriving tables.
+    /// </summary>
     [Test]
     public void It_should_ignore_additional_properties_when_deriving_tables()
     {
@@ -749,6 +1067,9 @@ public class Given_A_JsonSchema_With_AdditionalProperties_Schema
     }
 }
 
+/// <summary>
+/// Test type derive columns and bind descriptor edges step test context.
+/// </summary>
 internal static class DeriveColumnsAndBindDescriptorEdgesStepTestContext
 {
     /// <summary>

@@ -9,11 +9,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an extension project key matching project endpoint name.
+/// </summary>
 [TestFixture]
 public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name
 {
     private ProjectSchemaInfo _project = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -42,15 +48,18 @@ public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name
         };
 
         var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
-        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("SAMPLE-EXT");
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("sample-ext");
 
         _project = context.ResolveExtensionProjectKey(
-            "SAMPLE-EXT",
+            "sample-ext",
             extensionSite,
             new QualifiedResourceName("Ed-Fi", "School")
         );
     }
 
+    /// <summary>
+    /// It should resolve to the matching endpoint name.
+    /// </summary>
     [Test]
     public void It_should_resolve_to_the_matching_endpoint_name()
     {
@@ -58,11 +67,17 @@ public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name
     }
 }
 
+/// <summary>
+/// Test fixture for an extension project key matching project name.
+/// </summary>
 [TestFixture]
 public class Given_An_Extension_Project_Key_Matching_Project_Name
 {
     private ProjectSchemaInfo _project = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -100,6 +115,9 @@ public class Given_An_Extension_Project_Key_Matching_Project_Name
         );
     }
 
+    /// <summary>
+    /// It should resolve to the matching project name when no endpoint match exists.
+    /// </summary>
     [Test]
     public void It_should_resolve_to_the_matching_project_name_when_no_endpoint_match_exists()
     {
@@ -107,11 +125,17 @@ public class Given_An_Extension_Project_Key_Matching_Project_Name
     }
 }
 
+/// <summary>
+/// Test fixture for an extension project key matching endpoint and project names.
+/// </summary>
 [TestFixture]
 public class Given_An_Extension_Project_Key_Matching_Endpoint_And_Project_Names
 {
     private ProjectSchemaInfo _project = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -148,15 +172,18 @@ public class Given_An_Extension_Project_Key_Matching_Endpoint_And_Project_Names
         };
 
         var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
-        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("ALPHA");
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("alpha");
 
         _project = context.ResolveExtensionProjectKey(
-            "ALPHA",
+            "alpha",
             extensionSite,
             new QualifiedResourceName("Ed-Fi", "School")
         );
     }
 
+    /// <summary>
+    /// It should prefer endpoint name matches over project name fallbacks.
+    /// </summary>
     [Test]
     public void It_should_prefer_endpoint_name_matches_over_project_name_fallbacks()
     {
@@ -164,11 +191,17 @@ public class Given_An_Extension_Project_Key_Matching_Endpoint_And_Project_Names
     }
 }
 
+/// <summary>
+/// Test fixture for an extension project key matching a non extension project.
+/// </summary>
 [TestFixture]
 public class Given_An_Extension_Project_Key_Matching_A_Non_Extension_Project
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -213,6 +246,9 @@ public class Given_An_Extension_Project_Key_Matching_A_Non_Extension_Project
         }
     }
 
+    /// <summary>
+    /// It should fail when the key resolves to a non extension project.
+    /// </summary>
     [Test]
     public void It_should_fail_when_the_key_resolves_to_a_non_extension_project()
     {
@@ -223,11 +259,17 @@ public class Given_An_Extension_Project_Key_Matching_A_Non_Extension_Project
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema set with an unknown extension project key.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_An_Unknown_Extension_Project_Key
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -278,6 +320,9 @@ public class Given_An_EffectiveSchemaSet_With_An_Unknown_Extension_Project_Key
         }
     }
 
+    /// <summary>
+    /// It should fail with an unknown extension project key.
+    /// </summary>
     [Test]
     public void It_should_fail_with_an_unknown_extension_project_key()
     {
@@ -289,11 +334,17 @@ public class Given_An_EffectiveSchemaSet_With_An_Unknown_Extension_Project_Key
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema set with an ambiguous extension project key.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_An_Ambiguous_Extension_Project_Key
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -352,6 +403,9 @@ public class Given_An_EffectiveSchemaSet_With_An_Ambiguous_Extension_Project_Key
         }
     }
 
+    /// <summary>
+    /// It should fail with an ambiguous extension project key.
+    /// </summary>
     [Test]
     public void It_should_fail_with_an_ambiguous_extension_project_key()
     {
@@ -363,8 +417,14 @@ public class Given_An_EffectiveSchemaSet_With_An_Ambiguous_Extension_Project_Key
     }
 }
 
+/// <summary>
+/// Test type extension project key fixture.
+/// </summary>
 internal static class ExtensionProjectKeyFixture
 {
+    /// <summary>
+    /// Create extension site.
+    /// </summary>
     public static ExtensionSite CreateExtensionSite(params string[] projectKeys)
     {
         return new ExtensionSite(
@@ -374,6 +434,9 @@ internal static class ExtensionProjectKeyFixture
         );
     }
 
+    /// <summary>
+    /// Create context.
+    /// </summary>
     public static RelationalModelSetBuilderContext CreateContext(
         IReadOnlyList<EffectiveProjectSchema> projects,
         IReadOnlyList<ResourceKeyEntry> resourceKeys
@@ -388,6 +451,9 @@ internal static class ExtensionProjectKeyFixture
         );
     }
 
+    /// <summary>
+    /// Create effective schema set.
+    /// </summary>
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(
         IReadOnlyList<EffectiveProjectSchema> projects,
         IReadOnlyList<ResourceKeyEntry> resourceKeys

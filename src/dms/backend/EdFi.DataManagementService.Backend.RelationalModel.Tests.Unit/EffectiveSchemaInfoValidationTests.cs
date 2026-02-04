@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an effective schema info with a resource key count mismatch.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_A_ResourceKeyCount_Mismatch
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -38,6 +44,9 @@ public class Given_An_EffectiveSchemaInfo_With_A_ResourceKeyCount_Mismatch
         }
     }
 
+    /// <summary>
+    /// It should fail with a resource key count mismatch.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_resource_key_count_mismatch()
     {
@@ -47,11 +56,17 @@ public class Given_An_EffectiveSchemaInfo_With_A_ResourceKeyCount_Mismatch
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with missing resource keys.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Missing_ResourceKeys
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -75,6 +90,9 @@ public class Given_An_EffectiveSchemaInfo_With_Missing_ResourceKeys
         }
     }
 
+    /// <summary>
+    /// It should fail with a missing resource key.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_missing_resource_key()
     {
@@ -84,11 +102,17 @@ public class Given_An_EffectiveSchemaInfo_With_Missing_ResourceKeys
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with duplicate resource key ids.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeyIds
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -115,6 +139,9 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeyIds
         }
     }
 
+    /// <summary>
+    /// It should fail with duplicate resource key ids.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_resource_key_ids()
     {
@@ -124,11 +151,17 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeyIds
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with duplicate resource keys.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeys
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -152,6 +185,9 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeys
         }
     }
 
+    /// <summary>
+    /// It should fail with duplicate resource keys.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_resource_keys()
     {
@@ -161,11 +197,17 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_ResourceKeys
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with extra resource keys.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Extra_ResourceKeys
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -189,6 +231,9 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_ResourceKeys
         }
     }
 
+    /// <summary>
+    /// It should fail with extra resource keys.
+    /// </summary>
     [Test]
     public void It_should_fail_with_extra_resource_keys()
     {
@@ -198,11 +243,17 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_ResourceKeys
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with mismatched abstract resource flags.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Mismatched_Abstract_Resource_Flags
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -236,6 +287,9 @@ public class Given_An_EffectiveSchemaInfo_With_Mismatched_Abstract_Resource_Flag
         }
     }
 
+    /// <summary>
+    /// It should fail with an abstract resource mismatch.
+    /// </summary>
     [Test]
     public void It_should_fail_with_an_abstract_resource_mismatch()
     {
@@ -245,11 +299,17 @@ public class Given_An_EffectiveSchemaInfo_With_Mismatched_Abstract_Resource_Flag
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with missing schema components.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Missing_SchemaComponents
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -273,6 +333,9 @@ public class Given_An_EffectiveSchemaInfo_With_Missing_SchemaComponents
         }
     }
 
+    /// <summary>
+    /// It should fail with missing schema components.
+    /// </summary>
     [Test]
     public void It_should_fail_with_missing_schema_components()
     {
@@ -282,11 +345,17 @@ public class Given_An_EffectiveSchemaInfo_With_Missing_SchemaComponents
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with extra schema components.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -315,6 +384,9 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
         }
     }
 
+    /// <summary>
+    /// It should fail with extra schema components.
+    /// </summary>
     [Test]
     public void It_should_fail_with_extra_schema_components()
     {
@@ -324,11 +396,17 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with duplicate schema components.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -357,6 +435,9 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
         }
     }
 
+    /// <summary>
+    /// It should fail with duplicate schema components.
+    /// </summary>
     [Test]
     public void It_should_fail_with_duplicate_schema_components()
     {
@@ -366,11 +447,17 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema info with out of order schema components.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -417,6 +504,9 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
         }
     }
 
+    /// <summary>
+    /// It should fail with out of order schema components.
+    /// </summary>
     [Test]
     public void It_should_fail_with_out_of_order_schema_components()
     {
@@ -427,8 +517,14 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
     }
 }
 
+/// <summary>
+/// Test type effective schema fixture.
+/// </summary>
 internal static class EffectiveSchemaFixture
 {
+    /// <summary>
+    /// Create effective schema set.
+    /// </summary>
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(
         JsonObject projectSchema,
         IReadOnlyList<ResourceKeyEntry> resourceKeys,
@@ -460,6 +556,9 @@ internal static class EffectiveSchemaFixture
         return new EffectiveSchemaSet(effectiveSchemaInfo, new[] { project });
     }
 
+    /// <summary>
+    /// Create resource key.
+    /// </summary>
     public static ResourceKeyEntry CreateResourceKey(
         short keyId,
         string projectName,
@@ -475,6 +574,9 @@ internal static class EffectiveSchemaFixture
         );
     }
 
+    /// <summary>
+    /// Create project schema.
+    /// </summary>
     public static JsonObject CreateProjectSchema(
         params (string EndpointName, string ResourceName, bool IsResourceExtension)[] resources
     )
@@ -494,6 +596,9 @@ internal static class EffectiveSchemaFixture
         return new JsonObject { ["resourceSchemas"] = resourceSchemas };
     }
 
+    /// <summary>
+    /// Add abstract resources.
+    /// </summary>
     public static void AddAbstractResources(
         JsonObject projectSchema,
         params (string EndpointName, string ResourceName)[] abstractResources

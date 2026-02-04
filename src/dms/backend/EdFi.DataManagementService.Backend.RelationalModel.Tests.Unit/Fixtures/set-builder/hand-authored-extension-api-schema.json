@@ -9,16 +9,32 @@
         "resourceName": "Section",
         "isDescriptor": false,
         "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
         "identityJsonPaths": [
           "$.sectionId"
         ],
         "documentPathsMapping": {
+          "SectionId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.sectionId"
+          },
           "School": {
             "isReference": true,
             "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
             "projectName": "Ed-Fi",
             "resourceName": "School",
             "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId"
+              },
               {
                 "identityJsonPath": "$.schoolTypeDescriptor",
                 "referenceJsonPath": "$.schoolReference.schoolTypeDescriptor"
@@ -33,13 +49,16 @@
               "type": "integer"
             },
             "schoolReference": {
-              "type": "object",
-              "properties": {
-                "schoolTypeDescriptor": {
-                  "type": "string",
-                  "maxLength": 50
+                "type": "object",
+                "properties": {
+                  "schoolId": {
+                    "type": "integer"
+                  },
+                  "schoolTypeDescriptor": {
+                    "type": "string",
+                    "maxLength": 50
+                  }
                 }
-              }
             }
           },
           "required": [
@@ -51,8 +70,11 @@
         "resourceName": "ExtensionDescriptor",
         "isDescriptor": true,
         "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
         "identityJsonPaths": [
-          "$.extensionDescriptorId"
         ],
         "documentPathsMapping": {},
         "jsonSchemaForInsert": {

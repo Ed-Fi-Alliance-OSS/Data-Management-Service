@@ -545,7 +545,9 @@ Typical structure:
     - `..._DocumentId BIGINT` (stable FK key part), and
     - one column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`),
     enforced with a composite FK:
-    - `FOREIGN KEY (..._DocumentId, ..._{IdentityParts...}) REFERENCES <TargetIdentityKey>(DocumentId, <IdentityParts...>) ON UPDATE CASCADE`
+    - `FOREIGN KEY (..._DocumentId, ..._{IdentityParts...}) REFERENCES <TargetIdentityKey>(DocumentId, <IdentityParts...>)`
+      - `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true`
+      - `ON UPDATE NO ACTION` when `allowIdentityUpdates=false`
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part columns are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part columns are not `NULL`
@@ -571,7 +573,7 @@ Some Ed-Fi references target **abstract resources** (polymorphic references), no
 - `EducationOrganization` (e.g., `educationOrganizationReference`)
 - `GeneralStudentProgramAssociation` (e.g., `generalStudentProgramAssociationReference`)
 
-Abstract resources have **no physical root table**, but `ON UPDATE CASCADE` requires a concrete FK target with the required identity columns.
+Abstract resources have **no physical root table**, but composite FKs (and any identity-update cascades) require a concrete FK target with the required identity columns.
 
 This redesign provisions an **identity table per abstract resource**:
 
@@ -583,7 +585,7 @@ This redesign provisions an **identity table per abstract resource**:
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>) ON UPDATE CASCADE`.
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)` with `ON UPDATE CASCADE` (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
 
 Optional: `{schema}.{AbstractResource}_View` union view
 

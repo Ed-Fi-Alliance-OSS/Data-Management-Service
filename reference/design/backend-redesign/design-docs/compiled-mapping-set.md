@@ -130,9 +130,7 @@ public sealed record ConcreteResourceModel(
 
 public sealed record AbstractIdentityTableInfo(
     ResourceKeyEntry AbstractResourceKey,
-    DbTableName Table,
-    IReadOnlyList<DbColumnModel> ColumnsInIdentityOrder,
-    IReadOnlyList<TableConstraint> Constraints
+    DbTableModel TableModel
 );
 
 public sealed record AbstractUnionViewInfo(
@@ -297,7 +295,7 @@ For a write request targeting resource `R`:
    - This is what allows the flattener to populate FK columns for nested arrays in O(1) without per-row DB calls.
 
 5. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
-   - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInWriteDependencyOrder`, enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
+   - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInDependencyOrder`, enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
    - Each `TableWritePlan` contains `ColumnBindings: IReadOnlyList<WriteColumnBinding>`.
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
      - `DocumentId`, `ParentKeyPart(i)`, `Ordinal`
@@ -341,7 +339,7 @@ For a read request targeting resource `R`:
    - Execute one batched DB command that yields multiple result sets by concatenating:
      1) **keyset materialization SQL** (create/clear + insert `DocumentId`s),
      2) a `SELECT` of `dms.Document` joined to the keyset (document UUID + stamps like `_etag`/`_lastModifiedDate` + resource key id), and
-     3) one `SELECT` per `DbTableModel` in `ResourceReadPlan.Model.TablesInReadDependencyOrder`, using each table’s compiled `TableReadPlan.SelectByKeysetSql` (each `SELECT` joins the table to the keyset to return all rows for the page).
+     3) one `SELECT` per `DbTableModel` in `ResourceReadPlan.Model.TablesInDependencyOrder`, using each table’s compiled `TableReadPlan.SelectByKeysetSql` (each `SELECT` joins the table to the keyset to return all rows for the page).
    - Read result sets in order using `DbDataReader.NextResult()` / `QueryMultiple`, mapping each result set to the corresponding table model in the same order used to build the batch.
    - Each `SelectByKeysetSql` must emit rows ordered by the table key (parent key parts..., ordinal) so reconstitution can assemble arrays deterministically.
    - Each `SelectByKeysetSql` must emit its select-list in a stable order consistent with the table model (so readers can consume by ordinal without name-based mapping).
@@ -352,7 +350,7 @@ For a read request targeting resource `R`:
         - treat the root table as the anchor (one row per `DocumentId`),
         - for each child table, group rows by the *parent key parts* (the prefix of the composite key) and attach them to the parent row,
         - for array scopes, order siblings by the `Ordinal` key column so JSON arrays are stable and deterministic,
-        - repeat depth-first using `TablesInReadDependencyOrder` so parents are always available before children.
+        - repeat depth-first using `TablesInDependencyOrder` so parents are always available before children.
      2) **Stream JSON output** from that row graph:
         - write scalar columns to their JSON locations using precompiled “column → JSON writer” instructions (e.g., parse canonical paths like `$.studentReference.studentUniqueId` into tokens `["studentReference","studentUniqueId"]`, and store scalar paths relative to the current table scope such as scope `$.addresses[*]` + relative path `$.streetNumberName`) so the per-row/per-column inner loop is simple property/array writes, not a general JSONPath evaluator doing parse/traverse/wildcard work for every value,
         - materialize inlined objects as needed when any child/scalar property exists beneath them,

@@ -21,7 +21,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 1. **Relational-first storage**: Store resources in traditional relational tables (one root table per resource, plus child tables for collections).
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
-4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist referenced identity natural-key fields alongside each `..._DocumentId` and keep them synchronized via `ON UPDATE CASCADE`. This enables correct indirect-update semantics without a reverse-edge index, while constraining cascades to narrow identity columns (not full-row rewrites).
+4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist referenced identity natural-key fields alongside each `..._DocumentId` and keep them synchronized via `ON UPDATE CASCADE` when the referenced target allows identity updates (`allowIdentityUpdates=true`), otherwise `ON UPDATE NO ACTION`. This enables correct indirect-update semantics without a reverse-edge index, while constraining cascades to narrow identity columns (not full-row rewrites).
 5. **SQL Server + PostgreSQL parity**: The design must be implementable (DDL + CRUD + query) on both engines.
    - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
@@ -32,7 +32,7 @@ Draft. This is an initial design proposal for replacing the current three-table 
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authorization is out of scope**: authorization storage and query filtering is intentionally deferred and not part of this redesign phase.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
-- **Polymorphic references use abstract identity tables (and may still expose union views)**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table (`DocumentId` + abstract identity fields + optional discriminator) and reference it with composite FKs (including identity columns) so `ON UPDATE CASCADE` can propagate identity changes. Union views remain useful for query/diagnostics but are no longer required for reference identity projection. See [data-model.md](data-model.md).
+- **Polymorphic references use abstract identity tables (and may still expose union views)**: For abstract reference targets (e.g., `EducationOrganization`), provision an `{AbstractResource}Identity` table (`DocumentId` + abstract identity fields + optional discriminator) and reference it with composite FKs (including identity columns); abstract identity tables use `ON UPDATE CASCADE` (trigger-maintained) to propagate identity changes. Union views remain useful for query/diagnostics but are no longer required for reference identity projection. See [data-model.md](data-model.md).
 
 ## Key Implications vs the Current Three-Table Design
 
@@ -43,8 +43,8 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
-  - responses can reconstitute reference identity values directly from stored reference identity columns (kept consistent via composite FKs + `ON UPDATE CASCADE`), avoiding read-time joins to referenced tables in the common case.
-- Identity/URI changes do not rewrite `..._DocumentId` foreign keys, but **do** propagate into stored reference identity columns via `ON UPDATE CASCADE`. Cascades still exist for derived artifacts, but they are handled row-locally:
+  - responses can reconstitute reference identity values directly from stored reference identity columns (kept consistent via composite FKs with `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`), avoiding read-time joins to referenced tables in the common case.
+- Identity/URI changes do not rewrite `..._DocumentId` foreign keys, but **do** propagate into stored reference identity columns via `ON UPDATE CASCADE` when `allowIdentityUpdates=true` (otherwise identity updates are rejected and FKs use `ON UPDATE NO ACTION`). Cascades still exist for derived artifacts, but they are handled row-locally:
   - `dms.ReferentialIdentity` is maintained transactionally by per-resource triggers that recompute referential ids from locally present identity columns (including propagated reference identity values).
   - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Identity uniqueness is enforced by:
@@ -114,7 +114,7 @@ This redesign is split into focused docs in this directory:
 
 ## Risks / Open Questions
 
-1. **Cascade feasibility (SQL Server)**: `ON UPDATE CASCADE` can hit “multiple cascade paths” / cycle restrictions. Some reference sites may require trigger-based propagation instead of declarative cascades.
+1. **Cascade feasibility (SQL Server)**: For targets with `allowIdentityUpdates=true`, `ON UPDATE CASCADE` can hit “multiple cascade paths” / cycle restrictions. Some reference sites may require trigger-based propagation instead of declarative cascades.
 2. **Operational fan-out**: an identity update on a “hub” document can synchronously update many referencing rows (now via FK cascades), increasing deadlock and latency risk.
 3. **Schema width/index pressure**: persisting referenced identity fields for all document reference sites increases table width and may require additional indexing for query performance.
 4. **Schema change management**: this design assumes the database is already provisioned for the configured effective `ApiSchema.json`; DMS only validates mismatch via `dms.EffectiveSchema` (no in-place schema change behavior is defined here).

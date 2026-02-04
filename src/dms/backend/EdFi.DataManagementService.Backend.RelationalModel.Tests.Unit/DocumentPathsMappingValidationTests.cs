@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an effective schema set with a missing document paths mapping descriptor target.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_A_Missing_DocumentPathsMapping_Descriptor_Target
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -49,6 +55,9 @@ public class Given_An_EffectiveSchemaSet_With_A_Missing_DocumentPathsMapping_Des
         }
     }
 
+    /// <summary>
+    /// It should fail with a missing descriptor target.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_missing_descriptor_target()
     {
@@ -61,11 +70,17 @@ public class Given_An_EffectiveSchemaSet_With_A_Missing_DocumentPathsMapping_Des
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema set with a missing document paths mapping reference target.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_A_Missing_DocumentPathsMapping_Reference_Target
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -107,6 +122,9 @@ public class Given_An_EffectiveSchemaSet_With_A_Missing_DocumentPathsMapping_Ref
         }
     }
 
+    /// <summary>
+    /// It should fail with a missing reference target.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_missing_reference_target()
     {
@@ -118,11 +136,17 @@ public class Given_An_EffectiveSchemaSet_With_A_Missing_DocumentPathsMapping_Ref
     }
 }
 
+/// <summary>
+/// Test fixture for an effective schema set with an abstract resource missing document paths mapping target.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_An_AbstractResource_Missing_DocumentPathsMapping_Target
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -162,6 +186,9 @@ public class Given_An_EffectiveSchemaSet_With_An_AbstractResource_Missing_Docume
         }
     }
 
+    /// <summary>
+    /// It should fail with a missing reference target in abstract resource.
+    /// </summary>
     [Test]
     public void It_should_fail_with_a_missing_reference_target_in_abstract_resource()
     {
@@ -174,12 +201,18 @@ public class Given_An_EffectiveSchemaSet_With_An_AbstractResource_Missing_Docume
     }
 }
 
+/// <summary>
+/// Test fixture for reordered resources and document paths mapping.
+/// </summary>
 [TestFixture]
 public class Given_Reordered_Resources_And_DocumentPathsMapping
 {
     private Exception? _orderedException;
     private Exception? _reorderedException;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -187,6 +220,9 @@ public class Given_Reordered_Resources_And_DocumentPathsMapping
         _reorderedException = CaptureBuildException(reverseResourceOrder: true, reverseMappingOrder: true);
     }
 
+    /// <summary>
+    /// It should report missing targets in canonical order.
+    /// </summary>
     [Test]
     public void It_should_report_missing_targets_in_canonical_order()
     {
@@ -197,6 +233,9 @@ public class Given_Reordered_Resources_And_DocumentPathsMapping
         _orderedException.Message.Should().Contain("AlphaMissing");
     }
 
+    /// <summary>
+    /// Capture build exception.
+    /// </summary>
     private static Exception CaptureBuildException(bool reverseResourceOrder, bool reverseMappingOrder)
     {
         var projectSchema = CreateProjectSchema(reverseResourceOrder, reverseMappingOrder);
@@ -221,6 +260,9 @@ public class Given_Reordered_Resources_And_DocumentPathsMapping
         throw new InvalidOperationException("Expected builder to fail due to missing targets.");
     }
 
+    /// <summary>
+    /// Create project schema.
+    /// </summary>
     private static JsonObject CreateProjectSchema(bool reverseResourceOrder, bool reverseMappingOrder)
     {
         var resourceEntries = reverseResourceOrder
@@ -257,6 +299,9 @@ public class Given_Reordered_Resources_And_DocumentPathsMapping
         return new JsonObject { ["resourceSchemas"] = resourceSchemas };
     }
 
+    /// <summary>
+    /// Create alpha mappings.
+    /// </summary>
     private static JsonObject CreateAlphaMappings(bool reverseMappingOrder)
     {
         var alphaMapping = new JsonObject

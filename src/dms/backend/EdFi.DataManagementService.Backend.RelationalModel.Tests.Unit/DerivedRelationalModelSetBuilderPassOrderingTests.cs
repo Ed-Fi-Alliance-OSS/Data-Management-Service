@@ -9,11 +9,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a pass list with custom order.
+/// </summary>
 [TestFixture]
-public class Given_An_Unordered_Pass_List
+public class Given_A_Pass_List_With_Custom_Order
 {
     private IReadOnlyList<string> _executionOrder = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -34,25 +40,38 @@ public class Given_An_Unordered_Pass_List
         _executionOrder = executionOrder.ToArray();
     }
 
+    /// <summary>
+    /// It should execute passes in supplied order.
+    /// </summary>
     [Test]
-    public void It_should_execute_passes_in_deterministic_order()
+    public void It_should_execute_passes_in_supplied_order()
     {
-        _executionOrder.Should().Equal(nameof(PassBeta), nameof(PassGamma), nameof(PassAlpha));
+        _executionOrder.Should().Equal(nameof(PassGamma), nameof(PassBeta), nameof(PassAlpha));
     }
 
+    /// <summary>
+    /// Test type recording pass base.
+    /// </summary>
     private abstract class RecordingPassBase : IRelationalModelSetPass
     {
         private readonly IList<string> _executionOrder;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         protected RecordingPassBase(IList<string> executionOrder)
         {
             _executionOrder = executionOrder;
         }
 
-        public abstract int Order { get; }
-
+        /// <summary>
+        /// Gets label.
+        /// </summary>
         protected abstract string Label { get; }
 
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -61,84 +80,54 @@ public class Given_An_Unordered_Pass_List
         }
     }
 
+    /// <summary>
+    /// Test type pass alpha.
+    /// </summary>
     private sealed class PassAlpha : RecordingPassBase
     {
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public PassAlpha(IList<string> executionOrder)
             : base(executionOrder) { }
 
-        public override int Order { get; } = 30;
-
+        /// <summary>
+        /// Gets label.
+        /// </summary>
         protected override string Label => nameof(PassAlpha);
     }
 
+    /// <summary>
+    /// Test type pass beta.
+    /// </summary>
     private sealed class PassBeta : RecordingPassBase
     {
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public PassBeta(IList<string> executionOrder)
             : base(executionOrder) { }
 
-        public override int Order { get; } = 10;
-
+        /// <summary>
+        /// Gets label.
+        /// </summary>
         protected override string Label => nameof(PassBeta);
     }
 
+    /// <summary>
+    /// Test type pass gamma.
+    /// </summary>
     private sealed class PassGamma : RecordingPassBase
     {
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public PassGamma(IList<string> executionOrder)
             : base(executionOrder) { }
 
-        public override int Order { get; } = 20;
-
+        /// <summary>
+        /// Gets label.
+        /// </summary>
         protected override string Label => nameof(PassGamma);
-    }
-}
-
-[TestFixture]
-public class Given_A_Duplicate_Pass_Ordering_Key
-{
-    private Exception? _exception;
-
-    [SetUp]
-    public void Setup()
-    {
-        try
-        {
-            _ = new DerivedRelationalModelSetBuilder(
-                new IRelationalModelSetPass[] { new DuplicateOrderPassAlpha(), new DuplicateOrderPassBeta() }
-            );
-        }
-        catch (Exception ex)
-        {
-            _exception = ex;
-        }
-    }
-
-    [Test]
-    public void It_should_fail_fast_when_pass_ordering_keys_duplicate()
-    {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("Duplicate pass order values");
-        _exception.Message.Should().Contain("Order 5");
-        _exception.Message.Should().Contain(nameof(DuplicateOrderPassAlpha));
-        _exception.Message.Should().Contain(nameof(DuplicateOrderPassBeta));
-    }
-
-    private sealed class DuplicateOrderPassAlpha : IRelationalModelSetPass
-    {
-        public int Order { get; } = 5;
-
-        public void Execute(RelationalModelSetBuilderContext context)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-        }
-    }
-
-    private sealed class DuplicateOrderPassBeta : IRelationalModelSetPass
-    {
-        public int Order { get; } = 5;
-
-        public void Execute(RelationalModelSetBuilderContext context)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-        }
     }
 }

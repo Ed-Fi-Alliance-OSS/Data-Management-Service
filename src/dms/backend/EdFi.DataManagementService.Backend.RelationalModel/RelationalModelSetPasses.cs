@@ -16,7 +16,17 @@ public static class RelationalModelSetPasses
     /// <returns>The ordered pass list.</returns>
     public static IReadOnlyList<IRelationalModelSetPass> CreateDefault()
     {
-        IRelationalModelSetPass[] passes = [new BaseTraversalAndDescriptorBindingRelationalModelSetPass()];
+        IRelationalModelSetPass[] passes =
+        [
+            new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+            new ExtensionTableDerivationRelationalModelSetPass(),
+            new AbstractIdentityTableDerivationRelationalModelSetPass(),
+            new ReferenceBindingRelationalModelSetPass(),
+            new RootIdentityConstraintRelationalModelSetPass(),
+            new ReferenceConstraintRelationalModelSetPass(),
+            new ArrayUniquenessConstraintRelationalModelSetPass(),
+            new CanonicalizeOrderingRelationalModelSetPass(),
+        ];
 
         return passes;
     }

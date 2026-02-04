@@ -24,7 +24,7 @@ Source documents:
 
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
-- Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields co-stored alongside each `..._DocumentId` and kept consistent via composite FKs with `ON UPDATE CASCADE` (no FK rewrites).
+- Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields co-stored alongside each `..._DocumentId` and kept consistent via composite FKs with `ON UPDATE CASCADE` when the referenced target allows identity updates (`allowIdentityUpdates=true`), otherwise `ON UPDATE NO ACTION` (no FK rewrites).
 - Keep `ReferentialId` (UUIDv5 of `(ProjectName, ResourceName, DocumentIdentity)`) as the uniform natural-identity key for resolution and upserts.
 - SQL Server + PostgreSQL parity is required.
 - Authorization is intentionally out of scope for this redesign phase.
@@ -95,8 +95,8 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
     - scalar identity elements become scalar columns,
     - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values additionally stored in `{RefBaseName}_{IdentityPart}` columns for propagation and query.
   - Reference FK columns:
-    - for each document reference site: store both `..._DocumentId` and `{RefBaseName}_{IdentityPart}` columns, with a composite FK to the target identity key `(DocumentId, <IdentityParts...>)` using `ON UPDATE CASCADE`,
-    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityParts...>)` using `ON UPDATE CASCADE`,
+    - for each document reference site: store both `..._DocumentId` and `{RefBaseName}_{IdentityPart}` columns, with a composite FK to the target identity key `(DocumentId, <IdentityParts...>)` using `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`),
+    - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityParts...>)` using `ON UPDATE CASCADE` (identity tables are trigger-maintained),
     - descriptors: FK to `dms.Descriptor(DocumentId)` via `..._DescriptorId`.
 
 - Collection tables `{schema}.{Resource}_{CollectionPath}`:
@@ -151,7 +151,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
    - For descriptor references, validate “is a descriptor” via `dms.Descriptor` (and optionally enforce expected discriminator/type in application code).
 
 3. **DB-enforced identity propagation**
-   - Composite foreign keys with `ON UPDATE CASCADE` keep stored reference identity columns consistent when referenced identities change.
+   - Composite foreign keys keep stored reference identity columns consistent when referenced identities change (using `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
    - Identity-changing writes may optionally be serialized (advisory/application lock) as an operational guardrail, but correctness does not depend on an application-managed lock table.
 
 4. **Flatten and write relational rows (single transaction)**
@@ -212,7 +212,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 ## Key risks and mitigations (from the docs)
 
 - **Cascade feasibility and fan-out**
-  - `ON UPDATE CASCADE` can hit SQL Server “multiple cascade paths” / cycle restrictions; some sites may require trigger-based propagation.
+  - For targets with `allowIdentityUpdates=true`, `ON UPDATE CASCADE` can hit SQL Server “multiple cascade paths” / cycle restrictions; some sites may require trigger-based propagation.
   - Identity updates on “hub” documents can synchronously update many dependent rows; needs guardrails, telemetry, and a deadlock retry policy.
 
 - **Trigger correctness and multi-row stamping**

@@ -57,7 +57,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via `ON UPDATE CASCADE` (or trigger-based propagation where required), and
+- identity values are propagated into all direct referrers via `ON UPDATE CASCADE` (or trigger-based propagation where required) when `allowIdentityUpdates=true`, and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -73,7 +73,7 @@ Mitigations / guidance:
 ### SQL Server cascade-path restrictions (Feasibility + Complexity Risk)
 
 SQL Server may reject FK graphs with “cycles or multiple cascade paths”. The design depends on update propagation, so the DDL generator must:
-- use `ON UPDATE CASCADE` where permitted, and
+- use `ON UPDATE CASCADE` where permitted for targets with `allowIdentityUpdates=true`, and
 - fall back to trigger-based propagation for restricted edges (deterministic, set-based), without changing correctness semantics.
 
 Risks:

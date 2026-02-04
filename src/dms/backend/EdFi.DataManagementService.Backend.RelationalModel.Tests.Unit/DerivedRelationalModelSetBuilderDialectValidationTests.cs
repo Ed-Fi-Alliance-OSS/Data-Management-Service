@@ -9,11 +9,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a dialect mismatch when building a derived model set.
+/// </summary>
 [TestFixture]
 public class Given_A_Dialect_Mismatch_When_Building_A_Derived_Model_Set
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -33,6 +39,9 @@ public class Given_A_Dialect_Mismatch_When_Building_A_Derived_Model_Set
         }
     }
 
+    /// <summary>
+    /// It should fail fast with a dialect mismatch message.
+    /// </summary>
     [Test]
     public void It_should_fail_fast_with_a_dialect_mismatch_message()
     {

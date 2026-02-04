@@ -14,7 +14,7 @@ The backend redesign needs representation-sensitive metadata:
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
 - persisting referenced identity values as local columns alongside every `..._DocumentId` reference, and
-- using `ON UPDATE CASCADE` (or trigger-based propagation where required) so referenced identity changes become real row updates on referrers.
+- using `ON UPDATE CASCADE` (or trigger-based propagation where required) only when the referenced target allows identity updates (`allowIdentityUpdates=true`); otherwise `ON UPDATE NO ACTION`.
 
 Those referrer updates naturally trigger the same stamping rules as “direct” writes.
 

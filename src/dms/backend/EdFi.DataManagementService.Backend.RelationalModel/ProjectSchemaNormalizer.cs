@@ -10,13 +10,24 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
+/// <summary>
+/// The normalized project schema contexts and public schema infos derived from an effective schema set.
+/// </summary>
 internal sealed record ProjectSchemaNormalizationResult(
     IReadOnlyList<ProjectSchemaContext> ProjectSchemas,
     IReadOnlyList<ProjectSchemaInfo> ProjectSchemaInfos
 );
 
+/// <summary>
+/// Normalizes projects from an <see cref="EffectiveSchemaSet"/> into canonical endpoint/schema ordering and
+/// validates physical schema uniqueness.
+/// </summary>
 internal sealed class ProjectSchemaNormalizer
 {
+    /// <summary>
+    /// Normalizes project schemas and returns per-project contexts and schema infos.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The effective schema set to normalize.</param>
     public ProjectSchemaNormalizationResult Normalize(EffectiveSchemaSet effectiveSchemaSet)
     {
         ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
@@ -25,6 +36,10 @@ internal sealed class ProjectSchemaNormalizer
         return BuildProjectSchemaContexts(projectsInEndpointOrder);
     }
 
+    /// <summary>
+    /// Validates and canonicalizes <see cref="EffectiveSchemaSet.ProjectsInEndpointOrder"/> into a stable
+    /// endpoint-name sort order.
+    /// </summary>
     private static IReadOnlyList<EffectiveProjectSchema> NormalizeProjectsInEndpointOrder(
         EffectiveSchemaSet effectiveSchemaSet
     )
@@ -55,6 +70,9 @@ internal sealed class ProjectSchemaNormalizer
         return orderedProjects;
     }
 
+    /// <summary>
+    /// Builds normalized project schema contexts and schema info objects for all projects.
+    /// </summary>
     private static ProjectSchemaNormalizationResult BuildProjectSchemaContexts(
         IReadOnlyList<EffectiveProjectSchema> projectsInEndpointOrder
     )

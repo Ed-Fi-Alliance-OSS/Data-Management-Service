@@ -10,6 +10,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for schemas with different property order.
+/// </summary>
 [TestFixture]
 public class Given_Schemas_With_Different_Property_Order
 {
@@ -18,6 +21,9 @@ public class Given_Schemas_With_Different_Property_Order
     private IReadOnlyList<string> _snapshotA = default!;
     private IReadOnlyList<string> _snapshotB = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -60,17 +66,23 @@ public class Given_Schemas_With_Different_Property_Order
         _snapshotB = CanonicalizeOrderingStepTestContext.CaptureSnapshot(_modelB);
     }
 
+    /// <summary>
+    /// It should produce identical ordered output.
+    /// </summary>
     [Test]
     public void It_should_produce_identical_ordered_output()
     {
         _snapshotA.Should().Equal(_snapshotB);
     }
 
+    /// <summary>
+    /// It should place descriptor columns before scalars.
+    /// </summary>
     [Test]
     public void It_should_place_descriptor_columns_before_scalars()
     {
         var rootColumns = _modelA
-            .TablesInReadDependencyOrder.Single(table =>
+            .TablesInDependencyOrder.Single(table =>
                 string.Equals(table.JsonScope.Canonical, "$", StringComparison.Ordinal)
             )
             .Columns.Select(column => column.ColumnName.Value);
@@ -78,6 +90,9 @@ public class Given_Schemas_With_Different_Property_Order
         rootColumns.Should().Equal("DocumentId", "ZetaDescriptor_DescriptorId", "Alpha");
     }
 
+    /// <summary>
+    /// Create schema.
+    /// </summary>
     private static JsonObject CreateSchema(bool descriptorFirst)
     {
         var descriptorSchema = new JsonObject { ["type"] = "string", ["maxLength"] = 306 };
@@ -114,12 +129,18 @@ public class Given_Schemas_With_Different_Property_Order
     }
 }
 
+/// <summary>
+/// Test fixture for descriptor path mappings with different order.
+/// </summary>
 [TestFixture]
 public class Given_Descriptor_Path_Mappings_With_Different_Order
 {
     private IReadOnlyList<string> _edgesFirst = default!;
     private IReadOnlyList<string> _edgesSecond = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -168,12 +189,18 @@ public class Given_Descriptor_Path_Mappings_With_Different_Order
         _edgesSecond = CanonicalizeOrderingStepTestContext.CaptureDescriptorEdges(modelB);
     }
 
+    /// <summary>
+    /// It should produce identical descriptor edge ordering.
+    /// </summary>
     [Test]
     public void It_should_produce_identical_descriptor_edge_ordering()
     {
         _edgesFirst.Should().Equal(_edgesSecond);
     }
 
+    /// <summary>
+    /// Create descriptor schema.
+    /// </summary>
     private static JsonObject CreateDescriptorSchema()
     {
         return new JsonObject
@@ -188,8 +215,163 @@ public class Given_Descriptor_Path_Mappings_With_Different_Order
     }
 }
 
+/// <summary>
+/// Test fixture for mixed constraint types.
+/// </summary>
+[TestFixture]
+public class Given_Mixed_Constraint_Types
+{
+    private IReadOnlyList<string> _orderedConstraints = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+
+        var fkColumn = new DbColumnName("Student_DocumentId");
+        var dependentColumns = new[]
+        {
+            new DbColumnName("Student_StudentUniqueId"),
+            new DbColumnName("Student_SchoolId"),
+        };
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                fkColumn,
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "Student")
+            ),
+            new DbColumnModel(
+                dependentColumns[0],
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                dependentColumns[1],
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.schoolId"),
+                TargetResource: null
+            ),
+        };
+
+        var constraints = new TableConstraint[]
+        {
+            new TableConstraint.AllOrNoneNullability(
+                "CK_School_Student_DocumentId_AllOrNone_B",
+                fkColumn,
+                dependentColumns
+            ),
+            new TableConstraint.ForeignKey(
+                "FK_School_Student_B",
+                new[] { fkColumn },
+                new DbTableName(schema, "Student"),
+                new[] { RelationalNameConventions.DocumentIdColumnName }
+            ),
+            new TableConstraint.Unique("UK_School_B", new[] { fkColumn }),
+            new TableConstraint.AllOrNoneNullability(
+                "CK_School_Student_DocumentId_AllOrNone_A",
+                fkColumn,
+                dependentColumns
+            ),
+            new TableConstraint.ForeignKey(
+                "FK_School_Student_A",
+                new[] { fkColumn },
+                new DbTableName(schema, "Student"),
+                new[] { RelationalNameConventions.DocumentIdColumnName }
+            ),
+            new TableConstraint.Unique(
+                "UK_School_A",
+                new[] { RelationalNameConventions.DocumentIdColumnName }
+            ),
+        };
+
+        var table = new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "School"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            new[] { table },
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var context = new RelationalModelBuilderContext { ResourceModel = resourceModel };
+
+        var canonicalize = new CanonicalizeOrderingStep();
+        canonicalize.Execute(context);
+
+        _orderedConstraints = context.ResourceModel!.Root.Constraints.Select(GetConstraintName).ToArray();
+    }
+
+    /// <summary>
+    /// It should order constraints by kind then name.
+    /// </summary>
+    [Test]
+    public void It_should_order_constraints_by_kind_then_name()
+    {
+        _orderedConstraints
+            .Should()
+            .Equal(
+                "UK_School_A",
+                "UK_School_B",
+                "FK_School_Student_A",
+                "FK_School_Student_B",
+                "CK_School_Student_DocumentId_AllOrNone_A",
+                "CK_School_Student_DocumentId_AllOrNone_B"
+            );
+    }
+
+    /// <summary>
+    /// Get constraint name.
+    /// </summary>
+    private static string GetConstraintName(TableConstraint constraint)
+    {
+        return constraint switch
+        {
+            TableConstraint.Unique unique => unique.Name,
+            TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            _ => string.Empty,
+        };
+    }
+}
+
+/// <summary>
+/// Test type canonicalize ordering step test context.
+/// </summary>
 internal static class CanonicalizeOrderingStepTestContext
 {
+    /// <summary>
+    /// Build model.
+    /// </summary>
     public static RelationalResourceModel BuildModel(
         JsonObject schema,
         Action<RelationalModelBuilderContext>? configure = null
@@ -220,11 +402,14 @@ internal static class CanonicalizeOrderingStepTestContext
             );
     }
 
+    /// <summary>
+    /// Capture snapshot.
+    /// </summary>
     public static IReadOnlyList<string> CaptureSnapshot(RelationalResourceModel model)
     {
         List<string> snapshot = [];
 
-        foreach (var table in model.TablesInReadDependencyOrder)
+        foreach (var table in model.TablesInDependencyOrder)
         {
             var columnNames = string.Join(",", table.Columns.Select(column => column.ColumnName.Value));
             var constraintNames = string.Join(",", table.Constraints.Select(GetConstraintName));
@@ -237,6 +422,9 @@ internal static class CanonicalizeOrderingStepTestContext
         return snapshot.ToArray();
     }
 
+    /// <summary>
+    /// Capture descriptor edges.
+    /// </summary>
     public static IReadOnlyList<string> CaptureDescriptorEdges(RelationalResourceModel model)
     {
         return model
@@ -246,12 +434,16 @@ internal static class CanonicalizeOrderingStepTestContext
             .ToArray();
     }
 
+    /// <summary>
+    /// Get constraint name.
+    /// </summary>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch
         {
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
+            TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
             _ => string.Empty,
         };
     }

@@ -70,7 +70,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
 
         var tableBuilders = resourceModel
-            .TablesInReadDependencyOrder.Select(table => new TableBuilder(table))
+            .TablesInDependencyOrder.Select(table => new TableBuilder(table))
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         if (!tableBuilders.TryGetValue("$", out var rootTable))
@@ -82,6 +82,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             context.IdentityJsonPaths.Select(path => path.Canonical),
             StringComparer.Ordinal
         );
+        var referenceIdentityPaths = BuildReferenceIdentityPathSet(context.DocumentReferenceMappings);
+        var referenceObjectPaths = BuildReferenceObjectPathSet(context.DocumentReferenceMappings);
         HashSet<string> usedDescriptorPaths = new(StringComparer.Ordinal);
         List<DescriptorEdgeSource> descriptorEdgeSources = [];
 
@@ -95,6 +97,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             context,
             tableBuilders,
             identityPaths,
+            referenceIdentityPaths,
+            referenceObjectPaths,
             usedDescriptorPaths,
             descriptorEdgeSources
         );
@@ -102,7 +106,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         EnsureAllDescriptorPathsUsed(context, usedDescriptorPaths);
 
         var updatedTables = resourceModel
-            .TablesInReadDependencyOrder.Select(table => tableBuilders[table.JsonScope.Canonical].Build())
+            .TablesInDependencyOrder.Select(table => tableBuilders[table.JsonScope.Canonical].Build())
             .ToArray();
 
         var updatedRoot = tableBuilders[resourceModel.Root.JsonScope.Canonical].Build();
@@ -110,8 +114,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         context.ResourceModel = resourceModel with
         {
             Root = updatedRoot,
-            TablesInReadDependencyOrder = updatedTables,
-            TablesInWriteDependencyOrder = updatedTables,
+            TablesInDependencyOrder = updatedTables,
             DescriptorEdgeSources = descriptorEdgeSources.ToArray(),
         };
     }
@@ -129,6 +132,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
+        IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -149,6 +154,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     context,
                     tableBuilders,
                     identityPaths,
+                    referenceIdentityPaths,
+                    referenceObjectPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -161,6 +168,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     context,
                     tableBuilders,
                     identityPaths,
+                    referenceIdentityPaths,
+                    referenceObjectPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -186,6 +195,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
+        IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -195,18 +206,24 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             return;
         }
 
+        var scopePath = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
+
         if (propertiesNode is not JsonObject propertiesObject)
         {
-            var scopePath = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
-
             throw new InvalidOperationException($"Expected properties to be an object at {scopePath}.");
         }
 
         var requiredProperties = GetRequiredProperties(schema, pathSegments);
+        var isReferenceScope = referenceObjectPaths.Contains(scopePath);
 
         foreach (var property in propertiesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
             if (string.Equals(property.Key, ExtensionPropertyName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (isReferenceScope && string.Equals(property.Key, "link", StringComparison.Ordinal))
             {
                 continue;
             }
@@ -247,6 +264,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                         context,
                         tableBuilders,
                         identityPaths,
+                        referenceIdentityPaths,
+                        referenceObjectPaths,
                         usedDescriptorPaths,
                         descriptorEdgeSources
                     );
@@ -260,6 +279,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                         isNullable,
                         context,
                         identityPaths,
+                        referenceIdentityPaths,
                         usedDescriptorPaths,
                         descriptorEdgeSources
                     );
@@ -281,6 +301,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         RelationalModelBuilderContext context,
         IReadOnlyDictionary<string, TableBuilder> tableBuilders,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
+        IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -325,6 +347,8 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     context,
                     tableBuilders,
                     identityPaths,
+                    referenceIdentityPaths,
+                    referenceObjectPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -337,6 +361,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                     arraySegments,
                     context,
                     identityPaths,
+                    referenceIdentityPaths,
                     usedDescriptorPaths,
                     descriptorEdgeSources
                 );
@@ -359,6 +384,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         List<JsonPathSegment> arraySegments,
         RelationalModelBuilderContext context,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
@@ -383,6 +409,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             isNullable,
             context,
             identityPaths,
+            referenceIdentityPaths,
             usedDescriptorPaths,
             descriptorEdgeSources
         );
@@ -399,10 +426,32 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         bool isNullable,
         RelationalModelBuilderContext context,
         HashSet<string> identityPaths,
+        IReadOnlySet<string> referenceIdentityPaths,
         HashSet<string> usedDescriptorPaths,
         List<DescriptorEdgeSource> descriptorEdgeSources
     )
     {
+        if (referenceIdentityPaths.Contains(sourcePath.Canonical))
+        {
+            if (context.TryGetDescriptorPath(sourcePath, out _))
+            {
+                usedDescriptorPaths.Add(sourcePath.Canonical);
+            }
+
+            return;
+        }
+
+        if (identityPaths.Contains(sourcePath.Canonical) && isNullable)
+        {
+            var projectName = context.ProjectName ?? "Unknown";
+            var resourceName = context.ResourceName ?? "Unknown";
+
+            throw new InvalidOperationException(
+                $"Identity path '{sourcePath.Canonical}' on resource '{projectName}:{resourceName}' "
+                    + "maps to a nullable column. Identity components must be non-null."
+            );
+        }
+
         if (context.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
         {
             var descriptorBaseName = BuildColumnBaseName(columnSegments);
@@ -446,7 +495,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             return;
         }
 
-        var scalarType = ResolveScalarType(schema, sourcePath, context);
+        var scalarType = RelationalScalarTypeResolver.ResolveScalarType(schema, sourcePath, context);
         var scalarColumn = new DbColumnModel(
             new DbColumnName(BuildColumnBaseName(columnSegments)),
             ColumnKind.Scalar,
@@ -460,159 +509,50 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
     }
 
     /// <summary>
-    /// Resolves a relational scalar type from a JSON schema scalar node.
+    /// Builds a set of canonical reference identity JSONPaths from <c>documentPathsMapping.referenceJsonPaths</c>.
     /// </summary>
-    private static RelationalScalarType ResolveScalarType(
-        JsonObject schema,
-        JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
+    private static HashSet<string> BuildReferenceIdentityPathSet(
+        IReadOnlyList<DocumentReferenceMapping> mappings
     )
     {
-        var schemaType = GetSchemaType(schema, sourcePath.Canonical);
+        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
 
-        return schemaType switch
+        if (mappings.Count == 0)
         {
-            "string" => ResolveStringType(schema, sourcePath, context),
-            "integer" => ResolveIntegerType(schema, sourcePath),
-            "number" => ResolveDecimalType(sourcePath, context),
-            "boolean" => new RelationalScalarType(ScalarKind.Boolean),
-            _ => throw new InvalidOperationException(
-                $"Unsupported scalar type '{schemaType}' at {sourcePath.Canonical}."
-            ),
-        };
-    }
-
-    /// <summary>
-    /// Resolves a string scalar type, mapping well-known formats to temporal scalar kinds.
-    /// </summary>
-    private static RelationalScalarType ResolveStringType(
-        JsonObject schema,
-        JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
-    )
-    {
-        var format = GetOptionalString(schema, "format", sourcePath.Canonical);
-
-        if (!string.IsNullOrWhiteSpace(format))
-        {
-            return format switch
-            {
-                "date" => new RelationalScalarType(ScalarKind.Date),
-                "date-time" => new RelationalScalarType(ScalarKind.DateTime),
-                "time" => new RelationalScalarType(ScalarKind.Time),
-                _ => BuildStringType(schema, sourcePath, context),
-            };
+            return referenceIdentityPaths;
         }
 
-        return BuildStringType(schema, sourcePath, context);
-    }
-
-    /// <summary>
-    /// Builds the default string scalar type (with <c>maxLength</c>) unless omission is allowed by metadata.
-    /// </summary>
-    private static RelationalScalarType BuildStringType(
-        JsonObject schema,
-        JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
-    )
-    {
-        if (!schema.TryGetPropertyValue("maxLength", out var maxLengthNode) || maxLengthNode is null)
+        foreach (var mapping in mappings)
         {
-            if (IsMaxLengthOmissionAllowed(sourcePath, context))
+            foreach (var binding in mapping.ReferenceJsonPaths)
             {
-                return new RelationalScalarType(ScalarKind.String);
+                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
             }
-
-            throw new InvalidOperationException(
-                $"String schema maxLength is required at {sourcePath.Canonical}. "
-                    + "Set maxLength in MetaEd for string/sharedString."
-            );
         }
 
-        if (maxLengthNode is not JsonValue maxLengthValue)
-        {
-            throw new InvalidOperationException(
-                $"Expected maxLength to be a number at {sourcePath.Canonical}."
-            );
-        }
-
-        var maxLength = maxLengthValue.GetValue<int>();
-        if (maxLength <= 0)
-        {
-            throw new InvalidOperationException(
-                $"String schema maxLength must be positive at {sourcePath.Canonical}."
-            );
-        }
-
-        return new RelationalScalarType(ScalarKind.String, maxLength);
+        return referenceIdentityPaths;
     }
 
     /// <summary>
-    /// Indicates whether a missing <c>maxLength</c> is acceptable for a particular string JSONPath.
+    /// Builds a set of canonical reference-object JSONPaths from the document reference mappings.
     /// </summary>
-    private static bool IsMaxLengthOmissionAllowed(
-        JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
+    private static HashSet<string> BuildReferenceObjectPathSet(
+        IReadOnlyList<DocumentReferenceMapping> mappings
     )
     {
-        return context.StringMaxLengthOmissionPaths.Contains(sourcePath.Canonical);
-    }
+        HashSet<string> referenceObjectPaths = new(StringComparer.Ordinal);
 
-    /// <summary>
-    /// Resolves the integer scalar kind based on the optional <c>format</c> keyword.
-    /// </summary>
-    private static RelationalScalarType ResolveIntegerType(JsonObject schema, JsonPathExpression sourcePath)
-    {
-        var format = GetOptionalString(schema, "format", sourcePath.Canonical);
-
-        return format switch
+        if (mappings.Count == 0)
         {
-            "int64" => new RelationalScalarType(ScalarKind.Int64),
-            _ => new RelationalScalarType(ScalarKind.Int32),
-        };
-    }
-
-    /// <summary>
-    /// Resolves a decimal scalar type using precomputed validation info (precision/scale) sourced from
-    /// schema metadata.
-    /// </summary>
-    private static RelationalScalarType ResolveDecimalType(
-        JsonPathExpression sourcePath,
-        RelationalModelBuilderContext context
-    )
-    {
-        if (!context.TryGetDecimalPropertyValidationInfo(sourcePath, out var validationInfo))
-        {
-            throw new InvalidOperationException(
-                $"Decimal property validation info is required for number properties at {sourcePath.Canonical}."
-            );
+            return referenceObjectPaths;
         }
 
-        if (validationInfo.TotalDigits is null || validationInfo.DecimalPlaces is null)
+        foreach (var mapping in mappings)
         {
-            throw new InvalidOperationException(
-                $"Decimal property validation info must include totalDigits and decimalPlaces at {sourcePath.Canonical}."
-            );
+            referenceObjectPaths.Add(mapping.ReferenceObjectPath.Canonical);
         }
 
-        if (validationInfo.TotalDigits <= 0 || validationInfo.DecimalPlaces < 0)
-        {
-            throw new InvalidOperationException(
-                $"Decimal property validation info must be positive for {sourcePath.Canonical}."
-            );
-        }
-
-        if (validationInfo.DecimalPlaces > validationInfo.TotalDigits)
-        {
-            throw new InvalidOperationException(
-                $"Decimal places cannot exceed total digits for {sourcePath.Canonical}."
-            );
-        }
-
-        return new RelationalScalarType(
-            ScalarKind.Decimal,
-            Decimal: (validationInfo.TotalDigits.Value, validationInfo.DecimalPlaces.Value)
-        );
+        return referenceObjectPaths;
     }
 
     /// <summary>
@@ -632,43 +572,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         }
 
         return jsonValue.GetValue<bool>();
-    }
-
-    /// <summary>
-    /// Gets the scalar type keyword from a JSON schema node, enforcing that <c>type</c> is present and a
-    /// string.
-    /// </summary>
-    private static string GetSchemaType(JsonObject schema, string path)
-    {
-        if (!schema.TryGetPropertyValue("type", out var typeNode) || typeNode is null)
-        {
-            throw new InvalidOperationException($"Schema type must be specified at {path}.");
-        }
-
-        return typeNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<string>(),
-            _ => throw new InvalidOperationException($"Expected type to be a string at {path}.type."),
-        };
-    }
-
-    /// <summary>
-    /// Reads an optional string-valued keyword from a schema node.
-    /// </summary>
-    private static string? GetOptionalString(JsonObject schema, string propertyName, string path)
-    {
-        if (!schema.TryGetPropertyValue(propertyName, out var valueNode) || valueNode is null)
-        {
-            return null;
-        }
-
-        return valueNode switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<string>(),
-            _ => throw new InvalidOperationException(
-                $"Expected {propertyName} to be a string at {path}.{propertyName}."
-            ),
-        };
     }
 
     /// <summary>

@@ -94,11 +94,11 @@ For each document reference site, the referencing table stores:
 DDL generator requirements (derived from ApiSchema):
 - Enforce “all-or-none” nullability for the reference group via a CHECK constraint.
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
-- Enforce a composite FK with `ON UPDATE CASCADE`:
-  - concrete target: `{schema}.{TargetResource}(DocumentId, <IdentityParts...>)`, or
-  - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <IdentityParts...>)`.
+- Enforce a composite FK:
+  - concrete target: `{schema}.{TargetResource}(DocumentId, <IdentityParts...>)` using `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), or
+  - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <IdentityParts...>)` using `ON UPDATE CASCADE` (identity tables are trigger-maintained).
 
-When a referenced document’s identity changes, the database cascades updated identity values into all direct referrers’ stored columns. Those are real row updates on referrers, enabling normal stamping triggers to bump `_etag/_lastModifiedDate/ChangeVersion` without a separate reverse-lookup table.
+When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true`), the database cascades updated identity values into all direct referrers’ stored columns. Those are real row updates on referrers, enabling normal stamping triggers to bump `_etag/_lastModifiedDate/ChangeVersion` without a separate reverse-lookup table.
 
 #### Descriptor references (`..._DescriptorId`)
 
@@ -184,20 +184,20 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      - the referenced identity natural-key columns `{RefBaseName}_{IdentityPart}` from the request body.
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
-   - Composite FKs with `ON UPDATE CASCADE` (or trigger-based fallback where required) propagate identity changes into stored reference identity columns.
+   - Composite FKs use `ON UPDATE CASCADE` only for targets with `allowIdentityUpdates=true` (or trigger-based fallback where required) to propagate identity changes into stored reference identity columns.
    - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity projection changes).
    - Generated triggers stamp `dms.Document` representation/identity versions for `_etag/_lastModifiedDate/ChangeVersion` and emit `dms.DocumentChangeEvent` (see [update-tracking.md](update-tracking.md)).
 
 ### Identity propagation and derived maintenance (DB-driven)
 
-This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key fields alongside every document reference and enforces composite FKs with `ON UPDATE CASCADE`.
+This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key fields alongside every document reference and enforces composite FKs with `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`).
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database cascades updated identity values into all direct referrers’ stored reference identity columns.
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
-- PostgreSQL supports arbitrary cascades; SQL Server restricts “cycles or multiple cascade paths”. The DDL generator must use `ON UPDATE CASCADE` where allowed and otherwise emit trigger-based propagation for the restricted edges (still deterministic and set-based), without introducing `dms.ReferenceEdge`.
+- PostgreSQL supports arbitrary cascades; SQL Server restricts “cycles or multiple cascade paths”. For targets with `allowIdentityUpdates=true`, the DDL generator must use `ON UPDATE CASCADE` where allowed and otherwise emit trigger-based propagation for the restricted edges (still deterministic and set-based), without introducing `dms.ReferenceEdge`.
 
 ### Insert vs update detection
 

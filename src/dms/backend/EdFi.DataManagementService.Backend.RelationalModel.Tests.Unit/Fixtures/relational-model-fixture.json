@@ -8,14 +8,25 @@
     "schools": {
       "resourceName": "School",
       "isDescriptor": false,
+      "allowIdentityUpdates": false,
+      "arrayUniquenessConstraints": [
+      ],
       "identityJsonPaths": [
         "$.schoolId",
         "$.schoolTypeDescriptor"
       ],
         "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          },
           "SchoolTypeDescriptor": {
             "isReference": true,
             "isDescriptor": true,
+            "isPartOfIdentity": true,
+            "isRequired": true,
             "projectName": "Ed-Fi",
             "resourceName": "SchoolTypeDescriptor",
             "path": "$.schoolTypeDescriptor"

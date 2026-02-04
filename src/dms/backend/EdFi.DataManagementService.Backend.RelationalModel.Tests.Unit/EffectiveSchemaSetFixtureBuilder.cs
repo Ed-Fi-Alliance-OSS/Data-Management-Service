@@ -10,6 +10,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test type effective schema set fixture builder.
+/// </summary>
 internal static class EffectiveSchemaSetFixtureBuilder
 {
     private const string DefaultApiSchemaFormatVersion = "1.0.0";
@@ -17,6 +20,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
     private const string DefaultEffectiveSchemaHash = "deadbeef";
     private static readonly byte[] DefaultResourceKeySeedHash = { 0x01 };
 
+    /// <summary>
+    /// Create hand authored effective schema set.
+    /// </summary>
     public static EffectiveSchemaSet CreateHandAuthoredEffectiveSchemaSet(
         bool reverseProjectOrder = false,
         bool reverseResourceOrder = false
@@ -38,6 +44,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         return CreateEffectiveSchemaSet(projects);
     }
 
+    /// <summary>
+    /// Create effective schema set.
+    /// </summary>
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(IReadOnlyList<EffectiveProjectSchema> projects)
     {
         var schemaComponents = projects
@@ -65,6 +74,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         return new EffectiveSchemaSet(effectiveSchemaInfo, projects);
     }
 
+    /// <summary>
+    /// Create effective project schema.
+    /// </summary>
     public static EffectiveProjectSchema CreateEffectiveProjectSchema(
         JsonObject projectSchema,
         bool isExtensionProject
@@ -92,6 +104,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         );
     }
 
+    /// <summary>
+    /// Build resource key entries.
+    /// </summary>
     private static IReadOnlyList<ResourceKeyEntry> BuildResourceKeyEntries(
         IReadOnlyList<EffectiveProjectSchema> projects
     )
@@ -145,6 +160,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         return entries;
     }
 
+    /// <summary>
+    /// Add resource key seeds.
+    /// </summary>
     private static void AddResourceKeySeeds(
         ICollection<ResourceKeySeed> seeds,
         JsonObject resourceSchemas,
@@ -189,6 +207,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         }
     }
 
+    /// <summary>
+    /// Load project schema.
+    /// </summary>
     private static JsonObject LoadProjectSchema(string fileName, bool reverseResourceOrder)
     {
         var path = Path.Combine(
@@ -215,6 +236,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         return reverseResourceOrder ? ReverseResourceSchemas(projectSchema) : projectSchema;
     }
 
+    /// <summary>
+    /// Reverse resource schemas.
+    /// </summary>
     private static JsonObject ReverseResourceSchemas(JsonObject projectSchema)
     {
         var resourceSchemas = RequireObject(
@@ -243,6 +267,9 @@ internal static class EffectiveSchemaSetFixtureBuilder
         return projectSchema;
     }
 
+    /// <summary>
+    /// Test type resource key seed.
+    /// </summary>
     private sealed record ResourceKeySeed(
         QualifiedResourceName Resource,
         string ResourceVersion,

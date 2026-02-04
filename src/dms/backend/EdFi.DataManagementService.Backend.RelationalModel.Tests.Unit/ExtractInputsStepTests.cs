@@ -10,11 +10,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for an api schema with a descriptor mapping.
+/// </summary>
 [TestFixture]
 public class Given_An_ApiSchema_With_A_Descriptor_Mapping
 {
     private RelationalModelBuilderContext _context = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -30,6 +36,9 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
         step.Execute(_context);
     }
 
+    /// <summary>
+    /// It should capture the descriptor path and resource.
+    /// </summary>
     [Test]
     public void It_should_capture_the_descriptor_path_and_resource()
     {
@@ -41,18 +50,26 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
             .Be(new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor"));
     }
 
+    /// <summary>
+    /// It should mark the resource as non descriptor.
+    /// </summary>
     [Test]
     public void It_should_mark_the_resource_as_non_descriptor()
     {
         _context.IsDescriptorResource.Should().BeFalse();
     }
 
+    /// <summary>
+    /// Create api schema root.
+    /// </summary>
     private static JsonNode CreateApiSchemaRoot()
     {
         var resourceSchema = new JsonObject
         {
             ["resourceName"] = "School",
             ["isDescriptor"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject
@@ -61,6 +78,8 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
                 {
                     ["isReference"] = true,
                     ["isDescriptor"] = true,
+                    ["isPartOfIdentity"] = false,
+                    ["isRequired"] = false,
                     ["projectName"] = "Ed-Fi",
                     ["resourceName"] = "SchoolTypeDescriptor",
                     ["path"] = "$.schoolTypeDescriptor",
@@ -80,11 +99,17 @@ public class Given_An_ApiSchema_With_A_Descriptor_Mapping
     }
 }
 
+/// <summary>
+/// Test fixture for an api schema with a descriptor resource.
+/// </summary>
 [TestFixture]
 public class Given_An_ApiSchema_With_A_Descriptor_Resource
 {
     private RelationalModelBuilderContext _context = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -104,12 +129,18 @@ public class Given_An_ApiSchema_With_A_Descriptor_Resource
         step.Execute(_context);
     }
 
+    /// <summary>
+    /// It should mark the resource as descriptor.
+    /// </summary>
     [Test]
     public void It_should_mark_the_resource_as_descriptor()
     {
         _context.IsDescriptorResource.Should().BeTrue();
     }
 
+    /// <summary>
+    /// Create api schema root.
+    /// </summary>
     private static JsonNode CreateApiSchemaRoot(
         string resourceEndpointName,
         string resourceName,
@@ -120,6 +151,8 @@ public class Given_An_ApiSchema_With_A_Descriptor_Resource
         {
             ["resourceName"] = resourceName,
             ["isDescriptor"] = isDescriptor,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
             ["jsonSchemaForInsert"] = new JsonObject(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),

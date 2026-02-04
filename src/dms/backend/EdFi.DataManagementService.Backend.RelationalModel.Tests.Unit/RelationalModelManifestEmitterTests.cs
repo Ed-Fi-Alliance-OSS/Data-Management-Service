@@ -10,12 +10,18 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for a relational model manifest emitter.
+/// </summary>
 [TestFixture]
 public class Given_A_Relational_Model_Manifest_Emitter
 {
     private RelationalModelBuildResult _buildResult = default!;
     private string _manifest = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -43,6 +49,9 @@ public class Given_A_Relational_Model_Manifest_Emitter
         _manifest = RelationalModelManifestEmitter.Emit(_buildResult);
     }
 
+    /// <summary>
+    /// It should emit byte for byte identical output.
+    /// </summary>
     [Test]
     public void It_should_emit_byte_for_byte_identical_output()
     {
@@ -52,6 +61,9 @@ public class Given_A_Relational_Model_Manifest_Emitter
         _manifest.Should().NotContain("\r");
     }
 
+    /// <summary>
+    /// It should include expected inventory.
+    /// </summary>
     [Test]
     public void It_should_include_expected_inventory()
     {
@@ -90,6 +102,9 @@ public class Given_A_Relational_Model_Manifest_Emitter
         extensionSites.Count.Should().Be(2);
     }
 
+    /// <summary>
+    /// It should emit descriptor storage kind.
+    /// </summary>
     [Test]
     public void It_should_emit_descriptor_storage_kind()
     {
@@ -118,6 +133,9 @@ public class Given_A_Relational_Model_Manifest_Emitter
         tables.Should().BeEmpty("descriptor resources do not create per-resource tables");
     }
 
+    /// <summary>
+    /// It should emit key columns before non key columns.
+    /// </summary>
     [Test]
     public void It_should_emit_key_columns_before_non_key_columns()
     {
@@ -136,6 +154,123 @@ public class Given_A_Relational_Model_Manifest_Emitter
         addressColumns.Should().StartWith("School_DocumentId", "Ordinal");
     }
 
+    /// <summary>
+    /// It should emit all or none nullability constraints.
+    /// </summary>
+    [Test]
+    public void It_should_emit_all_or_none_nullability_constraints()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+
+        var fkColumn = new DbColumnName("Student_DocumentId");
+        var dependentColumns = new[]
+        {
+            new DbColumnName("Student_StudentUniqueId"),
+            new DbColumnName("Student_SchoolId"),
+        };
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                fkColumn,
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "Student")
+            ),
+            new DbColumnModel(
+                dependentColumns[0],
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.studentUniqueId"),
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                dependentColumns[1],
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.schoolId"),
+                TargetResource: null
+            ),
+        };
+
+        var constraints = new TableConstraint[]
+        {
+            new TableConstraint.AllOrNoneNullability(
+                "CK_School_Student_DocumentId_AllOrNone",
+                fkColumn,
+                dependentColumns
+            ),
+        };
+
+        var table = new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "School"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            new[] { table },
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var manifest = RelationalModelManifestEmitter.Emit(resourceModel, Array.Empty<ExtensionSite>());
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        var tableNode =
+            tables.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected table to be a JSON object.");
+
+        var constraintNodes =
+            tableNode["constraints"] as JsonArray
+            ?? throw new InvalidOperationException("Expected constraints to be a JSON array.");
+
+        var constraint =
+            constraintNodes.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected constraint to be a JSON object.");
+
+        constraint["kind"]!.GetValue<string>().Should().Be("AllOrNoneNullability");
+        constraint["name"]!.GetValue<string>().Should().Be("CK_School_Student_DocumentId_AllOrNone");
+        constraint["fk_column"]!.GetValue<string>().Should().Be("Student_DocumentId");
+
+        var dependentColumnNodes =
+            constraint["dependent_columns"] as JsonArray
+            ?? throw new InvalidOperationException("Expected dependent_columns to be a JSON array.");
+
+        dependentColumnNodes
+            .Select(column => column?.GetValue<string>())
+            .Should()
+            .Equal("Student_StudentUniqueId", "Student_SchoolId");
+    }
+
+    /// <summary>
+    /// Create schema.
+    /// </summary>
     private static JsonObject CreateSchema()
     {
         var extensionSchema = CreateExtensionSchema();
@@ -162,9 +297,13 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 ["addresses"] = addressesSchema,
                 ["_ext"] = extensionSchema,
             },
+            ["required"] = new JsonArray("schoolTypeDescriptor"),
         };
     }
 
+    /// <summary>
+    /// Create descriptor schema.
+    /// </summary>
     private static JsonObject CreateDescriptorSchema()
     {
         return new JsonObject
@@ -180,6 +319,9 @@ public class Given_A_Relational_Model_Manifest_Emitter
         };
     }
 
+    /// <summary>
+    /// Create extension schema.
+    /// </summary>
     private static JsonObject CreateExtensionSchema()
     {
         return new JsonObject
@@ -189,6 +331,9 @@ public class Given_A_Relational_Model_Manifest_Emitter
         };
     }
 
+    /// <summary>
+    /// Get column names.
+    /// </summary>
     private static IReadOnlyList<string> GetColumnNames(JsonArray tables, string tableName)
     {
         var table =
@@ -211,12 +356,18 @@ public class Given_A_Relational_Model_Manifest_Emitter
     }
 }
 
+/// <summary>
+/// Test fixture for schemas with and without additional properties.
+/// </summary>
 [TestFixture]
 public class Given_Schemas_With_And_Without_AdditionalProperties
 {
     private string _manifestWithAdditionalProperties = default!;
     private string _manifestWithoutAdditionalProperties = default!;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -231,12 +382,18 @@ public class Given_Schemas_With_And_Without_AdditionalProperties
         );
     }
 
+    /// <summary>
+    /// It should emit identical manifests.
+    /// </summary>
     [Test]
     public void It_should_emit_identical_manifests()
     {
         _manifestWithAdditionalProperties.Should().Be(_manifestWithoutAdditionalProperties);
     }
 
+    /// <summary>
+    /// Create schema.
+    /// </summary>
     private static JsonObject CreateSchema(bool includeAdditionalProperties)
     {
         var schema = new JsonObject
@@ -269,8 +426,14 @@ public class Given_Schemas_With_And_Without_AdditionalProperties
     }
 }
 
+/// <summary>
+/// Test type relational model manifest emitter test context.
+/// </summary>
 internal static class RelationalModelManifestEmitterTestContext
 {
+    /// <summary>
+    /// Build result.
+    /// </summary>
     public static RelationalModelBuildResult BuildResult(
         JsonObject schema,
         Action<RelationalModelBuilderContext>? configure = null

@@ -9,11 +9,17 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Test fixture for identifier shortening collision in derived model set.
+/// </summary>
 [TestFixture]
 public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -32,6 +38,9 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
         }
     }
 
+    /// <summary>
+    /// It should fail with identifier shortening collision.
+    /// </summary>
     [Test]
     public void It_should_fail_with_identifier_shortening_collision()
     {
@@ -42,11 +51,17 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
         _exception.Message.Should().Contain("LongTableNameBeta");
     }
 
+    /// <summary>
+    /// Test type identifier shortening collision pass.
+    /// </summary>
     private sealed class IdentifierShorteningCollisionPass : IRelationalModelSetPass
     {
         private readonly ResourceKeyEntry _resourceOne;
         private readonly ResourceKeyEntry _resourceTwo;
 
+        /// <summary>
+        /// Initializes a new instance.
+        /// </summary>
         public IdentifierShorteningCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
         {
             _resourceOne = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
@@ -61,8 +76,9 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
             );
         }
 
-        public int Order { get; } = 1;
-
+        /// <summary>
+        /// Execute.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -83,6 +99,9 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
             );
         }
 
+        /// <summary>
+        /// Create model.
+        /// </summary>
         private static RelationalResourceModel CreateModel(QualifiedResourceName resource, string tableName)
         {
             var schema = new DbSchemaName("edfi");
@@ -115,23 +134,37 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
                 ResourceStorageKind.RelationalTables,
                 table,
                 new[] { table },
-                new[] { table },
                 Array.Empty<DocumentReferenceBinding>(),
                 Array.Empty<DescriptorEdgeSource>()
             );
         }
     }
 
+    /// <summary>
+    /// Test type collision dialect rules.
+    /// </summary>
     private sealed class CollisionDialectRules : ISqlDialectRules
     {
         private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
 
+        /// <summary>
+        /// Gets dialect.
+        /// </summary>
         public SqlDialect Dialect => SqlDialect.Pgsql;
 
+        /// <summary>
+        /// Gets max identifier length.
+        /// </summary>
         public int MaxIdentifierLength => 8;
 
+        /// <summary>
+        /// Gets scalar type defaults.
+        /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
+        /// <summary>
+        /// Shorten identifier.
+        /// </summary>
         public string ShortenIdentifier(string identifier)
         {
             return identifier.Contains("LongTableName", StringComparison.Ordinal)

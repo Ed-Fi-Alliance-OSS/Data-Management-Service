@@ -16,12 +16,39 @@ Augment the base derived model with `documentPathsMapping`, `identityJsonPaths`,
 Key rules:
 - Document reference objects are represented by one `..._DocumentId` FK column at the owning scope, plus propagated
   identity natural-key columns for the referenced resource.
-- Root natural key unique constraint is derived from `identityJsonPaths`, using propagated identity columns for
+- Root natural key unique constraint is derived from `identityJsonPaths`, using the `..._DocumentId` FK column for
   identity components sourced from references.
 - Child uniqueness constraints are derived from `arrayUniquenessConstraints`.
 
 Descriptor binding (`*_DescriptorId` columns + descriptor edge metadata) is handled in the base traversal pass
 (`DMS-929`).
+
+### Implicit contracts enforced by DMS-930
+
+These rules are consistent with the `flattening-reconstitution.md` semantics, but they are currently enforced by
+implementation code rather than spelled out in the design docs:
+
+- Natural-key membership is derived only from `identityJsonPaths`.
+  - `documentPathsMapping[*].isPartOfIdentity` is allowed to be a superset and must not be cross-validated against
+    `identityJsonPaths`; it exists for other flattening/reconstitution semantics and does not drive relational identity
+    derivation.
+  - Enforced in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` by deriving
+    identity-component classification strictly from `identityJsonPaths` membership for scalar, descriptor, and
+    reference mappings.
+- Identity-component document references must be required.
+  - If a document reference participates in `identityJsonPaths`, the mapping entry must have `isRequired=true`.
+  - Enforced in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` when
+    extracting documentPathsMapping (the "Identity references must be required" guard).
+  - Rationale: identityJsonPaths represent required natural-key parts; optional references would allow null identity
+    components and undermine uniqueness guarantees.
+- Array-uniqueness paths that resolve to reference identity fields bind to the reference FK column.
+  - When an `arrayUniquenessConstraints` path matches a reference identity path, the derived UNIQUE constraint uses
+    the reference `..._DocumentId` column rather than the propagated identity columns.
+  - Enforced in
+    `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ArrayUniquenessConstraintRelationalModelSetPass.cs`
+    (`ResolveArrayUniquenessColumn` uses `DocumentReferenceBinding.FkColumn` for identity-path matches).
+  - Rationale: the FK `..._DocumentId` is the stable key for the referenced document; using it preserves determinism
+    and aligns with the root-identity rule above.
 
 ## Integration (ordered passes)
 
@@ -39,6 +66,7 @@ Descriptor binding (`*_DescriptorId` columns + descriptor edge metadata) is hand
   - `{RefBaseName}_{IdentityPart}` propagated identity columns at the same scope,
   - a `DocumentReferenceBinding` with correct `IsIdentityComponent` classification and column bindings.
 - Root-table natural key UNIQUE constraint matches `identityJsonPaths` semantics.
+  - For identity components sourced from references, the UNIQUE constraint uses the `..._DocumentId` column.
 - Child-table UNIQUE constraints are created per `arrayUniquenessConstraints` with deterministic column ordering.
 - Unknown/mismatched mapping paths fail fast during model compilation (no silent omissions).
 

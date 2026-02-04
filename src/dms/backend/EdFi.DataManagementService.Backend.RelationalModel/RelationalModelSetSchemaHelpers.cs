@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text;
 using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -149,6 +150,370 @@ internal static class RelationalModelSetSchemaHelpers
     internal static string FormatResource(QualifiedResourceName resource)
     {
         return $"{resource.ProjectName}:{resource.ResourceName}";
+    }
+
+    /// <summary>
+    /// Builds the base name for an identity path by concatenating Pascal-cased segments.
+    /// </summary>
+    /// <param name="identityJsonPath">The identity JSON path.</param>
+    /// <returns>The base name for identity column naming.</returns>
+    internal static string BuildIdentityPartBaseName(JsonPathExpression identityJsonPath)
+    {
+        List<string> segments = [];
+
+        foreach (var segment in identityJsonPath.Segments)
+        {
+            switch (segment)
+            {
+                case JsonPathSegment.Property property:
+                    segments.Add(property.Name);
+                    break;
+                case JsonPathSegment.AnyArrayElement:
+                    throw new InvalidOperationException(
+                        $"Identity path '{identityJsonPath.Canonical}' must not include array segments."
+                    );
+            }
+        }
+
+        if (segments.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{identityJsonPath.Canonical}' must include at least one property segment."
+            );
+        }
+
+        StringBuilder builder = new();
+
+        foreach (var segment in segments)
+        {
+            builder.Append(RelationalNameConventions.ToPascalCase(segment));
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag to determine whether the schema entry represents a
+    /// resource-extension document rather than a concrete base resource.
+    /// </summary>
+    /// <param name="resourceContext">The resource schema context.</param>
+    /// <returns><see langword="true"/> for resource extensions; otherwise <see langword="false"/>.</returns>
+    internal static bool IsResourceExtension(ConcreteResourceSchemaContext resourceContext)
+    {
+        var resource = new QualifiedResourceName(
+            resourceContext.Project.ProjectSchema.ProjectName,
+            resourceContext.ResourceName
+        );
+
+        return IsResourceExtension(resourceContext.ResourceSchema, resource);
+    }
+
+    /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag from a resource schema object.
+    /// </summary>
+    /// <param name="resourceSchema">The resource schema object.</param>
+    /// <param name="resource">The resource identifier for diagnostics.</param>
+    /// <returns><see langword="true"/> for resource extensions; otherwise <see langword="false"/>.</returns>
+    internal static bool IsResourceExtension(JsonObject resourceSchema, QualifiedResourceName resource)
+    {
+        return IsResourceExtension(resourceSchema, FormatResource(resource));
+    }
+
+    /// <summary>
+    /// Builds (and caches) a minimal <c>ApiSchema.json</c>-shaped root node for per-resource pipelines.
+    /// </summary>
+    /// <param name="apiSchemaRootsByProjectEndpoint">Cache of root nodes by project endpoint name.</param>
+    /// <param name="projectEndpointName">The project endpoint name for the resource.</param>
+    /// <param name="projectSchema">The project schema node.</param>
+    /// <param name="cloneProjectSchema">Whether to clone the project schema before caching.</param>
+    /// <returns>A root object containing the <c>projectSchema</c> property.</returns>
+    internal static JsonObject GetApiSchemaRoot(
+        IDictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint,
+        string projectEndpointName,
+        JsonObject projectSchema,
+        bool cloneProjectSchema
+    )
+    {
+        if (apiSchemaRootsByProjectEndpoint.TryGetValue(projectEndpointName, out var apiSchemaRoot))
+        {
+            return apiSchemaRoot;
+        }
+
+        var rootSchema = cloneProjectSchema ? CloneProjectSchema(projectSchema) : projectSchema;
+
+        apiSchemaRoot = new JsonObject { ["projectSchema"] = rootSchema };
+
+        apiSchemaRootsByProjectEndpoint[projectEndpointName] = apiSchemaRoot;
+
+        return apiSchemaRoot;
+    }
+
+    /// <summary>
+    /// Builds a lookup of base resources keyed by resource name.
+    /// </summary>
+    /// <typeparam name="TEntry">The entry type stored in the lookup.</typeparam>
+    /// <param name="resources">The ordered list of concrete resources.</param>
+    /// <param name="entryFactory">Factory for lookup entries.</param>
+    /// <returns>The lookup keyed by resource name.</returns>
+    internal static Dictionary<string, List<TEntry>> BuildBaseResourceLookup<TEntry>(
+        IReadOnlyList<ConcreteResourceModel> resources,
+        Func<int, ConcreteResourceModel, TEntry> entryFactory
+    )
+    {
+        Dictionary<string, List<TEntry>> lookup = new(StringComparer.Ordinal);
+
+        for (var index = 0; index < resources.Count; index++)
+        {
+            var resource = resources[index];
+            var resourceName = resource.ResourceKey.Resource.ResourceName;
+
+            if (!lookup.TryGetValue(resourceName, out var entries))
+            {
+                entries = [];
+                lookup.Add(resourceName, entries);
+            }
+
+            entries.Add(entryFactory(index, resource));
+        }
+
+        return lookup;
+    }
+
+    /// <summary>
+    /// Resolves the single concrete base resource entry for a resource extension, with consistent validation.
+    /// </summary>
+    /// <typeparam name="TEntry">The entry type stored in the lookup.</typeparam>
+    /// <param name="resourceName">The extension resource name used to locate base resources.</param>
+    /// <param name="resource">The resource identifier for diagnostics.</param>
+    /// <param name="baseResourcesByName">The lookup of base resources keyed by resource name.</param>
+    /// <param name="entryResourceSelector">Selector for the resource identifier on each entry.</param>
+    /// <returns>The matching base resource entry.</returns>
+    internal static TEntry ResolveBaseResourceForExtension<TEntry>(
+        string resourceName,
+        QualifiedResourceName resource,
+        IReadOnlyDictionary<string, List<TEntry>> baseResourcesByName,
+        Func<TEntry, QualifiedResourceName> entryResourceSelector
+    )
+    {
+        if (!baseResourcesByName.TryGetValue(resourceName, out var baseEntries))
+        {
+            throw new InvalidOperationException(
+                $"Resource extension '{FormatResource(resource)}' did not match a concrete base resource."
+            );
+        }
+
+        if (baseEntries.Count != 1)
+        {
+            var candidates = string.Join(
+                ", ",
+                baseEntries
+                    .Select(entry => FormatResource(entryResourceSelector(entry)))
+                    .OrderBy(name => name, StringComparer.Ordinal)
+            );
+
+            throw new InvalidOperationException(
+                $"Resource extension '{FormatResource(resource)}' matched multiple concrete resources: "
+                    + $"{candidates}."
+            );
+        }
+
+        return baseEntries[0];
+    }
+
+    /// <summary>
+    /// Determines whether the prefix segments match the beginning of the path segments.
+    /// </summary>
+    /// <param name="prefix">The prefix segments to compare.</param>
+    /// <param name="path">The full path segments.</param>
+    /// <returns><see langword="true"/> when the prefix matches; otherwise <see langword="false"/>.</returns>
+    internal static bool IsPrefixOf(
+        IReadOnlyList<JsonPathSegment> prefix,
+        IReadOnlyList<JsonPathSegment> path
+    )
+    {
+        if (prefix.Count > path.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < prefix.Count; index++)
+        {
+            var prefixSegment = prefix[index];
+            var pathSegment = path[index];
+
+            if (prefixSegment.GetType() != pathSegment.GetType())
+            {
+                return false;
+            }
+
+            if (
+                prefixSegment is JsonPathSegment.Property prefixProperty
+                && pathSegment is JsonPathSegment.Property pathProperty
+                && !string.Equals(prefixProperty.Name, pathProperty.Name, StringComparison.Ordinal)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the <c>isResourceExtension</c> flag from a resource schema node.
+    /// </summary>
+    private static bool IsResourceExtension(JsonObject resourceSchema, string resourceLabel)
+    {
+        if (
+            !resourceSchema.TryGetPropertyValue("isResourceExtension", out var resourceExtensionNode)
+            || resourceExtensionNode is null
+        )
+        {
+            throw new InvalidOperationException(
+                $"Expected isResourceExtension to be on ResourceSchema for resource '{resourceLabel}', "
+                    + "invalid ApiSchema."
+            );
+        }
+
+        return resourceExtensionNode switch
+        {
+            JsonValue jsonValue => jsonValue.GetValue<bool>(),
+            _ => throw new InvalidOperationException(
+                $"Expected isResourceExtension to be a boolean for resource '{resourceLabel}', "
+                    + "invalid ApiSchema."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Deep-clones a project schema into a detached JSON object so subsequent derivation passes may safely
+    /// traverse and validate it.
+    /// </summary>
+    private static JsonObject CloneProjectSchema(JsonObject projectSchema)
+    {
+        var detachedSchema = projectSchema.DeepClone();
+
+        if (detachedSchema is not JsonObject detachedObject)
+        {
+            throw new InvalidOperationException("Project schema must be an object.");
+        }
+
+        return detachedObject;
+    }
+
+    /// <summary>
+    /// Resolves the schema node for a JSON path within a resource schema.
+    /// </summary>
+    /// <param name="rootSchemaNode">The root schema node.</param>
+    /// <param name="path">The JSON path to resolve.</param>
+    /// <param name="resource">The resource identifier for diagnostics.</param>
+    /// <param name="pathRole">A label used in error messages (e.g., Reference, Identity).</param>
+    /// <returns>The resolved <see cref="JsonObject"/> schema node.</returns>
+    internal static JsonObject ResolveSchemaForPath(
+        JsonNode? rootSchemaNode,
+        JsonPathExpression path,
+        QualifiedResourceName resource,
+        string pathRole
+    )
+    {
+        if (rootSchemaNode is not JsonObject rootSchema)
+        {
+            throw new InvalidOperationException("Json schema root must be an object.");
+        }
+
+        var current = rootSchema;
+
+        foreach (var segment in path.Segments)
+        {
+            var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(current);
+
+            switch (segment)
+            {
+                case JsonPathSegment.Property property:
+                    if (schemaKind != SchemaKind.Object)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected object schema for '{path.Canonical}' while resolving "
+                                + $"'{property.Name}' on resource '{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (
+                        !current.TryGetPropertyValue("properties", out var propertiesNode)
+                        || propertiesNode is null
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected properties to be present for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (propertiesNode is not JsonObject propertiesObject)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected properties to be an object for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (
+                        !propertiesObject.TryGetPropertyValue(property.Name, out var propertyNode)
+                        || propertyNode is null
+                    )
+                    {
+                        throw new InvalidOperationException(
+                            $"{pathRole} path '{path.Canonical}' was not found in jsonSchemaForInsert for "
+                                + $"resource '{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (propertyNode is not JsonObject propertySchema)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected schema object at '{path.Canonical}' for resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    current = propertySchema;
+                    break;
+                case JsonPathSegment.AnyArrayElement:
+                    if (schemaKind != SchemaKind.Array)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected array schema for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (!current.TryGetPropertyValue("items", out var itemsNode) || itemsNode is null)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected array items for '{path.Canonical}' on resource "
+                                + $"'{FormatResource(resource)}'."
+                        );
+                    }
+
+                    if (itemsNode is not JsonObject itemsSchema)
+                    {
+                        throw new InvalidOperationException(
+                            $"Expected array items schema to be an object for '{path.Canonical}' on "
+                                + $"resource '{FormatResource(resource)}'."
+                        );
+                    }
+
+                    current = itemsSchema;
+                    break;
+                default:
+                    throw new InvalidOperationException(
+                        $"Unsupported JSONPath segment for '{path.Canonical}' on resource "
+                            + $"'{FormatResource(resource)}'."
+                    );
+            }
+        }
+
+        return current;
     }
 
     /// <summary>

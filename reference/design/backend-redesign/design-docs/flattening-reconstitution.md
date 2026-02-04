@@ -233,7 +233,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - abstract identity fields (from `abstractResources[A].identityPathOrder`),
      - optional `Discriminator`.
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
-   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites so `ON UPDATE CASCADE` can propagate identity changes and enforce membership/type at the DB level.
+   - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
 
 ### 4.2 Recommended child-table keys (composite parent+ordinal)
@@ -391,7 +391,7 @@ public sealed class ResourceFlattener : IResourceFlattener
               resolved: resolved);
 
           // pseudocode: for each childPlan in plan.ChildrenDepthFirst ...
-          foreach (var tableModel in plan.Model.TablesInWriteDependencyOrder)
+          foreach (var tableModel in plan.Model.TablesInDependencyOrder)
           {
               if (tableModel.Table.Equals(rootTable))
                   continue;
@@ -473,7 +473,7 @@ Within a single transaction:
    - extension scope/collection rows keyed to the same composite keys as the base scope they extend (document id + ordinals)
    - use the same baseline “replace” strategy as core collections (delete existing, insert current)
 5. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate via `ON UPDATE CASCADE` into stored reference identity columns, and
+   - referential-id impacts propagate into stored reference identity columns via composite FKs; use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
@@ -524,7 +524,7 @@ In this redesign, identity fields inside reference objects are persisted as loca
 
 - `..._DocumentId` (stable FK), plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns for the referenced identity fields,
-  kept consistent via composite FKs with `ON UPDATE CASCADE`.
+  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
 
 Therefore the query compiler can translate reference-identity query fields into simple predicates on the querying table, without subqueries:
 
@@ -663,7 +663,7 @@ In this redesign, identity fields inside reference objects are stored as local c
 
 - `..._DocumentId`, plus
 - `{ReferenceBaseName}_{IdentityFieldBaseName}` columns,
-  kept consistent via composite FKs with `ON UPDATE CASCADE`.
+  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
 
 Therefore reference expansion during JSON writing is a pure “read local columns and emit the reference object” operation. No batched reference identity projection queries (joins to referenced tables or `{AbstractResource}_View`) are required to populate reference identity fields.
 
@@ -884,13 +884,10 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// <param name="Resource">Logical resource identity (ApiSchema project/resource).</param>
 /// <param name="PhysicalSchema">Physical DB schema where resource tables live (e.g. "edfi").</param>
 /// <param name="Root">The root table model (one row per document; key includes DocumentId).</param>
-/// <param name="TablesInReadDependencyOrder">
-/// Tables ordered for hydration (root first, then child tables, then nested child tables).
+/// <param name="TablesInDependencyOrder">
+/// Tables ordered in dependency order (root first, then child tables, then nested child tables).
 /// This order is used to emit SELECT result sets and to reconstitute efficiently without N+1 queries.
-/// </param>
-/// <param name="TablesInWriteDependencyOrder">
-/// Tables ordered for writing (root first, then child tables in depth-first order).
-/// This order is used to delete/insert child rows in a stable way (replace semantics).
+/// It is also used for writes (root first, then child tables in depth-first order).
 /// </param>
 /// <param name="DocumentReferenceBindings">
 /// The set of document-reference bindings derived from documentPathsMapping.referenceJsonPaths.
@@ -904,8 +901,7 @@ public sealed record RelationalResourceModel(
     QualifiedResourceName Resource,
     DbSchemaName PhysicalSchema,
     DbTableModel Root,
-    IReadOnlyList<DbTableModel> TablesInReadDependencyOrder,
-    IReadOnlyList<DbTableModel> TablesInWriteDependencyOrder,
+    IReadOnlyList<DbTableModel> TablesInDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
 );
@@ -1593,7 +1589,7 @@ public async Task UpsertAsync(IUpsertRequest request, CancellationToken ct)
     await _writer.ExecuteAsync(writePlan, documentId, writeSet, connection, tx, ct);
 
     // ReferentialId maintenance and update tracking are handled in-transaction by generated database triggers
-    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE).
+    // (row-local referential-id recompute + version stamping; identity propagation via ON UPDATE CASCADE when allowIdentityUpdates=true).
 
     await tx.CommitAsync(ct);
 }
@@ -1728,7 +1724,7 @@ public async Task<ReconstitutedPage> ReconstituteAsync(
 
     var documentMetadata = ReadDocumentRows(reader); // dms.Document JOIN page
 
-    foreach (var table in plan.Model.TablesInReadDependencyOrder)
+    foreach (var table in plan.Model.TablesInDependencyOrder)
     {
         await reader.NextResultAsync(ct);
         ReadTableRows(reader, table); // grouped by (parent key parts..., ordinal)

@@ -1,0 +1,4168 @@
+{
+  "dialect": "Pgsql",
+  "projects": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.2.0",
+      "is_extension": false,
+      "physical_schema": "edfi"
+    },
+    {
+      "project_endpoint_name": "sample",
+      "project_name": "Sample",
+      "project_version": "1.1.0",
+      "is_extension": true,
+      "physical_schema": "sample"
+    }
+  ],
+  "resources": [
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AbsenceEventCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicHonorCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicSubjectDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicWeek",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AccommodationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AccountTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AccountabilityRating",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AchievementCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AdditionalCreditTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AddressTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AdministrationEnvironmentDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AdministrativeFundingControlDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AncestryEthnicOriginDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Assessment",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentAdministration",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentAdministrationParticipation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentBatteryPart",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentIdentificationSystemDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItem",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItemCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItemResultDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentPeriodDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentReportingMethodDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentScoreRangeLearningStandard",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AssignmentLateStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AttemptStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "AttendanceEventCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "BalanceSheetDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "BarrierToInternetAccessInResidenceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "BehaviorDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "BellSchedule",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "BusRouteDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CTEProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Calendar",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarDate",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarEventDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CareerPathwayDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ChartOfAccount",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CharterApprovalAgencyTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CharterStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CitizenshipStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ClassPeriod",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ClassroomPositionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Cohort",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CohortScopeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CohortTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CohortYearTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityOrganization",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityProvider",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityProviderLicense",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CompetencyLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CompetencyObjective",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Contact",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ContactTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ContentClassDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ContinuationOfServicesReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CostRateDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CountryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Course",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseAttemptResultDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseDefinedByDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseGPAApplicabilityDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseIdentificationSystemDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseLevelCharacteristicDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseOffering",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseRepeatCodeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseTranscript",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Credential",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CredentialFieldDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CredentialTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CreditCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CreditTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CrisisEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CrisisTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "CurriculumUsedDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DeliveryMethodDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DescriptorMapping",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DiagnosisDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DiplomaLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DiplomaTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisabilityDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisabilityDesignationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisabilityDeterminationSourceTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineAction",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineActionLengthDifferenceReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineIncident",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineIncidentParticipationCodeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DisplacedStudentStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DualCreditInstitutionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "DualCreditTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationContent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationAssociationTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationIdentificationSystemDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationInterventionPrescriptionAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationNetwork",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationNetworkAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationPeerAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationPlanDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationServiceCenter",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationalEnvironmentDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ElectronicMailTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EligibilityDelayReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EligibilityEvaluationTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EmploymentStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EnrollmentTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EntryGradeLevelReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EntryTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EvaluationDelayReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EvaluationRubricDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "EventCircumstanceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ExitWithdrawTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "FeederSchoolAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "FinancialCollectionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "FunctionDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "FundDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Grade",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradeLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradePointAverageTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradeTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradebookEntry",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradebookEntryTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradingPeriod",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GradingPeriodDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GraduationPlan",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GraduationPlanTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "GunFreeSchoolsActReportingStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "HomelessPrimaryNighttimeResidenceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "HomelessProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "IDEAPartDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "IdentificationDocumentUseDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ImmunizationTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "IncidentLocationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "IndicatorDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "IndicatorGroupDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "IndicatorLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InstitutionTelephoneNumberTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InteractivityStyleDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InternetAccessDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InternetAccessTypeInResidenceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InternetPerformanceInResidenceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Intervention",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionClassDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionEffectivenessRatingDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionPrescription",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionStudy",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LanguageDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LanguageInstructionProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LanguageUseDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandard",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardEquivalenceAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardEquivalenceStrengthDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardScopeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LevelOfEducationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LicenseStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LicenseTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LimitedEnglishProficiencyDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalAccount",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalActual",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalBudget",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalContractedStaff",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgency",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgencyCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEncumbrance",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalPayroll",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "LocaleDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Location",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "MagnetSpecialProgramEmphasisSchoolDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "MediumOfInstructionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "MethodCreditEarnedDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "MigrantEducationProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ModelEntityDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "MonitoredDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "NeglectedOrDelinquentProgramDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "NeglectedOrDelinquentProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "NetworkPurposeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "NonMedicalImmunizationExemptionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ObjectDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ObjectiveAssessment",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "OpenStaffPosition",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "OperationalStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "OperationalUnitDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "OrganizationDepartment",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "OtherNameTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ParticipationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ParticipationStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PerformanceBaseConversionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PerformanceLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Person",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PersonalInformationVerificationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PlatformTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PopulationServedDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryEventCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryInstitution",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryInstitutionLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PostingResultDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PrimaryLearningDeviceAccessDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PrimaryLearningDeviceAwayFromSchoolDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PrimaryLearningDeviceProviderDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProficiencyDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Program",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramAssignmentDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramCharacteristicDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationElement",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationObjective",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationPeriodDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramSponsorDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgressDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgressLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProjectDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProviderCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProviderProfitabilityDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ProviderStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "PublicationStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "QuestionFormDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RaceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RatingLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ReasonExitedDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ReasonNotTestedDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RecognitionTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RelationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RepeatIdentifierDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ReportCard",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ReporterDescriptionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ReportingTagDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ResidencyStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ResponseIndicatorDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ResponsibilityDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RestraintEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RestraintEventReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ResultDatatypeTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "RetestIndicatorDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolChoiceBasisDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolChoiceImplementStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolFoodServiceProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolYearType",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Section",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Section504DisabilityDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionAttendanceTakenEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionCharacteristicDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SeparationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SeparationReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "ServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Session",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SexDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SourceDimension",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SourceSystemDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SpecialEducationExitReasonDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SpecialEducationProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SpecialEducationSettingDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Staff",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffAbsenceEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffClassificationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffCohortAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffDisciplineIncidentAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationAssignmentAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationContactAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationEmploymentAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffIdentificationSystemDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffLeave",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffLeaveEventCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffSchoolAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffSectionAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StateAbbreviationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StateEducationAgency",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAcademicRecord",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessment",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentEducationOrganizationAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentRegistration",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentRegistrationBatteryPartAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCTEProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCharacteristicDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCohortAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCompetencyObjective",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentContactAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentDisciplineIncidentBehaviorAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentDisciplineIncidentNonOffenderAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationAssessmentAccommodation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationResponsibilityAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentGradebookEntry",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentHealth",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentHomelessProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentIdentificationSystemDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentInterventionAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentInterventionAttendanceEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentLanguageInstructionProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentMigrantEducationProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentNeglectedOrDelinquentProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramAttendanceEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramEvaluation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAttendanceEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolFoodServiceProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSection504ProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSectionAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSectionAttendanceEvent",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSpecialEducationProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSpecialEducationProgramEligibilityAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentTitleIPartAProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentTransportation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SubmissionStatusDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SupporterMilitaryConnectionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "Survey",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyCourseAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyLevelDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyQuestion",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyQuestionResponse",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponse",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponseEducationOrganizationTargetAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponseStaffTargetAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySection",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponse",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponseEducationOrganizationTargetAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponseStaffTargetAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TeachingCredentialBasisDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TeachingCredentialDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TechnicalSkillsAssessmentDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TelephoneNumberTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TermDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TitleIPartAParticipantDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TitleIPartAProgramServiceDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TitleIPartASchoolDesignationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TransportationPublicExpenseEligibilityTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TransportationTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TravelDayofWeekDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TravelDirectionDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "TribalAffiliationDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "VisaDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Ed-Fi",
+      "resource_name": "WeaponDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "edfi"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "ArtMediumDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "Bus",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "BusRoute",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "FavoriteBookCategoryDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "MembershipTypeDescriptor",
+      "storage_kind": "SharedDescriptorTable",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "StudentArtProgramAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    },
+    {
+      "project_name": "Sample",
+      "resource_name": "StudentGraduationPlanAssociation",
+      "storage_kind": "RelationalTables",
+      "physical_schema": "sample"
+    }
+  ],
+  "abstract_identity_tables": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization"
+      },
+      "table": {
+        "schema": "edfi",
+        "name": "EducationOrganizationIdentity",
+        "scope": "$",
+        "key_columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart"
+          }
+        ],
+        "columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": null
+          },
+          {
+            "name": "EducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.educationOrganizationId"
+          },
+          {
+            "name": "Discriminator",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 256
+            },
+            "is_nullable": false,
+            "source_path": null
+          }
+        ],
+        "constraints": [
+          {
+            "kind": "Unique",
+            "name": "UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId",
+            "columns": [
+              "DocumentId",
+              "EducationOrganizationId"
+            ]
+          },
+          {
+            "kind": "ForeignKey",
+            "name": "FK_EducationOrganizationIdentity_DocumentId",
+            "columns": [
+              "DocumentId"
+            ],
+            "target_table": {
+              "schema": "dms",
+              "name": "Document"
+            },
+            "target_columns": [
+              "DocumentId"
+            ],
+            "on_delete": "Cascade",
+            "on_update": "NoAction"
+          }
+        ]
+      }
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation"
+      },
+      "table": {
+        "schema": "edfi",
+        "name": "GeneralStudentProgramAssociationIdentity",
+        "scope": "$",
+        "key_columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart"
+          }
+        ],
+        "columns": [
+          {
+            "name": "DocumentId",
+            "kind": "ParentKeyPart",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": null
+          },
+          {
+            "name": "BeginDate",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Date"
+            },
+            "is_nullable": false,
+            "source_path": "$.beginDate"
+          },
+          {
+            "name": "EducationOrganizationReferenceEducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "name": "ProgramReferenceEducationOrganizationId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "name": "ProgramReferenceProgramName",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 60
+            },
+            "is_nullable": false,
+            "source_path": "$.programReference.programName"
+          },
+          {
+            "name": "ProgramReferenceProgramTypeDescriptor",
+            "kind": "DescriptorFk",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "name": "StudentReferenceStudentUniqueId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 32
+            },
+            "is_nullable": false,
+            "source_path": "$.studentReference.studentUniqueId"
+          },
+          {
+            "name": "Discriminator",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 256
+            },
+            "is_nullable": false,
+            "source_path": null
+          }
+        ],
+        "constraints": [
+          {
+            "kind": "Unique",
+            "name": "UX_GeneralStudentProgramAssociationIdentity_DocumentId_BeginDate_EducationOrganizationReferenceEducationOrganizationId_ProgramReferenceEducationOrganizationId_ProgramReferenceProgramName_ProgramReferenceProgramTypeDescriptor_StudentReferenceStudentUniqueId",
+            "columns": [
+              "DocumentId",
+              "BeginDate",
+              "EducationOrganizationReferenceEducationOrganizationId",
+              "ProgramReferenceEducationOrganizationId",
+              "ProgramReferenceProgramName",
+              "ProgramReferenceProgramTypeDescriptor",
+              "StudentReferenceStudentUniqueId"
+            ]
+          },
+          {
+            "kind": "ForeignKey",
+            "name": "FK_GeneralStudentProgramAssociationIdentity_DocumentId",
+            "columns": [
+              "DocumentId"
+            ],
+            "target_table": {
+              "schema": "dms",
+              "name": "Document"
+            },
+            "target_columns": [
+              "DocumentId"
+            ],
+            "on_delete": "Cascade",
+            "on_update": "NoAction"
+          }
+        ]
+      }
+    }
+  ],
+  "resource_details": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "AssessmentAdministration"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "AssessmentAdministration",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "AdministrationIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.administrationIdentifier"
+            },
+            {
+              "name": "Assessment_AssessmentIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentReference.assessmentIdentifier"
+            },
+            {
+              "name": "Assessment_Namespace",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentReference.namespace"
+            },
+            {
+              "name": "Assigning_EducationOrganization_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.assigningEducationOrganizationReference.educationOrganizationId"
+            },
+            {
+              "name": "Assessment_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentReference"
+            },
+            {
+              "name": "Assigning_EducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assigningEducationOrganizationReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministration_AdministrationIdentifier_Assessment_DocumentId_Assigning_EducationOrganization_DocumentId",
+              "columns": [
+                "AdministrationIdentifier",
+                "Assessment_DocumentId",
+                "Assigning_EducationOrganization_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministration_DocumentId_AdministrationIdentifier_Assessment_AssessmentIdentifier_Assessment_Namespace_Assigning_EducationOrganization_EducationOrganizationId",
+              "columns": [
+                "DocumentId",
+                "AdministrationIdentifier",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace",
+                "Assigning_EducationOrganization_EducationOrganizationId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministration_Assessment_DocumentId_Assessment_AssessmentIdentifier_Assessment_Namespace",
+              "columns": [
+                "Assessment_DocumentId",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Assessment"
+              },
+              "target_columns": [
+                "DocumentId",
+                "AssessmentIdentifier",
+                "Namespace"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministration_Assigning_EducationOrganization_DocumentId_Assigning_EducationOrganization_EducationOrganizationId",
+              "columns": [
+                "Assigning_EducationOrganization_DocumentId",
+                "Assigning_EducationOrganization_EducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "EducationOrganizationIdentity"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "Cascade"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministration_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_AssessmentAdministration_Assessment_DocumentId_AllOrNone",
+              "fk_column": "Assessment_DocumentId",
+              "dependent_columns": [
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_AssessmentAdministration_Assigning_EducationOrganization_DocumentId_AllOrNone",
+              "fk_column": "Assigning_EducationOrganization_DocumentId",
+              "dependent_columns": [
+                "Assigning_EducationOrganization_EducationOrganizationId"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "AssessmentAdministrationAssessmentBatteryPart",
+          "scope": "$.assessmentBatteryParts[*]",
+          "key_columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "AssessmentBatteryPart_AssessmentBatteryPartName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 65
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName"
+            },
+            {
+              "name": "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier"
+            },
+            {
+              "name": "AssessmentBatteryPart_AssessmentReferenceNamespace",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace"
+            },
+            {
+              "name": "AssessmentBatteryPart_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentAdministration_DocumentId",
+              "columns": [
+                "AssessmentAdministration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_DocumentId_AssessmentBatteryPart_AssessmentBatteryPartName_AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier_AssessmentBatteryPart_AssessmentReferenceNamespace",
+              "columns": [
+                "AssessmentBatteryPart_DocumentId",
+                "AssessmentBatteryPart_AssessmentBatteryPartName",
+                "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+                "AssessmentBatteryPart_AssessmentReferenceNamespace"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentBatteryPart"
+              },
+              "target_columns": [
+                "DocumentId",
+                "AssessmentBatteryPartName",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_DocumentId_AllOrNone",
+              "fk_column": "AssessmentBatteryPart_DocumentId",
+              "dependent_columns": [
+                "AssessmentBatteryPart_AssessmentBatteryPartName",
+                "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+                "AssessmentBatteryPart_AssessmentReferenceNamespace"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "AssessmentAdministrationPeriod",
+          "scope": "$.periods[*]",
+          "key_columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "BeginDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": false,
+              "source_path": "$.periods[*].beginDate"
+            },
+            {
+              "name": "EndDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": true,
+              "source_path": "$.periods[*].endDate"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_AssessmentAdministrationPeriod_AssessmentAdministration_DocumentId_BeginDate",
+              "columns": [
+                "AssessmentAdministration_DocumentId",
+                "BeginDate"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationPeriod_AssessmentAdministration_DocumentId",
+              "columns": [
+                "AssessmentAdministration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "document_reference_bindings": [
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministrationAssessmentBatteryPart"
+          },
+          "fk_column": "AssessmentBatteryPart_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "AssessmentBatteryPart"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName",
+              "column": "AssessmentBatteryPart_AssessmentBatteryPartName"
+            },
+            {
+              "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
+              "column": "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
+              "column": "AssessmentBatteryPart_AssessmentReferenceNamespace"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.assessmentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministration"
+          },
+          "fk_column": "Assessment_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Assessment"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assessmentReference.assessmentIdentifier",
+              "column": "Assessment_AssessmentIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentReference.namespace",
+              "column": "Assessment_Namespace"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.assigningEducationOrganizationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "AssessmentAdministration"
+          },
+          "fk_column": "Assigning_EducationOrganization_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationOrganization"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assigningEducationOrganizationReference.educationOrganizationId",
+              "column": "Assigning_EducationOrganization_EducationOrganizationId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "StudentSchoolAssociation"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "StudentSchoolAssociation",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "EnrollmentTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.enrollmentTypeDescriptor"
+            },
+            {
+              "name": "EntryGradeLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.entryGradeLevelDescriptor"
+            },
+            {
+              "name": "EntryGradeLevelReasonDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.entryGradeLevelReasonDescriptor"
+            },
+            {
+              "name": "EntryTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.entryTypeDescriptor"
+            },
+            {
+              "name": "ExitWithdrawTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.exitWithdrawTypeDescriptor"
+            },
+            {
+              "name": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
+            },
+            {
+              "name": "NextYearGradeLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearGradeLevelDescriptor"
+            },
+            {
+              "name": "ResidencyStatusDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.residencyStatusDescriptor"
+            },
+            {
+              "name": "SchoolChoiceBasisDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolChoiceBasisDescriptor"
+            },
+            {
+              "name": "Calendar_CalendarCode",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.calendarCode"
+            },
+            {
+              "name": "Calendar_SchoolReferenceSchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolId"
+            },
+            {
+              "name": "Calendar_SchoolYearTypeReferenceSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolYear"
+            },
+            {
+              "name": "ClassOfSchoolYear_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.classOfSchoolYearTypeReference.schoolYear"
+            },
+            {
+              "name": "EmployedWhileEnrolled",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.employedWhileEnrolled"
+            },
+            {
+              "name": "EntryDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": false,
+              "source_path": "$.entryDate"
+            },
+            {
+              "name": "ExitWithdrawDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": true,
+              "source_path": "$.exitWithdrawDate"
+            },
+            {
+              "name": "FullTimeEquivalency",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 5,
+                "scale": 4
+              },
+              "is_nullable": true,
+              "source_path": "$.fullTimeEquivalency"
+            },
+            {
+              "name": "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.educationOrganizationId"
+            },
+            {
+              "name": "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.graduationSchoolYear"
+            },
+            {
+              "name": "NextYear_School_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearSchoolReference.schoolId"
+            },
+            {
+              "name": "PrimarySchool",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.primarySchool"
+            },
+            {
+              "name": "RepeatGradeIndicator",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.repeatGradeIndicator"
+            },
+            {
+              "name": "SchoolChoice",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolChoice"
+            },
+            {
+              "name": "SchoolChoiceTransfer",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolChoiceTransfer"
+            },
+            {
+              "name": "SchoolYear_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolYearTypeReference.schoolYear"
+            },
+            {
+              "name": "School_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolReference.schoolId"
+            },
+            {
+              "name": "Student_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference.studentUniqueId"
+            },
+            {
+              "name": "TermCompletionIndicator",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Boolean"
+              },
+              "is_nullable": true,
+              "source_path": "$.termCompletionIndicator"
+            },
+            {
+              "name": "Calendar_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference"
+            },
+            {
+              "name": "ClassOfSchoolYear_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.classOfSchoolYearTypeReference"
+            },
+            {
+              "name": "GraduationPlan_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference"
+            },
+            {
+              "name": "NextYear_School_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearSchoolReference"
+            },
+            {
+              "name": "SchoolYear_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolYearTypeReference"
+            },
+            {
+              "name": "School_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolReference"
+            },
+            {
+              "name": "Student_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_DocumentId_EntryDate_School_SchoolId_Student_StudentUniqueId",
+              "columns": [
+                "DocumentId",
+                "EntryDate",
+                "School_SchoolId",
+                "Student_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_EntryDate_School_DocumentId_Student_DocumentId",
+              "columns": [
+                "EntryDate",
+                "School_DocumentId",
+                "Student_DocumentId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_Calendar_DocumentId_Calendar_CalendarCode_Calendar_SchoolReferenceSchoolId_Calendar_SchoolYearTypeReferenceSchoolYear",
+              "columns": [
+                "Calendar_DocumentId",
+                "Calendar_CalendarCode",
+                "Calendar_SchoolReferenceSchoolId",
+                "Calendar_SchoolYearTypeReferenceSchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Calendar"
+              },
+              "target_columns": [
+                "DocumentId",
+                "CalendarCode",
+                "School_SchoolId",
+                "SchoolYear_SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_ClassOfSchoolYear_DocumentId_ClassOfSchoolYear_SchoolYear",
+              "columns": [
+                "ClassOfSchoolYear_DocumentId",
+                "ClassOfSchoolYear_SchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "SchoolYearType"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EnrollmentTypeDescriptor_DescriptorId",
+              "columns": [
+                "EnrollmentTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_DescriptorId",
+              "columns": [
+                "EntryGradeLevelDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EntryGradeLevelReasonDescriptor_DescriptorId",
+              "columns": [
+                "EntryGradeLevelReasonDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_EntryTypeDescriptor_DescriptorId",
+              "columns": [
+                "EntryTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_ExitWithdrawTypeDescriptor_DescriptorId",
+              "columns": [
+                "ExitWithdrawTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_DocumentId_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "columns": [
+                "GraduationPlan_DocumentId",
+                "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "GraduationPlan"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationSchoolYear_SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "columns": [
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor_DescriptorId",
+              "columns": [
+                "NextYearGradeLevelDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_NextYear_School_DocumentId_NextYear_School_SchoolId",
+              "columns": [
+                "NextYear_School_DocumentId",
+                "NextYear_School_SchoolId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_ResidencyStatusDescriptor_DescriptorId",
+              "columns": [
+                "ResidencyStatusDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_SchoolChoiceBasisDescriptor_DescriptorId",
+              "columns": [
+                "SchoolChoiceBasisDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_SchoolYear_DocumentId_SchoolYear_SchoolYear",
+              "columns": [
+                "SchoolYear_DocumentId",
+                "SchoolYear_SchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "SchoolYearType"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_School_DocumentId_School_SchoolId",
+              "columns": [
+                "School_DocumentId",
+                "School_SchoolId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "School"
+              },
+              "target_columns": [
+                "DocumentId",
+                "SchoolId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_Student_DocumentId_Student_StudentUniqueId",
+              "columns": [
+                "Student_DocumentId",
+                "Student_StudentUniqueId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "Student"
+              },
+              "target_columns": [
+                "DocumentId",
+                "StudentUniqueId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_Calendar_DocumentId_AllOrNone",
+              "fk_column": "Calendar_DocumentId",
+              "dependent_columns": [
+                "Calendar_CalendarCode",
+                "Calendar_SchoolReferenceSchoolId",
+                "Calendar_SchoolYearTypeReferenceSchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_ClassOfSchoolYear_DocumentId_AllOrNone",
+              "fk_column": "ClassOfSchoolYear_DocumentId",
+              "dependent_columns": [
+                "ClassOfSchoolYear_SchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_GraduationPlan_DocumentId_AllOrNone",
+              "fk_column": "GraduationPlan_DocumentId",
+              "dependent_columns": [
+                "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_NextYear_School_DocumentId_AllOrNone",
+              "fk_column": "NextYear_School_DocumentId",
+              "dependent_columns": [
+                "NextYear_School_SchoolId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_SchoolYear_DocumentId_AllOrNone",
+              "fk_column": "SchoolYear_DocumentId",
+              "dependent_columns": [
+                "SchoolYear_SchoolYear"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_School_DocumentId_AllOrNone",
+              "fk_column": "School_DocumentId",
+              "dependent_columns": [
+                "School_SchoolId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociation_Student_DocumentId_AllOrNone",
+              "fk_column": "Student_DocumentId",
+              "dependent_columns": [
+                "Student_StudentUniqueId"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "sample",
+          "name": "StudentSchoolAssociationExtension",
+          "scope": "$._ext.sample",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "MembershipTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$._ext.sample.membershipTypeDescriptor"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_DocumentId",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_MembershipTypeDescriptor_DescriptorId",
+              "columns": [
+                "MembershipTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "StudentSchoolAssociationAlternativeGraduationPlan",
+          "scope": "$.alternativeGraduationPlans[*]",
+          "key_columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
+            },
+            {
+              "name": "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
+            },
+            {
+              "name": "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear"
+            },
+            {
+              "name": "Alternative_GraduationPlan_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_DocumentId_Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId_Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId_Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "columns": [
+                "Alternative_GraduationPlan_DocumentId",
+                "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "GraduationPlan"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "GraduationPlanTypeDescriptor_DescriptorId",
+                "GraduationSchoolYear_SchoolYear"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "columns": [
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_StudentSchoolAssociation_DocumentId",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_DocumentId_AllOrNone",
+              "fk_column": "Alternative_GraduationPlan_DocumentId",
+              "dependent_columns": [
+                "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+                "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "StudentSchoolAssociationEducationPlan",
+          "scope": "$.educationPlans[*]",
+          "key_columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null
+            },
+            {
+              "name": "EducationPlanDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.educationPlans[*].educationPlanDescriptor"
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociationEducationPlan_StudentSchoolAssociation_DocumentId_EducationPlanDescriptor_DescriptorId",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId",
+                "EducationPlanDescriptor_DescriptorId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationEducationPlan_EducationPlanDescriptor_DescriptorId",
+              "columns": [
+                "EducationPlanDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationEducationPlan_StudentSchoolAssociation_DocumentId",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "document_reference_bindings": [
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+          },
+          "fk_column": "Alternative_GraduationPlan_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlan"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
+              "column": "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+              "column": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+            },
+            {
+              "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear",
+              "column": "Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.calendarReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "Calendar_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Calendar"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.calendarReference.calendarCode",
+              "column": "Calendar_CalendarCode"
+            },
+            {
+              "reference_json_path": "$.calendarReference.schoolId",
+              "column": "Calendar_SchoolReferenceSchoolId"
+            },
+            {
+              "reference_json_path": "$.calendarReference.schoolYear",
+              "column": "Calendar_SchoolYearTypeReferenceSchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.classOfSchoolYearTypeReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "ClassOfSchoolYear_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolYearType"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.classOfSchoolYearTypeReference.schoolYear",
+              "column": "ClassOfSchoolYear_SchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.graduationPlanReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "GraduationPlan_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlan"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.graduationPlanReference.educationOrganizationId",
+              "column": "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+              "column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+            },
+            {
+              "reference_json_path": "$.graduationPlanReference.graduationSchoolYear",
+              "column": "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.nextYearSchoolReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "NextYear_School_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.nextYearSchoolReference.schoolId",
+              "column": "NextYear_School_SchoolId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.schoolReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "School_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.schoolReference.schoolId",
+              "column": "School_SchoolId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.schoolYearTypeReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "SchoolYear_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolYearType"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.schoolYearTypeReference.schoolYear",
+              "column": "SchoolYear_SchoolYear"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.studentReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "Student_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "Student"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.studentReference.studentUniqueId",
+              "column": "Student_StudentUniqueId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.enrollmentTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EnrollmentTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EnrollmentTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.entryGradeLevelDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EntryGradeLevelDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GradeLevelDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.entryGradeLevelReasonDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EntryGradeLevelReasonDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EntryGradeLevelReasonDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.entryTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "EntryTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EntryTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.exitWithdrawTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "ExitWithdrawTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ExitWithdrawTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlanTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.nextYearGradeLevelDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "NextYearGradeLevelDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GradeLevelDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.residencyStatusDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "ResidencyStatusDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ResidencyStatusDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.schoolChoiceBasisDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociation"
+          },
+          "fk_column": "SchoolChoiceBasisDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "SchoolChoiceBasisDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationAlternativeGraduationPlan"
+          },
+          "fk_column": "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GraduationPlanTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.educationPlans[*].educationPlanDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentSchoolAssociationEducationPlan"
+          },
+          "fk_column": "EducationPlanDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationPlanDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$._ext.sample.membershipTypeDescriptor",
+          "table": {
+            "schema": "sample",
+            "name": "StudentSchoolAssociationExtension"
+          },
+          "fk_column": "MembershipTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Sample",
+            "resource_name": "MembershipTypeDescriptor"
+          }
+        }
+      ],
+      "extension_sites": []
+    }
+  ]
+}
