@@ -482,12 +482,8 @@ public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRel
         List<DbColumnName> uniqueColumns = [RelationalNameConventions.DocumentIdColumnName];
         uniqueColumns.AddRange(identityColumns.Select(column => column.ColumnName));
 
-        var uniqueName =
-            $"UX_{tableName.Name}_{string.Join("_", uniqueColumns.Select(column => column.Value))}";
-        var fkName = RelationalNameConventions.ForeignKeyName(
-            tableName.Name,
-            new[] { RelationalNameConventions.DocumentIdColumnName }
-        );
+        var uniqueName = ConstraintNaming.BuildNaturalKeyUniqueName(tableName);
+        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
 
         return new TableConstraint[]
         {

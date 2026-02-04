@@ -95,10 +95,7 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
 
             if (!ContainsUniqueConstraint(rootTable.Constraints, rootTable.Table, descriptorUniqueColumns))
             {
-                var descriptorUniqueName = BuildUniqueConstraintName(
-                    rootTable.Table.Name,
-                    descriptorUniqueColumns
-                );
+                var descriptorUniqueName = ConstraintNaming.BuildNaturalKeyUniqueName(rootTable.Table);
                 tableAccumulator.AddConstraint(
                     new TableConstraint.Unique(descriptorUniqueName, descriptorUniqueColumns)
                 );
@@ -124,7 +121,7 @@ public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalMo
 
         if (!ContainsUniqueConstraint(rootTable.Constraints, rootTable.Table, identityColumns))
         {
-            var rootUniqueName = BuildUniqueConstraintName(rootTable.Table.Name, identityColumns);
+            var rootUniqueName = ConstraintNaming.BuildNaturalKeyUniqueName(rootTable.Table);
             tableAccumulator.AddConstraint(new TableConstraint.Unique(rootUniqueName, identityColumns));
             mutated = true;
         }

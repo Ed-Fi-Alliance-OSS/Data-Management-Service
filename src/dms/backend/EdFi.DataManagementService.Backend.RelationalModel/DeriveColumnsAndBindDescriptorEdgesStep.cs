@@ -468,10 +468,7 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             tableBuilder.AddColumn(column);
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
-                    RelationalNameConventions.ForeignKeyName(
-                        tableBuilder.Definition.Table.Name,
-                        new[] { columnName }
-                    ),
+                    ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
                     new[] { columnName },
                     _descriptorTableName,
                     new[] { RelationalNameConventions.DocumentIdColumnName },

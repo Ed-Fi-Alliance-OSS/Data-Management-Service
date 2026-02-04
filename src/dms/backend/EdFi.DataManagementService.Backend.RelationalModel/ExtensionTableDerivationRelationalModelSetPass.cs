@@ -750,7 +750,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         var keyColumns = BuildKeyColumns(tableKey.Columns);
         var fkColumns = tableKey.Columns.Select(column => column.ColumnName).ToArray();
-        var fkName = RelationalNameConventions.ForeignKeyName(tableName.Name, fkColumns);
+        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, baseTable.Table.Name);
 
         TableConstraint[] constraints =
         [
@@ -799,7 +799,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         var keyColumns = BuildKeyColumns(tableKey.Columns);
 
         var parentKeyColumns = BuildParentKeyColumnNames(baseRootBaseName, parent.CollectionBaseNames);
-        var fkName = RelationalNameConventions.ForeignKeyName(tableName.Name, parentKeyColumns);
+        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parent.Definition.Table.Name);
 
         TableConstraint[] constraints =
         [
@@ -1085,10 +1085,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             tableBuilder.AddColumn(column);
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
-                    RelationalNameConventions.ForeignKeyName(
-                        tableBuilder.Definition.Table.Name,
-                        new[] { columnName }
-                    ),
+                    ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
                     new[] { columnName },
                     _descriptorTableName,
                     new[] { RelationalNameConventions.DocumentIdColumnName },

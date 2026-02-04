@@ -2203,7 +2203,7 @@
         "constraints": [
           {
             "kind": "Unique",
-            "name": "UX_EducationOrganizationIdentity_DocumentId_EducationOrganizationId",
+            "name": "UX_EducationOrganizationIdentity_NK",
             "columns": [
               "DocumentId",
               "EducationOrganizationId"
@@ -2211,7 +2211,7 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_EducationOrganizationIdentity_DocumentId",
+            "name": "FK_EducationOrganizationIdentity_Document",
             "columns": [
               "DocumentId"
             ],
@@ -2323,7 +2323,7 @@
         "constraints": [
           {
             "kind": "Unique",
-            "name": "UX_GeneralStudentProgramAssociationIdentity_DocumentId_BeginDate_EducationOrganizationReferenceEducationOrganizationId_ProgramReferenceEducationOrganizationId_ProgramReferenceProgramName_ProgramReferenceProgramTypeDescriptor_StudentReferenceStudentUniqueId",
+            "name": "UX_GeneralStudentProgramAssociationIdentity_NK",
             "columns": [
               "DocumentId",
               "BeginDate",
@@ -2336,7 +2336,7 @@
           },
           {
             "kind": "ForeignKey",
-            "name": "FK_GeneralStudentProgramAssociationIdentity_DocumentId",
+            "name": "FK_GeneralStudentProgramAssociationIdentity_Document",
             "columns": [
               "DocumentId"
             ],
@@ -2444,7 +2444,7 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_AssessmentAdministration_AdministrationIdentifier_Assessment_DocumentId_Assigning_EducationOrganization_DocumentId",
+              "name": "UX_AssessmentAdministration_NK",
               "columns": [
                 "AdministrationIdentifier",
                 "Assessment_DocumentId",
@@ -2453,7 +2453,7 @@
             },
             {
               "kind": "Unique",
-              "name": "UX_AssessmentAdministration_DocumentId_AdministrationIdentifier_Assessment_AssessmentIdentifier_Assessment_Namespace_Assigning_EducationOrganization_EducationOrganizationId",
+              "name": "UX_AssessmentAdministration_RefKey",
               "columns": [
                 "DocumentId",
                 "AdministrationIdentifier",
@@ -2464,7 +2464,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministration_Assessment_DocumentId_Assessment_AssessmentIdentifier_Assessment_Namespace",
+              "name": "FK_AssessmentAdministration_Assessment_RefKey",
               "columns": [
                 "Assessment_DocumentId",
                 "Assessment_AssessmentIdentifier",
@@ -2484,7 +2484,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministration_Assigning_EducationOrganization_DocumentId_Assigning_EducationOrganization_EducationOrganizationId",
+              "name": "FK_AssessmentAdministration_Assigning_EducationOrgan_0d3c5ef038",
               "columns": [
                 "Assigning_EducationOrganization_DocumentId",
                 "Assigning_EducationOrganization_EducationOrganizationId"
@@ -2502,7 +2502,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministration_DocumentId",
+              "name": "FK_AssessmentAdministration_Document",
               "columns": [
                 "DocumentId"
               ],
@@ -2518,7 +2518,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_AssessmentAdministration_Assessment_DocumentId_AllOrNone",
+              "name": "CK_AssessmentAdministration_Assessment_AllNone",
               "fk_column": "Assessment_DocumentId",
               "dependent_columns": [
                 "Assessment_AssessmentIdentifier",
@@ -2527,7 +2527,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_AssessmentAdministration_Assigning_EducationOrganization_DocumentId_AllOrNone",
+              "name": "CK_AssessmentAdministration_Assigning_EducationOrgan_50c4f0c0a8",
               "fk_column": "Assigning_EducationOrganization_DocumentId",
               "dependent_columns": [
                 "Assigning_EducationOrganization_EducationOrganizationId"
@@ -2611,23 +2611,7 @@
           "constraints": [
             {
               "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentAdministration_DocumentId",
-              "columns": [
-                "AssessmentAdministration_DocumentId"
-              ],
-              "target_table": {
-                "schema": "edfi",
-                "name": "AssessmentAdministration"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_DocumentId_AssessmentBatteryPart_AssessmentBatteryPartName_AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier_AssessmentBatteryPart_AssessmentReferenceNamespace",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_Ass_714f559b37",
               "columns": [
                 "AssessmentBatteryPart_DocumentId",
                 "AssessmentBatteryPart_AssessmentBatteryPartName",
@@ -2648,8 +2632,24 @@
               "on_update": "NoAction"
             },
             {
+              "kind": "ForeignKey",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_Ass_c017bf67bc",
+              "columns": [
+                "AssessmentAdministration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
               "kind": "AllOrNoneNullability",
-              "name": "CK_AssessmentAdministrationAssessmentBatteryPart_AssessmentBatteryPart_DocumentId_AllOrNone",
+              "name": "CK_AssessmentAdministrationAssessmentBatteryPart_Ass_037720886f",
               "fk_column": "AssessmentBatteryPart_DocumentId",
               "dependent_columns": [
                 "AssessmentBatteryPart_AssessmentBatteryPartName",
@@ -2714,7 +2714,7 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_AssessmentAdministrationPeriod_AssessmentAdministration_DocumentId_BeginDate",
+              "name": "UX_AssessmentAdministrationPeriod_AssessmentAdminist_adb3a50817",
               "columns": [
                 "AssessmentAdministration_DocumentId",
                 "BeginDate"
@@ -2722,7 +2722,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministrationPeriod_AssessmentAdministration_DocumentId",
+              "name": "FK_AssessmentAdministrationPeriod_AssessmentAdministration",
               "columns": [
                 "AssessmentAdministration_DocumentId"
               ],
@@ -3164,7 +3164,16 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_StudentSchoolAssociation_DocumentId_EntryDate_School_SchoolId_Student_StudentUniqueId",
+              "name": "UX_StudentSchoolAssociation_NK",
+              "columns": [
+                "EntryDate",
+                "School_DocumentId",
+                "Student_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_StudentSchoolAssociation_RefKey",
               "columns": [
                 "DocumentId",
                 "EntryDate",
@@ -3173,17 +3182,8 @@
               ]
             },
             {
-              "kind": "Unique",
-              "name": "UX_StudentSchoolAssociation_EntryDate_School_DocumentId_Student_DocumentId",
-              "columns": [
-                "EntryDate",
-                "School_DocumentId",
-                "Student_DocumentId"
-              ]
-            },
-            {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_Calendar_DocumentId_Calendar_CalendarCode_Calendar_SchoolReferenceSchoolId_Calendar_SchoolYearTypeReferenceSchoolYear",
+              "name": "FK_StudentSchoolAssociation_Calendar_RefKey",
               "columns": [
                 "Calendar_DocumentId",
                 "Calendar_CalendarCode",
@@ -3205,7 +3205,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_ClassOfSchoolYear_DocumentId_ClassOfSchoolYear_SchoolYear",
+              "name": "FK_StudentSchoolAssociation_ClassOfSchoolYear_RefKey",
               "columns": [
                 "ClassOfSchoolYear_DocumentId",
                 "ClassOfSchoolYear_SchoolYear"
@@ -3223,7 +3223,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_DocumentId",
+              "name": "FK_StudentSchoolAssociation_Document",
               "columns": [
                 "DocumentId"
               ],
@@ -3239,7 +3239,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_EnrollmentTypeDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_EnrollmentTypeDescriptor",
               "columns": [
                 "EnrollmentTypeDescriptor_DescriptorId"
               ],
@@ -3255,7 +3255,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_EntryGradeLevelDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_EntryGradeLevelDescriptor",
               "columns": [
                 "EntryGradeLevelDescriptor_DescriptorId"
               ],
@@ -3271,7 +3271,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_EntryGradeLevelReasonDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_EntryGradeLevelReasonDescriptor",
               "columns": [
                 "EntryGradeLevelReasonDescriptor_DescriptorId"
               ],
@@ -3287,7 +3287,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_EntryTypeDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_EntryTypeDescriptor",
               "columns": [
                 "EntryTypeDescriptor_DescriptorId"
               ],
@@ -3303,7 +3303,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_ExitWithdrawTypeDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_ExitWithdrawTypeDescriptor",
               "columns": [
                 "ExitWithdrawTypeDescriptor_DescriptorId"
               ],
@@ -3319,7 +3319,23 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_GraduationPlan_DocumentId_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_Graduatio_1caf199d51",
+              "columns": [
+                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociation_GraduationPlan_RefKey",
               "columns": [
                 "GraduationPlan_DocumentId",
                 "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
@@ -3341,23 +3357,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-              "columns": [
-                "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Descriptor"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "NoAction",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_NextYearGradeLevelDescriptor",
               "columns": [
                 "NextYearGradeLevelDescriptor_DescriptorId"
               ],
@@ -3373,7 +3373,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_NextYear_School_DocumentId_NextYear_School_SchoolId",
+              "name": "FK_StudentSchoolAssociation_NextYear_School_RefKey",
               "columns": [
                 "NextYear_School_DocumentId",
                 "NextYear_School_SchoolId"
@@ -3391,7 +3391,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_ResidencyStatusDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_ResidencyStatusDescriptor",
               "columns": [
                 "ResidencyStatusDescriptor_DescriptorId"
               ],
@@ -3407,7 +3407,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_SchoolChoiceBasisDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociation_SchoolChoiceBasisDescriptor",
               "columns": [
                 "SchoolChoiceBasisDescriptor_DescriptorId"
               ],
@@ -3423,7 +3423,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_SchoolYear_DocumentId_SchoolYear_SchoolYear",
+              "name": "FK_StudentSchoolAssociation_SchoolYear_RefKey",
               "columns": [
                 "SchoolYear_DocumentId",
                 "SchoolYear_SchoolYear"
@@ -3441,7 +3441,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_School_DocumentId_School_SchoolId",
+              "name": "FK_StudentSchoolAssociation_School_RefKey",
               "columns": [
                 "School_DocumentId",
                 "School_SchoolId"
@@ -3459,7 +3459,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociation_Student_DocumentId_Student_StudentUniqueId",
+              "name": "FK_StudentSchoolAssociation_Student_RefKey",
               "columns": [
                 "Student_DocumentId",
                 "Student_StudentUniqueId"
@@ -3477,7 +3477,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_Calendar_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_Calendar_AllNone",
               "fk_column": "Calendar_DocumentId",
               "dependent_columns": [
                 "Calendar_CalendarCode",
@@ -3487,7 +3487,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_ClassOfSchoolYear_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_ClassOfSchoolYear_AllNone",
               "fk_column": "ClassOfSchoolYear_DocumentId",
               "dependent_columns": [
                 "ClassOfSchoolYear_SchoolYear"
@@ -3495,7 +3495,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_GraduationPlan_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_GraduationPlan_AllNone",
               "fk_column": "GraduationPlan_DocumentId",
               "dependent_columns": [
                 "GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
@@ -3505,7 +3505,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_NextYear_School_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_NextYear_School_AllNone",
               "fk_column": "NextYear_School_DocumentId",
               "dependent_columns": [
                 "NextYear_School_SchoolId"
@@ -3513,7 +3513,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_SchoolYear_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_SchoolYear_AllNone",
               "fk_column": "SchoolYear_DocumentId",
               "dependent_columns": [
                 "SchoolYear_SchoolYear"
@@ -3521,7 +3521,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_School_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_School_AllNone",
               "fk_column": "School_DocumentId",
               "dependent_columns": [
                 "School_SchoolId"
@@ -3529,7 +3529,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociation_Student_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociation_Student_AllNone",
               "fk_column": "Student_DocumentId",
               "dependent_columns": [
                 "Student_StudentUniqueId"
@@ -3570,23 +3570,7 @@
           "constraints": [
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationExtension_DocumentId",
-              "columns": [
-                "DocumentId"
-              ],
-              "target_table": {
-                "schema": "edfi",
-                "name": "StudentSchoolAssociation"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "Cascade",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationExtension_MembershipTypeDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociationExtension_MembershipTypeDescriptor",
               "columns": [
                 "MembershipTypeDescriptor_DescriptorId"
               ],
@@ -3598,6 +3582,22 @@
                 "DocumentId"
               ],
               "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationExtension_StudentSchoolAssociation",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
               "on_update": "NoAction"
             }
           ]
@@ -3675,7 +3675,23 @@
           "constraints": [
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_DocumentId_Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId_Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId_Alternative_GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_1d0ebb5794",
+              "columns": [
+                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_7b3ff36ab5",
               "columns": [
                 "Alternative_GraduationPlan_DocumentId",
                 "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
@@ -3697,23 +3713,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-              "columns": [
-                "Alternative_GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId"
-              ],
-              "target_table": {
-                "schema": "dms",
-                "name": "Descriptor"
-              },
-              "target_columns": [
-                "DocumentId"
-              ],
-              "on_delete": "NoAction",
-              "on_update": "NoAction"
-            },
-            {
-              "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_StudentSchoolAssociation_DocumentId",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_b46b27f570",
               "columns": [
                 "StudentSchoolAssociation_DocumentId"
               ],
@@ -3729,7 +3729,7 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociationAlternativeGraduationPlan_Alternative_GraduationPlan_DocumentId_AllOrNone",
+              "name": "CK_StudentSchoolAssociationAlternativeGraduationPlan_2f0faf2a32",
               "fk_column": "Alternative_GraduationPlan_DocumentId",
               "dependent_columns": [
                 "Alternative_GraduationPlan_EducationOrganizationReferenceEducationOrganizationId",
@@ -3785,7 +3785,7 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_StudentSchoolAssociationEducationPlan_StudentSchoolAssociation_DocumentId_EducationPlanDescriptor_DescriptorId",
+              "name": "UX_StudentSchoolAssociationEducationPlan_StudentScho_ded71a8fc2",
               "columns": [
                 "StudentSchoolAssociation_DocumentId",
                 "EducationPlanDescriptor_DescriptorId"
@@ -3793,7 +3793,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationEducationPlan_EducationPlanDescriptor_DescriptorId",
+              "name": "FK_StudentSchoolAssociationEducationPlan_EducationPl_2e5ab20cb7",
               "columns": [
                 "EducationPlanDescriptor_DescriptorId"
               ],
@@ -3809,7 +3809,7 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationEducationPlan_StudentSchoolAssociation_DocumentId",
+              "name": "FK_StudentSchoolAssociationEducationPlan_StudentScho_203e3e1f45",
               "columns": [
                 "StudentSchoolAssociation_DocumentId"
               ],
