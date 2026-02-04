@@ -1,0 +1,25 @@
+[
+  {
+    "category": "Naming",
+    "description": "DMS-931: Apply dialect identifier shortening into the derived model (not just collision detection). Today `RelationalModelSetBuilderContext.BuildResult` detects shortening collisions, but the model still stores pre-shortened identifiers, forcing every downstream consumer to remember to shorten consistently. Acceptance: (1) A set-level pass (or the DMS-931 naming pass) rewrites all derived identifiers using `context.DialectRules.ShortenIdentifier` and stores the shortened names in the `DerivedRelationalModelSet` (tables, columns, constraints, indexes, triggers, abstract identity tables/views); (2) all internal references are updated consistently (FK `TargetTable/TargetColumns`, `DocumentReferenceBinding.Table/FkColumn/IdentityBindings`, `DescriptorEdgeSource`, etc.); (3) the pass is deterministic and idempotent (running twice yields the same model); (4) collision detection still fails fast when multiple original identifiers shorten to the same value; (5) unit tests cover a model with overlong names and assert the shortened identifiers are present in the output and referenced correctly by constraints/bindings; (6) all unit tests pass and the DMS solution builds.",
+    "steps-to-verify": [
+      "Implement a new set-level pass (e.g., `ApplyDialectIdentifierShorteningRelationalModelSetPass`) that rewrites identifiers in-place on `RelationalModelSetBuilderContext` inventories using `DialectRules.ShortenIdentifier` and updates all references consistently.",
+      "Register the new pass at the end of `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelSetPasses.cs` (after DMS-931 naming/override application, and after indexes/triggers inventories exist).",
+      "Add unit tests that force overlong identifiers (e.g., a UNIQUE constraint name built from many columns) and assert the shortened names are stored in the resulting `DerivedRelationalModelSet` and referenced by FKs/bindings correctly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming",
+    "description": "DMS-931: Implement full `resourceSchema.relational.nameOverrides` semantics (beyond DMS-930 placeholders) and remove temporary restrictions. DMS-930 currently extracts reference-only overrides (or will fail fast on non-reference keys) to avoid silent no-ops. Acceptance: (1) `relational.nameOverrides` keys are parsed/validated using the restricted JSONPath grammar and canonicalization described in `reference/design/backend-redesign/epics/01-relational-model/02-naming-and-overrides.md`; (2) overrides are applied to derived identifiers at the correct stage (before suffixes like `_DocumentId`/`_DescriptorId` and before dialect shortening); (3) unknown override keys fail fast with an exception listing the unknown keys and the owning resource; (4) overrides support scalar/descriptor/reference columns and collection segment naming as specified by the design; (5) override application is deterministic and cannot introduce undetected collisions (collisions fail fast with actionable diagnostics); (6) unit tests cover valid overrides, unknown keys, and collisions introduced by overrides; (7) DMS-930 placeholder enforcement (reference-only extraction/fail-fast for non-reference keys) is removed or revised so there is exactly one authoritative override implementation.",
+    "steps-to-verify": [
+      "Implement the DMS-931 override parsing + application in the naming pass (or a dedicated pass), consuming raw overrides from schema inputs and applying them to the derived model identifiers before dialect shortening.",
+      "Update/replace `ExtractReferenceNameOverrides` behavior in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` so DMS-930 placeholder restrictions do not conflict with the full DMS-931 implementation.",
+      "Add unit tests covering: (a) scalar column override; (b) reference base name override; (c) collection segment override; (d) unknown override key fails fast; (e) override collision fails fast deterministically.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  }
+]
