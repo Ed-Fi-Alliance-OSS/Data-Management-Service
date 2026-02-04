@@ -341,7 +341,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     )
     {
         var mappingObject = RequireDocumentPathsMappingEntryObject(mappingNode);
-        var isPartOfIdentity = TryGetOptionalBoolean(mappingObject, "isPartOfIdentity");
 
         var isReference =
             mappingObject["isReference"]?.GetValue<bool>()
@@ -357,7 +356,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 projectName,
                 resourceName,
                 identityJsonPaths,
-                isPartOfIdentity,
                 state
             );
             return;
@@ -377,7 +375,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 projectName,
                 resourceName,
                 identityJsonPaths,
-                isPartOfIdentity,
                 state
             );
             return;
@@ -389,7 +386,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             projectName,
             resourceName,
             identityJsonPaths,
-            isPartOfIdentity,
             state
         );
     }
@@ -421,23 +417,11 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         string projectName,
         string resourceName,
         IReadOnlySet<string> identityJsonPaths,
-        bool? isPartOfIdentity,
         DocumentReferenceMappingExtractionState state
     )
     {
         var path = RequireString(mappingObject, "path");
         var pathExpression = JsonPathExpressionCompiler.Compile(path);
-        var pathIsPartOfIdentity = identityJsonPaths.Contains(pathExpression.Canonical);
-
-        _ = ResolveIsPartOfIdentity(
-            mappingKey,
-            projectName,
-            resourceName,
-            isPartOfIdentity,
-            pathIsPartOfIdentity,
-            new[] { pathExpression.Canonical },
-            pathExpression.Segments.Count > 1
-        );
 
         state.MappedIdentityPaths.Add(pathExpression.Canonical);
     }
@@ -451,23 +435,11 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         string projectName,
         string resourceName,
         IReadOnlySet<string> identityJsonPaths,
-        bool? isPartOfIdentity,
         DocumentReferenceMappingExtractionState state
     )
     {
         var path = RequireString(mappingObject, "path");
         var pathExpression = JsonPathExpressionCompiler.Compile(path);
-        var descriptorIsPartOfIdentity = identityJsonPaths.Contains(pathExpression.Canonical);
-
-        _ = ResolveIsPartOfIdentity(
-            mappingKey,
-            projectName,
-            resourceName,
-            isPartOfIdentity,
-            descriptorIsPartOfIdentity,
-            new[] { pathExpression.Canonical },
-            pathExpression.Segments.Count > 1
-        );
 
         state.MappedIdentityPaths.Add(pathExpression.Canonical);
     }
@@ -483,7 +455,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         string projectName,
         string resourceName,
         IReadOnlySet<string> identityJsonPaths,
-        bool? isPartOfIdentity,
         DocumentReferenceMappingExtractionState state
     )
     {
@@ -510,15 +481,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             .Select(binding => binding.ReferenceJsonPath.Canonical)
             .ToArray();
         var referenceIsPartOfIdentity = referencePaths.Any(identityJsonPaths.Contains);
-        var effectiveIsPartOfIdentity = ResolveIsPartOfIdentity(
-            mappingKey,
-            projectName,
-            resourceName,
-            isPartOfIdentity,
-            referenceIsPartOfIdentity,
-            referencePaths,
-            referenceObjectPath.Segments.Count > 1
-        );
         ValidateReferenceIdentityCompleteness(
             mappingKey,
             projectName,
@@ -533,11 +495,11 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         var targetResourceName = RequireString(mappingObject, "resourceName");
         var isRequired = mappingObject["isRequired"]?.GetValue<bool>() ?? false;
 
-        if (effectiveIsPartOfIdentity && !isRequired)
+        if (referenceIsPartOfIdentity && !isRequired)
         {
             throw new InvalidOperationException(
                 $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                    + "marked as isPartOfIdentity but isRequired is false. "
+                    + "mapped to identityJsonPaths but isRequired is false. "
                     + "Identity references must be required."
             );
         }
@@ -548,7 +510,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 mappingKey,
                 new QualifiedResourceName(targetProjectName, targetResourceName),
                 isRequired,
-                effectiveIsPartOfIdentity,
+                referenceIsPartOfIdentity,
                 referenceObjectPath,
                 referenceJsonPaths
             )
@@ -1019,47 +981,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Resolves the effective <c>isPartOfIdentity</c> value for a reference mapping and validates it is
-    /// consistent with the derived identity-path classification.
-    /// </summary>
-    private static bool ResolveIsPartOfIdentity(
-        string mappingKey,
-        string projectName,
-        string resourceName,
-        bool? isPartOfIdentity,
-        bool derivedIsPartOfIdentity,
-        IReadOnlyList<string> mappingPaths,
-        bool isNestedContext
-    )
-    {
-        if (!derivedIsPartOfIdentity)
-        {
-            if (isPartOfIdentity is true && !isNestedContext)
-            {
-                var orderedPaths = mappingPaths.OrderBy(path => path, StringComparer.Ordinal).ToArray();
-
-                throw new InvalidOperationException(
-                    $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                        + "marked as isPartOfIdentity but identityJsonPaths does not include path(s): "
-                        + string.Join(", ", orderedPaths)
-                );
-            }
-
-            return false;
-        }
-
-        if (isPartOfIdentity is false)
-        {
-            throw new InvalidOperationException(
-                $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                    + "not marked as isPartOfIdentity but identityJsonPaths includes it."
-            );
-        }
-
-        return true;
-    }
-
-    /// <summary>
     /// Validates that all identity-component reference paths are present in the resource's
     /// <c>identityJsonPaths</c>.
     /// </summary>
@@ -1092,9 +1013,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
 
         throw new InvalidOperationException(
-            $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' is "
-                + $"marked isPartOfIdentity for reference '{referenceObjectPath.Canonical}' but "
-                + "identityJsonPaths is missing reference path(s): "
+            $"documentPathsMapping entry '{mappingKey}' on resource '{projectName}:{resourceName}' has "
+                + $"reference identity paths for '{referenceObjectPath.Canonical}' but identityJsonPaths "
+                + "is missing reference path(s): "
                 + string.Join(", ", missing)
         );
     }
@@ -1460,31 +1381,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 $"Expected {propertyName} to be a boolean, invalid ApiSchema."
             ),
         };
-    }
-
-    /// <summary>
-    /// Reads an optional boolean property from a JSON object.
-    /// </summary>
-    private static bool? TryGetOptionalBoolean(JsonObject node, string propertyName)
-    {
-        if (!node.TryGetPropertyValue(propertyName, out var value))
-        {
-            return null;
-        }
-
-        if (value is null)
-        {
-            return null;
-        }
-
-        if (value is not JsonValue jsonValue)
-        {
-            throw new InvalidOperationException(
-                $"Expected {propertyName} to be a boolean, invalid ApiSchema."
-            );
-        }
-
-        return jsonValue.GetValue<bool>();
     }
 
     /// <summary>

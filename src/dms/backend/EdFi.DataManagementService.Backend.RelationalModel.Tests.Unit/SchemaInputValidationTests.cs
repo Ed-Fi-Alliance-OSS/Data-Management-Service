@@ -226,7 +226,7 @@ public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_Identity
     public void It_should_fail_with_missing_identity_paths()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("isPartOfIdentity");
+        _exception!.Message.Should().Contain("identityJsonPaths");
         _exception.Message.Should().Contain("missing reference path");
         _exception.Message.Should().Contain("$.schoolReference");
     }
@@ -238,7 +238,7 @@ public class Given_A_Document_Reference_Marked_As_Identity_With_Partial_Identity
 [TestFixture]
 public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonPaths
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -266,7 +266,7 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
             },
         };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject()
@@ -274,15 +274,12 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
     }
 
     /// <summary>
-    /// It should fail with missing identity paths.
+    /// It should not fail without identity json paths.
     /// </summary>
     [Test]
-    public void It_should_fail_with_missing_identity_paths()
+    public void It_should_not_fail_without_identity_json_paths()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("isPartOfIdentity");
-        _exception.Message.Should().Contain("does not include path");
-        _exception.Message.Should().Contain("$.schoolReference.schoolId");
+        _context.Should().NotBeNull();
     }
 }
 
@@ -292,7 +289,7 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
 [TestFixture]
 public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJsonPaths
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -309,6 +306,7 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
                 ["isReference"] = true,
                 ["isDescriptor"] = false,
                 ["isPartOfIdentity"] = false,
+                ["isRequired"] = true,
                 ["projectName"] = "Ed-Fi",
                 ["resourceName"] = "School",
                 ["referenceJsonPaths"] = new JsonArray
@@ -322,7 +320,7 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
             },
         };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: identityJsonPaths,
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject()
@@ -330,14 +328,12 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
     }
 
     /// <summary>
-    /// It should fail with identity paths present.
+    /// It should not fail with identity paths present.
     /// </summary>
     [Test]
-    public void It_should_fail_with_identity_paths_present()
+    public void It_should_not_fail_with_identity_paths_present()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("isPartOfIdentity");
-        _exception.Message.Should().Contain("includes it");
+        _context.Should().NotBeNull();
     }
 }
 
@@ -392,7 +388,7 @@ public class Given_An_Identity_Reference_That_Is_Not_Required
     public void It_should_fail_with_optional_identity_reference()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("isPartOfIdentity");
+        _exception!.Message.Should().Contain("identityJsonPaths");
         _exception.Message.Should().Contain("isRequired");
         _exception.Message.Should().Contain("School");
     }
@@ -404,7 +400,7 @@ public class Given_An_Identity_Reference_That_Is_Not_Required
 [TestFixture]
 public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -422,7 +418,7 @@ public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
             },
         };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject()
@@ -430,15 +426,12 @@ public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
     }
 
     /// <summary>
-    /// It should fail with missing identity path.
+    /// It should not fail without identity json paths.
     /// </summary>
     [Test]
-    public void It_should_fail_with_missing_identity_path()
+    public void It_should_not_fail_without_identity_json_paths()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("isPartOfIdentity");
-        _exception.Message.Should().Contain("does not include path");
-        _exception.Message.Should().Contain("$.schoolId");
+        _context.Should().NotBeNull();
     }
 }
 
@@ -448,7 +441,7 @@ public class Given_A_Scalar_Marked_As_Identity_Without_IdentityJsonPaths
 [TestFixture]
 public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -466,7 +459,7 @@ public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
             },
         };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray { "$.schoolId" },
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject()
@@ -474,14 +467,12 @@ public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
     }
 
     /// <summary>
-    /// It should fail with identity paths present.
+    /// It should not fail with identity paths present.
     /// </summary>
     [Test]
-    public void It_should_fail_with_identity_paths_present()
+    public void It_should_not_fail_with_identity_paths_present()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("not marked as isPartOfIdentity");
-        _exception.Message.Should().Contain("includes it");
+        _context.Should().NotBeNull();
     }
 }
 
@@ -491,7 +482,7 @@ public class Given_A_Scalar_Not_Marked_As_Identity_With_IdentityJsonPaths
 [TestFixture]
 public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -506,11 +497,13 @@ public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
                 ["isReference"] = true,
                 ["isDescriptor"] = true,
                 ["isPartOfIdentity"] = true,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "SchoolTypeDescriptor",
                 ["path"] = "$.schoolTypeDescriptor",
             },
         };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject()
@@ -518,15 +511,12 @@ public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
     }
 
     /// <summary>
-    /// It should fail with missing identity path.
+    /// It should not fail without identity json paths.
     /// </summary>
     [Test]
-    public void It_should_fail_with_missing_identity_path()
+    public void It_should_not_fail_without_identity_json_paths()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("isPartOfIdentity");
-        _exception.Message.Should().Contain("does not include path");
-        _exception.Message.Should().Contain("$.schoolTypeDescriptor");
+        _context.Should().NotBeNull();
     }
 }
 
@@ -536,7 +526,7 @@ public class Given_A_Descriptor_Marked_As_Identity_Without_IdentityJsonPaths
 [TestFixture]
 public class Given_A_Descriptor_Not_Marked_As_Identity_With_IdentityJsonPaths
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -551,11 +541,13 @@ public class Given_A_Descriptor_Not_Marked_As_Identity_With_IdentityJsonPaths
                 ["isReference"] = true,
                 ["isDescriptor"] = true,
                 ["isPartOfIdentity"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "SchoolTypeDescriptor",
                 ["path"] = "$.schoolTypeDescriptor",
             },
         };
 
-        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
             identityJsonPaths: new JsonArray { "$.schoolTypeDescriptor" },
             documentPathsMapping: documentPathsMapping,
             jsonSchemaForInsert: new JsonObject()
@@ -563,14 +555,12 @@ public class Given_A_Descriptor_Not_Marked_As_Identity_With_IdentityJsonPaths
     }
 
     /// <summary>
-    /// It should fail with identity paths present.
+    /// It should not fail with identity paths present.
     /// </summary>
     [Test]
-    public void It_should_fail_with_identity_paths_present()
+    public void It_should_not_fail_with_identity_paths_present()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("not marked as isPartOfIdentity");
-        _exception.Message.Should().Contain("includes it");
+        _context.Should().NotBeNull();
     }
 }
 

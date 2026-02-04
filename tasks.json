@@ -1,3 +1,10 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed to the Ed-Fi Alliance under one or more agreements.
+ * The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+ * See the LICENSE and NOTICES files in the project root for more information.
+ */
+
 [
   {
     "category": "Robustness",
@@ -174,23 +181,34 @@
   },
   {
     "category": "Correctness",
-    "description": "Validate that any constraint path set that includes reference-identity fields is complete before collapsing to `..._DocumentId`. Today, root identity and array uniqueness derivation collapse reference identity paths to the reference FK column (stable key). This is only semantics-preserving when the constraint includes the full referenced identity. Acceptance: (1) If a `documentPathsMapping` reference entry is part of identity (via `identityJsonPaths` / `isPartOfIdentity`), then `identityJsonPaths` must include *all* `referenceJsonPaths[*].referenceJsonPath` for that entry; otherwise fail fast with an error that includes the mapping key, reference object path, and the missing canonical JSONPaths; (2) For each `arrayUniquenessConstraints` scope group, if any path is a reference identity path under a reference object, then that scope's uniqueness path set must include *all* identity paths for that same reference object; otherwise fail fast with an error that includes the scope/basePath (including extension-aligned variants), reference object path, and missing canonical JSONPaths; (3) Add unit tests covering partial reference identity in `identityJsonPaths` and partial reference identity in `arrayUniquenessConstraints` (including a nested constraint case); (4) All existing unit tests pass.",
+    "description": "Remove the implicit 1:1 coupling between `documentPathsMapping[*].isPartOfIdentity` and `identityJsonPaths`. The authoritative source of which JSONPaths participate in a resource natural key is `identityJsonPaths`; `isPartOfIdentity` must not be validated against it, as `isPartOfIdentity` is not the same thing. Acceptance: (1) `ExtractInputsStep` never throws because a mapping entry's `isPartOfIdentity` disagrees with `identityJsonPaths` (for scalar, descriptor, or reference mapping entries); (2) Identity-component classification used by relational model derivation is computed solely from `identityJsonPaths` membership (e.g., `DocumentReferenceMapping.IsPartOfIdentity`/`DocumentReferenceBinding.IsIdentityComponent` are derived from `identityJsonPaths`, not from the input `isPartOfIdentity` flag); (3) Existing validations that are truly about `identityJsonPaths` correctness remain (e.g., identity paths must exist in `documentPathsMapping`, reference identity completeness, duplicate identity paths, and identity-reference requiredness based on `identityJsonPaths`); (4) All unit tests pass.",
     "steps-to-verify": [
-      "Add a validation step (likely during inputs extraction/validation) that enforces full reference-identity coverage for identity-bearing references (`identityJsonPaths` contains all `referenceJsonPaths[*].referenceJsonPath` for that mapping).",
-      "Add a validation step that enforces full reference-identity coverage for each `arrayUniquenessConstraints` scope group when any reference identity path is present (consider nested constraints and extension-aligned `_ext.{project}` paths).",
-      "Add failing unit tests demonstrating: (a) identityJsonPaths includes only one identity field under a reference object; (b) arrayUniquenessConstraints includes only one identity field under a reference object; (c) nestedConstraints partial mapping.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` to stop validating `isPartOfIdentity` vs `identityJsonPaths` (remove/replace `ResolveIsPartOfIdentity` and any mismatch-throwing logic).",
+      "Ensure `DocumentReferenceMapping.IsPartOfIdentity` is computed only from whether any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`, regardless of the input `isPartOfIdentity` value.",
+      "Confirm the identity-reference requiredness guard still triggers based on the derived identity classification (i.e., `identityJsonPaths` membership) rather than the input `isPartOfIdentity` flag.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
   },
   {
-    "category": "Maintainability",
-    "description": "Refactor `ReferenceConstraintRelationalModelSetPass.BuildReferenceIdentityColumns` to be order-independent. The current implementation assumes `DocumentReferenceMapping.ReferenceJsonPaths` and `DocumentReferenceBinding.IdentityBindings` are aligned by index; this is brittle if bindings are ever canonicalized/sorted independently. Acceptance: (1) Join mapping/reference bindings by canonical `referenceJsonPath` (and/or canonical identity path keys) rather than list index; (2) Fail fast with actionable errors if the mapping and binding sets disagree (missing/extra paths), without relying on list ordering; (3) Add a unit test that exercises a binding list in a different order than the mapping (or otherwise proves ordering is irrelevant) while still producing the same derived FK column sets ordered by target identity order; (4) All existing unit tests pass.",
+    "category": "Tests",
+    "description": "Update schema-input validation tests to reflect that `identityJsonPaths` is authoritative and `documentPathsMapping[*].isPartOfIdentity` has no required relationship to it. Acceptance: (1) Remove/replace unit tests that expect `ExtractInputsStep` to fail solely due to `isPartOfIdentity`/`identityJsonPaths` mismatch (scalar, descriptor, and reference cases); (2) Add regression tests showing mismatches are tolerated and do not affect identity-component derivation (e.g., a reference with `isPartOfIdentity=false` but with a `referenceJsonPath` included in `identityJsonPaths` is still treated as an identity component; conversely, `isPartOfIdentity=true` with no matching `identityJsonPaths` does not force identity behavior); (3) Keep coverage proving identity-reference requiredness is enforced based on `identityJsonPaths` (not on `isPartOfIdentity`); (4) All relational-model unit tests pass.",
     "steps-to-verify": [
-      "Update `BuildReferenceIdentityColumns` to build a dictionary keyed by `ReferenceJsonPath.Canonical` from `DocumentReferenceBinding.IdentityBindings`, then resolve each `DocumentReferenceMapping.ReferenceJsonPaths` entry via that lookup (no index coupling).",
-      "Add a unit test that constructs a resource model with `DocumentReferenceBinding.IdentityBindings` in a different order than the source mapping (e.g., by mutating the binding in a test or by building the model directly) and asserts `ReferenceConstraintRelationalModelSetPass` still derives the correct composite FK column ordering (target identity order) and all-or-none constraint behavior.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs` to remove the mismatch-fail-fast fixtures and replace them with success-path tests (use `SchemaInputValidationHelpers.ExecuteExtractInputs(...)` and assert no exception).",
+      "Add tests that assert identity-component classification is derived from `identityJsonPaths` only, e.g., inspect `RelationalModelBuilderContext.DocumentReferenceMappings` to verify `IsPartOfIdentity` when `identityJsonPaths` includes/excludes a `referenceJsonPath` independent of `isPartOfIdentity` input.",
+      "Add/adjust tests for the identity-reference requiredness guard where `isPartOfIdentity=false` but `identityJsonPaths` includes a reference path and `isRequired=false`, and assert it still fails with the expected message.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Clarify in backend-redesign documentation that `identityJsonPaths` is the sole authoritative source of natural-key membership and that `documentPathsMapping[*].isPartOfIdentity` must not be treated as authoritative or cross-validated because it is a superset of natural key membership. Acceptance: (1) Update `reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md` (and any relevant design doc sections) to explicitly state that identity membership is derived from `identityJsonPaths` and that `isPartOfIdentity` also serves other purposes; (2) Doc wording aligns with `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` identity-component definitions and does not imply a 1:1 coupling.",
+    "steps-to-verify": [
+      "Update `reference/design/backend-redesign/epics/01-relational-model/01-reference-and-constraints.md` to add an explicit note under inputs/validation about `identityJsonPaths` authority and `isPartOfIdentity` non-authority.",
+      "Sanity-check the updated docs against `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` to ensure the identity-component rules are consistent."
+    ],
+    "completed": false
   }
 ]
