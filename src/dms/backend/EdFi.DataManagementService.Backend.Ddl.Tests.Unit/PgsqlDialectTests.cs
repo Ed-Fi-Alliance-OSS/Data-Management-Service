@@ -449,3 +449,366 @@ public class Given_PgsqlDialect_Rules_Access
         _dialect.Rules.MaxIdentifierLength.Should().Be(63);
     }
 }
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Sequence_If_Not_Exists
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateSequenceIfNotExists(new DbSchemaName("dms"), "ChangeVersionSequence", 1);
+    }
+
+    [Test]
+    public void It_should_use_if_not_exists_syntax()
+    {
+        _ddl.Should().Be("CREATE SEQUENCE IF NOT EXISTS \"dms\".\"ChangeVersionSequence\" START WITH 1;");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Sequence_With_Custom_Start
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateSequenceIfNotExists(new DbSchemaName("dms"), "MySequence", 1000);
+    }
+
+    [Test]
+    public void It_should_include_custom_start_value()
+    {
+        _ddl.Should().Contain("START WITH 1000");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Index_If_Not_Exists
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var columns = new[] { new DbColumnName("SchoolId"), new DbColumnName("LocalEducationAgencyId") };
+        _ddl = dialect.CreateIndexIfNotExists(table, "IX_School_LEA", columns);
+    }
+
+    [Test]
+    public void It_should_use_if_not_exists_syntax()
+    {
+        _ddl.Should().Contain("IF NOT EXISTS");
+    }
+
+    [Test]
+    public void It_should_qualify_index_name_with_schema()
+    {
+        _ddl.Should().Contain("\"edfi\".\"IX_School_LEA\"");
+    }
+
+    [Test]
+    public void It_should_include_all_columns()
+    {
+        _ddl.Should().Contain("(\"SchoolId\", \"LocalEducationAgencyId\")");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Unique_Index_If_Not_Exists
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var columns = new[] { new DbColumnName("SchoolId") };
+        _ddl = dialect.CreateIndexIfNotExists(table, "UX_School_SchoolId", columns, isUnique: true);
+    }
+
+    [Test]
+    public void It_should_include_unique_keyword()
+    {
+        _ddl.Should().Contain("CREATE UNIQUE INDEX");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Add_Foreign_Key_Constraint
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation");
+        var targetTable = new DbTableName(new DbSchemaName("edfi"), "School");
+        var columns = new[] { new DbColumnName("School_DocumentId"), new DbColumnName("School_SchoolId") };
+        var targetColumns = new[] { new DbColumnName("DocumentId"), new DbColumnName("SchoolId") };
+        _ddl = dialect.AddForeignKeyConstraint(
+            table,
+            "FK_StudentSchoolAssociation_School",
+            columns,
+            targetTable,
+            targetColumns,
+            ReferentialAction.NoAction,
+            ReferentialAction.Cascade
+        );
+    }
+
+    [Test]
+    public void It_should_use_do_block_for_idempotency()
+    {
+        _ddl.Should().Contain("DO $$");
+    }
+
+    [Test]
+    public void It_should_check_constraint_existence()
+    {
+        _ddl.Should().Contain("IF NOT EXISTS");
+        _ddl.Should().Contain("pg_constraint");
+    }
+
+    [Test]
+    public void It_should_include_foreign_key_clause()
+    {
+        _ddl.Should().Contain("FOREIGN KEY");
+    }
+
+    [Test]
+    public void It_should_include_references_clause()
+    {
+        _ddl.Should().Contain("REFERENCES \"edfi\".\"School\"");
+    }
+
+    [Test]
+    public void It_should_include_on_delete_action()
+    {
+        _ddl.Should().Contain("ON DELETE NO ACTION");
+    }
+
+    [Test]
+    public void It_should_include_on_update_action()
+    {
+        _ddl.Should().Contain("ON UPDATE CASCADE");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Add_Unique_Constraint
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "School");
+        var columns = new[] { new DbColumnName("DocumentId"), new DbColumnName("SchoolId") };
+        _ddl = dialect.AddUniqueConstraint(table, "UQ_School_Identity", columns);
+    }
+
+    [Test]
+    public void It_should_use_do_block_for_idempotency()
+    {
+        _ddl.Should().Contain("DO $$");
+    }
+
+    [Test]
+    public void It_should_check_constraint_existence()
+    {
+        _ddl.Should().Contain("IF NOT EXISTS");
+        _ddl.Should().Contain("pg_constraint");
+    }
+
+    [Test]
+    public void It_should_include_unique_keyword()
+    {
+        _ddl.Should().Contain("UNIQUE");
+    }
+
+    [Test]
+    public void It_should_include_all_columns()
+    {
+        _ddl.Should().Contain("(\"DocumentId\", \"SchoolId\")");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Add_Check_Constraint
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var table = new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation");
+        _ddl = dialect.AddCheckConstraint(
+            table,
+            "CK_StudentSchoolAssociation_SchoolRef",
+            "(School_DocumentId IS NULL) = (School_SchoolId IS NULL)"
+        );
+    }
+
+    [Test]
+    public void It_should_use_do_block_for_idempotency()
+    {
+        _ddl.Should().Contain("DO $$");
+    }
+
+    [Test]
+    public void It_should_include_check_keyword()
+    {
+        _ddl.Should().Contain("CHECK");
+    }
+
+    [Test]
+    public void It_should_include_check_expression()
+    {
+        _ddl.Should().Contain("(School_DocumentId IS NULL) = (School_SchoolId IS NULL)");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Render_Column_Definition
+{
+    private string _definition = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _definition = dialect.RenderColumnDefinition(
+            new DbColumnName("SchoolId"),
+            "bigint",
+            isNullable: false
+        );
+    }
+
+    [Test]
+    public void It_should_quote_column_name()
+    {
+        _definition.Should().StartWith("\"SchoolId\"");
+    }
+
+    [Test]
+    public void It_should_include_type()
+    {
+        _definition.Should().Contain("bigint");
+    }
+
+    [Test]
+    public void It_should_include_not_null()
+    {
+        _definition.Should().Contain("NOT NULL");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Render_Nullable_Column_Definition
+{
+    private string _definition = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _definition = dialect.RenderColumnDefinition(
+            new DbColumnName("MiddleName"),
+            "varchar(75)",
+            isNullable: true
+        );
+    }
+
+    [Test]
+    public void It_should_include_null()
+    {
+        _definition.Should().Contain("NULL");
+        _definition.Should().NotContain("NOT NULL");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Render_Column_Definition_With_Default
+{
+    private string _definition = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _definition = dialect.RenderColumnDefinition(
+            new DbColumnName("CreatedAt"),
+            "timestamp with time zone",
+            isNullable: false,
+            defaultExpression: "CURRENT_TIMESTAMP"
+        );
+    }
+
+    [Test]
+    public void It_should_include_default_clause()
+    {
+        _definition.Should().Contain("DEFAULT CURRENT_TIMESTAMP");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Render_Primary_Key_Clause
+{
+    private string _clause = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        var columns = new[] { new DbColumnName("DocumentId"), new DbColumnName("Ordinal") };
+        _clause = dialect.RenderPrimaryKeyClause(columns);
+    }
+
+    [Test]
+    public void It_should_start_with_primary_key()
+    {
+        _clause.Should().StartWith("PRIMARY KEY");
+    }
+
+    [Test]
+    public void It_should_include_all_columns_quoted()
+    {
+        _clause.Should().Contain("\"DocumentId\", \"Ordinal\"");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Render_Referential_Actions
+{
+    private PgsqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new PgsqlDialect(new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_no_action()
+    {
+        _dialect.RenderReferentialAction(ReferentialAction.NoAction).Should().Be("NO ACTION");
+    }
+
+    [Test]
+    public void It_should_render_cascade()
+    {
+        _dialect.RenderReferentialAction(ReferentialAction.Cascade).Should().Be("CASCADE");
+    }
+}

@@ -114,4 +114,204 @@ public sealed class PgsqlDialect : ISqlDialect
 
         return $"DROP TRIGGER IF EXISTS {QuoteIdentifier(triggerName)} ON {QualifyTable(table)};";
     }
+
+    /// <inheritdoc />
+    public string CreateSequenceIfNotExists(DbSchemaName schema, string sequenceName, long startWith = 1)
+    {
+        ArgumentNullException.ThrowIfNull(sequenceName);
+
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(sequenceName)}";
+        return $"CREATE SEQUENCE IF NOT EXISTS {qualifiedName} START WITH {startWith};";
+    }
+
+    /// <inheritdoc />
+    public string CreateIndexIfNotExists(
+        DbTableName table,
+        string indexName,
+        IReadOnlyList<DbColumnName> columns,
+        bool isUnique = false
+    )
+    {
+        ArgumentNullException.ThrowIfNull(indexName);
+        ArgumentNullException.ThrowIfNull(columns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException("At least one column is required for an index.", nameof(columns));
+        }
+
+        var uniqueKeyword = isUnique ? "UNIQUE " : "";
+        var qualifiedIndex = $"{QuoteIdentifier(table.Schema.Value)}.{QuoteIdentifier(indexName)}";
+        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
+
+        return $"CREATE {uniqueKeyword}INDEX IF NOT EXISTS {qualifiedIndex} ON {QualifyTable(table)} ({columnList});";
+    }
+
+    /// <inheritdoc />
+    public string AddForeignKeyConstraint(
+        DbTableName table,
+        string constraintName,
+        IReadOnlyList<DbColumnName> columns,
+        DbTableName targetTable,
+        IReadOnlyList<DbColumnName> targetColumns,
+        ReferentialAction onDelete = ReferentialAction.NoAction,
+        ReferentialAction onUpdate = ReferentialAction.NoAction
+    )
+    {
+        ArgumentNullException.ThrowIfNull(constraintName);
+        ArgumentNullException.ThrowIfNull(columns);
+        ArgumentNullException.ThrowIfNull(targetColumns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one column is required for a foreign key.",
+                nameof(columns)
+            );
+        }
+
+        if (columns.Count != targetColumns.Count)
+        {
+            throw new ArgumentException(
+                "Foreign key column count must match target column count.",
+                nameof(targetColumns)
+            );
+        }
+
+        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
+        var targetColumnList = string.Join(", ", targetColumns.Select(c => QuoteIdentifier(c.Value)));
+        var quotedConstraint = QuoteIdentifier(constraintName);
+        var escapedConstraint = constraintName.Replace("'", "''");
+
+        // Use DO block to check if constraint exists before adding
+        return $"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = '{escapedConstraint}'
+                    AND conrelid = '{table.Schema.Value}.{table.Name}'::regclass
+                )
+                THEN
+                    ALTER TABLE {QualifyTable(table)}
+                    ADD CONSTRAINT {quotedConstraint}
+                    FOREIGN KEY ({columnList})
+                    REFERENCES {QualifyTable(targetTable)} ({targetColumnList})
+                    ON DELETE {RenderReferentialAction(onDelete)}
+                    ON UPDATE {RenderReferentialAction(onUpdate)};
+                END IF;
+            END $$;
+            """;
+    }
+
+    /// <inheritdoc />
+    public string AddUniqueConstraint(
+        DbTableName table,
+        string constraintName,
+        IReadOnlyList<DbColumnName> columns
+    )
+    {
+        ArgumentNullException.ThrowIfNull(constraintName);
+        ArgumentNullException.ThrowIfNull(columns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one column is required for a unique constraint.",
+                nameof(columns)
+            );
+        }
+
+        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
+        var quotedConstraint = QuoteIdentifier(constraintName);
+        var escapedConstraint = constraintName.Replace("'", "''");
+
+        return $"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = '{escapedConstraint}'
+                    AND conrelid = '{table.Schema.Value}.{table.Name}'::regclass
+                )
+                THEN
+                    ALTER TABLE {QualifyTable(table)}
+                    ADD CONSTRAINT {quotedConstraint} UNIQUE ({columnList});
+                END IF;
+            END $$;
+            """;
+    }
+
+    /// <inheritdoc />
+    public string AddCheckConstraint(DbTableName table, string constraintName, string checkExpression)
+    {
+        ArgumentNullException.ThrowIfNull(constraintName);
+        ArgumentNullException.ThrowIfNull(checkExpression);
+
+        var quotedConstraint = QuoteIdentifier(constraintName);
+        var escapedConstraint = constraintName.Replace("'", "''");
+
+        return $"""
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint
+                    WHERE conname = '{escapedConstraint}'
+                    AND conrelid = '{table.Schema.Value}.{table.Name}'::regclass
+                )
+                THEN
+                    ALTER TABLE {QualifyTable(table)}
+                    ADD CONSTRAINT {quotedConstraint} CHECK ({checkExpression});
+                END IF;
+            END $$;
+            """;
+    }
+
+    /// <inheritdoc />
+    public string RenderColumnDefinition(
+        DbColumnName columnName,
+        string sqlType,
+        bool isNullable,
+        string? defaultExpression = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sqlType);
+
+        var nullability = isNullable ? "NULL" : "NOT NULL";
+        var defaultClause = defaultExpression is not null ? $" DEFAULT {defaultExpression}" : "";
+
+        return $"{QuoteIdentifier(columnName.Value)} {sqlType} {nullability}{defaultClause}";
+    }
+
+    /// <inheritdoc />
+    public string RenderPrimaryKeyClause(IReadOnlyList<DbColumnName> columns)
+    {
+        ArgumentNullException.ThrowIfNull(columns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one column is required for a primary key.",
+                nameof(columns)
+            );
+        }
+
+        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
+        return $"PRIMARY KEY ({columnList})";
+    }
+
+    /// <inheritdoc />
+    public string RenderReferentialAction(ReferentialAction action)
+    {
+        return action switch
+        {
+            ReferentialAction.NoAction => "NO ACTION",
+            ReferentialAction.Cascade => "CASCADE",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(action),
+                action,
+                "Unsupported referential action."
+            ),
+        };
+    }
 }
