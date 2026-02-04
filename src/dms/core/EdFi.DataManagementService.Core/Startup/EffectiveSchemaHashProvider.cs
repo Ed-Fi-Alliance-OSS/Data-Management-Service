@@ -55,7 +55,7 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
         var apiSchemaFormatVersion = GetApiSchemaVersion(nodes.CoreApiSchemaRootNode);
 
         // Step 2: Build project metadata list with per-project hashes
-        var projects = new List<ProjectHashMetadata>();
+        var projects = new List<ProjectHashMetadata>(1 + nodes.ExtensionApiSchemaRootNodes.Length);
 
         // Add core project
         projects.Add(ExtractProjectMetadata(nodes.CoreApiSchemaRootNode));
@@ -78,7 +78,7 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
 
         // Step 5: Compute final hash of the manifest
         byte[] hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(manifest));
-        string hashHex = Convert.ToHexString(hashBytes).ToLowerInvariant();
+        string hashHex = Convert.ToHexStringLower(hashBytes);
 
         _logger.LogDebug("Computed effective schema hash: {Hash}", hashHex);
 
@@ -113,7 +113,7 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
         // Note: OpenAPI payloads have already been stripped by ApiSchemaInputNormalizer
         byte[] canonicalBytes = CanonicalJsonSerializer.SerializeToUtf8Bytes(projectSchema);
         byte[] projectHashBytes = SHA256.HashData(canonicalBytes);
-        var projectHash = Convert.ToHexString(projectHashBytes).ToLowerInvariant();
+        var projectHash = Convert.ToHexStringLower(projectHashBytes);
 
         return new ProjectHashMetadata(
             projectEndpointName,
@@ -132,7 +132,9 @@ public class EffectiveSchemaHashProvider(ILogger<EffectiveSchemaHashProvider> lo
         List<ProjectHashMetadata> projects
     )
     {
-        var sb = new StringBuilder();
+        // Header (~80 chars) + per project (~140 chars each)
+        var estimatedSize = 80 + (projects.Count * 140);
+        var sb = new StringBuilder(estimatedSize);
 
         // Line 1: Hash algorithm version header
         sb.Append(SchemaHashConstants.HashVersion);
