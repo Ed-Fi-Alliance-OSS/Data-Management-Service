@@ -321,11 +321,17 @@ public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationa
         IReadOnlyList<DbColumnName> uniqueColumns
     )
     {
-        var uniqueName = BuildUniqueConstraintName(table.Table.Name, uniqueColumns);
         var tableAccumulator = mutation.GetTableAccumulator(table, mutation.Entry.Model.ResourceKey.Resource);
 
-        if (!ContainsUniqueConstraint(tableAccumulator.Constraints, uniqueName))
+        if (
+            !ContainsUniqueConstraint(
+                tableAccumulator.Constraints,
+                tableAccumulator.Definition.Table,
+                uniqueColumns
+            )
+        )
         {
+            var uniqueName = BuildUniqueConstraintName(table.Table.Name, uniqueColumns);
             tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns));
             mutation.MarkTableMutated(table);
         }

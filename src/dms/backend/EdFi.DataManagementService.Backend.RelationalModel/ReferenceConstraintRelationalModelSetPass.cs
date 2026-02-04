@@ -154,13 +154,19 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
 
             if (identityColumns.LocalColumns.Count > 0)
             {
-                var allOrNoneName = BuildAllOrNoneConstraintName(
-                    tableAccumulator.Definition.Table.Name,
-                    binding.FkColumn
-                );
-
-                if (!ContainsAllOrNoneConstraint(tableAccumulator.Constraints, allOrNoneName))
+                if (
+                    !ContainsAllOrNoneConstraint(
+                        tableAccumulator.Constraints,
+                        tableAccumulator.Definition.Table,
+                        binding.FkColumn,
+                        identityColumns.LocalColumns
+                    )
+                )
                 {
+                    var allOrNoneName = BuildAllOrNoneConstraintName(
+                        tableAccumulator.Definition.Table.Name,
+                        binding.FkColumn
+                    );
                     tableAccumulator.AddConstraint(
                         new TableConstraint.AllOrNoneNullability(
                             allOrNoneName,
@@ -184,17 +190,27 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
             };
             targetColumns.AddRange(identityColumns.TargetColumns);
 
-            var fkName = RelationalNameConventions.ForeignKeyName(
-                tableAccumulator.Definition.Table.Name,
-                localColumns
-            );
+            var onUpdate =
+                targetInfo.IsAbstract ? ReferentialAction.Cascade
+                : targetInfo.AllowIdentityUpdates ? ReferentialAction.Cascade
+                : ReferentialAction.NoAction;
 
-            if (!ContainsForeignKeyConstraint(tableAccumulator.Constraints, fkName))
+            if (
+                !ContainsForeignKeyConstraint(
+                    tableAccumulator.Constraints,
+                    tableAccumulator.Definition.Table,
+                    localColumns,
+                    targetInfo.Table,
+                    targetColumns,
+                    ReferentialAction.NoAction,
+                    onUpdate
+                )
+            )
             {
-                var onUpdate =
-                    targetInfo.IsAbstract ? ReferentialAction.Cascade
-                    : targetInfo.AllowIdentityUpdates ? ReferentialAction.Cascade
-                    : ReferentialAction.NoAction;
+                var fkName = RelationalNameConventions.ForeignKeyName(
+                    tableAccumulator.Definition.Table.Name,
+                    localColumns
+                );
 
                 tableAccumulator.AddConstraint(
                     new TableConstraint.ForeignKey(
@@ -517,10 +533,15 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         };
         uniqueColumns.AddRange(targetIdentityColumns);
 
-        var uniqueName = BuildUniqueConstraintName(tableAccumulator.Definition.Table.Name, uniqueColumns);
-
-        if (!ContainsUniqueConstraint(tableAccumulator.Constraints, uniqueName))
+        if (
+            !ContainsUniqueConstraint(
+                tableAccumulator.Constraints,
+                tableAccumulator.Definition.Table,
+                uniqueColumns
+            )
+        )
         {
+            var uniqueName = BuildUniqueConstraintName(tableAccumulator.Definition.Table.Name, uniqueColumns);
             tableAccumulator.AddConstraint(new TableConstraint.Unique(uniqueName, uniqueColumns.ToArray()));
             mutation.MarkTableMutated(entry.Model.RelationalModel.Root);
         }
