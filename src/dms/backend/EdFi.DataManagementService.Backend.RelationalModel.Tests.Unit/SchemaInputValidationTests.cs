@@ -280,6 +280,11 @@ public class Given_A_Document_Reference_Marked_As_Identity_Without_IdentityJsonP
     public void It_should_not_fail_without_identity_json_paths()
     {
         _context.Should().NotBeNull();
+        _context!
+            .DocumentReferenceMappings.Should()
+            .ContainSingle()
+            .Which.IsPartOfIdentity.Should()
+            .BeFalse();
     }
 }
 
@@ -334,6 +339,7 @@ public class Given_A_Document_Reference_Not_Marked_As_Identity_With_IdentityJson
     public void It_should_not_fail_with_identity_paths_present()
     {
         _context.Should().NotBeNull();
+        _context!.DocumentReferenceMappings.Should().ContainSingle().Which.IsPartOfIdentity.Should().BeTrue();
     }
 }
 
@@ -359,7 +365,7 @@ public class Given_An_Identity_Reference_That_Is_Not_Required
             {
                 ["isReference"] = true,
                 ["isDescriptor"] = false,
-                ["isPartOfIdentity"] = true,
+                ["isPartOfIdentity"] = false,
                 ["isRequired"] = false,
                 ["projectName"] = "Ed-Fi",
                 ["resourceName"] = "School",

@@ -200,7 +200,7 @@
       "Add/adjust tests for the identity-reference requiredness guard where `isPartOfIdentity=false` but `identityJsonPaths` includes a reference path and `isRequired=false`, and assert it still fails with the expected message.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs",
