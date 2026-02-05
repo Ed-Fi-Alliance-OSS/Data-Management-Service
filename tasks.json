@@ -237,6 +237,6 @@
       "Spot-check the expected derived manifest contains reference-bound columns for `studentAssessmentRegistrations` (e.g., `StudentSchoolAssociation_DocumentId`).",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   }
 ]
