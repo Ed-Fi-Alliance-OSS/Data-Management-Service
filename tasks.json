@@ -283,7 +283,7 @@
       "Confirm folder names and groupings match the accepted taxonomy.",
       "Run: `rg --files ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel | wc -l` and compare to the number of mapped files."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
