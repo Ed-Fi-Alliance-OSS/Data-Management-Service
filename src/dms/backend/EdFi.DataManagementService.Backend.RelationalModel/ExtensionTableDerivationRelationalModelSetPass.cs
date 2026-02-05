@@ -1330,17 +1330,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     resourceLabel
                 )
             );
-            context.OverrideCollisionDetector?.RegisterColumn(
-                tableBuilder.Definition.Table,
-                columnName,
-                originalColumnName.Value,
-                BuildCollisionOrigin(
-                    tableBuilder.Definition.Table,
-                    columnName,
-                    descriptorPathInfo.DescriptorValuePath,
-                    resourceLabel
-                )
-            );
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
                     ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
@@ -1385,17 +1374,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         tableBuilder.AddColumn(
             scalarColumn,
-            originalBaseName,
-            BuildCollisionOrigin(
-                tableBuilder.Definition.Table,
-                scalarColumn.ColumnName,
-                sourcePath,
-                resourceLabel
-            )
-        );
-        context.OverrideCollisionDetector?.RegisterColumn(
-            tableBuilder.Definition.Table,
-            scalarColumn.ColumnName,
             originalBaseName,
             BuildCollisionOrigin(
                 tableBuilder.Definition.Table,

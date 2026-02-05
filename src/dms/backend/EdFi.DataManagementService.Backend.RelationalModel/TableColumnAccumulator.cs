@@ -7,6 +7,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
 /// Accumulates columns and constraints for a table while guarding against column name collisions.
+/// This is the primary per-table collision guard for derived columns.
 /// </summary>
 internal sealed class TableColumnAccumulator
 {
