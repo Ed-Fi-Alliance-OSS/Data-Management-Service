@@ -118,9 +118,8 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
         var manifestBuilder = new StringBuilder();
         manifestBuilder.Append(SchemaHashConstants.ResourceKeySeedHashVersion).Append('\n');
 
-        // Entries must be in ascending ResourceKeyId order. Seeds from GetSeeds are already sorted,
-        // but we sort defensively here to guarantee determinism regardless of the caller's source.
-        foreach (var seed in seeds.OrderBy(s => s.ResourceKeyId))
+        // Entries are emitted in ascending ResourceKeyId order, which GetSeeds guarantees.
+        foreach (var seed in seeds)
         {
             manifestBuilder
                 .Append(seed.ResourceKeyId)
