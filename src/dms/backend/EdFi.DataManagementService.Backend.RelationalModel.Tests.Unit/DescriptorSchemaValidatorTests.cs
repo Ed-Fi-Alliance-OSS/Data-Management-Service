@@ -102,10 +102,7 @@ public class Given_A_Valid_Descriptor_Schema
     public void It_Should_Recognize_Descriptor_By_Name_And_Structure()
     {
         var schema = CreateValidDescriptorSchema();
-        var isDescriptor = DescriptorSchemaValidator.IsDescriptorResource(
-            schema,
-            "AcademicHonorCategoryDescriptor"
-        );
+        var isDescriptor = DescriptorSchemaValidator.IsDescriptorResource(schema);
 
         isDescriptor.Should().BeTrue();
     }
@@ -312,7 +309,7 @@ public class Given_An_Invalid_Descriptor_Schema
             """
         )!;
 
-        var isDescriptor = DescriptorSchemaValidator.IsDescriptorResource(schema, "School");
+        var isDescriptor = DescriptorSchemaValidator.IsDescriptorResource(schema);
 
         isDescriptor.Should().BeFalse();
     }
@@ -336,10 +333,7 @@ public class Given_An_Invalid_Descriptor_Schema
             """
         )!;
 
-        var isDescriptor = DescriptorSchemaValidator.IsDescriptorResource(
-            schema,
-            "AcademicHonorCategoryDescriptor"
-        );
+        var isDescriptor = DescriptorSchemaValidator.IsDescriptorResource(schema);
 
         isDescriptor.Should().BeFalse();
     }

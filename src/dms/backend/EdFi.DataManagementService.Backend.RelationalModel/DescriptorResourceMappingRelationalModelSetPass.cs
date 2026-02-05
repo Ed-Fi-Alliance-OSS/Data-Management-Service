@@ -57,7 +57,7 @@ public sealed class DescriptorResourceMappingRelationalModelSetPass : IRelationa
 
             var resourceSchema = resourceContext.ResourceSchema;
 
-            if (!DescriptorSchemaValidator.IsDescriptorResource(resourceSchema, qname.ResourceName))
+            if (!DescriptorSchemaValidator.IsDescriptorResource(resourceSchema))
             {
                 continue;
             }

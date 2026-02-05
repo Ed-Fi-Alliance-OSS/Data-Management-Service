@@ -16,19 +16,15 @@ internal static class DescriptorSchemaValidator
     /// Determines whether a resource schema represents a descriptor resource.
     /// </summary>
     /// <param name="resourceSchema">The resource schema node from ApiSchema.json.</param>
-    /// <param name="resourceName">The resource name.</param>
     /// <returns><c>true</c> if the resource is a descriptor; otherwise, <c>false</c>.</returns>
-    public static bool IsDescriptorResource(JsonNode? resourceSchema, string resourceName)
+    public static bool IsDescriptorResource(JsonNode? resourceSchema)
     {
         if (resourceSchema is null)
         {
             return false;
         }
 
-        var isDescriptorFlag = resourceSchema["isDescriptor"]?.GetValue<bool>() ?? false;
-        var hasDescriptorSuffix = resourceName.EndsWith("Descriptor", StringComparison.Ordinal);
-
-        return isDescriptorFlag && hasDescriptorSuffix;
+        return resourceSchema["isDescriptor"]?.GetValue<bool>() ?? false;
     }
 
     /// <summary>
