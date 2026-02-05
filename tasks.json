@@ -118,7 +118,7 @@
       "Update/add unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NameOverrideTests.cs` to cover missing descendant overrides and nested overrides without parent-prefix requirements.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",
