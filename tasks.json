@@ -156,5 +156,63 @@
       "Confirm no changes under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/*/inputs/`."
     ],
     "completed": true
+  },
+  {
+    "category": "Validation",
+    "description": "DMS-931 follow-up: Close collision detection gaps for direct duplicate identifiers by updating `OverrideCollisionDetector` and `IdentifierCollisionDetector` to collide on multiple distinct origins, not only multiple distinct original identifier strings. Acceptance: (1) Build fails when two distinct derived elements share the same final identifier in a collision scope even when their original identifier strings are identical (e.g., root table name collisions created by `rootTableNameOverride`); (2) de-duplication only suppresses truly duplicate registrations of the same element (same origin), not distinct derived elements; (3) diagnostics remain deterministic and include the collision stage, scope, and origin details (resource label + JSONPath) for each conflicting source; (4) existing collision tests remain passing.",
+    "steps-to-verify": [
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/OverrideCollisionDetector.cs` to treat multiple unique origins for the same final identifier as a collision even when `OriginalIdentifier` matches.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/IdentifierCollisionDetector.cs` to treat multiple unique origins for the same shortened identifier as a collision even when `OriginalIdentifier` matches.",
+      "Ensure collision-source ordering remains deterministic (Ordinal) and stage labels remain accurate (`AfterOverrideNormalization`, `AfterDialectShortening`).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "DMS-931 follow-up: Add regression tests covering `rootTableNameOverride` collisions (root-vs-root and root-vs-child table name collisions). Acceptance: (1) A fixture where two resources in the same physical schema resolve to the same root table name via `relational.rootTableNameOverride` fails fast during derived model build; (2) a fixture where a resource root table name collides with another resource's child collection table name fails fast; (3) the exception message includes both resources and the colliding identifiers with actionable origins (resource label + JSON scope/path); (4) behavior is deterministic across resource ordering.",
+    "steps-to-verify": [
+      "Add a minimal hand-authored fixture under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/set-builder/` containing two resources that collide via `rootTableNameOverride`.",
+      "Add a second fixture where `rootTableNameOverride` produces a root table name that collides with another resource's derived child table name.",
+      "Add a new NUnit fixture (e.g., `RootTableNameOverrideCollisionTests`) asserting the build throws `InvalidOperationException` with an actionable collision record.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "DMS-931 follow-up: Remove the unused `hasOverriddenAncestor` state in collection table derivation to reduce complexity. Acceptance: (1) `hasOverriddenAncestor` is either removed from `DeriveTableScopesAndKeysStep` / `ExtensionTableDerivationRelationalModelSetPass` (and any callers) or used for a clearly-defined behavior; (2) derived outputs are unchanged (goldens + unit tests stay green); (3) no dead code remains.",
+    "steps-to-verify": [
+      "Verify `hasOverriddenAncestor` is unused in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs` and `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtensionTableDerivationRelationalModelSetPass.cs`.",
+      "Remove the parameter and all plumbing (or introduce a tested behavior if it is intended to mean something).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cleanup",
+    "description": "DMS-931 follow-up: Remove the unused legacy helper `RelationalNameConventions.ForeignKeyName` (superseded by `ConstraintNaming`) to prevent accidental divergence of naming rules. Acceptance: (1) The helper is removed and no call sites depend on it; (2) constraint naming uses `ConstraintNaming` consistently; (3) build and unit tests remain green.",
+    "steps-to-verify": [
+      "Confirm no usages of `RelationalNameConventions.ForeignKeyName` remain outside the helper itself.",
+      "Remove the helper from `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs` (or mark obsolete and add a follow-up task to remove).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "DMS-931 follow-up: Remove brittle runtime type assumptions in `ApplyDialectIdentifierShorteningRelationalModelSetPass.UpdateProjectSchemas`. Acceptance: (1) Dialect shortening can update `ProjectSchemasInEndpointOrder` without throwing when the backing collection is not a mutable array/list; (2) behavior remains deterministic and stable across runs; (3) unit tests cover schema-shortening behavior; (4) build and unit tests remain green.",
+    "steps-to-verify": [
+      "Refactor `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelSetBuilderContext.cs` to expose a consistently-mutable representation for `ProjectSchemasInEndpointOrder` (or provide an explicit mutation method) so passes do not depend on the concrete backing type.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ApplyDialectIdentifierShorteningRelationalModelSetPass.cs` to use the new mutation approach and remove the runtime type checks/throw.",
+      "Add/adjust a unit test under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/` that exercises schema shortening via a small `MaxIdentifierLength` and asserts updated `PhysicalSchema` values.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
