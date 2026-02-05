@@ -13,7 +13,7 @@
   },
   {
     "category": "Testing",
-    "description": "DMS-931: Add \u201cnaming-stress\u201d hand-authored fixtures + extend authoritative expected outputs (inputs unchanged). Acceptance: (1) New unit tests are built from `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/set-builder/*` fixtures and exercise: long names, `rootTableNameOverride`, scalar/reference/array overrides (including nested-array remainder ordinal naming, inside-reference identity overrides, and nested collection override compatibility without descendant/prefix requirements), extension-schema override auto-prefixing, reserved-word/edge-case normalization, and collision diagnostics; (2) authoritative fixture inputs remain unchanged; only `expected/` outputs are updated to reflect new naming/override/constraint-naming/shortening behavior; (3) the authoritative derived model set JSON comparisons pass; (4) the DMS solution builds.",
+    "description": "DMS-931: Add “naming-stress” hand-authored fixtures + extend authoritative expected outputs (inputs unchanged). Acceptance: (1) New unit tests are built from `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/set-builder/*` fixtures and exercise: long names, `rootTableNameOverride`, scalar/reference/array overrides (including nested-array remainder ordinal naming, inside-reference identity overrides, and nested collection override compatibility without descendant/prefix requirements), extension-schema override auto-prefixing, reserved-word/edge-case normalization, and collision diagnostics; (2) authoritative fixture inputs remain unchanged; only `expected/` outputs are updated to reflect new naming/override/constraint-naming/shortening behavior; (3) the authoritative derived model set JSON comparisons pass; (4) the DMS solution builds.",
     "steps-to-verify": [
       "Add/extend hand-authored fixture inputs under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/set-builder/` to cover naming stress scenarios without requiring changes to authoritative inputs.",
       "Update authoritative `expected/authoritative-derived-relational-model-set.json` files to match the new deterministic naming + constraint naming + shortening behavior.",
@@ -33,7 +33,7 @@
   },
   {
     "category": "Backend",
-    "description": "DMS-931: Allow inside-reference identity overrides during input validation (reject non-identity inside-reference keys). Acceptance: (1) `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` allows an override key inside a reference object only if it exactly matches one of the mapping\u2019s `ReferenceJsonPaths[*].ReferenceJsonPath` canonicals; (2) authoritative overrides like `$.graduationSchoolYearTypeReference.schoolYear` are accepted; (3) non-identity inside-reference keys (e.g., `$.schoolReference.link`) still fail fast with diagnostics that include raw key text + canonical form.",
+    "description": "DMS-931: Allow inside-reference identity overrides during input validation (reject non-identity inside-reference keys). Acceptance: (1) `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` allows an override key inside a reference object only if it exactly matches one of the mapping’s `ReferenceJsonPaths[*].ReferenceJsonPath` canonicals; (2) authoritative overrides like `$.graduationSchoolYearTypeReference.schoolYear` are accepted; (3) non-identity inside-reference keys (e.g., `$.schoolReference.link`) still fail fast with diagnostics that include raw key text + canonical form.",
     "steps-to-verify": [
       "Update inside-reference validation in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` (near the existing inside-reference failure) to allow only reference identity JSONPaths from the mapping and to fail fast on other inside-reference keys.",
       "Update/add unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs` to cover allowed inside-reference identity override and rejected non-identity inside-reference key.",
@@ -294,7 +294,7 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
