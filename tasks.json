@@ -107,7 +107,7 @@
       "Add/adjust unit tests to assert a reference identity column can be renamed via an inside-reference identity override without renaming non-identity keys inside the reference.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Backend",
