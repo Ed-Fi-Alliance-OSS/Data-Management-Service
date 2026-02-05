@@ -101,45 +101,17 @@ public sealed class ApplyDialectIdentifierShorteningRelationalModelSetPass : IRe
         ISqlDialectRules dialectRules
     )
     {
-        if (context.ProjectSchemasInEndpointOrder is ProjectSchemaInfo[] schemas)
+        context.UpdateProjectSchemasInEndpointOrder(schema =>
         {
-            for (var index = 0; index < schemas.Length; index++)
-            {
-                var schema = schemas[index];
-                var shortened = ShortenSchema(schema.PhysicalSchema, dialectRules);
+            var shortened = ShortenSchema(schema.PhysicalSchema, dialectRules);
 
-                if (shortened.Equals(schema.PhysicalSchema))
+            return shortened.Equals(schema.PhysicalSchema)
+                ? schema
+                : schema with
                 {
-                    continue;
-                }
-
-                schemas[index] = schema with { PhysicalSchema = shortened };
-            }
-
-            return;
-        }
-
-        if (context.ProjectSchemasInEndpointOrder is List<ProjectSchemaInfo> schemaList)
-        {
-            for (var index = 0; index < schemaList.Count; index++)
-            {
-                var schema = schemaList[index];
-                var shortened = ShortenSchema(schema.PhysicalSchema, dialectRules);
-
-                if (shortened.Equals(schema.PhysicalSchema))
-                {
-                    continue;
-                }
-
-                schemaList[index] = schema with { PhysicalSchema = shortened };
-            }
-
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "ProjectSchemasInEndpointOrder must be backed by a mutable collection."
-        );
+                    PhysicalSchema = shortened,
+                };
+        });
     }
 
     private static RelationalResourceModel ApplyToResource(

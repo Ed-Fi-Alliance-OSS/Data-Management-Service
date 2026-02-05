@@ -38,6 +38,8 @@ public sealed record ConcreteResourceSchemaContext(
 public sealed class RelationalModelSetBuilderContext
 {
     private readonly IReadOnlyList<ProjectSchemaContext> _projectsInEndpointOrder;
+    private readonly List<ProjectSchemaInfo> _projectSchemasInEndpointOrder;
+    private readonly IReadOnlyList<ProjectSchemaInfo> _projectSchemasInEndpointOrderView;
     private readonly IReadOnlyList<ConcreteResourceSchemaContext> _concreteResourceSchemasInNameOrder;
     private readonly IReadOnlyDictionary<
         QualifiedResourceName,
@@ -112,7 +114,8 @@ public sealed class RelationalModelSetBuilderContext
         var projectSchemaBundle = new ProjectSchemaNormalizer().Normalize(effectiveSchemaSet);
 
         _projectsInEndpointOrder = projectSchemaBundle.ProjectSchemas;
-        ProjectSchemasInEndpointOrder = projectSchemaBundle.ProjectSchemaInfos;
+        _projectSchemasInEndpointOrder = projectSchemaBundle.ProjectSchemaInfos.ToList();
+        _projectSchemasInEndpointOrderView = _projectSchemasInEndpointOrder.AsReadOnly();
         var descriptorPathMaps = new DescriptorPathMapBuilder().Build(_projectsInEndpointOrder);
         _descriptorPathsByResource = descriptorPathMaps.BaseDescriptorPathsByResource;
         _extensionDescriptorPathsByResource = descriptorPathMaps.ExtensionDescriptorPathsByResource;
@@ -144,7 +147,8 @@ public sealed class RelationalModelSetBuilderContext
     /// <summary>
     /// Project schemas ordered by endpoint name, with physical schema normalization applied.
     /// </summary>
-    public IReadOnlyList<ProjectSchemaInfo> ProjectSchemasInEndpointOrder { get; }
+    public IReadOnlyList<ProjectSchemaInfo> ProjectSchemasInEndpointOrder =>
+        _projectSchemasInEndpointOrderView;
 
     /// <summary>
     /// Derived concrete resources ordered by (project, resource) name.
@@ -179,6 +183,89 @@ public sealed class RelationalModelSetBuilderContext
     public IEnumerable<ProjectSchemaContext> EnumerateProjectsInEndpointOrder()
     {
         return _projectsInEndpointOrder;
+    }
+
+    /// <summary>
+    /// Updates project schema info entries in endpoint order.
+    /// </summary>
+    /// <param name="update">The update callback for each project schema info.</param>
+    internal void UpdateProjectSchemasInEndpointOrder(Func<ProjectSchemaInfo, ProjectSchemaInfo> update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        for (var index = 0; index < _projectSchemasInEndpointOrder.Count; index++)
+        {
+            var current = _projectSchemasInEndpointOrder[index];
+            var updated = update(current);
+
+            if (updated.Equals(current))
+            {
+                continue;
+            }
+
+            _projectSchemasInEndpointOrder[index] = updated;
+            UpdateExtensionProjectCache(current, updated);
+        }
+    }
+
+    /// <summary>
+    /// Updates a single project schema entry by endpoint name.
+    /// </summary>
+    /// <param name="projectEndpointName">The project endpoint name to update.</param>
+    /// <param name="update">The update callback.</param>
+    internal void UpdateProjectSchema(
+        string projectEndpointName,
+        Func<ProjectSchemaInfo, ProjectSchemaInfo> update
+    )
+    {
+        if (!TryUpdateProjectSchema(projectEndpointName, update))
+        {
+            throw new InvalidOperationException($"Project schema '{projectEndpointName}' was not found.");
+        }
+    }
+
+    /// <summary>
+    /// Attempts to update a single project schema entry by endpoint name.
+    /// </summary>
+    /// <param name="projectEndpointName">The project endpoint name to update.</param>
+    /// <param name="update">The update callback.</param>
+    /// <returns>True when the project schema was found and updated.</returns>
+    internal bool TryUpdateProjectSchema(
+        string projectEndpointName,
+        Func<ProjectSchemaInfo, ProjectSchemaInfo> update
+    )
+    {
+        if (string.IsNullOrWhiteSpace(projectEndpointName))
+        {
+            throw new ArgumentException(
+                "Project endpoint name must be non-empty.",
+                nameof(projectEndpointName)
+            );
+        }
+
+        ArgumentNullException.ThrowIfNull(update);
+
+        for (var index = 0; index < _projectSchemasInEndpointOrder.Count; index++)
+        {
+            var schema = _projectSchemasInEndpointOrder[index];
+
+            if (!string.Equals(schema.ProjectEndpointName, projectEndpointName, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var updated = update(schema);
+
+            if (!updated.Equals(schema))
+            {
+                _projectSchemasInEndpointOrder[index] = updated;
+                UpdateExtensionProjectCache(schema, updated);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -837,5 +924,36 @@ public sealed class RelationalModelSetBuilderContext
             "; ",
             candidates.Select(project => $"{project.ProjectEndpointName} ({project.ProjectName})")
         );
+    }
+
+    private void UpdateExtensionProjectCache(ProjectSchemaInfo current, ProjectSchemaInfo updated)
+    {
+        if (ReferenceEquals(current, updated) || _extensionProjectsByKey.Count == 0)
+        {
+            return;
+        }
+
+        List<string>? updateKeys = null;
+
+        foreach (var entry in _extensionProjectsByKey)
+        {
+            if (!ReferenceEquals(entry.Value, current))
+            {
+                continue;
+            }
+
+            updateKeys ??= new List<string>();
+            updateKeys.Add(entry.Key);
+        }
+
+        if (updateKeys is null)
+        {
+            return;
+        }
+
+        foreach (var key in updateKeys)
+        {
+            _extensionProjectsByKey[key] = updated;
+        }
     }
 }
