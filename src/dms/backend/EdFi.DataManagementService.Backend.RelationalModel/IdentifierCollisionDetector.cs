@@ -104,11 +104,7 @@ internal sealed class IdentifierCollisionDetector
     /// <param name="origin">The collision origin details.</param>
     public void RegisterIndex(DbTableName table, DbIndexName indexName, IdentifierCollisionOrigin origin)
     {
-        Register(
-            new IdentifierCollisionScope(IdentifierCollisionKind.Index, table.Schema.Value, string.Empty),
-            indexName.Value,
-            origin
-        );
+        Register(BuildIndexScope(table), indexName.Value, origin);
     }
 
     /// <summary>
@@ -123,11 +119,7 @@ internal sealed class IdentifierCollisionDetector
         IdentifierCollisionOrigin origin
     )
     {
-        Register(
-            new IdentifierCollisionScope(IdentifierCollisionKind.Trigger, table.Schema.Value, string.Empty),
-            triggerName.Value,
-            origin
-        );
+        Register(BuildTriggerScope(table), triggerName.Value, origin);
     }
 
     /// <summary>
@@ -208,6 +200,50 @@ internal sealed class IdentifierCollisionDetector
     private static string NormalizeOriginPart(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
+    }
+
+    private IdentifierCollisionScope BuildIndexScope(DbTableName table)
+    {
+        return _dialectRules.Dialect switch
+        {
+            SqlDialect.Pgsql => new IdentifierCollisionScope(
+                IdentifierCollisionKind.Index,
+                table.Schema.Value,
+                string.Empty
+            ),
+            SqlDialect.Mssql => new IdentifierCollisionScope(
+                IdentifierCollisionKind.Index,
+                table.Schema.Value,
+                table.Name
+            ),
+            _ => new IdentifierCollisionScope(
+                IdentifierCollisionKind.Index,
+                table.Schema.Value,
+                string.Empty
+            ),
+        };
+    }
+
+    private IdentifierCollisionScope BuildTriggerScope(DbTableName table)
+    {
+        return _dialectRules.Dialect switch
+        {
+            SqlDialect.Pgsql => new IdentifierCollisionScope(
+                IdentifierCollisionKind.Trigger,
+                table.Schema.Value,
+                table.Name
+            ),
+            SqlDialect.Mssql => new IdentifierCollisionScope(
+                IdentifierCollisionKind.Trigger,
+                table.Schema.Value,
+                string.Empty
+            ),
+            _ => new IdentifierCollisionScope(
+                IdentifierCollisionKind.Trigger,
+                table.Schema.Value,
+                string.Empty
+            ),
+        };
     }
 
     private static (string Description, string ResourceLabel, string JsonPath) BuildOriginKey(
