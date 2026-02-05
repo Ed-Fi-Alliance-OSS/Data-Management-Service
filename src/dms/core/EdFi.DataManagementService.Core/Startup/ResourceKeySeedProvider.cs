@@ -18,8 +18,6 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// </summary>
 internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) : IResourceKeySeedProvider
 {
-    private readonly ILogger<ResourceKeySeedProvider> _logger = logger;
-
     /// <summary>
     /// Maximum number of resource keys supported (smallint max value).
     /// </summary>
@@ -28,9 +26,9 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
     /// <inheritdoc />
     public IReadOnlyList<ResourceKeySeed> GetSeeds(ApiSchemaDocumentNodes nodes)
     {
-        _logger.LogDebug("Deriving resource key seeds from API schema");
+        logger.LogDebug("Deriving resource key seeds from API schema");
 
-        var apiSchemaDocuments = new ApiSchemaDocuments(nodes, _logger);
+        var apiSchemaDocuments = new ApiSchemaDocuments(nodes, logger);
         var seedEntries =
             new List<(string ProjectName, string ResourceName, string ResourceVersion, bool IsAbstract)>();
 
@@ -70,9 +68,12 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
             (a, b) =>
             {
                 var projectCompare = string.Compare(a.ProjectName, b.ProjectName, StringComparison.Ordinal);
-                return projectCompare != 0
-                    ? projectCompare
-                    : string.Compare(a.ResourceName, b.ResourceName, StringComparison.Ordinal);
+                if (projectCompare != 0)
+                {
+                    return projectCompare;
+                }
+                var nameCompare = string.Compare(a.ResourceName, b.ResourceName, StringComparison.Ordinal);
+                return nameCompare != 0 ? nameCompare : a.IsAbstract.CompareTo(b.IsAbstract);
             }
         );
 
@@ -101,7 +102,7 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
             );
         }
 
-        _logger.LogDebug("Derived {Count} resource key seeds from API schema", seeds.Count);
+        logger.LogDebug("Derived {Count} resource key seeds from API schema", seeds.Count);
 
         return seeds.AsReadOnly();
     }
@@ -138,7 +139,7 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
         var manifest = manifestBuilder.ToString();
         var hashBytes = SHA256.HashData(Encoding.UTF8.GetBytes(manifest));
 
-        _logger.LogDebug("Computed resource key seed hash over {Count} entries", seeds.Count);
+        logger.LogDebug("Computed resource key seed hash over {Count} entries", seeds.Count);
 
         return hashBytes;
     }

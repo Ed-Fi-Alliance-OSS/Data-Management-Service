@@ -527,6 +527,40 @@ public class ResourceKeySeedProviderTests
     }
 
     [TestFixture]
+    public class Given_Schema_Exceeding_SmallInt_Limit : ResourceKeySeedProviderTests
+    {
+        private ResourceKeySeedProvider _provider = null!;
+        private ApiSchemaDocumentNodes _nodes = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _provider = new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance);
+
+            // Generate 32768 resources to exceed the smallint max of 32767
+            var resourceSchemas = new JsonObject();
+            for (var i = 0; i < 32768; i++)
+            {
+                resourceSchemas[$"resource{i}"] = CreateResourceSchema($"Resource{i}");
+            }
+
+            var schema = CreateMinimalSchema(
+                resourceSchemas: resourceSchemas,
+                abstractResources: new JsonObject()
+            );
+
+            _nodes = new ApiSchemaDocumentNodes(schema, []);
+        }
+
+        [Test]
+        public void It_throws_on_overflow()
+        {
+            var act = () => _provider.GetSeeds(_nodes);
+            act.Should().Throw<InvalidOperationException>().WithMessage("*exceeds maximum*");
+        }
+    }
+
+    [TestFixture]
     public class Given_Case_Sensitive_Ordinal_Sorting : ResourceKeySeedProviderTests
     {
         private ResourceKeySeedProvider _provider = null!;
