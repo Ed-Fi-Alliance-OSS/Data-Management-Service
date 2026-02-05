@@ -9,30 +9,6 @@ using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelS
 namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 /// <summary>
-/// Bundles project-level metadata and the normalized project schema payload.
-/// </summary>
-/// <param name="EffectiveProject">The normalized project schema payload.</param>
-/// <param name="ProjectSchema">The project schema metadata with physical schema info.</param>
-public sealed record ProjectSchemaContext(
-    EffectiveProjectSchema EffectiveProject,
-    ProjectSchemaInfo ProjectSchema
-);
-
-/// <summary>
-/// Represents a concrete resource schema entry within a project schema.
-/// </summary>
-/// <param name="Project">The owning project schema context.</param>
-/// <param name="ResourceEndpointName">The API endpoint name for the resource.</param>
-/// <param name="ResourceName">The logical resource name.</param>
-/// <param name="ResourceSchema">The resource schema payload.</param>
-public sealed record ConcreteResourceSchemaContext(
-    ProjectSchemaContext Project,
-    string ResourceEndpointName,
-    string ResourceName,
-    JsonObject ResourceSchema
-);
-
-/// <summary>
 /// Shared mutable context passed through set-level relational model derivation passes.
 /// </summary>
 public sealed class RelationalModelSetBuilderContext
