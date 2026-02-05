@@ -214,5 +214,29 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Testing",
+    "description": "Add a new ds-5.2 golden test that validates reference binding by building a `DerivedRelationalModelSet` (set-level passes) and emitting a project-level manifest to a new expected fixture. Acceptance: (1) A new NUnit fixture builds a derived model set from `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json` using `RelationalModelSetPasses.CreateDefault()`; (2) it writes/diffs a new expected file `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/expected/authoritative-relational-model.derived.manifest.json`; (3) the derived manifest for `studentAssessmentRegistrations` includes reference-bound columns for the `StudentSchoolAssociation` reference (at minimum `StudentSchoolAssociation_DocumentId` and `StudentSchoolAssociation_StudentReferenceStudentUniqueId`) on the `StudentAssessmentRegistration` root table; (4) the existing per-resource ds-5.2 golden (`authoritative-relational-model.manifest.json`) remains unchanged and still passes.",
+    "steps-to-verify": [
+      "Add a new NUnit golden test file (e.g., `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelDerivedAuthoritativeGoldenTests.cs`) that loads the ds-5.2 project schema, builds an `EffectiveSchemaSet`, then builds a `DerivedRelationalModelSet` with `RelationalModelSetPasses.CreateDefault()` (plus an extension-site capture pass for per-resource emission).",
+      "Emit the derived project-level manifest in the same top-level shape as the existing ds-5.2 manifest (`project_*` + `resources[]` with `resource_endpoint_name` + per-resource manifest), using `RelationalModelManifestEmitter.Emit(concrete.RelationalModel, extensionSites)` for each resource.",
+      "Ensure the test writes an `actual` file under the test work directory and diffs it against the new expected fixture file, failing with the diff output when mismatched.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Confirm reference binding is present by searching the expected derived manifest for `StudentSchoolAssociation_DocumentId` and `StudentSchoolAssociation_StudentReferenceStudentUniqueId`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Fixtures",
+    "description": "Add and maintain the derived ds-5.2 expected golden manifest for reference binding. Acceptance: (1) `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/expected/authoritative-relational-model.derived.manifest.json` exists in source control; (2) running the new derived golden test without `UPDATE_GOLDENS` produces no diff; (3) running with `UPDATE_GOLDENS=1` rewrites the file deterministically (stable ordering, LF-only, no trailing whitespace).",
+    "steps-to-verify": [
+      "Generate the expected derived manifest by running: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Re-run the same test without `UPDATE_GOLDENS` and ensure it passes with an empty diff.",
+      "Spot-check the expected derived manifest contains reference-bound columns for `studentAssessmentRegistrations` (e.g., `StudentSchoolAssociation_DocumentId`).",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
