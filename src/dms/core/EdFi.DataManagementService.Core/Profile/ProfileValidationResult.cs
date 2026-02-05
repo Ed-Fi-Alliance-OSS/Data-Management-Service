@@ -54,9 +54,9 @@ public record ProfileValidationResult(IReadOnlyList<ValidationFailure> Failures)
     public bool HasWarnings => Failures.Any(f => f.Severity == ValidationSeverity.Warning);
 
     /// <summary>
-    /// Gets whether the validation passed completely (no failures).
+    /// Gets whether the validation passed (no errors). Warnings do not affect validity.
     /// </summary>
-    public bool IsValid => !HasErrors && !HasWarnings;
+    public bool IsValid => !HasErrors;
 
     /// <summary>
     /// Creates a successful validation result with no failures.

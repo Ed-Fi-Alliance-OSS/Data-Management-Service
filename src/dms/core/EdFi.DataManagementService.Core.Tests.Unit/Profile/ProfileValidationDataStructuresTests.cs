@@ -127,7 +127,7 @@ public class ProfileValidationDataStructuresTests
             result.Failures.Should().HaveCount(1);
             result.HasErrors.Should().BeFalse();
             result.HasWarnings.Should().BeTrue();
-            result.IsValid.Should().BeFalse();
+            result.IsValid.Should().BeTrue(); // Warnings don't block - only errors affect IsValid
         }
 
         [Test]
