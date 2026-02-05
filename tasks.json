@@ -226,7 +226,7 @@
       "Confirm reference binding is present by searching the expected derived manifest for `StudentSchoolAssociation_DocumentId` and `StudentSchoolAssociation_StudentReferenceStudentUniqueId`.",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Fixtures",
