@@ -273,5 +273,73 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Design",
+    "description": "RelationalModel folder restructure: Define and approve a target folder taxonomy for `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/` aligned to the current pipeline and pass architecture. Write it to FOLDER-RESTRUCTURE.md file. Acceptance: (1) A documented mapping exists from every current top-level `.cs` file to exactly one target folder; (2) target folders include at minimum `Build/`, `Build/Steps/`, `SetPasses/`, `Schema/`, `Validation/`, `Naming/`, `Constraints/`, and `DescriptorPaths/`; (3) the mapping keeps public API discoverable by grouping orchestration types (`RelationalModelBuilderPipeline`, `RelationalModelSetPasses`, `DerivedRelationalModelSetBuilder`) under `Build/`; (4) no implementation code changes are required in this planning task.",
+    "steps-to-verify": [
+      "Create a file-to-folder mapping checklist that covers all files currently under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/`.",
+      "Confirm each file appears once in the mapping and no file is left unassigned.",
+      "Confirm folder names and groupings match the accepted taxonomy.",
+      "Run: `rg --files ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel | wc -l` and compare to the number of mapped files."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "RelationalModel folder restructure phase 1: Move files into the new folders without changing type names, namespaces, or behavior. Acceptance: (1) Files are moved from project root into approved folders (`Build`, `Build/Steps`, `SetPasses`, `Schema`, `Validation`, `Naming`, `Constraints`, `DescriptorPaths`, and optionally `Diagnostics`); (2) all moved files retain `namespace EdFi.DataManagementService.Backend.RelationalModel;`; (3) no public type names change in this phase; (4) project compiles and unit tests pass unchanged.",
+    "steps-to-verify": [
+      "Move the files according to the approved mapping in FOLDER-RESTRUCTURE.md file while preserving filenames and namespaces.",
+      "Confirm no class/record/interface/enum name changes occurred by running: `rg -n \"^(public|internal)\\s+(sealed\\s+|abstract\\s+)?(class|record|interface|enum)\\s+\" ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "RelationalModel cleanup phase 2: Split multi-type files into one-public-type-per-file for orchestration and context types to improve discoverability. Private types should stay with the type that uses them, unless they are shared and must become public types. Acceptance: (1) `RelationalModelBuilderPipeline.cs` is split so `IRelationalModelBuilderStep`, `RelationalModelBuilderContext`, `DescriptorPathSource`, `RelationalModelBuildResult`, and `RelationalModelBuilderPipeline` live in separate files with matching filenames; (2) large context-holder files with multiple public types (e.g., set builder context records/classes) are similarly split where practical; (3) behavior and public API signatures remain unchanged; (4) build and tests remain green.",
+    "steps-to-verify": [
+      "Create separate files for each public type currently co-located in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelBuilderPipeline.cs` (or its moved location).",
+      "Split additional multi-type orchestration/context files where they contain multiple public types and preserve signatures.",
+      "Run: `rg -n \"^public\\s\" ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel` to confirm one public type per target file in the split scope.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "RelationalModel optional phase 3: Rename set-pass type and file names from `*RelationalModelSetPass` to `*Pass` for readability while preserving semantics and ordering. Acceptance: (1) Each set-pass type/file pair is renamed consistently (for example, `ReferenceBindingRelationalModelSetPass` -> `ReferenceBindingPass`); (2) `RelationalModelSetPasses.CreateDefault()` order remains unchanged; (3) all references in production code and tests compile; (4) existing behavior remains unchanged as demonstrated by green tests.",
+    "steps-to-verify": [
+      "Rename set-pass files and type declarations under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/` using a consistent `*Pass` suffix.",
+      "Update constructor calls and references in `RelationalModelSetPasses`, production code, and unit tests to the new names.",
+      "Confirm pass ordering is unchanged by validating `RelationalModelSetPassesTests`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "RelationalModel documentation update: Reflect the new folder layout and naming conventions in project docs so contributors can navigate the codebase quickly. Acceptance: (1) `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/README.md` includes the new folder taxonomy and a short responsibility summary for each folder; (2) if phase-3 renames are executed, README examples and terminology use the new pass names; (3) documentation does not contradict code structure; (4) build/test commands in docs remain valid.",
+    "steps-to-verify": [
+      "Update the README section that explains pipeline architecture to include folder-level organization.",
+      "If pass renames were applied, update examples and references to `*Pass` names.",
+      "Verify referenced file paths and symbols exist by spot-checking with `rg --files` and `rg -n`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Verification",
+    "description": "RelationalModel restructure validation: Execute end-to-end verification after folder moves and optional renames to ensure no regressions. Acceptance: (1) RelationalModel unit tests pass; (2) DMS solution build succeeds; (3) no accidental namespace changes are introduced outside planned scope; (4) `tasks.json` entries for this restructure can be marked complete only after the commands and checks pass.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.",
+      "Run: `rg -n \"^namespace \" ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel` and confirm expected namespace declarations.",
+      "Review `git diff --name-status` to ensure file moves/renames align with the approved mapping and no unrelated files were modified."
+    ],
+    "completed": false
   }
 ]
