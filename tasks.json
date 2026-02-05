@@ -97,7 +97,7 @@
       "Update/add unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs` to cover allowed inside-reference identity override and rejected non-identity inside-reference key.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Backend",
