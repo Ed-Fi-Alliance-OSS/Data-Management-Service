@@ -397,37 +397,28 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             out var overrideName
         );
 
-        if (!hasOverride && hasOverriddenAncestor)
-        {
-            throw new InvalidOperationException(
-                $"relational.nameOverrides entry is required for descendant collection scope "
-                    + $"'{jsonScope.Canonical}' on resource '{resourceLabel}'."
-            );
-        }
-
         var collectionBaseName = defaultCollectionBaseName;
 
         if (hasOverride)
         {
-            if (!overrideName.StartsWith(parentSuffix, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"relational.nameOverrides entry for '{jsonScope.Canonical}' on resource "
-                        + $"'{resourceLabel}' must start with '{parentSuffix}'."
-                );
-            }
+            var superclassBaseName = string.IsNullOrWhiteSpace(context.SuperclassResourceName)
+                ? null
+                : RelationalNameConventions.ToPascalCase(context.SuperclassResourceName);
+            var includeSuperclass =
+                !string.IsNullOrWhiteSpace(superclassBaseName)
+                && !string.Equals(overrideName, defaultCollectionBaseName, StringComparison.Ordinal);
+            var impliedPrefixes = RelationalModelSetSchemaHelpers.BuildCollectionOverridePrefixes(
+                rootBaseName,
+                parentSuffix,
+                includeSuperclass ? superclassBaseName : null
+            );
 
-            var remainder = overrideName[parentSuffix.Length..];
-
-            if (string.IsNullOrWhiteSpace(remainder))
-            {
-                throw new InvalidOperationException(
-                    $"relational.nameOverrides entry for '{jsonScope.Canonical}' on resource "
-                        + $"'{resourceLabel}' must extend the parent collection suffix."
-                );
-            }
-
-            collectionBaseName = remainder;
+            collectionBaseName = RelationalModelSetSchemaHelpers.ResolveCollectionOverrideBaseName(
+                overrideName,
+                impliedPrefixes,
+                jsonScope.Canonical,
+                resourceLabel
+            );
         }
 
         var nextHasOverriddenAncestor = hasOverriddenAncestor || hasOverride;

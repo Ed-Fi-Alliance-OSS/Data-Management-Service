@@ -648,7 +648,7 @@
                 "source_path": null
               },
               {
-                "name": "BeginDate",
+                "name": "AssessmentAdministrationBeginDate",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Date"
@@ -657,7 +657,7 @@
                 "source_path": "$.periods[*].beginDate"
               },
               {
-                "name": "EndDate",
+                "name": "AssessmentAdministrationEndDate",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Date"
@@ -8463,7 +8463,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].personalInformationVerificationDescriptor"
               },
               {
-                "name": "DocumentExpirationDate",
+                "name": "PersonalDocumentExpirationDate",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Date"
@@ -8472,7 +8472,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].documentExpirationDate"
               },
               {
-                "name": "DocumentTitle",
+                "name": "PersonalDocumentTitle",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -8482,7 +8482,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].documentTitle"
               },
               {
-                "name": "IssuerDocumentIdentificationCode",
+                "name": "PersonalIssuerDocumentIdentificationCode",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -8492,7 +8492,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].issuerDocumentIdentificationCode"
               },
               {
-                "name": "IssuerName",
+                "name": "PersonalIssuerName",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -9998,7 +9998,7 @@
                 "source_path": "$.alternativeCourseIdentificationCodes[*].courseIdentificationSystemDescriptor"
               },
               {
-                "name": "AssigningOrganizationIdentificationCode",
+                "name": "AlternativeAssigningOrganizationIdentificationCode",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -10008,7 +10008,7 @@
                 "source_path": "$.alternativeCourseIdentificationCodes[*].assigningOrganizationIdentificationCode"
               },
               {
-                "name": "CourseCatalogURL",
+                "name": "AlternativeCourseCatalogURL",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -10018,7 +10018,7 @@
                 "source_path": "$.alternativeCourseIdentificationCodes[*].courseCatalogURL"
               },
               {
-                "name": "IdentificationCode",
+                "name": "AlternativeIdentificationCode",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -10196,7 +10196,7 @@
           },
           {
             "schema": "edfi",
-            "name": "CourseTranscriptEarnedAdditionalCredit",
+            "name": "CourseTranscriptEarnedAdditionalCredits",
             "scope": "$.earnedAdditionalCredits[*]",
             "key_columns": [
               {
@@ -10237,7 +10237,7 @@
                 "source_path": "$.earnedAdditionalCredits[*].additionalCreditTypeDescriptor"
               },
               {
-                "name": "Credits",
+                "name": "EarnedCredits",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
@@ -10251,7 +10251,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseTranscriptEarnedAdditionalCredit_AdditionalCreditTypeDescriptor",
+                "name": "FK_CourseTranscriptEarnedAdditionalCredits_AdditionalCreditTypeDescriptor",
                 "columns": [
                   "AdditionalCreditTypeDescriptor_DescriptorId"
                 ],
@@ -10267,7 +10267,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseTranscriptEarnedAdditionalCredit_CourseTranscript",
+                "name": "FK_CourseTranscriptEarnedAdditionalCredits_CourseTranscript",
                 "columns": [
                   "CourseTranscript_DocumentId"
                 ],
@@ -10285,7 +10285,7 @@
           },
           {
             "schema": "edfi",
-            "name": "CourseTranscriptPartialCourseTranscriptAward",
+            "name": "CourseTranscriptPartialCourseTranscriptAwards",
             "scope": "$.partialCourseTranscriptAwards[*]",
             "key_columns": [
               {
@@ -10369,7 +10369,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseTranscriptPartialCourseTranscriptAward_CourseTranscript",
+                "name": "FK_CourseTranscriptPartialCourseTranscriptAwards_CourseTranscript",
                 "columns": [
                   "CourseTranscript_DocumentId"
                 ],
@@ -10385,7 +10385,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_CourseTranscriptPartialCourseTranscriptAward_MethodCreditEarnedDescriptor",
+                "name": "FK_CourseTranscriptPartialCourseTranscriptAwards_MethodCreditEarnedDescriptor",
                 "columns": [
                   "MethodCreditEarnedDescriptor_DescriptorId"
                 ],
@@ -10578,7 +10578,7 @@
             "descriptor_value_path": "$.earnedAdditionalCredits[*].additionalCreditTypeDescriptor",
             "table": {
               "schema": "edfi",
-              "name": "CourseTranscriptEarnedAdditionalCredit"
+              "name": "CourseTranscriptEarnedAdditionalCredits"
             },
             "fk_column": "AdditionalCreditTypeDescriptor_DescriptorId",
             "descriptor_resource": {
@@ -10591,7 +10591,7 @@
             "descriptor_value_path": "$.partialCourseTranscriptAwards[*].methodCreditEarnedDescriptor",
             "table": {
               "schema": "edfi",
-              "name": "CourseTranscriptPartialCourseTranscriptAward"
+              "name": "CourseTranscriptPartialCourseTranscriptAwards"
             },
             "fk_column": "MethodCreditEarnedDescriptor_DescriptorId",
             "descriptor_resource": {
@@ -19224,7 +19224,7 @@
                 "source_path": "$.requiredAssessments[*].performanceLevel.resultDatatypeTypeDescriptor"
               },
               {
-                "name": "PerformanceLevelMaximumScore",
+                "name": "RequiredMaximumScore",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -19234,7 +19234,7 @@
                 "source_path": "$.requiredAssessments[*].performanceLevel.maximumScore"
               },
               {
-                "name": "PerformanceLevelMinimumScore",
+                "name": "RequiredMinimumScore",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -19244,7 +19244,7 @@
                 "source_path": "$.requiredAssessments[*].performanceLevel.minimumScore"
               },
               {
-                "name": "PerformanceLevelPerformanceLevelIndicatorName",
+                "name": "RequiredPerformanceLevelIndicatorName",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -19454,7 +19454,7 @@
                 "source_path": "$.requiredAssessments[*].scores[*].resultDatatypeTypeDescriptor"
               },
               {
-                "name": "MaximumScore",
+                "name": "RequiredMaximumScore",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -19464,7 +19464,7 @@
                 "source_path": "$.requiredAssessments[*].scores[*].maximumScore"
               },
               {
-                "name": "MinimumScore",
+                "name": "RequiredMinimumScore",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -24468,7 +24468,7 @@
           },
           {
             "schema": "edfi",
-            "name": "LocalEducationAgencyFederalFund",
+            "name": "LocalEducationAgencyFederalFunds",
             "scope": "$.federalFunds[*]",
             "key_columns": [
               {
@@ -24600,7 +24600,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_LocalEducationAgencyFederalFund_LocalEducationAgency",
+                "name": "FK_LocalEducationAgencyFederalFunds_LocalEducationAgency",
                 "columns": [
                   "LocalEducationAgency_DocumentId"
                 ],
@@ -30884,7 +30884,7 @@
                 "source_path": "$.programEvaluationLevels[*].ratingLevelDescriptor"
               },
               {
-                "name": "MaxNumericRating",
+                "name": "ElementMaxNumericRating",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
@@ -30895,7 +30895,7 @@
                 "source_path": "$.programEvaluationLevels[*].maxNumericRating"
               },
               {
-                "name": "MinNumericRating",
+                "name": "ElementMinNumericRating",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
@@ -31104,7 +31104,7 @@
                 "source_path": "$.programEvaluationLevels[*].ratingLevelDescriptor"
               },
               {
-                "name": "MaxNumericRating",
+                "name": "ObjectiveMaxNumericRating",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
@@ -31115,7 +31115,7 @@
                 "source_path": "$.programEvaluationLevels[*].maxNumericRating"
               },
               {
-                "name": "MinNumericRating",
+                "name": "ObjectiveMinNumericRating",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Decimal",
@@ -34270,7 +34270,7 @@
           },
           {
             "schema": "edfi",
-            "name": "SchoolSchoolCategory",
+            "name": "SchoolCategory",
             "scope": "$.schoolCategories[*]",
             "key_columns": [
               {
@@ -34314,7 +34314,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolSchoolCategory_School",
+                "name": "FK_SchoolCategory_School",
                 "columns": [
                   "School_DocumentId"
                 ],
@@ -34330,7 +34330,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_SchoolSchoolCategory_SchoolCategoryDescriptor",
+                "name": "FK_SchoolCategory_SchoolCategoryDescriptor",
                 "columns": [
                   "SchoolCategoryDescriptor_DescriptorId"
                 ],
@@ -34665,6 +34665,19 @@
           },
           {
             "is_identity_component": false,
+            "descriptor_value_path": "$.schoolCategories[*].schoolCategoryDescriptor",
+            "table": {
+              "schema": "edfi",
+              "name": "SchoolCategory"
+            },
+            "fk_column": "SchoolCategoryDescriptor_DescriptorId",
+            "descriptor_resource": {
+              "project_name": "Ed-Fi",
+              "resource_name": "SchoolCategoryDescriptor"
+            }
+          },
+          {
+            "is_identity_component": false,
             "descriptor_value_path": "$.educationOrganizationCategories[*].educationOrganizationCategoryDescriptor",
             "table": {
               "schema": "edfi",
@@ -34778,19 +34791,6 @@
             "descriptor_resource": {
               "project_name": "Ed-Fi",
               "resource_name": "CountryDescriptor"
-            }
-          },
-          {
-            "is_identity_component": false,
-            "descriptor_value_path": "$.schoolCategories[*].schoolCategoryDescriptor",
-            "table": {
-              "schema": "edfi",
-              "name": "SchoolSchoolCategory"
-            },
-            "fk_column": "SchoolCategoryDescriptor_DescriptorId",
-            "descriptor_resource": {
-              "project_name": "Ed-Fi",
-              "resource_name": "SchoolCategoryDescriptor"
             }
           }
         ],
@@ -39565,7 +39565,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].personalInformationVerificationDescriptor"
               },
               {
-                "name": "DocumentExpirationDate",
+                "name": "PersonalDocumentExpirationDate",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Date"
@@ -39574,7 +39574,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].documentExpirationDate"
               },
               {
-                "name": "DocumentTitle",
+                "name": "PersonalDocumentTitle",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -39584,7 +39584,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].documentTitle"
               },
               {
-                "name": "IssuerDocumentIdentificationCode",
+                "name": "PersonalIssuerDocumentIdentificationCode",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -39594,7 +39594,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].issuerDocumentIdentificationCode"
               },
               {
-                "name": "IssuerName",
+                "name": "PersonalIssuerName",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -41261,7 +41261,7 @@
           },
           {
             "schema": "edfi",
-            "name": "StateEducationAgencyFederalFund",
+            "name": "StateEducationAgencyFederalFunds",
             "scope": "$.federalFunds[*]",
             "key_columns": [
               {
@@ -41316,7 +41316,7 @@
             "constraints": [
               {
                 "kind": "ForeignKey",
-                "name": "FK_StateEducationAgencyFederalFund_StateEducationAgency",
+                "name": "FK_StateEducationAgencyFederalFunds_StateEducationAgency",
                 "columns": [
                   "StateEducationAgency_DocumentId"
                 ],
@@ -58437,7 +58437,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].personalInformationVerificationDescriptor"
               },
               {
-                "name": "DocumentExpirationDate",
+                "name": "PersonalDocumentExpirationDate",
                 "kind": "Scalar",
                 "type": {
                   "kind": "Date"
@@ -58446,7 +58446,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].documentExpirationDate"
               },
               {
-                "name": "DocumentTitle",
+                "name": "PersonalDocumentTitle",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -58456,7 +58456,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].documentTitle"
               },
               {
-                "name": "IssuerDocumentIdentificationCode",
+                "name": "PersonalIssuerDocumentIdentificationCode",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",
@@ -58466,7 +58466,7 @@
                 "source_path": "$.personalIdentificationDocuments[*].issuerDocumentIdentificationCode"
               },
               {
-                "name": "IssuerName",
+                "name": "PersonalIssuerName",
                 "kind": "Scalar",
                 "type": {
                   "kind": "String",

@@ -170,6 +170,17 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                 var identityPartBaseName = BuildIdentityPartBaseName(identityBinding.IdentityJsonPath);
 
                 if (
+                    builderContext.TryGetNameOverride(
+                        identityBinding.ReferenceJsonPath,
+                        NameOverrideKind.Column,
+                        out var identityOverride
+                    )
+                )
+                {
+                    identityPartBaseName = identityOverride;
+                }
+
+                if (
                     TryResolveDescriptorIdentity(
                         context,
                         mapping.TargetResource,

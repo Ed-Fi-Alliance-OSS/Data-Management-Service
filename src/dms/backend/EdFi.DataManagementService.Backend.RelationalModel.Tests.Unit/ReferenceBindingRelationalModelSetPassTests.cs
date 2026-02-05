@@ -174,6 +174,158 @@ public class Given_Reference_Binding
 }
 
 /// <summary>
+/// Test fixture for inside-reference identity overrides during reference binding.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Binding_With_Identity_NameOverride
+{
+    private RelationalResourceModel _model = default!;
+    private DocumentReferenceBinding _schoolBinding = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+                new ReferenceBindingRelationalModelSetPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _model = result
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Student"
+            )
+            .RelationalModel;
+
+        _schoolBinding = _model.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.schoolReference"
+        );
+    }
+
+    /// <summary>
+    /// It should apply identity overrides to propagated reference identity columns.
+    /// </summary>
+    [Test]
+    public void It_should_apply_identity_overrides_to_reference_identity_columns()
+    {
+        _schoolBinding.FkColumn.Value.Should().Be("School_DocumentId");
+        _schoolBinding.IdentityBindings.Single().Column.Value.Should().Be("School_CampusId");
+
+        _model.Root.Columns.Should().Contain(column => column.ColumnName.Value == "School_CampusId");
+    }
+
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["students"] = BuildStudentSchema(),
+                ["schools"] = BuildSchoolSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildStudentSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["schoolReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Student",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+            ["relational"] = new JsonObject
+            {
+                ["nameOverrides"] = new JsonObject { ["$.schoolReference.schoolId"] = "campusId" },
+            },
+        };
+    }
+
+    private static JsonObject BuildSchoolSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.schoolId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["schoolId"] = new JsonObject { ["type"] = "integer" } },
+                ["required"] = new JsonArray { "schoolId" },
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test fixture for reference binding when descriptor path is missing.
 /// </summary>
 [TestFixture]

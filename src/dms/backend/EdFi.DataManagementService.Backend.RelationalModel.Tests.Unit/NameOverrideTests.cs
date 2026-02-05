@@ -86,7 +86,7 @@ public class Given_Relational_NameOverrides
 [TestFixture]
 public class Given_A_Collection_NameOverride_With_Missing_Descendant_Override
 {
-    private Exception? _exception;
+    private RelationalResourceModel _model = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -98,27 +98,88 @@ public class Given_A_Collection_NameOverride_With_Missing_Descendant_Override
             "hand-authored-name-override-descendant-missing-api-schema.json"
         );
         var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var derived = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
 
-        try
-        {
-            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
-        }
-        catch (Exception exception)
-        {
-            _exception = exception;
-        }
+        _model = derived
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Person"
+            )
+            .RelationalModel;
     }
 
     /// <summary>
-    /// It should fail fast when a descendant collection override is missing.
+    /// It should build successfully when a descendant collection override is missing.
     /// </summary>
     [Test]
-    public void It_should_fail_fast_when_descendant_override_is_missing()
+    public void It_should_build_when_descendant_override_is_missing()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("descendant collection scope");
-        _exception.Message.Should().Contain("$.addresses[*].periods[*]");
-        _exception.Message.Should().Contain("Ed-Fi:Person");
+        var tableNames = _model.TablesInDependencyOrder.Select(table => table.Table.Name).ToArray();
+
+        tableNames.Should().Contain("PersonSite");
+        tableNames.Should().Contain("PersonSitePeriod");
+
+        var nestedTable = _model.TablesInDependencyOrder.Single(table =>
+            table.Table.Name == "PersonSitePeriod"
+        );
+        var keyColumns = nestedTable.Key.Columns.Select(column => column.ColumnName.Value).ToArray();
+
+        keyColumns.Should().Contain("SiteOrdinal");
+    }
+}
+
+/// <summary>
+/// Test fixture for nested collection overrides without parent prefixes.
+/// </summary>
+[TestFixture]
+public class Given_A_Nested_Collection_NameOverride_Without_Parent_Prefix
+{
+    private DbTableModel _segmentTable = default!;
+    private DbTableModel _qualifiedTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+
+        var segmentSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixture(
+            "hand-authored-name-override-nested-segment-api-schema.json"
+        );
+        var segmentDerived = builder.Build(segmentSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var segmentModel = segmentDerived
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Person"
+            )
+            .RelationalModel;
+
+        var qualifiedSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixture(
+            "hand-authored-name-overrides-api-schema.json"
+        );
+        var qualifiedDerived = builder.Build(qualifiedSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var qualifiedModel = qualifiedDerived
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Person"
+            )
+            .RelationalModel;
+
+        _segmentTable = segmentModel.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.addresses[*].periods[*]"
+        );
+        _qualifiedTable = qualifiedModel.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.addresses[*].periods[*]"
+        );
+    }
+
+    /// <summary>
+    /// It should resolve segment-only and fully-qualified overrides consistently.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_segment_only_and_qualified_overrides_consistently()
+    {
+        _segmentTable.Table.Name.Should().Be("PersonSiteWindow");
+        _qualifiedTable.Table.Name.Should().Be("PersonSiteWindow");
     }
 }
 
