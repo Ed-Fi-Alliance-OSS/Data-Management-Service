@@ -594,20 +594,16 @@ public sealed class RelationalModelSetBuilderContext
     }
 
     /// <summary>
-    /// Ensures that derived index names are unique within a table and schema.
+    /// Ensures that derived index names are unique within the dialect's required scope.
     /// </summary>
     private void ValidateIndexNameUniqueness()
     {
         var duplicateIndexKeys = IndexInventory
-            .GroupBy(index => new TableNamedObjectKey(
-                index.Table.Schema.Value,
-                index.Table.Name,
-                index.Name.Value
-            ))
+            .GroupBy(index => BuildIndexUniquenessKey(index))
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
             .OrderBy(key => key.Schema, StringComparer.Ordinal)
-            .ThenBy(key => key.Table, StringComparer.Ordinal)
+            .ThenBy(key => key.TableOrEmpty, StringComparer.Ordinal)
             .ThenBy(key => key.Name, StringComparer.Ordinal)
             .Select(key => key.Format())
             .ToArray();
@@ -621,20 +617,16 @@ public sealed class RelationalModelSetBuilderContext
     }
 
     /// <summary>
-    /// Ensures that derived trigger names are unique within a table and schema.
+    /// Ensures that derived trigger names are unique within the dialect's required scope.
     /// </summary>
     private void ValidateTriggerNameUniqueness()
     {
         var duplicateTriggerKeys = TriggerInventory
-            .GroupBy(trigger => new TableNamedObjectKey(
-                trigger.Table.Schema.Value,
-                trigger.Table.Name,
-                trigger.Name.Value
-            ))
+            .GroupBy(trigger => BuildTriggerUniquenessKey(trigger))
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
             .OrderBy(key => key.Schema, StringComparer.Ordinal)
-            .ThenBy(key => key.Table, StringComparer.Ordinal)
+            .ThenBy(key => key.TableOrEmpty, StringComparer.Ordinal)
             .ThenBy(key => key.Name, StringComparer.Ordinal)
             .Select(key => key.Format())
             .ToArray();
@@ -665,16 +657,63 @@ public sealed class RelationalModelSetBuilderContext
     /// <summary>
     /// Represents a fully-qualified named object key used when checking name uniqueness.
     /// </summary>
-    private readonly record struct TableNamedObjectKey(string Schema, string Table, string Name)
+    private readonly record struct NamedObjectKey(string Schema, string? Table, string Name)
     {
+        /// <summary>
+        /// Gets the table portion for ordering (empty string when schema-scoped).
+        /// </summary>
+        public string TableOrEmpty => Table ?? string.Empty;
+
         /// <summary>
         /// Formats the key for diagnostics.
         /// </summary>
         /// <returns>A formatted key string.</returns>
         public string Format()
         {
-            return $"{Schema}.{Table}:{Name}";
+            return string.IsNullOrWhiteSpace(Table) ? $"{Schema}:{Name}" : $"{Schema}.{Table}:{Name}";
         }
+
+        /// <summary>
+        /// Builds a schema-scoped uniqueness key.
+        /// </summary>
+        public static NamedObjectKey ForSchema(string schema, string name)
+        {
+            return new NamedObjectKey(schema, null, name);
+        }
+
+        /// <summary>
+        /// Builds a table-scoped uniqueness key.
+        /// </summary>
+        public static NamedObjectKey ForTable(string schema, string table, string name)
+        {
+            return new NamedObjectKey(schema, table, name);
+        }
+    }
+
+    private NamedObjectKey BuildIndexUniquenessKey(DbIndexInfo index)
+    {
+        var schema = index.Table.Schema.Value;
+        var name = index.Name.Value;
+
+        return Dialect switch
+        {
+            SqlDialect.Pgsql => NamedObjectKey.ForSchema(schema, name),
+            SqlDialect.Mssql => NamedObjectKey.ForTable(schema, index.Table.Name, name),
+            _ => NamedObjectKey.ForSchema(schema, name),
+        };
+    }
+
+    private NamedObjectKey BuildTriggerUniquenessKey(DbTriggerInfo trigger)
+    {
+        var schema = trigger.Table.Schema.Value;
+        var name = trigger.Name.Value;
+
+        return Dialect switch
+        {
+            SqlDialect.Pgsql => NamedObjectKey.ForTable(schema, trigger.Table.Name, name),
+            SqlDialect.Mssql => NamedObjectKey.ForSchema(schema, name),
+            _ => NamedObjectKey.ForSchema(schema, name),
+        };
     }
 
     /// <summary>

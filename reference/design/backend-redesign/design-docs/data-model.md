@@ -877,6 +877,10 @@ Object names are deterministic and derived from the owning table plus purpose to
   - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`
   - PostgreSQL trigger functions (when used): `TF_{TableName}_{Purpose}`
 
+Uniqueness scope (dialect-specific):
+- PostgreSQL: index names are schema-scoped; trigger names are table-scoped.
+- SQL Server: index names are scoped to the owning table/view; DML trigger names are schema-scoped.
+
 If a name exceeds the dialect identifier limit, apply truncation + hash as below.
 
 ### 6) Max identifier length handling (truncation + hash)
