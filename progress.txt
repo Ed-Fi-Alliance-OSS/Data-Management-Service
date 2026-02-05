@@ -111,3 +111,7 @@
   Decisions: Verified ReferenceBindingRelationalModelSetPass already applies identity nameOverrides to propagated reference identity columns; no code changes needed.
   Files: tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed.
+- Task: Relax collection override derivation (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Verified collection override relaxation already implemented via ResolveCollectionOverrideBaseName; no code changes needed; existing tests cover missing descendant + segment/qualified overrides.
+  Files: tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
