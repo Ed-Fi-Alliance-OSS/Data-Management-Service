@@ -1,0 +1,46 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "people": {
+        "resourceName": "Person",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.personId"
+        ],
+        "documentPathsMapping": {
+          "PersonId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.personId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "personId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "personId"
+          ]
+        },
+        "relational": {
+          "nameOverrides": {
+            "$.unknownProperty": "Unknown"
+          }
+        }
+      }
+    }
+  }
+}

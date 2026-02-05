@@ -64,6 +64,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var physicalSchema = RelationalNameConventions.NormalizeSchemaName(projectEndpointName);
         var rootBaseName =
             context.RootTableNameOverride ?? RelationalNameConventions.ToPascalCase(resourceName);
+        var resourceLabel = $"{projectName}:{resourceName}";
         var storageKind = context.IsDescriptorResource
             ? ResourceStorageKind.SharedDescriptorTable
             : ResourceStorageKind.RelationalTables;
@@ -86,11 +87,29 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             return;
         }
 
-        var rootTableScope = CreateRootTable(physicalSchema, rootBaseName);
+        var rootTableScope = CreateRootTable(
+            physicalSchema,
+            rootBaseName,
+            context.OverrideCollisionDetector,
+            resourceLabel
+        );
 
         List<TableScope> tableScopes = [rootTableScope];
 
-        DiscoverTables(rootSchema, [], [], rootTableScope, tableScopes, physicalSchema, rootBaseName, "$");
+        DiscoverTables(
+            rootSchema,
+            [],
+            [],
+            [],
+            rootTableScope,
+            tableScopes,
+            physicalSchema,
+            rootBaseName,
+            "$",
+            hasOverriddenAncestor: false,
+            context,
+            resourceLabel
+        );
 
         var tables = tableScopes.Select(scope => scope.Table).ToArray();
 
@@ -108,7 +127,12 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     /// <summary>
     /// Creates the resource root table, keyed by <c>DocumentId</c> and FK'd to <c>dms.Document</c>.
     /// </summary>
-    private static TableScope CreateRootTable(DbSchemaName schema, string rootBaseName)
+    private static TableScope CreateRootTable(
+        DbSchemaName schema,
+        string rootBaseName,
+        OverrideCollisionDetector? collisionDetector,
+        string resourceLabel
+    )
     {
         var tableName = new DbTableName(schema, rootBaseName);
         var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
@@ -137,7 +161,24 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
 
-        return new TableScope(table, Array.Empty<string>());
+        collisionDetector?.RegisterTable(
+            tableName,
+            rootBaseName,
+            BuildTableOrigin(tableName, resourceLabel, jsonScope)
+        );
+        collisionDetector?.RegisterColumn(
+            tableName,
+            RelationalNameConventions.DocumentIdColumnName,
+            RelationalNameConventions.DocumentIdColumnName.Value,
+            BuildColumnOrigin(
+                tableName,
+                RelationalNameConventions.DocumentIdColumnName,
+                resourceLabel,
+                jsonScope
+            )
+        );
+
+        return new TableScope(table, Array.Empty<string>(), Array.Empty<string>());
     }
 
     /// <summary>
@@ -174,7 +215,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 
         var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints);
 
-        return new TableScope(table, Array.Empty<string>());
+        return new TableScope(table, Array.Empty<string>(), Array.Empty<string>());
     }
 
     /// <summary>
@@ -184,11 +225,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
         List<string> collectionBaseNames,
+        List<string> defaultCollectionBaseNames,
         TableScope parentTable,
         List<TableScope> tables,
         DbSchemaName schemaName,
         string rootBaseName,
-        string schemaPath
+        string schemaPath,
+        bool hasOverriddenAncestor,
+        RelationalModelBuilderContext context,
+        string resourceLabel
     )
     {
         var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(schema);
@@ -200,11 +245,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                     schema,
                     scopeSegments,
                     collectionBaseNames,
+                    defaultCollectionBaseNames,
                     parentTable,
                     tables,
                     schemaName,
                     rootBaseName,
-                    schemaPath
+                    schemaPath,
+                    hasOverriddenAncestor,
+                    context,
+                    resourceLabel
                 );
                 break;
             case SchemaKind.Array:
@@ -212,11 +261,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                     schema,
                     scopeSegments,
                     collectionBaseNames,
+                    defaultCollectionBaseNames,
                     parentTable,
                     tables,
                     schemaName,
                     rootBaseName,
-                    schemaPath
+                    schemaPath,
+                    hasOverriddenAncestor,
+                    context,
+                    resourceLabel
                 );
                 break;
             case SchemaKind.Scalar:
@@ -233,11 +286,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
         List<string> collectionBaseNames,
+        List<string> defaultCollectionBaseNames,
         TableScope parentTable,
         List<TableScope> tables,
         DbSchemaName schemaName,
         string rootBaseName,
-        string schemaPath
+        string schemaPath,
+        bool hasOverriddenAncestor,
+        RelationalModelBuilderContext context,
+        string resourceLabel
     )
     {
         if (!schema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is null)
@@ -278,11 +335,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 propertySchema,
                 propertySegments,
                 collectionBaseNames,
+                defaultCollectionBaseNames,
                 parentTable,
                 tables,
                 schemaName,
                 rootBaseName,
-                propertySchemaPath
+                propertySchemaPath,
+                hasOverriddenAncestor,
+                context,
+                resourceLabel
             );
         }
     }
@@ -295,11 +356,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         JsonObject schema,
         List<JsonPathSegment> scopeSegments,
         List<string> collectionBaseNames,
+        List<string> defaultCollectionBaseNames,
         TableScope parentTable,
         List<TableScope> tables,
         DbSchemaName schemaName,
         string rootBaseName,
-        string schemaPath
+        string schemaPath,
+        bool hasOverriddenAncestor,
+        RelationalModelBuilderContext context,
+        string resourceLabel
     )
     {
         if (!schema.TryGetPropertyValue("items", out var itemsNode) || itemsNode is null)
@@ -321,18 +386,67 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             throw new InvalidOperationException("Array schema must be rooted at a property segment.");
         }
 
-        var collectionBaseName = RelationalNameConventions.ToCollectionBaseName(propertySegment.Name);
-
-        List<string> nextCollectionBaseNames = [.. collectionBaseNames, collectionBaseName];
         List<JsonPathSegment> arraySegments = [.. scopeSegments, new JsonPathSegment.AnyArrayElement()];
         var jsonScope = JsonPathExpressionCompiler.FromSegments(arraySegments);
+
+        var defaultCollectionBaseName = RelationalNameConventions.ToCollectionBaseName(propertySegment.Name);
+        var parentSuffix = string.Concat(collectionBaseNames);
+        var hasOverride = context.TryGetNameOverride(
+            jsonScope,
+            NameOverrideKind.Collection,
+            out var overrideName
+        );
+
+        if (!hasOverride && hasOverriddenAncestor)
+        {
+            throw new InvalidOperationException(
+                $"relational.nameOverrides entry is required for descendant collection scope "
+                    + $"'{jsonScope.Canonical}' on resource '{resourceLabel}'."
+            );
+        }
+
+        var collectionBaseName = defaultCollectionBaseName;
+
+        if (hasOverride)
+        {
+            if (!overrideName.StartsWith(parentSuffix, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry for '{jsonScope.Canonical}' on resource "
+                        + $"'{resourceLabel}' must start with '{parentSuffix}'."
+                );
+            }
+
+            var remainder = overrideName[parentSuffix.Length..];
+
+            if (string.IsNullOrWhiteSpace(remainder))
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry for '{jsonScope.Canonical}' on resource "
+                        + $"'{resourceLabel}' must extend the parent collection suffix."
+                );
+            }
+
+            collectionBaseName = remainder;
+        }
+
+        var nextHasOverriddenAncestor = hasOverriddenAncestor || hasOverride;
+        List<string> nextCollectionBaseNames = [.. collectionBaseNames, collectionBaseName];
+        List<string> nextDefaultCollectionBaseNames =
+        [
+            .. defaultCollectionBaseNames,
+            defaultCollectionBaseName,
+        ];
 
         var childTableScope = CreateChildTable(
             schemaName,
             rootBaseName,
             parentTable,
             nextCollectionBaseNames,
-            jsonScope
+            nextDefaultCollectionBaseNames,
+            jsonScope,
+            context.OverrideCollisionDetector,
+            resourceLabel
         );
 
         tables.Add(childTableScope);
@@ -341,11 +455,15 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             itemsSchema,
             arraySegments,
             nextCollectionBaseNames,
+            nextDefaultCollectionBaseNames,
             childTableScope,
             tables,
             schemaName,
             rootBaseName,
-            itemsSchemaPath
+            itemsSchemaPath,
+            nextHasOverriddenAncestor,
+            context,
+            resourceLabel
         );
     }
 
@@ -358,7 +476,10 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         string rootBaseName,
         TableScope parentTable,
         IReadOnlyList<string> collectionBaseNames,
-        JsonPathExpression jsonScope
+        IReadOnlyList<string> defaultCollectionBaseNames,
+        JsonPathExpression jsonScope,
+        OverrideCollisionDetector? collisionDetector,
+        string resourceLabel
     )
     {
         var tableName = new DbTableName(
@@ -366,6 +487,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             BuildCollectionTableName(rootBaseName, collectionBaseNames)
         );
         var key = BuildChildTableKey(rootBaseName, collectionBaseNames);
+        var originalKey = BuildChildTableKey(rootBaseName, defaultCollectionBaseNames);
         var parentKeyColumns = BuildParentKeyColumnNames(rootBaseName, parentTable.CollectionBaseNames);
 
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, parentTable.Table.Table.Name);
@@ -384,7 +506,28 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         var columns = BuildKeyColumns(key.Columns);
         var table = new DbTableModel(tableName, jsonScope, key, columns, constraints);
 
-        return new TableScope(table, collectionBaseNames);
+        var originalTableName = BuildCollectionTableName(rootBaseName, defaultCollectionBaseNames);
+
+        collisionDetector?.RegisterTable(
+            tableName,
+            originalTableName,
+            BuildTableOrigin(tableName, resourceLabel, jsonScope)
+        );
+
+        for (var index = 0; index < key.Columns.Count; index++)
+        {
+            var finalColumn = key.Columns[index].ColumnName;
+            var originalColumn = originalKey.Columns[index].ColumnName;
+
+            collisionDetector?.RegisterColumn(
+                tableName,
+                finalColumn,
+                originalColumn.Value,
+                BuildColumnOrigin(tableName, finalColumn, resourceLabel, jsonScope)
+            );
+        }
+
+        return new TableScope(table, collectionBaseNames, defaultCollectionBaseNames);
     }
 
     /// <summary>
@@ -515,6 +658,29 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
+    private static IdentifierCollisionOrigin BuildTableOrigin(
+        DbTableName tableName,
+        string resourceLabel,
+        JsonPathExpression jsonScope
+    )
+    {
+        var description = $"table {tableName.Schema.Value}.{tableName.Name}";
+
+        return new IdentifierCollisionOrigin(description, resourceLabel, jsonScope.Canonical);
+    }
+
+    private static IdentifierCollisionOrigin BuildColumnOrigin(
+        DbTableName tableName,
+        DbColumnName columnName,
+        string resourceLabel,
+        JsonPathExpression jsonScope
+    )
+    {
+        var description = $"column {tableName.Schema.Value}.{tableName.Name}.{columnName.Value}";
+
+        return new IdentifierCollisionOrigin(description, resourceLabel, jsonScope.Canonical);
+    }
+
     /// <summary>
     /// Ensures required string inputs are present on the context before derivation proceeds.
     /// </summary>
@@ -532,5 +698,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     /// Tracks the derived <see cref="DbTableModel"/> along with the collection-name chain used for key and FK
     /// column derivation.
     /// </summary>
-    private sealed record TableScope(DbTableModel Table, IReadOnlyList<string> CollectionBaseNames);
+    private sealed record TableScope(
+        DbTableModel Table,
+        IReadOnlyList<string> CollectionBaseNames,
+        IReadOnlyList<string> DefaultCollectionBaseNames
+    );
 }

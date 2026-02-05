@@ -69,6 +69,7 @@ public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IR
                 ResourceEndpointName = resourceContext.ResourceEndpointName,
                 DescriptorPathSource = DescriptorPathSource.Precomputed,
                 DescriptorPathsByJsonPath = descriptorPaths,
+                OverrideCollisionDetector = context.OverrideCollisionDetector,
             };
 
             var result = _pipeline.Run(builderContext);

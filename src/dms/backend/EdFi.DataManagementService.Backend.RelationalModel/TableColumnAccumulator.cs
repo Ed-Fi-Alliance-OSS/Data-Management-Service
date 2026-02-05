@@ -10,26 +10,35 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </summary>
 internal sealed class TableColumnAccumulator
 {
-    private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, ColumnCollisionInfo> _columnOrigins = new(StringComparer.Ordinal);
+    private readonly string? _resourceLabel;
 
     /// <summary>
     /// Creates an accumulator seeded with the table's existing columns and constraints.
     /// </summary>
     /// <param name="table">The table definition to mutate.</param>
-    public TableColumnAccumulator(DbTableModel table)
+    /// <param name="resourceLabel">Optional resource label for diagnostics.</param>
+    public TableColumnAccumulator(DbTableModel table, string? resourceLabel = null)
     {
         Definition = table;
+        _resourceLabel = resourceLabel;
         Columns = new List<DbColumnModel>(table.Columns);
         Constraints = new List<TableConstraint>(table.Constraints);
 
         foreach (var column in table.Columns)
         {
-            _columnSources[column.ColumnName.Value] = column.SourceJsonPath;
+            _columnOrigins[column.ColumnName.Value] = new ColumnCollisionInfo(
+                column.ColumnName.Value,
+                BuildOrigin(column.ColumnName, column.SourceJsonPath)
+            );
         }
 
         foreach (var keyColumn in table.Key.Columns)
         {
-            _columnSources.TryAdd(keyColumn.ColumnName.Value, null);
+            _columnOrigins.TryAdd(
+                keyColumn.ColumnName.Value,
+                new ColumnCollisionInfo(keyColumn.ColumnName.Value, BuildOrigin(keyColumn.ColumnName, null))
+            );
         }
     }
 
@@ -52,22 +61,57 @@ internal sealed class TableColumnAccumulator
     /// Adds a column and throws on name collision.
     /// </summary>
     /// <param name="column">The column to add.</param>
-    public void AddColumn(DbColumnModel column)
+    /// <param name="originalName">The pre-override name for collision reporting.</param>
+    /// <param name="origin">The origin details used for collision reporting.</param>
+    public void AddColumn(
+        DbColumnModel column,
+        string? originalName = null,
+        IdentifierCollisionOrigin? origin = null
+    )
     {
-        if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
+        if (_columnOrigins.TryGetValue(column.ColumnName.Value, out var existing))
         {
-            var tableName = Definition.Table.Name;
-            var existingPath = ResolveSourcePath(existingSource);
-            var incomingPath = ResolveSourcePath(column.SourceJsonPath);
+            var resolvedOriginal = string.IsNullOrWhiteSpace(originalName)
+                ? column.ColumnName.Value
+                : originalName;
+            var resolvedOrigin = origin ?? BuildOrigin(column.ColumnName, column.SourceJsonPath);
+            var scope = new IdentifierCollisionScope(
+                IdentifierCollisionKind.Column,
+                Definition.Table.Schema.Value,
+                Definition.Table.Name
+            );
+            IdentifierCollisionSource[] sources =
+            [
+                new IdentifierCollisionSource(
+                    existing.OriginalName,
+                    column.ColumnName.Value,
+                    existing.Origin
+                ),
+                new IdentifierCollisionSource(resolvedOriginal, column.ColumnName.Value, resolvedOrigin),
+            ];
+
+            var orderedSources = sources
+                .OrderBy(source => source.OriginalIdentifier, StringComparer.Ordinal)
+                .ThenBy(source => source.Origin.Description, StringComparer.Ordinal)
+                .ThenBy(source => source.Origin.ResourceLabel ?? string.Empty, StringComparer.Ordinal)
+                .ThenBy(source => source.Origin.JsonPath ?? string.Empty, StringComparer.Ordinal)
+                .ToArray();
+
+            var record = new IdentifierCollisionRecord(
+                IdentifierCollisionStage.AfterOverrideNormalization,
+                scope,
+                orderedSources
+            );
 
             throw new InvalidOperationException(
-                $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'. "
-                    + $"Colliding source paths '{existingPath}' and '{incomingPath}'. "
-                    + "Use relational.nameOverrides to resolve the collision."
+                "Identifier override collisions detected: " + record.Format()
             );
         }
 
-        _columnSources.Add(column.ColumnName.Value, column.SourceJsonPath);
+        var finalOriginal = string.IsNullOrWhiteSpace(originalName) ? column.ColumnName.Value : originalName;
+        var finalOrigin = origin ?? BuildOrigin(column.ColumnName, column.SourceJsonPath);
+
+        _columnOrigins.Add(column.ColumnName.Value, new ColumnCollisionInfo(finalOriginal, finalOrigin));
         Columns.Add(column);
     }
 
@@ -90,10 +134,16 @@ internal sealed class TableColumnAccumulator
     }
 
     /// <summary>
-    /// Resolves a human-readable source JSONPath for diagnostics, defaulting to the table scope.
+    /// Builds collision origin details for a column.
     /// </summary>
-    private string ResolveSourcePath(JsonPathExpression? sourcePath)
+    private IdentifierCollisionOrigin BuildOrigin(DbColumnName columnName, JsonPathExpression? sourcePath)
     {
-        return (sourcePath ?? Definition.JsonScope).Canonical;
+        var description =
+            $"column {Definition.Table.Schema.Value}.{Definition.Table.Name}.{columnName.Value}";
+        var resolvedPath = sourcePath ?? Definition.JsonScope;
+
+        return new IdentifierCollisionOrigin(description, _resourceLabel, resolvedPath.Canonical);
     }
+
+    private sealed record ColumnCollisionInfo(string OriginalName, IdentifierCollisionOrigin Origin);
 }
