@@ -147,3 +147,7 @@
   Decisions: Dropped unused hasOverriddenAncestor parameter/state from base and extension collection-table traversal; no behavior change.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveTableScopesAndKeysStep.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtensionTableDerivationRelationalModelSetPass.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
+- Task: Remove RelationalNameConventions.ForeignKeyName helper (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Removed unused legacy FK naming helper and its tests; keep ConstraintNaming as sole FK naming source.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalNameConventions.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalNameConventionsTests.cs; tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
