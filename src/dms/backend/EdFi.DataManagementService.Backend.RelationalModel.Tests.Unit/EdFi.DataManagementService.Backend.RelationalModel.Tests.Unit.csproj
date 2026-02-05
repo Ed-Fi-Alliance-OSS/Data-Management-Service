@@ -42,6 +42,12 @@
         <Content Include="Fixtures\set-builder\hand-authored-root-override-api-schema.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-root-override-collision-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-root-override-child-collision-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
         <Content Include="Fixtures\set-builder\hand-authored-name-overrides-api-schema.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
