@@ -119,3 +119,7 @@
   Decisions: Tests already present for allowed identity override and rejected non-identity inside reference; marked task complete after verification.
   Files: tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed.
+- Task: Update override derivation tests to allow missing descendant collection overrides (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Verified NameOverrideTests already assert successful build and expected table/key names for missing descendant override; no code change needed.
+  Files: tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed.
