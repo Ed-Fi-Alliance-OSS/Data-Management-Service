@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.Profile;
@@ -69,11 +70,23 @@ public class CachedProfileServiceTests
 
     private static CachedProfileService CreateService(
         IProfileCmsProvider cmsProvider,
-        HybridCache? cache = null
+        HybridCache? cache = null,
+        IProfileDataValidator? profileDataValidator = null,
+        IEffectiveApiSchemaProvider? effectiveApiSchemaProvider = null
     )
     {
+        // Default validator returns success for all profiles
+        var validator = profileDataValidator ?? A.Fake<IProfileDataValidator>();
+        if (profileDataValidator is null)
+        {
+            A.CallTo(() => validator.Validate(A<ProfileDefinition>._, A<IEffectiveApiSchemaProvider>._))
+                .Returns(ProfileValidationResult.Success);
+        }
+
         return new CachedProfileService(
             cmsProvider,
+            validator,
+            effectiveApiSchemaProvider ?? A.Fake<IEffectiveApiSchemaProvider>(),
             cache ?? CreateHybridCache(),
             new CacheSettings { ProfileCacheExpirationSeconds = 1800 },
             NullLogger<CachedProfileService>.Instance
