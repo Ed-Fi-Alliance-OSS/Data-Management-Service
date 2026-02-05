@@ -84,7 +84,9 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             context.IdentityJsonPaths.Select(path => path.Canonical),
             StringComparer.Ordinal
         );
-        var referenceIdentityPaths = BuildReferenceIdentityPathSet(context.DocumentReferenceMappings);
+        var referenceIdentityPaths = RelationalModelSetSchemaHelpers.BuildReferenceIdentityPathSet(
+            context.DocumentReferenceMappings
+        );
         var referenceObjectPaths = BuildReferenceObjectPathSet(context.DocumentReferenceMappings);
         HashSet<string> usedDescriptorPaths = new(StringComparer.Ordinal);
         List<DescriptorEdgeSource> descriptorEdgeSources = [];
@@ -531,31 +533,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         return context.TryGetNameOverride(sourcePath, NameOverrideKind.Column, out var overrideName)
             ? overrideName
             : originalBaseName;
-    }
-
-    /// <summary>
-    /// Builds a set of canonical reference identity JSONPaths from <c>documentPathsMapping.referenceJsonPaths</c>.
-    /// </summary>
-    private static HashSet<string> BuildReferenceIdentityPathSet(
-        IReadOnlyList<DocumentReferenceMapping> mappings
-    )
-    {
-        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
-
-        if (mappings.Count == 0)
-        {
-            return referenceIdentityPaths;
-        }
-
-        foreach (var mapping in mappings)
-        {
-            foreach (var binding in mapping.ReferenceJsonPaths)
-            {
-                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
-            }
-        }
-
-        return referenceIdentityPaths;
     }
 
     /// <summary>

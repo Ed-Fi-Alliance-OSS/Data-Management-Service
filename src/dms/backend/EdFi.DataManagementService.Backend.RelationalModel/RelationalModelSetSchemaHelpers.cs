@@ -194,6 +194,31 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Builds a set of canonical reference identity JSONPaths from the document reference mappings.
+    /// </summary>
+    internal static HashSet<string> BuildReferenceIdentityPathSet(
+        IReadOnlyList<DocumentReferenceMapping> mappings
+    )
+    {
+        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
+
+        if (mappings.Count == 0)
+        {
+            return referenceIdentityPaths;
+        }
+
+        foreach (var mapping in mappings)
+        {
+            foreach (var binding in mapping.ReferenceJsonPaths)
+            {
+                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
+            }
+        }
+
+        return referenceIdentityPaths;
+    }
+
+    /// <summary>
     /// Builds the implied prefixes used to resolve collection override base names.
     /// </summary>
     internal static IReadOnlyList<string> BuildCollectionOverridePrefixes(

@@ -870,7 +870,9 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 
         Dictionary<string, NameOverrideEntry> overrides = new(StringComparer.Ordinal);
         string? extensionProjectKey = null;
-        var referenceIdentityPaths = BuildReferenceIdentityPathSet(referenceMappings);
+        var referenceIdentityPaths = RelationalModelSetSchemaHelpers.BuildReferenceIdentityPathSet(
+            referenceMappings
+        );
 
         foreach (var overrideEntry in nameOverridesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
@@ -981,28 +983,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
 
         return overrides;
-    }
-
-    private static HashSet<string> BuildReferenceIdentityPathSet(
-        IReadOnlyList<DocumentReferenceMapping> referenceMappings
-    )
-    {
-        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
-
-        if (referenceMappings.Count == 0)
-        {
-            return referenceIdentityPaths;
-        }
-
-        foreach (var mapping in referenceMappings)
-        {
-            foreach (var binding in mapping.ReferenceJsonPaths)
-            {
-                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
-            }
-        }
-
-        return referenceIdentityPaths;
     }
 
     private static bool IsExtensionRootPath(JsonPathExpression path)
