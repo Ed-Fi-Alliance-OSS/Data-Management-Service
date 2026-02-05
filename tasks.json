@@ -329,7 +329,7 @@
       "Verify referenced file paths and symbols exist by spot-checking with `rg --files` and `rg -n`.",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Verification",
