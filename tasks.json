@@ -87,7 +87,7 @@
       "Update `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` sections 3.2/3.3 to reflect the updated rules (reference-object override vs reference-identity override; relaxed collection rules; prefix-stripping compatibility) and add/adjust examples accordingly.",
       "Confirm `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` language matches the updated DMS-931 acceptance text in `tasks.json` (no contradictions)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Backend",
