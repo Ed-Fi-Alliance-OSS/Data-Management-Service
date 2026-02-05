@@ -136,7 +136,7 @@
       "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NameOverrideTests.cs` (near the existing descendant override test) to assert successful build + expected naming behavior instead of asserting an exception.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",
