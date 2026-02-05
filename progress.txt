@@ -107,3 +107,7 @@
   Decisions: Task already implemented in ExtractInputsStep; inside-reference overrides allowed only for reference identity JSONPaths; non-identity inside-reference keys still fail fast. Marking complete after test verification.
   Files: tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed.
+- Task: Inside-reference identity overrides for propagated columns (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Verified ReferenceBindingRelationalModelSetPass already applies identity nameOverrides to propagated reference identity columns; no code changes needed.
+  Files: tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed.
