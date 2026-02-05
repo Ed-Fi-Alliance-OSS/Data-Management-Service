@@ -175,7 +175,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             extensionContext.IdentityJsonPaths.Select(path => path.Canonical),
             StringComparer.Ordinal
         );
-        var referenceIdentityPaths = BuildReferenceIdentityPathSet(
+        var referenceIdentityPaths = RelationalModelSetSchemaHelpers.BuildReferenceIdentityPathSet(
             extensionContext.DocumentReferenceMappings
         );
         var referenceObjectPaths = BuildReferenceObjectPathSet(extensionContext.DocumentReferenceMappings);
@@ -1159,31 +1159,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Builds a set of canonical reference identity JSONPaths from <c>documentPathsMapping.referenceJsonPaths</c>.
-    /// </summary>
-    private static HashSet<string> BuildReferenceIdentityPathSet(
-        IReadOnlyList<DocumentReferenceMapping> mappings
-    )
-    {
-        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
-
-        if (mappings.Count == 0)
-        {
-            return referenceIdentityPaths;
-        }
-
-        foreach (var mapping in mappings)
-        {
-            foreach (var binding in mapping.ReferenceJsonPaths)
-            {
-                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
-            }
-        }
-
-        return referenceIdentityPaths;
     }
 
     /// <summary>
