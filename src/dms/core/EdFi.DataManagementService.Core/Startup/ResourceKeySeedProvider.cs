@@ -72,8 +72,7 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
                 {
                     return projectCompare;
                 }
-                var nameCompare = string.Compare(a.ResourceName, b.ResourceName, StringComparison.Ordinal);
-                return nameCompare != 0 ? nameCompare : a.IsAbstract.CompareTo(b.IsAbstract);
+                return string.Compare(a.ResourceName, b.ResourceName, StringComparison.Ordinal);
             }
         );
 
