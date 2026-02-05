@@ -307,7 +307,7 @@ Recommended derivation:
 - Fail fast if `N` exceeds the maximum representable `ResourceKeyId` (`smallint`).
 
 Recommended additional fingerprinting:
-- Compute `ResourceKeySeedHash` as raw `SHA-256` bytes (32 bytes) over a canonical UTF-8 manifest derived from the same ordered seed list (include a version header like `resource-key-seed-hash:v1` and one line per row as `ResourceKeyId|ProjectName|ResourceName|ResourceVersion`).
+- Compute `ResourceKeySeedHash` as raw `SHA-256` bytes (32 bytes) over a canonical UTF-8 manifest derived from the same ordered seed list (include a version header like `resource-key-seed-hash:v1` and one line per row as `ResourceKeyId|ProjectName|ResourceName|ResourceVersion|IsAbstract`, where `IsAbstract` is `1` for abstract resources, `0` for concrete). Line endings MUST be `\n` (LF) only for cross-platform determinism.
 - Record `ResourceKeyCount=N` and `ResourceKeySeedHash` alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` so DMS can validate the `ResourceKeyId` mapping with a single-row read (full table diff only on mismatch).
 
 DMS runtime should validate and cache this mapping per database (fail fast on mismatch) as part of the schema fingerprint check.

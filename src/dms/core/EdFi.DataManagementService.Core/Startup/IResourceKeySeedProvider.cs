@@ -10,9 +10,18 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// <summary>
 /// Represents a seed entry for the dms.ResourceKey table.
 /// </summary>
-/// <param name="QualifiedResourceName">The fully qualified resource name (e.g., "ed-fi.student").</param>
+/// <param name="ResourceKeyId">The sequential identifier assigned during seed generation (1..N).</param>
+/// <param name="ProjectName">The project name (e.g., "Ed-Fi").</param>
+/// <param name="ResourceName">The resource name (e.g., "Student").</param>
+/// <param name="ResourceVersion">The resource version from the owning project (e.g., "5.0.0").</param>
 /// <param name="IsAbstract">Whether this is an abstract resource.</param>
-public record ResourceKeySeed(string QualifiedResourceName, bool IsAbstract);
+public record ResourceKeySeed(
+    short ResourceKeyId,
+    string ProjectName,
+    string ResourceName,
+    string ResourceVersion,
+    bool IsAbstract
+);
 
 /// <summary>
 /// Provides deterministic resource key seeds derived from the API schema.
@@ -22,16 +31,19 @@ public interface IResourceKeySeedProvider
 {
     /// <summary>
     /// Gets the list of resource key seeds derived from the API schema.
-    /// The list is deterministically ordered for consistent hashing.
+    /// The list is deterministically ordered by (ProjectName, ResourceName) using ordinal comparison,
+    /// with ResourceKeyId assigned sequentially from 1..N.
     /// </summary>
     /// <param name="nodes">The API schema nodes to derive seeds from.</param>
     /// <returns>An ordered list of resource key seeds.</returns>
     IReadOnlyList<ResourceKeySeed> GetSeeds(ApiSchemaDocumentNodes nodes);
 
     /// <summary>
-    /// Computes a hash of the resource key seeds for fast validation.
+    /// Computes a SHA-256 hash of the resource key seeds for fast validation.
+    /// The hash is computed over a canonical UTF-8 manifest with version header and one line per seed,
+    /// where each line includes all seed fields (ResourceKeyId, ProjectName, ResourceName, ResourceVersion, IsAbstract).
     /// </summary>
     /// <param name="seeds">The seeds to hash.</param>
-    /// <returns>A hexadecimal string representation of the seed hash.</returns>
-    string ComputeSeedHash(IReadOnlyList<ResourceKeySeed> seeds);
+    /// <returns>The raw SHA-256 hash bytes (32 bytes).</returns>
+    byte[] ComputeSeedHash(IReadOnlyList<ResourceKeySeed> seeds);
 }

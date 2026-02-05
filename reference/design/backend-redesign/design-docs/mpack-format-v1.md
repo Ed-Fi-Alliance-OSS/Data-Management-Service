@@ -153,11 +153,13 @@ Where `manifest` is:
 
 ```text
 resource-key-seed-hash:v1\n
-{resource_key_id}|{project_name}|{resource_name}|{resource_version}\n
+{resource_key_id}|{project_name}|{resource_name}|{resource_version}|{is_abstract}\n
 ...
 ```
 
-Entries are emitted in the same order as `resource_keys` (ascending `resource_key_id`).
+- `{is_abstract}` is `1` for abstract resources, `0` for concrete resources.
+- Line endings MUST be `\n` (LF) only, not `\r\n` (CRLF), for cross-platform determinism.
+- Entries are emitted in the same order as `resource_keys` (ascending `resource_key_id`).
 
 ### 5.3 Runtime validation against database
 
