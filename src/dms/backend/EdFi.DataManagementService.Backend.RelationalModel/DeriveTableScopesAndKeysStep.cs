@@ -106,7 +106,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             physicalSchema,
             rootBaseName,
             "$",
-            hasOverriddenAncestor: false,
             context,
             resourceLabel
         );
@@ -231,7 +230,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         DbSchemaName schemaName,
         string rootBaseName,
         string schemaPath,
-        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
         string resourceLabel
     )
@@ -251,7 +249,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                     schemaName,
                     rootBaseName,
                     schemaPath,
-                    hasOverriddenAncestor,
                     context,
                     resourceLabel
                 );
@@ -267,7 +264,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                     schemaName,
                     rootBaseName,
                     schemaPath,
-                    hasOverriddenAncestor,
                     context,
                     resourceLabel
                 );
@@ -292,7 +288,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         DbSchemaName schemaName,
         string rootBaseName,
         string schemaPath,
-        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
         string resourceLabel
     )
@@ -341,7 +336,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 schemaName,
                 rootBaseName,
                 propertySchemaPath,
-                hasOverriddenAncestor,
                 context,
                 resourceLabel
             );
@@ -362,7 +356,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         DbSchemaName schemaName,
         string rootBaseName,
         string schemaPath,
-        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
         string resourceLabel
     )
@@ -421,7 +414,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             );
         }
 
-        var nextHasOverriddenAncestor = hasOverriddenAncestor || hasOverride;
         List<string> nextCollectionBaseNames = [.. collectionBaseNames, collectionBaseName];
         List<string> nextDefaultCollectionBaseNames =
         [
@@ -452,7 +444,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             schemaName,
             rootBaseName,
             itemsSchemaPath,
-            nextHasOverriddenAncestor,
             context,
             resourceLabel
         );

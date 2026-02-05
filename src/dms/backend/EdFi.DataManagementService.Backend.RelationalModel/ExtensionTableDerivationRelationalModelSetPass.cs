@@ -189,7 +189,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             [],
             "$",
             hasOptionalAncestor: false,
-            hasOverriddenAncestor: false,
             extensionContext,
             overrideProvider,
             resourceLabel,
@@ -247,7 +246,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<string> columnSegments,
         string schemaPath,
         bool hasOptionalAncestor,
-        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
         INameOverrideProvider overrideProvider,
         string resourceLabel,
@@ -275,7 +273,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     columnSegments,
                     schemaPath,
                     hasOptionalAncestor,
-                    hasOverriddenAncestor,
                     context,
                     overrideProvider,
                     resourceLabel,
@@ -309,8 +306,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     referenceIdentityPaths,
                     referenceObjectPaths,
                     usedDescriptorPaths,
-                    descriptorEdgeSources,
-                    hasOverriddenAncestor
+                    descriptorEdgeSources
                 );
                 break;
             case SchemaKind.Scalar:
@@ -331,7 +327,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<string> columnSegments,
         string schemaPath,
         bool hasOptionalAncestor,
-        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
         INameOverrideProvider overrideProvider,
         string resourceLabel,
@@ -381,7 +376,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     schemaPath,
                     requiredProperties,
                     hasOptionalAncestor,
-                    hasOverriddenAncestor,
                     context,
                     overrideProvider,
                     resourceLabel,
@@ -428,7 +422,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                         propertyColumnSegments,
                         propertySchemaPath,
                         nextHasOptionalAncestor,
-                        hasOverriddenAncestor,
                         context,
                         overrideProvider,
                         resourceLabel,
@@ -486,7 +479,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         string schemaPath,
         HashSet<string> requiredProperties,
         bool hasOptionalAncestor,
-        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
         INameOverrideProvider overrideProvider,
         string resourceLabel,
@@ -584,7 +576,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             [],
             projectSchemaPath,
             projectHasOptionalAncestor,
-            hasOverriddenAncestor,
             context,
             overrideProvider,
             resourceLabel,
@@ -622,8 +613,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         IReadOnlySet<string> referenceIdentityPaths,
         IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources,
-        bool hasOverriddenAncestor
+        List<DescriptorEdgeSource> descriptorEdgeSources
     )
     {
         var arrayPath = JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
@@ -659,7 +649,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             NameOverrideKind.Collection,
             out var overrideName
         );
-        var nextHasOverriddenAncestor = hasOverriddenAncestor || hasOverride;
 
         var itemsKind = JsonSchemaTraversalConventions.DetermineSchemaKind(itemsSchema);
 
@@ -674,7 +663,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     [],
                     itemsSchemaPath,
                     hasOptionalAncestor: false,
-                    hasOverriddenAncestor: nextHasOverriddenAncestor,
                     context,
                     overrideProvider,
                     resourceLabel,
@@ -739,7 +727,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 [],
                 itemsSchemaPath,
                 hasOptionalAncestor: false,
-                hasOverriddenAncestor: nextHasOverriddenAncestor,
                 context,
                 overrideProvider,
                 resourceLabel,
@@ -784,7 +771,6 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     [],
                     itemsSchemaPath,
                     hasOptionalAncestor: false,
-                    hasOverriddenAncestor: nextHasOverriddenAncestor,
                     context,
                     overrideProvider,
                     resourceLabel,
