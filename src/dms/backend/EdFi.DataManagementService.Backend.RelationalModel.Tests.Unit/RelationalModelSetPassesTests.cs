@@ -46,6 +46,7 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(ReferenceConstraintRelationalModelSetPass),
                 typeof(ArrayUniquenessConstraintRelationalModelSetPass),
                 typeof(ApplyConstraintDialectHashingRelationalModelSetPass),
+                typeof(ApplyDialectIdentifierShorteningRelationalModelSetPass),
                 typeof(CanonicalizeOrderingRelationalModelSetPass)
             );
     }

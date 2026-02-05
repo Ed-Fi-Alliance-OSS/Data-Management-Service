@@ -27,6 +27,7 @@ public static class RelationalModelSetPasses
             new ReferenceConstraintRelationalModelSetPass(),
             new ArrayUniquenessConstraintRelationalModelSetPass(),
             new ApplyConstraintDialectHashingRelationalModelSetPass(),
+            new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
             new CanonicalizeOrderingRelationalModelSetPass(),
         ];
 
