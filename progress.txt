@@ -127,3 +127,7 @@
   Decisions: Verified existing NameOverrideTests already cover segment-only nested override vs fully-qualified value yielding same derived table name; no code change required.
   Files: tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed.
+- Task: Verification (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Ran required test/build loops; no code changes needed; confirmed authoritative inputs unchanged.
+  Files: tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning; git status clean.
