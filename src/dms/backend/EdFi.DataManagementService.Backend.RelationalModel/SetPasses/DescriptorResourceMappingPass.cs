@@ -9,7 +9,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// Detects descriptor resources across the effective schema set and applies the <c>SharedDescriptorTable</c> storage
 /// kind with appropriate metadata.
 /// </summary>
-public sealed class DescriptorResourceMappingRelationalModelSetPass : IRelationalModelSetPass
+public sealed class DescriptorResourceMappingPass : IRelationalModelSetPass
 {
     /// <summary>
     /// Executes descriptor resource detection and validation across all concrete resources in the effective schema set.

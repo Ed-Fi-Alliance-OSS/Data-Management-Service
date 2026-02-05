@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Derives array uniqueness constraints.
 /// </summary>
-public sealed class ArrayUniquenessConstraintRelationalModelSetPass : IRelationalModelSetPass
+public sealed class ArrayUniquenessConstraintPass : IRelationalModelSetPass
 {
     /// <summary>
     /// Applies child-table unique constraints derived from <c>arrayUniquenessConstraints</c> for all concrete

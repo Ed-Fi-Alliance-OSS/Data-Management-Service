@@ -10,7 +10,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Applies dialect-specific identifier shortening across the derived relational model set.
 /// </summary>
-public sealed class ApplyDialectIdentifierShorteningRelationalModelSetPass : IRelationalModelSetPass
+public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPass
 {
     /// <summary>
     /// Executes the pass.

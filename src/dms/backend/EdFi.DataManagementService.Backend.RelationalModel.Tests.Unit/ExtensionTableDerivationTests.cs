@@ -45,8 +45,8 @@ public class Given_Extension_Table_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ExtensionTableDerivationRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ExtensionTableDerivationPass(),
             }
         );
 

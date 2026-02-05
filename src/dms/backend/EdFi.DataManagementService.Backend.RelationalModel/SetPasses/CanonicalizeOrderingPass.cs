@@ -8,7 +8,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Re-applies canonical ordering to concrete resource models after set-level mutation passes.
 /// </summary>
-public sealed class CanonicalizeOrderingRelationalModelSetPass : IRelationalModelSetPass
+public sealed class CanonicalizeOrderingPass : IRelationalModelSetPass
 {
     /// <summary>
     /// Canonicalizes tables, document reference bindings, and descriptor edges for all concrete resources.

@@ -150,7 +150,7 @@ internal sealed record ShorteningScenario(
             new IRelationalModelSetPass[]
             {
                 new IdentifierShorteningFixturePass(effectiveSchemaSet, identifiers),
-                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+                new ApplyDialectIdentifierShorteningPass(),
             }
         );
 

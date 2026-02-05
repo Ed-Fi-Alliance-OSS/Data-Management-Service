@@ -18,17 +18,17 @@ public static class RelationalModelSetPasses
     {
         IRelationalModelSetPass[] passes =
         [
-            new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-            new DescriptorResourceMappingRelationalModelSetPass(),
-            new ExtensionTableDerivationRelationalModelSetPass(),
-            new AbstractIdentityTableDerivationRelationalModelSetPass(),
-            new ReferenceBindingRelationalModelSetPass(),
-            new RootIdentityConstraintRelationalModelSetPass(),
-            new ReferenceConstraintRelationalModelSetPass(),
-            new ArrayUniquenessConstraintRelationalModelSetPass(),
-            new ApplyConstraintDialectHashingRelationalModelSetPass(),
-            new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
-            new CanonicalizeOrderingRelationalModelSetPass(),
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new AbstractIdentityTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+            new CanonicalizeOrderingPass(),
         ];
 
         return passes;

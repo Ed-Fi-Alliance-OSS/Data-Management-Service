@@ -49,9 +49,9 @@ public class Given_Reference_Binding
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ExtensionTableDerivationRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
             }
         );
 
@@ -197,8 +197,8 @@ public class Given_Reference_Binding_With_Identity_NameOverride
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
             }
         );
 
@@ -348,8 +348,8 @@ public class Given_Reference_Binding_When_Descriptor_Path_Is_Missing
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
             }
         );
 

@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Derives abstract identity table models for abstract resources in the effective schema set.
 /// </summary>
-public sealed class AbstractIdentityTableDerivationRelationalModelSetPass : IRelationalModelSetPass
+public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPass
 {
     private const string DiscriminatorColumnLabel = "Discriminator";
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
