@@ -155,6 +155,6 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Confirm no changes under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/*/inputs/`."
     ],
-    "completed": false
+    "completed": true
   }
 ]
