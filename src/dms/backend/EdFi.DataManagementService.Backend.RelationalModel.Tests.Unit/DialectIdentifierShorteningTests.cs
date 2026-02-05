@@ -63,6 +63,73 @@ public class Given_Mssql_Identifier_Shortening
     }
 }
 
+/// <summary>
+/// Test fixture for schema shortening with a small identifier limit.
+/// </summary>
+[TestFixture]
+public class Given_Short_Identifier_Limit
+{
+    private ShorteningScenario _scenario = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _scenario = ShorteningScenario.Build(new TinyDialectRules(20), "Tiny");
+    }
+
+    /// <summary>
+    /// It should shorten project schema identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_project_schema_identifiers()
+    {
+        var expectedSchema = _scenario.DialectRules.ShortenIdentifier(_scenario.Identifiers.SchemaName);
+        var projectSchema = _scenario.Result.ProjectSchemasInEndpointOrder.Single(schema =>
+            schema.ProjectEndpointName == ShorteningScenario.CoreProjectEndpointName
+        );
+
+        projectSchema.PhysicalSchema.Value.Should().Be(expectedSchema);
+    }
+
+    private sealed class TinyDialectRules : ISqlDialectRules
+    {
+        private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
+
+        public TinyDialectRules(int maxIdentifierLength)
+        {
+            if (maxIdentifierLength <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(maxIdentifierLength),
+                    maxIdentifierLength,
+                    "Identifier length limit must be positive."
+                );
+            }
+
+            MaxIdentifierLength = maxIdentifierLength;
+        }
+
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public int MaxIdentifierLength { get; }
+
+        public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        public string ShortenIdentifier(string identifier)
+        {
+            if (identifier is null)
+            {
+                throw new ArgumentNullException(nameof(identifier));
+            }
+
+            return identifier.Length <= MaxIdentifierLength ? identifier : identifier[..MaxIdentifierLength];
+        }
+    }
+}
+
 internal sealed record ShorteningScenario(
     DerivedRelationalModelSet Result,
     ShorteningIdentifiers Identifiers,
@@ -458,55 +525,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
 
     private void UpdateProjectSchema(RelationalModelSetBuilderContext context)
     {
-        if (context.ProjectSchemasInEndpointOrder is ProjectSchemaInfo[] schemas)
-        {
-            for (var index = 0; index < schemas.Length; index++)
-            {
-                var schema = schemas[index];
-
-                if (
-                    !string.Equals(
-                        schema.ProjectEndpointName,
-                        ShorteningScenario.CoreProjectEndpointName,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    continue;
-                }
-
-                schemas[index] = schema with { PhysicalSchema = new DbSchemaName(_identifiers.SchemaName) };
-                return;
-            }
-        }
-
-        if (context.ProjectSchemasInEndpointOrder is List<ProjectSchemaInfo> schemaList)
-        {
-            for (var index = 0; index < schemaList.Count; index++)
-            {
-                var schema = schemaList[index];
-
-                if (
-                    !string.Equals(
-                        schema.ProjectEndpointName,
-                        ShorteningScenario.CoreProjectEndpointName,
-                        StringComparison.Ordinal
-                    )
-                )
-                {
-                    continue;
-                }
-
-                schemaList[index] = schema with
-                {
-                    PhysicalSchema = new DbSchemaName(_identifiers.SchemaName),
-                };
-                return;
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Project schema '{ShorteningScenario.CoreProjectEndpointName}' was not found."
+        context.UpdateProjectSchema(
+            ShorteningScenario.CoreProjectEndpointName,
+            schema => schema with { PhysicalSchema = new DbSchemaName(_identifiers.SchemaName) }
         );
     }
 }
