@@ -474,17 +474,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             );
 
             tableBuilder.AddColumn(column, originalColumnName.Value);
-            context.OverrideCollisionDetector?.RegisterColumn(
-                tableBuilder.Definition.Table,
-                columnName,
-                originalColumnName.Value,
-                BuildCollisionOrigin(
-                    tableBuilder.Definition.Table,
-                    columnName,
-                    descriptorPathInfo.DescriptorValuePath,
-                    context
-                )
-            );
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
                     ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
@@ -528,12 +517,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         );
 
         tableBuilder.AddColumn(scalarColumn, originalScalarBaseName);
-        context.OverrideCollisionDetector?.RegisterColumn(
-            tableBuilder.Definition.Table,
-            scalarColumn.ColumnName,
-            originalScalarBaseName,
-            BuildCollisionOrigin(tableBuilder.Definition.Table, scalarColumn.ColumnName, sourcePath, context)
-        );
     }
 
     private static string ResolveColumnBaseName(
@@ -548,20 +531,6 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         return context.TryGetNameOverride(sourcePath, NameOverrideKind.Column, out var overrideName)
             ? overrideName
             : originalBaseName;
-    }
-
-    private static IdentifierCollisionOrigin BuildCollisionOrigin(
-        DbTableName tableName,
-        DbColumnName columnName,
-        JsonPathExpression? sourcePath,
-        RelationalModelBuilderContext context
-    )
-    {
-        var description = $"column {tableName.Schema.Value}.{tableName.Name}.{columnName.Value}";
-        var resourceLabel = $"{context.ProjectName ?? "Unknown"}:{context.ResourceName ?? "Unknown"}";
-        var resolvedPath = sourcePath;
-
-        return new IdentifierCollisionOrigin(description, resourceLabel, resolvedPath?.Canonical);
     }
 
     /// <summary>

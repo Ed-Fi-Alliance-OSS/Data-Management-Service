@@ -29,7 +29,8 @@ internal sealed class OverrideCollisionDetector
     }
 
     /// <summary>
-    /// Registers a column identifier for override collision detection.
+    /// Registers a column identifier for override collision detection when the column is not already guarded
+    /// by a per-table accumulator.
     /// </summary>
     public void RegisterColumn(
         DbTableName table,

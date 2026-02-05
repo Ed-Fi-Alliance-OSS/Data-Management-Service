@@ -151,17 +151,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
             );
 
             tableBuilder.AddColumn(fkColumn, originalFkColumnName.Value);
-            context.OverrideCollisionDetector?.RegisterColumn(
-                tableBuilder.Definition.Table,
-                fkColumnName,
-                originalFkColumnName.Value,
-                BuildCollisionOrigin(
-                    tableBuilder.Definition.Table,
-                    fkColumnName,
-                    mapping.ReferenceObjectPath,
-                    resourceLabel
-                )
-            );
 
             List<ReferenceIdentityBinding> identityBindings = new(mapping.ReferenceJsonPaths.Count);
 
@@ -205,17 +194,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                     );
 
                     tableBuilder.AddColumn(descriptorColumn, originalDescriptorColumnName.Value);
-                    context.OverrideCollisionDetector?.RegisterColumn(
-                        tableBuilder.Definition.Table,
-                        descriptorColumnName,
-                        originalDescriptorColumnName.Value,
-                        BuildCollisionOrigin(
-                            tableBuilder.Definition.Table,
-                            descriptorColumnName,
-                            identityBinding.ReferenceJsonPath,
-                            resourceLabel
-                        )
-                    );
                     tableBuilder.AddConstraint(
                         new TableConstraint.ForeignKey(
                             ConstraintNaming.BuildDescriptorForeignKeyName(
@@ -289,17 +267,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
                 );
 
                 tableBuilder.AddColumn(scalarColumn, originalColumnName.Value);
-                context.OverrideCollisionDetector?.RegisterColumn(
-                    tableBuilder.Definition.Table,
-                    columnName,
-                    originalColumnName.Value,
-                    BuildCollisionOrigin(
-                        tableBuilder.Definition.Table,
-                        columnName,
-                        identityBinding.ReferenceJsonPath,
-                        resourceLabel
-                    )
-                );
                 identityBindings.Add(
                     new ReferenceIdentityBinding(identityBinding.ReferenceJsonPath, columnName)
                 );
@@ -435,18 +402,6 @@ public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSet
         }
 
         return new DbColumnName($"{referenceBaseName}_DocumentId");
-    }
-
-    private static IdentifierCollisionOrigin BuildCollisionOrigin(
-        DbTableName tableName,
-        DbColumnName columnName,
-        JsonPathExpression sourcePath,
-        string resourceLabel
-    )
-    {
-        var description = $"column {tableName.Schema.Value}.{tableName.Name}.{columnName.Value}";
-
-        return new IdentifierCollisionOrigin(description, resourceLabel, sourcePath.Canonical);
     }
 
     /// <summary>
