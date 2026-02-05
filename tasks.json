@@ -145,7 +145,7 @@
       "Add a new unit test (and any minimal fixture) under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/` covering nested collection override segment resolution and prefix-stripping compatibility.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Verification",
