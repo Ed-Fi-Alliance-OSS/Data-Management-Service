@@ -122,3 +122,7 @@
   Decisions: Ran required post-restructure feedback loops + namespace scan + diff check; no regressions; no accidental out-of-scope changes detected.
   Files: tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed (250/250); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning; rg -n "^namespace " ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel showed expected namespace declarations; git diff --name-status empty.
+- Task: RelationalModel documentation update (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Rewrote RelationalModel README to match post-restructure layout; added folder taxonomy + per-folder responsibilities; updated set-level derivation section to current `*Pass` naming and default pass order; corrected derived-set sample to use `PgsqlDialectRules` from Backend.External.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/README.md; tasks.json; progress.txt
+  Notes: Symbol/path spot-checks via rg passed; dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed (250/250); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.

@@ -1,107 +1,127 @@
 # EdFi.DataManagementService.Backend.RelationalModel
 
-This project derives a deterministic, dialect-neutral relational model for a single Ed-Fi resource from the effective `ApiSchema.json` payload. It is the in-memory “compiler” used by the Backend Redesign Relational Primary Store work (tables-per-resource).
+This project derives a deterministic, dialect-neutral relational model from effective `ApiSchema.json` payloads.
+It includes both:
+- per-resource derivation (`RelationalModelBuilderPipeline` + `Build/Steps`)
+- set-level derivation across all resources (`DerivedRelationalModelSetBuilder` + `SetPasses`)
 
 Design references:
 - Epic: `../../../../reference/design/backend-redesign/epics/01-relational-model/EPIC.md`
-- Story (base schema traversal): `../../../../reference/design/backend-redesign/epics/01-relational-model/00-base-schema-traversal.md`
+- Story (naming + overrides): `../../../../reference/design/backend-redesign/epics/01-relational-model/02-naming-and-overrides.md`
 - Redesign summary: `../../../../reference/design/backend-redesign/design-docs/summary.md`
 - Flattening/reconstitution rules: `../../../../reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
 - Unified mapping model target (`DerivedRelationalModelSet`): `../../../../reference/design/backend-redesign/design-docs/compiled-mapping-set.md`
 
+## Folder taxonomy
+
+- `Build/`: orchestration entry points, builder contexts, canonicalization/order helpers, and manifest emission.
+- `Build/Steps/`: per-resource pipeline steps (`ExtractInputsStep`, `ValidateJsonSchemaStep`, `DiscoverExtensionSitesStep`, `DeriveTableScopesAndKeysStep`, `DeriveColumnsAndBindDescriptorEdgesStep`, `CanonicalizeOrderingStep`).
+- `SetPasses/`: set-level derivation passes and the `IRelationalModelSetPass` contract.
+- `Schema/`: schema input models, normalization, JSONPath helpers, traversal conventions, and scalar type resolution.
+- `Validation/`: JSON-schema and set-level invariant validators.
+- `Naming/`: name-override parsing/lookup and naming convention helpers.
+- `Constraints/`: constraint identity and dialect-aware constraint naming/derivation helpers.
+- `DescriptorPaths/`: descriptor path inference and descriptor path map construction.
+- `Diagnostics/`: collision detection, collision records, and table-column accumulation diagnostics.
+
 ## What you get
 
-The pipeline produces a `RelationalModelBuildResult`:
-- `RelationalResourceModel` with:
-  - storage kind classification (`RelationalTables` vs `SharedDescriptorTable`)
-  - root table for scope `$`
-  - one child table per array path (including nested arrays)
-  - derived columns (scalar columns and descriptor FK columns)
-  - derived FK constraints (root → `dms.Document`, child → parent scope)
-  - descriptor edge metadata (`DescriptorEdgeSource`) for later descriptor resolution/reconstitution
-- Discovered extension sites (`ExtensionSite`) so later steps can derive `_ext` tables aligned to the owning scope.
+Per-resource derivation returns `RelationalModelBuildResult` with:
+- `RelationalResourceModel` containing storage classification, derived tables, columns, constraints, and descriptor edge metadata.
+- discovered `ExtensionSite` metadata used by set-level extension table derivation.
 
-This project does not connect to a database and does not emit SQL. It’s intended to be consumed by later layers (DDL generation and runtime plan compilation).
+Set-level derivation returns `DerivedRelationalModelSet` with:
+- all derived concrete resources in endpoint order
+- extension table expansion
+- abstract identity table derivation
+- reference binding and constraint enrichment
+- dialect-aware identifier hashing/shortening
+- canonical ordering for deterministic emission
 
 ## Inputs and assumptions
 
-The derivation is driven by `resourceSchema.jsonSchemaForInsert` from `ApiSchema.json`, plus supporting metadata extracted from the schema:
-- `identityJsonPaths` (for identity-component tagging/constraints)
-- `documentPathsMapping` (used to discover descriptor value paths)
-- `decimalPropertyValidationInfos` / `stringMaxLengthOmissionPaths` (type metadata inputs)
+The per-resource derivation is driven by `resourceSchema.jsonSchemaForInsert` from `ApiSchema.json`, plus supporting metadata extracted from schema:
+- `identityJsonPaths`
+- `documentPathsMapping`
+- `decimalPropertyValidationInfos`
+- `stringMaxLengthOmissionPaths`
 
-Schema constraints enforced by `ValidateJsonSchemaStep` and `JsonSchemaUnsupportedKeywordValidator`:
-- `jsonSchemaForInsert` must be fully dereferenced/expanded (no `$ref`, `oneOf`/`anyOf`/`allOf`, `enum`).
+Core schema constraints are enforced by `ValidateJsonSchemaStep` and `JsonSchemaUnsupportedKeywordValidator`:
+- `jsonSchemaForInsert` must be dereferenced/expanded (`$ref`, `oneOf`/`anyOf`/`allOf`, `enum` are not supported here).
 - `patternProperties` and array-valued `type` are rejected.
-- Objects are traversed through `properties` only; `additionalProperties` is treated as “prune/ignore” (closed-world persistence).
-- Arrays normally require `items.type == "object"` (a descriptor scalar array is a special-case, driven by descriptor path metadata).
+- Objects are traversed through `properties`; unsupported `additionalProperties` usage is rejected/pruned according to traversal rules.
+- Arrays are expected to use object `items` except descriptor-specific scalar-array handling.
 
 ## Quick start (build one resource model)
-
-The canonical pipeline order is:
 
 ```csharp
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 
 var apiSchemaRoot = JsonNode.Parse(File.ReadAllText("path/to/ApiSchema.json"))
-  ?? throw new InvalidOperationException("ApiSchema parsed null.");
+    ?? throw new InvalidOperationException("ApiSchema parsed null.");
 
 var pipeline = new RelationalModelBuilderPipeline(
-  new IRelationalModelBuilderStep[]
-  {
+[
     new ExtractInputsStep(),
     new ValidateJsonSchemaStep(),
     new DiscoverExtensionSitesStep(),
     new DeriveTableScopesAndKeysStep(),
     new DeriveColumnsAndBindDescriptorEdgesStep(),
     new CanonicalizeOrderingStep(),
-  }
-);
+]);
 
 var context = new RelationalModelBuilderContext
 {
-  ApiSchemaRoot = apiSchemaRoot,
-  ResourceEndpointName = "schools",
+    ApiSchemaRoot = apiSchemaRoot,
+    ResourceEndpointName = "schools",
 };
 
 var result = pipeline.Run(context);
-var model = result.ResourceModel;
 ```
 
-If you already have the per-resource schema inputs, you can skip `ExtractInputsStep` and populate `RelationalModelBuilderContext` directly (see the required fields validated by each step).
+## Quick start (build a derived relational model set)
 
-## How derivation works (at a glance)
+```csharp
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.RelationalModel;
 
-- **Tables**
-  - Root scope `$` becomes the root table (named from `resourceName` under the project’s physical schema).
-  - Every array scope like `$.addresses[*]` becomes a child table.
-- **Keys**
-  - Root table PK: `DocumentId` (FK → `dms.Document(DocumentId)`).
-  - Child table PK: `{Root}_DocumentId`, ancestor `{ParentCollection}Ordinal` key parts, and `Ordinal` for the current collection.
-  - Child table FK to parent key parts uses `ON DELETE CASCADE`.
-- **Columns**
-  - Objects inline (except `_ext`) by prefixing scalar descendants into the owning scope’s table.
-  - Scalars become typed columns with nullability derived from JSON Schema required-ness, `x-nullable`, and optional-ancestor rules.
-  - Descriptor value paths are stored as `*_DescriptorId` columns (FK → `dms.Descriptor`) and recorded as `DescriptorEdgeSource` entries; the raw descriptor string column is suppressed.
-- **Determinism**
-  - Traversal sorts `properties` with `StringComparer.Ordinal`.
-  - JSONPaths are canonicalized via `JsonPathExpressionCompiler`.
-  - `CanonicalizeOrderingStep` produces stable ordering for tables/columns/constraints/edges/sites.
+var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+var dialectRules = new PgsqlDialectRules();
+
+DerivedRelationalModelSet set = builder.Build(
+    effectiveSchemaSet,
+    SqlDialect.Pgsql,
+    dialectRules);
+```
+
+`RelationalModelSetPasses.CreateDefault()` currently runs these pass types, in order:
+1. `BaseTraversalAndDescriptorBindingPass`
+2. `ExtensionTableDerivationPass`
+3. `AbstractIdentityTableDerivationPass`
+4. `ReferenceBindingPass`
+5. `RootIdentityConstraintPass`
+6. `ReferenceConstraintPass`
+7. `ArrayUniquenessConstraintPass`
+8. `ApplyConstraintDialectHashingPass`
+9. `ApplyDialectIdentifierShorteningPass`
+10. `CanonicalizeOrderingPass`
 
 ## Debugging and snapshot output
 
-`RelationalModelManifestEmitter` emits a stable, human-readable JSON manifest:
+`RelationalModelManifestEmitter` emits deterministic JSON manifests used by golden/snapshot tests:
 
 ```csharp
-var manifestJson = RelationalModelManifestEmitter.Emit(result);
+string manifestJson = RelationalModelManifestEmitter.Emit(result);
 ```
-
-The unit test project uses this emitter for golden/snapshot tests.
 
 ## Tests
 
 Unit tests live in `../EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/`.
 
-- Run: `dotnet test ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`
-- To regenerate the authoritative golden manifest fixture, set `UPDATE_GOLDENS=1` and run the tests.
+- Run unit tests:
+  - `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`
+- Regenerate golden fixtures when intended:
+  - `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`
+- Build DMS solution:
+  - `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`
