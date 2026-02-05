@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -12,16 +13,17 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 public class Given_A_Complete_Model_Set_With_Descriptors
 {
     private DerivedRelationalModelSet? _modelSet;
+    private EffectiveSchemaSet? _effectiveSchemaSet;
 
     [SetUp]
     public void Setup()
     {
-        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        _effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
 
         var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
         var dialectRules = new PgsqlDialectRules();
 
-        _modelSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+        _modelSet = builder.Build(_effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
     }
 
     [Test]
@@ -30,9 +32,7 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         _modelSet.Should().NotBeNull();
 
         var descriptorResources = _modelSet!
-            .ConcreteResourcesInNameOrder.Where(r =>
-                r.ResourceKey.Resource.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
-            )
+            .ConcreteResourcesInNameOrder.Where(r => IsDescriptorResource(r.ResourceKey.Resource))
             .ToList();
 
         descriptorResources.Should().NotBeEmpty("hand-authored fixture should contain descriptors");
@@ -49,9 +49,7 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         _modelSet.Should().NotBeNull();
 
         var descriptorResources = _modelSet!
-            .ConcreteResourcesInNameOrder.Where(r =>
-                r.ResourceKey.Resource.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
-            )
+            .ConcreteResourcesInNameOrder.Where(r => IsDescriptorResource(r.ResourceKey.Resource))
             .ToList();
 
         descriptorResources.Should().NotBeEmpty();
@@ -72,9 +70,7 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         _modelSet.Should().NotBeNull();
 
         var descriptorResources = _modelSet!
-            .ConcreteResourcesInNameOrder.Where(r =>
-                r.ResourceKey.Resource.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
-            )
+            .ConcreteResourcesInNameOrder.Where(r => IsDescriptorResource(r.ResourceKey.Resource))
             .ToList();
 
         descriptorResources.Should().NotBeEmpty();
@@ -97,9 +93,7 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         _modelSet.Should().NotBeNull();
 
         var nonDescriptorResources = _modelSet!
-            .ConcreteResourcesInNameOrder.Where(r =>
-                !r.ResourceKey.Resource.ResourceName.EndsWith("Descriptor", StringComparison.Ordinal)
-            )
+            .ConcreteResourcesInNameOrder.Where(r => !IsDescriptorResource(r.ResourceKey.Resource))
             .ToList();
 
         nonDescriptorResources.Should().NotBeEmpty();
@@ -109,5 +103,43 @@ public class Given_A_Complete_Model_Set_With_Descriptors
             resource.StorageKind.Should().Be(ResourceStorageKind.RelationalTables);
             resource.DescriptorMetadata.Should().BeNull();
         }
+    }
+
+    /// <summary>
+    /// Checks if a resource is a descriptor by looking up the isDescriptor property in the ApiSchema.
+    /// </summary>
+    private bool IsDescriptorResource(QualifiedResourceName resource)
+    {
+        var resourceSchema = GetResourceSchema(resource);
+        return DescriptorSchemaValidator.IsDescriptorResource(resourceSchema);
+    }
+
+    /// <summary>
+    /// Retrieves the resource schema from the effective schema set.
+    /// </summary>
+    private JsonNode? GetResourceSchema(QualifiedResourceName resource)
+    {
+        var project = _effectiveSchemaSet?.ProjectsInEndpointOrder.FirstOrDefault(p =>
+            p.ProjectName.Equals(resource.ProjectName, StringComparison.Ordinal)
+        );
+
+        var resourceSchemas = project?.ProjectSchema["resourceSchemas"]?.AsObject();
+        if (resourceSchemas is null)
+        {
+            return null;
+        }
+
+        // resourceSchemas uses endpoint keys, but we need to find by resourceName property
+        foreach (var kvp in resourceSchemas)
+        {
+            var schema = kvp.Value;
+            var resourceName = schema?["resourceName"]?.GetValue<string>();
+            if (resource.ResourceName.Equals(resourceName, StringComparison.Ordinal))
+            {
+                return schema;
+            }
+        }
+
+        return null;
     }
 }
