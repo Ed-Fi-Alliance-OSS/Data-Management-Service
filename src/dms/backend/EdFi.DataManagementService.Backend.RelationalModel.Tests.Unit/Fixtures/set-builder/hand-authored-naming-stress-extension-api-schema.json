@@ -1,0 +1,47 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Stress",
+    "projectEndpointName": "stress",
+    "projectVersion": "1.0.0",
+    "resourceSchemas": {
+      "personExtensions": {
+        "resourceName": "Person",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+        ],
+        "documentPathsMapping": {
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "stress": {
+                  "type": "object",
+                  "properties": {
+                    "extensionField": {
+                      "type": "string",
+                      "maxLength": 25
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "relational": {
+          "nameOverrides": {
+            "$.extensionField": "extension_field_override"
+          }
+        }
+      }
+    }
+  }
+}

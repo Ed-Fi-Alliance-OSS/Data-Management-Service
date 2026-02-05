@@ -63,5 +63,14 @@
         <Content Include="Fixtures\set-builder\hand-authored-name-override-extension-project-api-schema.json">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-naming-stress-core-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-naming-stress-extension-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
+        <Content Include="Fixtures\set-builder\hand-authored-naming-stress-collision-api-schema.json">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </Content>
     </ItemGroup>
 </Project>
