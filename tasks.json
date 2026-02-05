@@ -340,6 +340,6 @@
       "Run: `rg -n \"^namespace \" ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel` and confirm expected namespace declarations.",
       "Review `git diff --name-status` to ensure file moves/renames align with the approved mapping and no unrelated files were modified."
     ],
-    "completed": false
+    "completed": true
   }
 ]
