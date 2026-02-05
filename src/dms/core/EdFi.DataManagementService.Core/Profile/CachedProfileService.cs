@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Model;
 using EdFi.DataManagementService.Core.OpenApi;
@@ -89,6 +90,8 @@ internal sealed record CachedProfileStore(
 /// </summary>
 internal class CachedProfileService(
     IProfileCmsProvider profileCmsProvider,
+    IProfileDataValidator profileDataValidator,
+    IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
     HybridCache hybridCache,
     CacheSettings cacheSettings,
     ILogger<CachedProfileService> logger
@@ -667,6 +670,45 @@ internal class CachedProfileService(
                                 )
                             );
                             continue;
+                        }
+
+                        // Validate the parsed profile against the API schema
+                        ProfileValidationResult validationResult = profileDataValidator.Validate(
+                            parseResult.Definition,
+                            effectiveApiSchemaProvider
+                        );
+
+                        // Skip profiles with validation errors
+                        if (validationResult.HasErrors)
+                        {
+                            logger.LogError(
+                                "Profile validation failed with errors. ProfileId: {ProfileId}, Name: {Name}, Errors: {Errors}",
+                                profileResponse.Id,
+                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                string.Join(
+                                    "; ",
+                                    validationResult
+                                        .Failures.Where(f => f.Severity == ValidationSeverity.Error)
+                                        .Select(f => LoggingSanitizer.SanitizeForLogging(f.Message))
+                                )
+                            );
+                            continue;
+                        }
+
+                        // Log warnings but still include the profile
+                        if (validationResult.HasWarnings)
+                        {
+                            logger.LogWarning(
+                                "Profile validation succeeded with warnings. ProfileId: {ProfileId}, Name: {Name}, Warnings: {Warnings}",
+                                profileResponse.Id,
+                                LoggingSanitizer.SanitizeForLogging(profileResponse.Name),
+                                string.Join(
+                                    "; ",
+                                    validationResult
+                                        .Failures.Where(f => f.Severity == ValidationSeverity.Warning)
+                                        .Select(f => LoggingSanitizer.SanitizeForLogging(f.Message))
+                                )
+                            );
                         }
 
                         profilesByName[parseResult.Definition.ProfileName] = parseResult.Definition;
