@@ -1111,7 +1111,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 continue;
             }
 
-            if (IsSegmentPrefix(referenceObjectPath.Segments, path.Segments))
+            if (RelationalModelSetSchemaHelpers.IsPrefixOf(referenceObjectPath.Segments, path.Segments))
             {
                 referencePath = referenceObjectPath.Canonical;
                 return true;
@@ -1120,50 +1120,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 
         referencePath = string.Empty;
         return false;
-    }
-
-    private static bool IsSegmentPrefix(
-        IReadOnlyList<JsonPathSegment> prefix,
-        IReadOnlyList<JsonPathSegment> candidate
-    )
-    {
-        if (prefix.Count > candidate.Count)
-        {
-            return false;
-        }
-
-        for (var index = 0; index < prefix.Count; index++)
-        {
-            var prefixSegment = prefix[index];
-            var candidateSegment = candidate[index];
-
-            if (prefixSegment is JsonPathSegment.Property prefixProperty)
-            {
-                if (
-                    candidateSegment is not JsonPathSegment.Property candidateProperty
-                    || !string.Equals(prefixProperty.Name, candidateProperty.Name, StringComparison.Ordinal)
-                )
-                {
-                    return false;
-                }
-
-                continue;
-            }
-
-            if (prefixSegment is JsonPathSegment.AnyArrayElement)
-            {
-                if (candidateSegment is not JsonPathSegment.AnyArrayElement)
-                {
-                    return false;
-                }
-
-                continue;
-            }
-
-            return false;
-        }
-
-        return true;
     }
 
     /// <summary>
