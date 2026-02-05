@@ -1,0 +1,55 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "collisionTests": {
+        "resourceName": "CollisionTest",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.collisionTestId"
+        ],
+        "documentPathsMapping": {
+          "CollisionTestId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.collisionTestId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "collisionTestId": {
+              "type": "integer"
+            },
+            "firstName": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "lastName": {
+              "type": "string",
+              "maxLength": 20
+            }
+          },
+          "required": [
+            "collisionTestId"
+          ]
+        },
+        "relational": {
+          "nameOverrides": {
+            "$.firstName": "duplicate",
+            "$.lastName": "duplicate"
+          }
+        }
+      }
+    }
+  }
+}
