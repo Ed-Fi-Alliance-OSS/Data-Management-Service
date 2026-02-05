@@ -25,7 +25,11 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new IdentifierShorteningCollisionPass(effectiveSchemaSet) }
+            new IRelationalModelSetPass[]
+            {
+                new IdentifierShorteningCollisionPass(effectiveSchemaSet),
+                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+            }
         );
 
         try

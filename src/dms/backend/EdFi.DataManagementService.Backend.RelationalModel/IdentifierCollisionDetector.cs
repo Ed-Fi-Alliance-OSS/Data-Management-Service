@@ -33,6 +33,20 @@ internal sealed class IdentifierCollisionDetector
     }
 
     /// <summary>
+    /// Registers a schema identifier for collision detection.
+    /// </summary>
+    /// <param name="schema">The schema name.</param>
+    /// <param name="origin">The collision origin details.</param>
+    public void RegisterSchema(DbSchemaName schema, IdentifierCollisionOrigin origin)
+    {
+        Register(
+            new IdentifierCollisionScope(IdentifierCollisionKind.Schema, string.Empty, string.Empty),
+            schema.Value,
+            origin
+        );
+    }
+
+    /// <summary>
     /// Registers a table identifier for collision detection.
     /// </summary>
     /// <param name="table">The table name.</param>
