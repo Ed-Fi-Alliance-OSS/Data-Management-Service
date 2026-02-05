@@ -12,11 +12,8 @@ internal sealed class OverrideCollisionDetector
 {
     private const string DmsSchemaName = "dms";
     private const string DescriptorTableName = "Descriptor";
+    private readonly CollisionDetectorCore _core = new();
     private readonly IdentifierCollisionStage _stage = IdentifierCollisionStage.AfterOverrideNormalization;
-    private readonly Dictionary<
-        IdentifierCollisionScope,
-        Dictionary<string, List<IdentifierCollisionSource>>
-    > _sources = new();
 
     /// <summary>
     /// Registers a table identifier for override collision detection.
@@ -54,47 +51,10 @@ internal sealed class OverrideCollisionDetector
     /// </summary>
     public void ThrowIfCollisions()
     {
-        List<IdentifierCollisionRecord> collisions = [];
-
-        var orderedScopes = _sources
-            .Keys.OrderBy(scope => scope.Kind)
-            .ThenBy(scope => scope.Schema, StringComparer.Ordinal)
-            .ThenBy(scope => scope.Table, StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var scope in orderedScopes)
-        {
-            var names = _sources[scope];
-
-            foreach (var finalName in names.Keys.OrderBy(name => name, StringComparer.Ordinal))
-            {
-                var sources = names[finalName]
-                    .OrderBy(source => source.OriginalIdentifier, StringComparer.Ordinal)
-                    .ThenBy(source => source.Origin.Description, StringComparer.Ordinal)
-                    .ThenBy(
-                        source => NormalizeOriginPart(source.Origin.ResourceLabel),
-                        StringComparer.Ordinal
-                    )
-                    .ThenBy(source => NormalizeOriginPart(source.Origin.JsonPath), StringComparer.Ordinal)
-                    .ThenBy(source => source.FinalIdentifier, StringComparer.Ordinal)
-                    .DistinctBy(source => BuildOriginKey(scope, finalName, source.Origin))
-                    .ToArray();
-
-                if (sources.Length > 1)
-                {
-                    collisions.Add(new IdentifierCollisionRecord(_stage, scope, sources));
-                }
-            }
-        }
-
-        if (collisions.Count == 0)
-        {
-            return;
-        }
-
-        throw new InvalidOperationException(
-            "Identifier override collisions detected: "
-                + string.Join("; ", collisions.Select(collision => collision.Format()))
+        _core.ThrowIfCollisions(
+            _stage,
+            "Identifier override collisions detected: ",
+            IsSharedDescriptorElement
         );
     }
 
@@ -107,43 +67,14 @@ internal sealed class OverrideCollisionDetector
     {
         var resolvedOriginal = string.IsNullOrWhiteSpace(originalName) ? finalName : originalName;
 
-        if (!_sources.TryGetValue(scope, out var entries))
-        {
-            entries = new Dictionary<string, List<IdentifierCollisionSource>>(StringComparer.Ordinal);
-            _sources[scope] = entries;
-        }
-
-        if (!entries.TryGetValue(finalName, out var sources))
-        {
-            sources = [];
-            entries[finalName] = sources;
-        }
-
-        sources.Add(new IdentifierCollisionSource(resolvedOriginal, finalName, origin));
+        _core.Register(scope, finalName, new IdentifierCollisionSource(resolvedOriginal, finalName, origin));
     }
 
-    private static string NormalizeOriginPart(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
-    }
-
-    private static (string Description, string ResourceLabel, string JsonPath) BuildOriginKey(
+    private static bool IsSharedDescriptorElement(
         IdentifierCollisionScope scope,
         string finalName,
-        IdentifierCollisionOrigin origin
+        IdentifierCollisionOrigin _
     )
-    {
-        var resourceLabel = NormalizeOriginPart(origin.ResourceLabel);
-
-        if (IsSharedDescriptorElement(scope, finalName))
-        {
-            resourceLabel = string.Empty;
-        }
-
-        return (origin.Description, resourceLabel, NormalizeOriginPart(origin.JsonPath));
-    }
-
-    private static bool IsSharedDescriptorElement(IdentifierCollisionScope scope, string finalName)
     {
         if (!string.Equals(scope.Schema, DmsSchemaName, StringComparison.Ordinal))
         {
