@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 
@@ -190,6 +191,142 @@ internal static class RelationalModelSetSchemaHelpers
         }
 
         return builder.ToString();
+    }
+
+    /// <summary>
+    /// Builds the implied prefixes used to resolve collection override base names.
+    /// </summary>
+    internal static IReadOnlyList<string> BuildCollectionOverridePrefixes(
+        string rootBaseName,
+        string parentSuffix,
+        params string?[] additionalRoots
+    )
+    {
+        HashSet<string> prefixes = new(StringComparer.Ordinal);
+
+        void AddPrefix(string? value)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                prefixes.Add(value);
+            }
+        }
+
+        AddPrefix(rootBaseName + parentSuffix);
+        AddPrefix(rootBaseName);
+        AddPrefix(parentSuffix);
+
+        if (additionalRoots is not null)
+        {
+            foreach (var additionalRoot in additionalRoots)
+            {
+                if (string.IsNullOrWhiteSpace(additionalRoot))
+                {
+                    continue;
+                }
+
+                AddPrefix(additionalRoot + parentSuffix);
+                AddPrefix(additionalRoot);
+            }
+        }
+
+        return prefixes.ToArray();
+    }
+
+    /// <summary>
+    /// Resolves a collection override value to an effective segment name, stripping implied prefixes when present.
+    /// </summary>
+    internal static string ResolveCollectionOverrideBaseName(
+        string overrideName,
+        IReadOnlyList<string> impliedPrefixes,
+        string jsonPath,
+        string resourceLabel
+    )
+    {
+        if (string.IsNullOrWhiteSpace(overrideName))
+        {
+            throw new InvalidOperationException(
+                $"relational.nameOverrides entry for '{jsonPath}' on resource '{resourceLabel}' must be non-empty."
+            );
+        }
+
+        if (impliedPrefixes.Count == 0)
+        {
+            return overrideName;
+        }
+
+        HashSet<string> suffixes = new(StringComparer.Ordinal);
+
+        foreach (var prefix in impliedPrefixes)
+        {
+            foreach (var suffix in BuildPascalCaseSuffixes(prefix))
+            {
+                suffixes.Add(suffix);
+            }
+        }
+
+        var orderedSuffixes = suffixes
+            .OrderByDescending(value => value.Length)
+            .ThenBy(value => value, StringComparer.Ordinal)
+            .ToArray();
+
+        foreach (var suffix in orderedSuffixes)
+        {
+            if (!overrideName.StartsWith(suffix, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var remainder = overrideName[suffix.Length..];
+
+            if (string.IsNullOrWhiteSpace(remainder))
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry for '{jsonPath}' on resource '{resourceLabel}' must extend "
+                        + $"the implied prefix '{suffix}'."
+                );
+            }
+
+            return remainder;
+        }
+
+        return overrideName;
+    }
+
+    private static IEnumerable<string> BuildPascalCaseSuffixes(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            yield break;
+        }
+
+        List<int> boundaries = [0];
+
+        for (var index = 1; index < value.Length; index++)
+        {
+            if (!char.IsUpper(value[index]))
+            {
+                continue;
+            }
+
+            var previous = value[index - 1];
+            var nextIsLower = index + 1 < value.Length && char.IsLower(value[index + 1]);
+
+            if (char.IsLower(previous) || nextIsLower)
+            {
+                boundaries.Add(index);
+            }
+        }
+
+        foreach (var boundary in boundaries)
+        {
+            var suffix = value[boundary..];
+
+            if (!string.IsNullOrWhiteSpace(suffix))
+            {
+                yield return suffix;
+            }
+        }
     }
 
     /// <summary>

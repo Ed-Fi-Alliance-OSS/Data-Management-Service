@@ -70,6 +70,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             "isResourceExtension",
             defaultValue: false
         );
+        var superclassResourceName = RelationalModelSetSchemaHelpers.TryGetOptionalString(
+            resourceSchema,
+            "superclassResourceName"
+        );
         var jsonSchemaForInsert =
             resourceSchema["jsonSchemaForInsert"]
             ?? throw new InvalidOperationException(
@@ -127,6 +131,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         context.ProjectEndpointName = projectEndpointName;
         context.ProjectVersion = projectVersion;
         context.ResourceName = resourceName;
+        context.SuperclassResourceName = superclassResourceName;
         context.RootTableNameOverride = rootTableNameOverride;
         context.IsDescriptorResource = isDescriptor;
         context.JsonSchemaForInsert = jsonSchemaForInsert;
@@ -865,6 +870,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 
         Dictionary<string, NameOverrideEntry> overrides = new(StringComparer.Ordinal);
         string? extensionProjectKey = null;
+        var referenceIdentityPaths = BuildReferenceIdentityPathSet(referenceMappings);
 
         foreach (var overrideEntry in nameOverridesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
@@ -937,11 +943,14 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
 
             if (IsInsideReferenceObjectPath(resolvedPath, referenceMappings, out var referencePath))
             {
-                throw new InvalidOperationException(
-                    $"relational.nameOverrides entry '{overrideKey}' (canonical '{resolvedPath.Canonical}') "
-                        + $"on resource '{projectName}:{resourceName}' targets a path inside reference "
-                        + $"object '{referencePath}'. Only reference object paths may be overridden."
-                );
+                if (!referenceIdentityPaths.Contains(resolvedPath.Canonical))
+                {
+                    throw new InvalidOperationException(
+                        $"relational.nameOverrides entry '{overrideKey}' (canonical '{resolvedPath.Canonical}') "
+                            + $"on resource '{projectName}:{resourceName}' targets a non-identity path inside "
+                            + $"reference object '{referencePath}'. Only reference identity paths may be overridden."
+                    );
+                }
             }
 
             var overrideKind =
@@ -972,6 +981,28 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         }
 
         return overrides;
+    }
+
+    private static HashSet<string> BuildReferenceIdentityPathSet(
+        IReadOnlyList<DocumentReferenceMapping> referenceMappings
+    )
+    {
+        HashSet<string> referenceIdentityPaths = new(StringComparer.Ordinal);
+
+        if (referenceMappings.Count == 0)
+        {
+            return referenceIdentityPaths;
+        }
+
+        foreach (var mapping in referenceMappings)
+        {
+            foreach (var binding in mapping.ReferenceJsonPaths)
+            {
+                referenceIdentityPaths.Add(binding.ReferenceJsonPath.Canonical);
+            }
+        }
+
+        return referenceIdentityPaths;
     }
 
     private static bool IsExtensionRootPath(JsonPathExpression path)

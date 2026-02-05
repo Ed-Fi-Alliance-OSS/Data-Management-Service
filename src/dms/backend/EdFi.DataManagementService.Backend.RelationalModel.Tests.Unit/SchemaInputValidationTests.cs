@@ -1223,7 +1223,7 @@ public class Given_A_Relational_NameOverride_For_A_Reference_Path
 [TestFixture]
 public class Given_A_Relational_NameOverride_Inside_A_Reference_Object
 {
-    private Exception? _exception;
+    private RelationalModelBuilderContext? _context;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -1257,6 +1257,71 @@ public class Given_A_Relational_NameOverride_Inside_A_Reference_Object
             ["nameOverrides"] = new JsonObject { ["$.schoolReference.schoolId"] = "SchoolIdOverride" },
         };
 
+        _context = SchemaInputValidationHelpers.ExecuteExtractInputs(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject(),
+            relational: relational
+        );
+    }
+
+    /// <summary>
+    /// It should allow overrides for reference identity paths.
+    /// </summary>
+    [Test]
+    public void It_should_allow_reference_identity_overrides()
+    {
+        _context.Should().NotBeNull();
+        _context!.NameOverridesByPath.Should().ContainKey("$.schoolReference.schoolId");
+
+        var entry = _context.NameOverridesByPath["$.schoolReference.schoolId"];
+        entry.RawKey.Should().Be("$.schoolReference.schoolId");
+        entry.CanonicalPath.Should().Be("$.schoolReference.schoolId");
+        entry.NormalizedName.Should().Be("SchoolIdOverride");
+        entry.Kind.Should().Be(NameOverrideKind.Column);
+    }
+}
+
+/// <summary>
+/// Test fixture for a relational name override inside a reference object targeting a non-identity path.
+/// </summary>
+[TestFixture]
+public class Given_A_Relational_NameOverride_Inside_A_Reference_Object_For_Non_Identity_Path
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["isRequired"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                },
+            },
+        };
+
+        var relational = new JsonObject
+        {
+            ["nameOverrides"] = new JsonObject { ["$.schoolReference.link"] = "SchoolLinkOverride" },
+        };
+
         _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
             identityJsonPaths: new JsonArray(),
             documentPathsMapping: documentPathsMapping,
@@ -1266,15 +1331,15 @@ public class Given_A_Relational_NameOverride_Inside_A_Reference_Object
     }
 
     /// <summary>
-    /// It should fail fast when the override targets inside the reference object.
+    /// It should fail fast when the override targets a non-identity path inside a reference object.
     /// </summary>
     [Test]
-    public void It_should_fail_fast_for_inside_reference_object_paths()
+    public void It_should_fail_fast_for_non_identity_reference_paths()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("inside reference object");
-        _exception.Message.Should().Contain("$.schoolReference.schoolId");
-        _exception.Message.Should().Contain("$.schoolReference");
+        _exception!.Message.Should().Contain("non-identity");
+        _exception.Message.Should().Contain("$.schoolReference.link");
+        _exception.Message.Should().Contain("canonical '$.schoolReference.link'");
     }
 }
 

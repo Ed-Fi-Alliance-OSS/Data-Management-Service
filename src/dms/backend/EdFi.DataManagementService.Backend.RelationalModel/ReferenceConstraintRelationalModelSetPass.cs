@@ -140,7 +140,13 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
             }
 
             var targetInfo = GetTargetIdentityInfo(mapping.TargetResource, context);
-            var identityColumns = BuildReferenceIdentityColumns(mapping, binding, targetInfo, resource);
+            var identityColumns = BuildReferenceIdentityColumns(
+                mapping,
+                binding,
+                targetInfo,
+                resource,
+                builderContext
+            );
             var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn, mapping, resource);
 
             EnsureTargetUnique(
@@ -237,7 +243,8 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         DocumentReferenceMapping mapping,
         DocumentReferenceBinding binding,
         TargetIdentityInfo targetInfo,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        RelationalModelBuilderContext builderContext
     )
     {
         var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn, mapping, resource);
@@ -341,6 +348,18 @@ public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModel
         foreach (var path in mapping.ReferenceJsonPaths)
         {
             var identityPartBaseName = BuildIdentityPartBaseName(path.IdentityJsonPath);
+
+            if (
+                builderContext.TryGetNameOverride(
+                    path.ReferenceJsonPath,
+                    NameOverrideKind.Column,
+                    out var identityOverride
+                )
+            )
+            {
+                identityPartBaseName = identityOverride;
+            }
+
             var identityColumnBaseName = $"{referenceBaseName}_{identityPartBaseName}";
 
             if (

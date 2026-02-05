@@ -44,7 +44,7 @@
       "Add unit tests (hand-authored fixtures) covering: scalar override (including inlined objects), reference-object override, inside-reference identity override (allowed) + non-identity inside-reference key failure, collection overrides + remainder ordinal naming (no descendant requirement; no parent-prefix requirement; segment-only vs fully-qualified compatibility), unknown key diagnostics (raw + canonical), extension-schema override auto-prefixing, and base-vs-extension override conflict failure.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Naming",

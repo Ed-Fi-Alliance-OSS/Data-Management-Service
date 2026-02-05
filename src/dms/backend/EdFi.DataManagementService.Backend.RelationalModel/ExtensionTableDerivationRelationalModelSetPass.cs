@@ -571,7 +571,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             extensionProject,
             overrideProvider,
             resourceLabel,
-            context.OverrideCollisionDetector
+            context.OverrideCollisionDetector,
+            string.IsNullOrWhiteSpace(context.SuperclassResourceName)
+                ? null
+                : RelationalNameConventions.ToPascalCase(context.SuperclassResourceName)
         );
 
         WalkSchema(
@@ -702,37 +705,29 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             return;
         }
 
-        if (!hasOverride && hasOverriddenAncestor)
-        {
-            throw new InvalidOperationException(
-                $"relational.nameOverrides entry is required for descendant collection scope "
-                    + $"'{arrayPathExpression.Canonical}' on resource '{resourceLabel}'."
-            );
-        }
-
         var collectionBaseName = defaultCollectionBaseName;
 
         if (hasOverride)
         {
-            if (!overrideName.StartsWith(parentSuffix, StringComparison.Ordinal))
-            {
-                throw new InvalidOperationException(
-                    $"relational.nameOverrides entry for '{arrayPathExpression.Canonical}' on resource "
-                        + $"'{resourceLabel}' must start with '{parentSuffix}'."
-                );
-            }
+            var superclassBaseName = string.IsNullOrWhiteSpace(context.SuperclassResourceName)
+                ? null
+                : RelationalNameConventions.ToPascalCase(context.SuperclassResourceName);
+            var includeSuperclass =
+                !string.IsNullOrWhiteSpace(superclassBaseName)
+                && !string.Equals(overrideName, defaultCollectionBaseName, StringComparison.Ordinal);
+            var impliedPrefixes = RelationalModelSetSchemaHelpers.BuildCollectionOverridePrefixes(
+                extensionRootBaseName,
+                parentSuffix,
+                baseRootBaseName,
+                includeSuperclass ? superclassBaseName : null
+            );
 
-            var remainder = overrideName[parentSuffix.Length..];
-
-            if (string.IsNullOrWhiteSpace(remainder))
-            {
-                throw new InvalidOperationException(
-                    $"relational.nameOverrides entry for '{arrayPathExpression.Canonical}' on resource "
-                        + $"'{resourceLabel}' must extend the parent collection suffix."
-                );
-            }
-
-            collectionBaseName = remainder;
+            collectionBaseName = RelationalModelSetSchemaHelpers.ResolveCollectionOverrideBaseName(
+                overrideName,
+                impliedPrefixes,
+                arrayPathExpression.Canonical,
+                resourceLabel
+            );
         }
 
         if (itemsKind == SchemaKind.Object && HasExtensionProperty(itemsSchema))
@@ -842,7 +837,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         ProjectSchemaInfo extensionProject,
         INameOverrideProvider overrideProvider,
         string resourceLabel,
-        OverrideCollisionDetector? collisionDetector
+        OverrideCollisionDetector? collisionDetector,
+        string? superclassBaseName
     )
     {
         if (extensionTablesByScope.TryGetValue(projectPath.Canonical, out var existing))
@@ -865,7 +861,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         var (collectionBaseNames, defaultCollectionBaseNames) = BuildCollectionBaseNames(
             baseTableScopeSegments,
             overrideProvider,
-            resourceLabel
+            resourceLabel,
+            baseRootBaseName,
+            extensionRootBaseName,
+            superclassBaseName
         );
         var tableName = new DbTableName(
             extensionProject.PhysicalSchema,
@@ -1000,13 +999,14 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
     private static (IReadOnlyList<string> Effective, IReadOnlyList<string> Default) BuildCollectionBaseNames(
         IReadOnlyList<JsonPathSegment> segments,
         INameOverrideProvider overrideProvider,
-        string resourceLabel
+        string resourceLabel,
+        string baseRootBaseName,
+        string extensionRootBaseName,
+        string? superclassBaseName
     )
     {
         List<string> effective = [];
         List<string> defaults = [];
-        var hasOverriddenAncestor = false;
-
         for (var index = 0; index < segments.Count - 1; index++)
         {
             if (
@@ -1024,40 +1024,28 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     out var overrideName
                 );
 
-                if (!hasOverride && hasOverriddenAncestor)
-                {
-                    throw new InvalidOperationException(
-                        $"relational.nameOverrides entry is required for descendant collection scope "
-                            + $"'{arrayPath.Canonical}' on resource '{resourceLabel}'."
-                    );
-                }
-
                 var baseName = defaultBaseName;
 
                 if (hasOverride)
                 {
-                    if (!overrideName.StartsWith(parentSuffix, StringComparison.Ordinal))
-                    {
-                        throw new InvalidOperationException(
-                            $"relational.nameOverrides entry for '{arrayPath.Canonical}' on resource "
-                                + $"'{resourceLabel}' must start with '{parentSuffix}'."
-                        );
-                    }
+                    var includeSuperclass =
+                        !string.IsNullOrWhiteSpace(superclassBaseName)
+                        && !string.Equals(overrideName, defaultBaseName, StringComparison.Ordinal);
+                    var impliedPrefixes = RelationalModelSetSchemaHelpers.BuildCollectionOverridePrefixes(
+                        extensionRootBaseName,
+                        parentSuffix,
+                        baseRootBaseName,
+                        includeSuperclass ? superclassBaseName : null
+                    );
 
-                    var remainder = overrideName[parentSuffix.Length..];
-
-                    if (string.IsNullOrWhiteSpace(remainder))
-                    {
-                        throw new InvalidOperationException(
-                            $"relational.nameOverrides entry for '{arrayPath.Canonical}' on resource "
-                                + $"'{resourceLabel}' must extend the parent collection suffix."
-                        );
-                    }
-
-                    baseName = remainder;
+                    baseName = RelationalModelSetSchemaHelpers.ResolveCollectionOverrideBaseName(
+                        overrideName,
+                        impliedPrefixes,
+                        arrayPath.Canonical,
+                        resourceLabel
+                    );
                 }
 
-                hasOverriddenAncestor = hasOverriddenAncestor || hasOverride;
                 effective.Add(baseName);
                 defaults.Add(defaultBaseName);
             }

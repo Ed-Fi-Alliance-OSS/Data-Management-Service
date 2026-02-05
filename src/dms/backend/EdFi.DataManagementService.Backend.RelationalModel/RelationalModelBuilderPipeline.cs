@@ -66,6 +66,11 @@ public sealed class RelationalModelBuilderContext : INameOverrideProvider
     public string? ResourceName { get; set; }
 
     /// <summary>
+    /// Optional superclass resource name for subclass schemas.
+    /// </summary>
+    public string? SuperclassResourceName { get; set; }
+
+    /// <summary>
     /// Optional override for the root table base name (<c>resourceSchema.relational.rootTableNameOverride</c>).
     /// </summary>
     public string? RootTableNameOverride { get; set; }
