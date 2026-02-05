@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
 using System.Text;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -15,7 +14,6 @@ internal static class ConstraintNaming
     internal const string AllNoneToken = "AllNone";
     internal const string DocumentToken = "Document";
 
-    private const int HashSegmentLength = 10;
     private const string DescriptorIdSuffix = "_DescriptorId";
 
     internal static string BuildNaturalKeyUniqueName(DbTableName table)
@@ -70,24 +68,7 @@ internal static class ConstraintNaming
         ArgumentNullException.ThrowIfNull(baseName);
         ArgumentNullException.ThrowIfNull(dialectRules);
 
-        var maxLength = dialectRules.MaxIdentifierLength;
-
-        if (GetIdentifierLength(baseName, dialectRules) <= maxLength)
-        {
-            return baseName;
-        }
-
-        var hash = ComputeSha256Hex(BuildSignature(identity));
-        var suffix = $"_{hash[..HashSegmentLength]}";
-        var prefixLength = maxLength - suffix.Length;
-
-        if (prefixLength <= 0)
-        {
-            return suffix.Length > maxLength ? suffix[..maxLength] : suffix;
-        }
-
-        var prefix = TruncateToLength(baseName, prefixLength, dialectRules);
-        return $"{prefix}{suffix}";
+        return SqlIdentifierShortening.ApplyDialectLimit(baseName, BuildSignature(identity), dialectRules);
     }
 
     internal static string BuildSignature(ConstraintIdentity identity)
@@ -226,63 +207,5 @@ internal static class ConstraintNaming
 
             builder.Append(columns[index].Value);
         }
-    }
-
-    private static int GetIdentifierLength(string value, ISqlDialectRules dialectRules)
-    {
-        return dialectRules.Dialect switch
-        {
-            SqlDialect.Pgsql => Encoding.UTF8.GetByteCount(value),
-            SqlDialect.Mssql => value.Length,
-            _ => value.Length,
-        };
-    }
-
-    private static string TruncateToLength(string value, int maxLength, ISqlDialectRules dialectRules)
-    {
-        if (value.Length == 0 || maxLength <= 0)
-        {
-            return string.Empty;
-        }
-
-        return dialectRules.Dialect == SqlDialect.Pgsql ? TruncateToUtf8Bytes(value, maxLength)
-            : value.Length <= maxLength ? value
-            : value[..maxLength];
-    }
-
-    private static string ComputeSha256Hex(string signature)
-    {
-        using var sha256 = SHA256.Create();
-        var bytes = Encoding.UTF8.GetBytes(signature);
-        var hash = sha256.ComputeHash(bytes);
-
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    private static string TruncateToUtf8Bytes(string value, int maxBytes)
-    {
-        if (value.Length == 0 || maxBytes <= 0)
-        {
-            return string.Empty;
-        }
-
-        StringBuilder builder = new(value.Length);
-        var currentBytes = 0;
-
-        foreach (var rune in value.EnumerateRunes())
-        {
-            var runeString = rune.ToString();
-            var runeBytes = Encoding.UTF8.GetByteCount(runeString);
-
-            if (currentBytes + runeBytes > maxBytes)
-            {
-                break;
-            }
-
-            builder.Append(runeString);
-            currentBytes += runeBytes;
-        }
-
-        return builder.ToString();
     }
 }
