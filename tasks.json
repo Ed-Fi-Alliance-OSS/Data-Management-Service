@@ -203,7 +203,7 @@
       "Run: `dotnet test --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Design",
