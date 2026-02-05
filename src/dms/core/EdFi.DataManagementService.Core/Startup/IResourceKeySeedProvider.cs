@@ -41,7 +41,7 @@ public interface IResourceKeySeedProvider
     /// <summary>
     /// Computes a SHA-256 hash of the resource key seeds for fast validation.
     /// The hash is computed over a canonical UTF-8 manifest with version header and one line per seed,
-    /// where each line includes all seed fields (ResourceKeyId, ProjectName, ResourceName, ResourceVersion, IsAbstract).
+    /// where each line includes ResourceKeyId, ProjectName, ResourceName, and ResourceVersion.
     /// </summary>
     /// <param name="seeds">The seeds to hash.</param>
     /// <returns>The raw SHA-256 hash bytes (32 bytes).</returns>

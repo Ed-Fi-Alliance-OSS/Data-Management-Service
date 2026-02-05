@@ -368,9 +368,9 @@ public class ResourceKeySeedProviderTests
         // If canonicalization, manifest format, hash algorithm, or schema content changes,
         // this value must be updated intentionally.
         // NOTE: This hash uses LF line endings for cross-platform determinism.
-        // Manifest format: {id}|{projectName}|{resourceName}|{resourceVersion}|{isAbstract}
+        // Manifest format: {id}|{projectName}|{resourceName}|{resourceVersion}
         private const string ExpectedHashHex =
-            "3f07da9efc9b94c9633352dce3bbe0be66c98f50e1ab7ffadaa3c2f4a4c0cd13";
+            "74805d4a2fed04970ca3b3e69569ad02bde531e4898a1c1a3f4c998a02749466";
 
         [SetUp]
         public void Setup()

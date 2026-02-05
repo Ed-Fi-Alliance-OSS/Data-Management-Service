@@ -111,7 +111,7 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
     {
         // Build manifest string:
         // resource-key-seed-hash:v1
-        // {id}|{projectName}|{resourceName}|{resourceVersion}|{isAbstract}
+        // {id}|{projectName}|{resourceName}|{resourceVersion}
         // ...
         // NOTE: Use explicit '\n' for cross-platform determinism. Do NOT use AppendLine()
         // which uses Environment.NewLine (CRLF on Windows, LF on Linux).
@@ -129,8 +129,6 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
                 .Append(seed.ResourceName)
                 .Append('|')
                 .Append(seed.ResourceVersion)
-                .Append('|')
-                .Append(seed.IsAbstract ? '1' : '0')
                 .Append('\n');
         }
 
