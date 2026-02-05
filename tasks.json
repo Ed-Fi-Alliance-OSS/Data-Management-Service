@@ -180,5 +180,98 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Naming",
+    "description": "Follow-up: Fix misleading override collision diagnostics for inside-reference identity overrides. Today `ReferenceBindingRelationalModelSetPass` uses the overridden identity-part base name when building the pre-override (`originalName`) identifier for reference identity columns, which can make collision messages show the wrong original identifier. Acceptance: (1) For reference identity columns derived in `ReferenceBindingRelationalModelSetPass` (scalar identity bindings and descriptor identity bindings), the `originalName` recorded for collision reporting reflects the pre-override identity part base name derived from `BuildIdentityPartBaseName(identityJsonPath)`; (2) final derived column names still reflect `relational.nameOverrides` applied to the reference identity JSONPath; (3) add a unit test fixture that forces a collision between two reference-identity columns after overrides and asserts the exception includes two distinct original identifiers and the shared final identifier; (4) unit tests pass and the DMS solution builds.",
+    "steps-to-verify": [
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ReferenceBindingRelationalModelSetPass.cs` to keep `originalIdentityPartBaseName` separate from the overridden `identityPartBaseName` and use the original when constructing `originalColumnName` / `originalDescriptorColumnName` and when passing `originalName` to `TableColumnAccumulator` and `OverrideCollisionDetector`.",
+      "Add a hand-authored fixture under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/set-builder/` with a reference mapping that includes multiple `referenceJsonPaths` identity bindings and overrides those inside-reference identity paths to the same name to force a collision.",
+      "Add an NUnit test (new or in an existing override test fixture) asserting the thrown `InvalidOperationException` message includes the two distinct original identifiers (pre-override) and the colliding final identifier (post-override).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "E02/E15 follow-up: Add regression tests that validate SQL/DDL emission always quotes identifiers (PostgreSQL double quotes, SQL Server brackets) to protect reserved-word and PascalCase identifiers. The current naming tests prove the model can contain reserved-looking identifiers (e.g., `Select`), but correctness depends on consistent quoting in SQL emission. Acceptance: (1) A test constructs a `DerivedRelationalModelSet` that includes at least one reserved-word-like schema/table/column name (e.g., `Select`) and runs the DDL emitter and/or plan compiler; (2) emitted SQL always quotes schema/table/column/constraint/index/trigger identifiers per dialect with no unquoted occurrences; (3) tests cover both `SqlDialect.Pgsql` and `SqlDialect.Mssql`; (4) tests are deterministic and run in CI without requiring a live database; (5) `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` remains green.",
+    "steps-to-verify": [
+      "Implement (or extend) the SQL writer / DDL emitter / plan compiler layer to centralize identifier quoting (Pgsql: `\"name\"`, Mssql: `[name]`) and ensure every emitted identifier uses it.",
+      "Add a unit test (or golden SQL snapshot test) that emits SQL for a fixture containing reserved-word-like identifiers and asserts quoting is applied to every identifier occurrence (schema, table, columns, constraints, indexes, triggers).",
+      "Ensure the test runs for both dialects and fails if any unquoted identifier is emitted.",
+      "Run: `dotnet test --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Design",
+    "description": "Follow-up: Align index/trigger uniqueness validation with collision detection and documented dialect semantics. Today `RelationalModelSetBuilderContext` validates index/trigger uniqueness per `(schema, table, name)`, but `IdentifierCollisionDetector` treats indexes/triggers as schema-scoped during shortening collision detection. Acceptance: (1) Confirm the required uniqueness scope for index and trigger names per dialect (Pgsql vs Mssql) and document the chosen rule; (2) update `RelationalModelSetBuilderContext.ValidateIndexNameUniqueness/ValidateTriggerNameUniqueness` and `IdentifierCollisionDetector` scoping so they enforce the same rule (including any dialect-specific differences, if needed); (3) add unit tests that demonstrate allowed duplicates and expected failures for each dialect; (4) build and unit tests remain green.",
+    "steps-to-verify": [
+      "Document the index/trigger name uniqueness rule in `reference/design/backend-redesign/design-docs/data-model.md` (or a more appropriate design doc) with explicit scope for Pgsql and Mssql.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/RelationalModelSetBuilderContext.cs` uniqueness validators and `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/IdentifierCollisionDetector.cs` scopes to match the documented rule.",
+      "Add unit tests under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/` that construct duplicate index/trigger inventories and assert the correct validation behavior for both dialects.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Refactor: Deduplicate collision detector implementations (`OverrideCollisionDetector` and `IdentifierCollisionDetector`) to reduce drift risk. These types share the same grouping/ordering/DistinctBy logic and shared-descriptor special-casing. Acceptance: (1) Extract a shared internal helper that encapsulates collection of sources, deterministic ordering, and record formatting; (2) keep observable behavior and exception messages stable (tests assert key substrings and should continue to pass); (3) code duplication is reduced materially (no parallel logic blocks for ordering and record generation); (4) unit tests pass and the DMS solution builds.",
+    "steps-to-verify": [
+      "Introduce a shared internal helper (e.g., `CollisionDetectorCore`) in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/` that supports both override-collision and shortening-collision scenarios.",
+      "Refactor `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/OverrideCollisionDetector.cs` and `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/IdentifierCollisionDetector.cs` to delegate ordering/grouping/diagnostic formatting to the shared helper.",
+      "Ensure all existing collision tests still pass (including `CollisionDetectorOriginTests`).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Refactor: Centralize truncate+hash identifier shortening utilities to avoid duplicated UTF-8 truncation logic. `ConstraintNaming` and `SqlDialectRulesUtilities` both implement nearly identical SHA-256 suffixing and UTF-8 byte truncation. Acceptance: (1) Remove duplicated truncation/hash implementation from one location by reusing a single shared helper; (2) preserve constraint shortening semantics (hash input is the canonical constraint signature, not the raw identifier) while reusing the shared truncation/length-unit handling; (3) `ConstraintNamingTests` and `SqlDialectRulesTests` remain green; (4) DMS solution builds.",
+    "steps-to-verify": [
+      "Extract a reusable helper in `./src/dms/backend/EdFi.DataManagementService.Backend.External/SqlDialectRules.cs` (or a new shared internal file) that supports suffixing a provided hash input with byte/char truncation.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ConstraintNaming.cs` to use the shared helper while still hashing the constraint signature, not the name string.",
+      "Ensure `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintNamingTests.cs` assertions remain valid.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Refactor: Remove duplicate JSONPath prefix logic by reusing `RelationalModelSetSchemaHelpers.IsPrefixOf` from schema input validation helpers. Today `ExtractInputsStep` contains an independent `IsSegmentPrefix` implementation. Acceptance: (1) `ExtractInputsStep` uses `RelationalModelSetSchemaHelpers.IsPrefixOf` for reference-object path prefix checks; (2) behavior is unchanged (all unit tests remain green); (3) duplicated prefix logic is removed.",
+    "steps-to-verify": [
+      "Replace `ExtractInputsStep.IsSegmentPrefix` usage with `RelationalModelSetSchemaHelpers.IsPrefixOf` and delete the local helper from `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Refactor: Consolidate `BuildReferenceIdentityPathSet` helper duplication to reduce drift between base traversal and input validation. This helper exists in both `ExtractInputsStep` and `DeriveColumnsAndBindDescriptorEdgesStep`. Acceptance: (1) Introduce a single shared helper for building the reference identity path set; (2) update both call sites to use it; (3) no behavior change; (4) unit tests pass and the DMS solution builds.",
+    "steps-to-verify": [
+      "Create a shared helper (e.g., in `RelationalModelSetSchemaHelpers` or a new internal static class) that returns the canonical reference identity path set from `IReadOnlyList<DocumentReferenceMapping>`.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs` and `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DeriveColumnsAndBindDescriptorEdgesStep.cs` to call the shared helper and remove duplicated implementations.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Refactor: Clarify and potentially reduce redundant override-collision tracking between `TableColumnAccumulator` and `OverrideCollisionDetector`. Most per-table column collisions are already detected at insertion time by `TableColumnAccumulator`, while `OverrideCollisionDetector` re-registers many of the same columns. Acceptance: (1) Define a single, clear responsibility split (e.g., `TableColumnAccumulator` for per-table column collisions; `OverrideCollisionDetector` for cross-resource table collisions and non-accumulator-derived identifiers like key columns); (2) remove redundant `OverrideCollisionDetector.RegisterColumn` calls where they provide no additional coverage, without losing actionable diagnostics; (3) all naming/override collision tests remain green (including naming-stress collision fixture); (4) DMS solution builds.",
+    "steps-to-verify": [
+      "Audit override collision reporting paths and identify which collisions are already caught by `TableColumnAccumulator` vs those only detectable via `OverrideCollisionDetector` (e.g., root table naming collisions, key column collisions).",
+      "Update pass/step implementations to register only the identifiers that require set-level tracking; remove redundant registrations for columns that cannot collide outside a table or are already guarded at insertion time.",
+      "Ensure collision diagnostics remain actionable and deterministic across resource ordering.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
