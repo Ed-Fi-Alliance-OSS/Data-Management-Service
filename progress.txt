@@ -102,3 +102,7 @@
   Decisions: Reused RelationalModelSetSchemaHelpers.IsPrefixOf for reference-object prefix checks; removed local IsSegmentPrefix helper to avoid drift.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/ExtractInputsStep.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded (existing SyntheticTests warning).
+- Task: RelationalModel folder restructure plan doc (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: chose taxonomy aligned to current pipeline/set-pass architecture; mapped every current top-level RelationalModel .cs file (46) exactly once; placed orchestration entry points (RelationalModelBuilderPipeline/RelationalModelSetPasses/DerivedRelationalModelSetBuilder) under Build for discoverability; added optional Diagnostics bucket for collision tooling.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/FOLDER-RESTRUCTURE.md; tasks.json; progress.txt
+  Notes: mapping coverage check passed (source 46, mapped 46, duplicates 0); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests feature warning.
