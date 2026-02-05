@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Linq;
 using System.Text;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel;
@@ -207,21 +206,6 @@ public static class RelationalNameConventions
         }
 
         return new DbColumnName($"{descriptorBaseName}_DescriptorId");
-    }
-
-    /// <summary>
-    /// Builds a deterministic foreign key constraint name from a table name and its FK columns.
-    /// </summary>
-    public static string ForeignKeyName(string tableName, IReadOnlyList<DbColumnName> columns)
-    {
-        if (columns.Count == 0)
-        {
-            throw new InvalidOperationException("Foreign key must have at least one column.");
-        }
-
-        var columnSuffix = string.Join("_", columns.Select(column => column.Value));
-
-        return $"FK_{tableName}_{columnSuffix}";
     }
 
     /// <summary>
