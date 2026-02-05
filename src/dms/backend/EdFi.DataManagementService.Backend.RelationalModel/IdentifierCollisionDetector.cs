@@ -14,6 +14,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// </summary>
 internal sealed class IdentifierCollisionDetector
 {
+    private const string DmsSchemaName = "dms";
+    private const string DescriptorTableName = "Descriptor";
     private readonly ISqlDialectRules _dialectRules;
     private readonly IdentifierCollisionStage _stage;
     private readonly Dictionary<
@@ -148,18 +150,15 @@ internal sealed class IdentifierCollisionDetector
             foreach (var shortenedName in names.Keys.OrderBy(name => name, StringComparer.Ordinal))
             {
                 var sources = names[shortenedName]
-                    .GroupBy(source => source.OriginalIdentifier, StringComparer.Ordinal)
-                    .OrderBy(group => group.Key, StringComparer.Ordinal)
-                    .Select(group =>
-                        group
-                            .OrderBy(source => source.Origin.Description, StringComparer.Ordinal)
-                            .ThenBy(
-                                source => source.Origin.ResourceLabel ?? string.Empty,
-                                StringComparer.Ordinal
-                            )
-                            .ThenBy(source => source.Origin.JsonPath ?? string.Empty, StringComparer.Ordinal)
-                            .First()
+                    .OrderBy(source => source.OriginalIdentifier, StringComparer.Ordinal)
+                    .ThenBy(source => source.Origin.Description, StringComparer.Ordinal)
+                    .ThenBy(
+                        source => NormalizeOriginPart(source.Origin.ResourceLabel),
+                        StringComparer.Ordinal
                     )
+                    .ThenBy(source => NormalizeOriginPart(source.Origin.JsonPath), StringComparer.Ordinal)
+                    .ThenBy(source => source.FinalIdentifier, StringComparer.Ordinal)
+                    .DistinctBy(source => BuildOriginKey(scope, shortenedName, source.Origin))
                     .ToArray();
 
                 if (sources.Length > 1)
@@ -204,5 +203,59 @@ internal sealed class IdentifierCollisionDetector
         }
 
         sources.Add(new IdentifierCollisionSource(originalName, shortenedName, origin));
+    }
+
+    private static string NormalizeOriginPart(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
+    }
+
+    private static (string Description, string ResourceLabel, string JsonPath) BuildOriginKey(
+        IdentifierCollisionScope scope,
+        string finalName,
+        IdentifierCollisionOrigin origin
+    )
+    {
+        var resourceLabel = NormalizeOriginPart(origin.ResourceLabel);
+
+        if (IsSharedDescriptorElement(scope, finalName, origin.Description))
+        {
+            resourceLabel = string.Empty;
+        }
+
+        return (origin.Description, resourceLabel, NormalizeOriginPart(origin.JsonPath));
+    }
+
+    private static bool IsSharedDescriptorElement(
+        IdentifierCollisionScope scope,
+        string finalName,
+        string description
+    )
+    {
+        if (!string.Equals(scope.Schema, DmsSchemaName, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return scope.Kind switch
+        {
+            IdentifierCollisionKind.Table => string.Equals(
+                finalName,
+                DescriptorTableName,
+                StringComparison.Ordinal
+            ),
+            IdentifierCollisionKind.Column => string.Equals(
+                scope.Table,
+                DescriptorTableName,
+                StringComparison.Ordinal
+            ),
+            IdentifierCollisionKind.Constraint
+            or IdentifierCollisionKind.Index
+            or IdentifierCollisionKind.Trigger => description.Contains(
+                $"{DmsSchemaName}.{DescriptorTableName}",
+                StringComparison.Ordinal
+            ),
+            _ => false,
+        };
     }
 }

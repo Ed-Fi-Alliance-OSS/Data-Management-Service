@@ -131,3 +131,7 @@
   Decisions: Ran required test/build loops; no code changes needed; confirmed authoritative inputs unchanged.
   Files: tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning; git status clean.
+- Task: Collision detection gaps for duplicate identifiers (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Detectors now de-dupe by origin (not original name) with deterministic ordering; shared dms.Descriptor artifacts ignore per-resource labels to avoid false collisions; added tests asserting duplicate-origin collisions.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/OverrideCollisionDetector.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/IdentifierCollisionDetector.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/CollisionDetectorOriginTests.cs; tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed; dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning.
