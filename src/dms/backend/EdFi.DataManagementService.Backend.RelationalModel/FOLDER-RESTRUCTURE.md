@@ -25,12 +25,12 @@ The following orchestration types stay under `Build/` for discoverability:
 ## File-To-Folder Mapping (Current Top-Level Files)
 | Current file | Target folder |
 |---|---|
-| `AbstractIdentityTableDerivationRelationalModelSetPass.cs` | `SetPasses/` |
-| `ApplyConstraintDialectHashingRelationalModelSetPass.cs` | `SetPasses/` |
-| `ApplyDialectIdentifierShorteningRelationalModelSetPass.cs` | `SetPasses/` |
-| `ArrayUniquenessConstraintRelationalModelSetPass.cs` | `SetPasses/` |
-| `BaseTraversalAndDescriptorBindingRelationalModelSetPass.cs` | `SetPasses/` |
-| `CanonicalizeOrderingRelationalModelSetPass.cs` | `SetPasses/` |
+| `AbstractIdentityTableDerivationPass.cs` | `SetPasses/` |
+| `ApplyConstraintDialectHashingPass.cs` | `SetPasses/` |
+| `ApplyDialectIdentifierShorteningPass.cs` | `SetPasses/` |
+| `ArrayUniquenessConstraintPass.cs` | `SetPasses/` |
+| `BaseTraversalAndDescriptorBindingPass.cs` | `SetPasses/` |
+| `CanonicalizeOrderingPass.cs` | `SetPasses/` |
 | `CanonicalizeOrderingStep.cs` | `Build/Steps/` |
 | `CollisionDetectorCore.cs` | `Diagnostics/` |
 | `ConstraintDerivationHelpers.cs` | `Constraints/` |
@@ -42,7 +42,7 @@ The following orchestration types stay under `Build/` for discoverability:
 | `DescriptorPathInference.cs` | `DescriptorPaths/` |
 | `DescriptorPathMapBuilder.cs` | `DescriptorPaths/` |
 | `DiscoverExtensionSitesStep.cs` | `Build/Steps/` |
-| `ExtensionTableDerivationRelationalModelSetPass.cs` | `SetPasses/` |
+| `ExtensionTableDerivationPass.cs` | `SetPasses/` |
 | `ExtractInputsStep.cs` | `Build/Steps/` |
 | `GlobalUsings.cs` | `Build/` |
 | `IRelationalModelSetPass.cs` | `SetPasses/` |
@@ -55,8 +55,8 @@ The following orchestration types stay under `Build/` for discoverability:
 | `NameOverrideProvider.cs` | `Naming/` |
 | `OverrideCollisionDetector.cs` | `Diagnostics/` |
 | `ProjectSchemaNormalizer.cs` | `Schema/` |
-| `ReferenceBindingRelationalModelSetPass.cs` | `SetPasses/` |
-| `ReferenceConstraintRelationalModelSetPass.cs` | `SetPasses/` |
+| `ReferenceBindingPass.cs` | `SetPasses/` |
+| `ReferenceConstraintPass.cs` | `SetPasses/` |
 | `RelationalModelBuilderPipeline.cs` | `Build/` |
 | `RelationalModelCanonicalization.cs` | `Build/` |
 | `RelationalModelManifestEmitter.cs` | `Build/` |
@@ -67,7 +67,7 @@ The following orchestration types stay under `Build/` for discoverability:
 | `RelationalModelSetValidation.cs` | `Validation/` |
 | `RelationalNameConventions.cs` | `Naming/` |
 | `RelationalScalarTypeResolver.cs` | `Schema/` |
-| `RootIdentityConstraintRelationalModelSetPass.cs` | `SetPasses/` |
+| `RootIdentityConstraintPass.cs` | `SetPasses/` |
 | `SchemaInputModels.cs` | `Schema/` |
 | `TableColumnAccumulator.cs` | `Diagnostics/` |
 | `ValidateJsonSchemaStep.cs` | `Build/Steps/` |

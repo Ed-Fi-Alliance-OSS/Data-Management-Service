@@ -28,7 +28,7 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
             new IRelationalModelSetPass[]
             {
                 new IdentifierShorteningCollisionPass(effectiveSchemaSet),
-                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+                new ApplyDialectIdentifierShorteningPass(),
             }
         );
 

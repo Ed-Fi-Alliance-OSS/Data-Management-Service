@@ -37,16 +37,16 @@ public class Given_Default_RelationalModelSet_Passes
         _firstPassTypes
             .Should()
             .Equal(
-                typeof(BaseTraversalAndDescriptorBindingRelationalModelSetPass),
-                typeof(ExtensionTableDerivationRelationalModelSetPass),
-                typeof(AbstractIdentityTableDerivationRelationalModelSetPass),
-                typeof(ReferenceBindingRelationalModelSetPass),
-                typeof(RootIdentityConstraintRelationalModelSetPass),
-                typeof(ReferenceConstraintRelationalModelSetPass),
-                typeof(ArrayUniquenessConstraintRelationalModelSetPass),
-                typeof(ApplyConstraintDialectHashingRelationalModelSetPass),
-                typeof(ApplyDialectIdentifierShorteningRelationalModelSetPass),
-                typeof(CanonicalizeOrderingRelationalModelSetPass)
+                typeof(BaseTraversalAndDescriptorBindingPass),
+                typeof(ExtensionTableDerivationPass),
+                typeof(AbstractIdentityTableDerivationPass),
+                typeof(ReferenceBindingPass),
+                typeof(RootIdentityConstraintPass),
+                typeof(ReferenceConstraintPass),
+                typeof(ArrayUniquenessConstraintPass),
+                typeof(ApplyConstraintDialectHashingPass),
+                typeof(ApplyDialectIdentifierShorteningPass),
+                typeof(CanonicalizeOrderingPass)
             );
     }
 

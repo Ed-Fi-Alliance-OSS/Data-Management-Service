@@ -12,21 +12,21 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// Executes base schema traversal and descriptor binding for each concrete, non-extension resource in the
 /// effective schema set.
 /// </summary>
-public sealed class BaseTraversalAndDescriptorBindingRelationalModelSetPass : IRelationalModelSetPass
+public sealed class BaseTraversalAndDescriptorBindingPass : IRelationalModelSetPass
 {
     private readonly RelationalModelBuilderPipeline _pipeline;
 
     /// <summary>
     /// Creates a new base traversal pass using the canonical pipeline steps.
     /// </summary>
-    public BaseTraversalAndDescriptorBindingRelationalModelSetPass()
+    public BaseTraversalAndDescriptorBindingPass()
         : this(CreateDefaultPipeline()) { }
 
     /// <summary>
     /// Creates a new base traversal pass using the supplied pipeline.
     /// </summary>
     /// <param name="pipeline">The per-resource pipeline to execute.</param>
-    public BaseTraversalAndDescriptorBindingRelationalModelSetPass(RelationalModelBuilderPipeline pipeline)
+    public BaseTraversalAndDescriptorBindingPass(RelationalModelBuilderPipeline pipeline)
     {
         ArgumentNullException.ThrowIfNull(pipeline);
 

@@ -8,7 +8,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Applies dialect length handling to constraint identifiers by appending a signature hash when required.
 /// </summary>
-public sealed class ApplyConstraintDialectHashingRelationalModelSetPass : IRelationalModelSetPass
+public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
 {
     /// <summary>
     /// Applies dialect shortening for all constraint identifiers in the derived model set.

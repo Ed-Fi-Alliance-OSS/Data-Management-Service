@@ -33,8 +33,8 @@ public class Given_Abstract_Identity_Table_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new AbstractIdentityTableDerivationRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
             }
         );
 
@@ -159,8 +159,8 @@ public class Given_Abstract_Identity_Table_With_Mismatched_Types
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new AbstractIdentityTableDerivationRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
             }
         );
 
@@ -216,8 +216,8 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new AbstractIdentityTableDerivationRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
             }
         );
 

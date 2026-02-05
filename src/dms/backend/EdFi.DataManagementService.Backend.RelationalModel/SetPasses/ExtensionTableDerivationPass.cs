@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Derives extension tables (<c>_ext</c>) from resource-extension schemas and aligns them to base scopes.
 /// </summary>
-public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelationalModelSetPass
+public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 {
     private const string ExtensionPropertyName = "_ext";
     private static readonly DbSchemaName _dmsSchemaName = new("dms");

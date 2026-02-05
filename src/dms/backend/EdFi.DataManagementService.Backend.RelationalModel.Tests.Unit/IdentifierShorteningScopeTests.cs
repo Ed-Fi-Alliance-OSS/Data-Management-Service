@@ -28,7 +28,7 @@ public class Given_Index_Name_Shortening_Collision_Across_Tables_For_Pgsql
             new IRelationalModelSetPass[]
             {
                 new IndexShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+                new ApplyDialectIdentifierShorteningPass(),
             }
         );
         var dialectRules = new MappedDialectRules(
@@ -83,7 +83,7 @@ public class Given_Index_Name_Shortening_Collision_Across_Tables_For_Mssql
             new IRelationalModelSetPass[]
             {
                 new IndexShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+                new ApplyDialectIdentifierShorteningPass(),
             }
         );
         var dialectRules = new MappedDialectRules(
@@ -136,7 +136,7 @@ public class Given_Trigger_Name_Shortening_Collision_Across_Tables_For_Pgsql
             new IRelationalModelSetPass[]
             {
                 new TriggerShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+                new ApplyDialectIdentifierShorteningPass(),
             }
         );
         var dialectRules = new MappedDialectRules(
@@ -188,7 +188,7 @@ public class Given_Trigger_Name_Shortening_Collision_Across_Tables_For_Mssql
             new IRelationalModelSetPass[]
             {
                 new TriggerShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningRelationalModelSetPass(),
+                new ApplyDialectIdentifierShorteningPass(),
             }
         );
         var dialectRules = new MappedDialectRules(

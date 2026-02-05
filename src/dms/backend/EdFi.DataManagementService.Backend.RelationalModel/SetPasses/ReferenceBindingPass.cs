@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// Binds document references from <c>documentPathsMapping.referenceJsonPaths</c> into derived tables by
 /// adding FK/identity columns and emitting <see cref="DocumentReferenceBinding"/> metadata.
 /// </summary>
-public sealed class ReferenceBindingRelationalModelSetPass : IRelationalModelSetPass
+public sealed class ReferenceBindingPass : IRelationalModelSetPass
 {
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
     private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");

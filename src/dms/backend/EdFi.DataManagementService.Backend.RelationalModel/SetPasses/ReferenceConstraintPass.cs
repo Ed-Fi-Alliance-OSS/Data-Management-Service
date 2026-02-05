@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Derives reference foreign keys and all-or-none constraints.
 /// </summary>
-public sealed class ReferenceConstraintRelationalModelSetPass : IRelationalModelSetPass
+public sealed class ReferenceConstraintPass : IRelationalModelSetPass
 {
     /// <summary>
     /// Applies reference foreign keys and all-or-none constraints for all concrete resources and resource

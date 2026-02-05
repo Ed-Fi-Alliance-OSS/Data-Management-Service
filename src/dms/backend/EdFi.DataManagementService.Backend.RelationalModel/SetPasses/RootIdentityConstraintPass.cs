@@ -11,7 +11,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 /// <summary>
 /// Derives root-table unique constraints for each concrete resource.
 /// </summary>
-public sealed class RootIdentityConstraintRelationalModelSetPass : IRelationalModelSetPass
+public sealed class RootIdentityConstraintPass : IRelationalModelSetPass
 {
     private const string UriColumnLabel = "Uri";
     private const string DiscriminatorColumnLabel = "Discriminator";

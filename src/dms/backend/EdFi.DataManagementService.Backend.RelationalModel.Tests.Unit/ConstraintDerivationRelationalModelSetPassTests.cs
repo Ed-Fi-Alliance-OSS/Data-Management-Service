@@ -33,12 +33,12 @@ public class Given_Root_Unique_Constraint_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ExtensionTableDerivationRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ExtensionTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -92,10 +92,10 @@ public class Given_Descriptor_Unique_Constraint_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -164,10 +164,10 @@ public class Given_Unmappable_Identity_Paths
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -199,11 +199,11 @@ public class Given_Incomplete_Reference_Identity_Mapping
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -240,12 +240,12 @@ public class Given_Incomplete_Abstract_Reference_Identity_Mapping
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new AbstractIdentityTableDerivationRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -405,11 +405,11 @@ public class Given_Duplicate_Reference_Path_Bindings
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -465,11 +465,11 @@ public class Given_Reference_Constraint_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -567,15 +567,15 @@ public class Given_Shuffled_Reference_Identity_Bindings
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
                 new ShuffleReferenceIdentityBindingsRelationalModelSetPass(
                     new QualifiedResourceName("Ed-Fi", "Enrollment"),
                     "$.schoolReference"
                 ),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -722,11 +722,11 @@ public class Given_Target_Unique_Mutation_From_Reference
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -780,11 +780,11 @@ public class Given_Multiple_References_To_Same_Target
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -838,12 +838,12 @@ public class Given_Abstract_Reference_Constraint_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new AbstractIdentityTableDerivationRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -897,11 +897,11 @@ public class Given_Array_Uniqueness_Constraint_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -977,11 +977,11 @@ public class Given_Nested_Array_Uniqueness_Constraint_Derivation
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -1052,11 +1052,11 @@ public class Given_Unmappable_Array_Uniqueness_Path
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -1095,7 +1095,7 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
             new IRelationalModelSetPass[]
             {
                 new DuplicateScopeResourceModelPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -1280,11 +1280,11 @@ public class Given_Extension_Array_Uniqueness_Constraint_Alignment
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
@@ -1349,11 +1349,11 @@ public class Given_Extension_Array_Uniqueness_Constraint_With_Missing_Base_Table
         var builder = new DerivedRelationalModelSetBuilder(
             new IRelationalModelSetPass[]
             {
-                new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-                new ReferenceBindingRelationalModelSetPass(),
-                new RootIdentityConstraintRelationalModelSetPass(),
-                new ReferenceConstraintRelationalModelSetPass(),
-                new ArrayUniquenessConstraintRelationalModelSetPass(),
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+                new RootIdentityConstraintPass(),
+                new ReferenceConstraintPass(),
+                new ArrayUniquenessConstraintPass(),
             }
         );
 
