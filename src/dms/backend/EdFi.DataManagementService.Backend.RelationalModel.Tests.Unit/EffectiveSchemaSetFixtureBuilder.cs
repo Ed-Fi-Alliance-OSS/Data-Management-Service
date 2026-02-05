@@ -60,6 +60,39 @@ internal static class EffectiveSchemaSetFixtureBuilder
     }
 
     /// <summary>
+    /// Create an effective schema set from multiple fixture files.
+    /// </summary>
+    public static EffectiveSchemaSet CreateEffectiveSchemaSetFromFixtures(
+        IReadOnlyList<(string FileName, bool IsExtensionProject)> fixtures,
+        bool reverseProjectOrder = false,
+        bool reverseResourceOrder = false
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fixtures);
+
+        if (fixtures.Count == 0)
+        {
+            throw new ArgumentException("At least one fixture must be provided.", nameof(fixtures));
+        }
+
+        List<EffectiveProjectSchema> projects = new(fixtures.Count);
+
+        foreach (var fixture in fixtures)
+        {
+            var projectSchema = LoadProjectSchema(fixture.FileName, reverseResourceOrder);
+            var project = CreateEffectiveProjectSchema(projectSchema, fixture.IsExtensionProject);
+            projects.Add(project);
+        }
+
+        if (reverseProjectOrder)
+        {
+            projects.Reverse();
+        }
+
+        return CreateEffectiveSchemaSet(projects);
+    }
+
+    /// <summary>
     /// Create effective schema set.
     /// </summary>
     public static EffectiveSchemaSet CreateEffectiveSchemaSet(IReadOnlyList<EffectiveProjectSchema> projects)

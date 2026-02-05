@@ -137,6 +137,11 @@ public sealed class RelationalModelSetBuilderContext
     public ISqlDialectRules DialectRules { get; }
 
     /// <summary>
+    /// Collision detector used for name overrides prior to dialect shortening.
+    /// </summary>
+    internal OverrideCollisionDetector OverrideCollisionDetector { get; } = new();
+
+    /// <summary>
     /// Project schemas ordered by endpoint name, with physical schema normalization applied.
     /// </summary>
     public IReadOnlyList<ProjectSchemaInfo> ProjectSchemasInEndpointOrder { get; }
@@ -284,6 +289,7 @@ public sealed class RelationalModelSetBuilderContext
             ResourceEndpointName = resourceContext.ResourceEndpointName,
             DescriptorPathSource = DescriptorPathSource.Precomputed,
             DescriptorPathsByJsonPath = descriptorPaths,
+            OverrideCollisionDetector = OverrideCollisionDetector,
         };
 
         _extractInputsStep.Execute(builderContext);
@@ -389,6 +395,7 @@ public sealed class RelationalModelSetBuilderContext
     public DerivedRelationalModelSet BuildResult()
     {
         ValidateDerivedInventories();
+        ValidateNameOverridesConsumed();
 
         var orderedConcreteResources = ConcreteResourcesInNameOrder
             .OrderBy(resource => resource.ResourceKey.Resource.ProjectName, StringComparer.Ordinal)
@@ -416,6 +423,8 @@ public sealed class RelationalModelSetBuilderContext
             .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
+
+        OverrideCollisionDetector.ThrowIfCollisions();
 
         ValidateIdentifierShorteningCollisions(
             orderedConcreteResources,
@@ -450,6 +459,37 @@ public sealed class RelationalModelSetBuilderContext
         ValidateConcreteResourceUniqueness();
         ValidateIndexNameUniqueness();
         ValidateTriggerNameUniqueness();
+    }
+
+    /// <summary>
+    /// Validates that all declared name overrides were applied during derivation.
+    /// </summary>
+    private void ValidateNameOverridesConsumed()
+    {
+        foreach (var entry in _builderContextsByResource)
+        {
+            var resource = entry.Key;
+            var builderContext = entry.Value;
+            var unused = builderContext.GetUnusedNameOverrides();
+
+            if (unused.Count == 0)
+            {
+                continue;
+            }
+
+            var resourceLabel = FormatResource(resource);
+            var details = string.Join(
+                ", ",
+                unused.Select(overrideEntry =>
+                    $"'{overrideEntry.RawKey}' (canonical '{overrideEntry.CanonicalPath}')"
+                )
+            );
+
+            throw new InvalidOperationException(
+                $"relational.nameOverrides entries did not match any derived columns or collection scopes "
+                    + $"on resource '{resourceLabel}': {details}."
+            );
+        }
     }
 
     /// <summary>

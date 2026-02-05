@@ -69,8 +69,10 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
 
         JsonSchemaUnsupportedKeywordValidator.Validate(rootSchema, "$");
 
+        var resourceLabel = $"{context.ProjectName ?? "Unknown"}:{context.ResourceName ?? "Unknown"}";
+
         var tableBuilders = resourceModel
-            .TablesInDependencyOrder.Select(table => new TableBuilder(table))
+            .TablesInDependencyOrder.Select(table => new TableBuilder(table, resourceLabel))
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         if (!tableBuilders.TryGetValue("$", out var rootTable))
@@ -454,8 +456,14 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
 
         if (context.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
         {
-            var descriptorBaseName = BuildColumnBaseName(columnSegments);
+            var descriptorBaseName = ResolveColumnBaseName(
+                context,
+                sourcePath,
+                columnSegments,
+                out var originalBaseName
+            );
             var columnName = RelationalNameConventions.DescriptorIdColumnName(descriptorBaseName);
+            var originalColumnName = RelationalNameConventions.DescriptorIdColumnName(originalBaseName);
             var column = new DbColumnModel(
                 columnName,
                 ColumnKind.DescriptorFk,
@@ -465,7 +473,18 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
                 descriptorPathInfo.DescriptorResource
             );
 
-            tableBuilder.AddColumn(column);
+            tableBuilder.AddColumn(column, originalColumnName.Value);
+            context.OverrideCollisionDetector?.RegisterColumn(
+                tableBuilder.Definition.Table,
+                columnName,
+                originalColumnName.Value,
+                BuildCollisionOrigin(
+                    tableBuilder.Definition.Table,
+                    columnName,
+                    descriptorPathInfo.DescriptorValuePath,
+                    context
+                )
+            );
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
                     ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
@@ -493,8 +512,14 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         }
 
         var scalarType = RelationalScalarTypeResolver.ResolveScalarType(schema, sourcePath, context);
+        var scalarBaseName = ResolveColumnBaseName(
+            context,
+            sourcePath,
+            columnSegments,
+            out var originalScalarBaseName
+        );
         var scalarColumn = new DbColumnModel(
-            new DbColumnName(BuildColumnBaseName(columnSegments)),
+            new DbColumnName(scalarBaseName),
             ColumnKind.Scalar,
             scalarType,
             isNullable,
@@ -502,7 +527,41 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             null
         );
 
-        tableBuilder.AddColumn(scalarColumn);
+        tableBuilder.AddColumn(scalarColumn, originalScalarBaseName);
+        context.OverrideCollisionDetector?.RegisterColumn(
+            tableBuilder.Definition.Table,
+            scalarColumn.ColumnName,
+            originalScalarBaseName,
+            BuildCollisionOrigin(tableBuilder.Definition.Table, scalarColumn.ColumnName, sourcePath, context)
+        );
+    }
+
+    private static string ResolveColumnBaseName(
+        RelationalModelBuilderContext context,
+        JsonPathExpression sourcePath,
+        IReadOnlyList<string> columnSegments,
+        out string originalBaseName
+    )
+    {
+        originalBaseName = BuildColumnBaseName(columnSegments);
+
+        return context.TryGetNameOverride(sourcePath, NameOverrideKind.Column, out var overrideName)
+            ? overrideName
+            : originalBaseName;
+    }
+
+    private static IdentifierCollisionOrigin BuildCollisionOrigin(
+        DbTableName tableName,
+        DbColumnName columnName,
+        JsonPathExpression? sourcePath,
+        RelationalModelBuilderContext context
+    )
+    {
+        var description = $"column {tableName.Schema.Value}.{tableName.Name}.{columnName.Value}";
+        var resourceLabel = $"{context.ProjectName ?? "Unknown"}:{context.ResourceName ?? "Unknown"}";
+        var resolvedPath = sourcePath;
+
+        return new IdentifierCollisionOrigin(description, resourceLabel, resolvedPath?.Canonical);
     }
 
     /// <summary>
@@ -741,25 +800,36 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
     /// </summary>
     private sealed class TableBuilder
     {
-        private readonly Dictionary<string, JsonPathExpression?> _columnSources = new(StringComparer.Ordinal);
+        private readonly Dictionary<string, ColumnCollisionInfo> _columnOrigins = new(StringComparer.Ordinal);
+        private readonly string? _resourceLabel;
 
         /// <summary>
         /// Initializes a builder using an existing table definition (typically containing only key columns).
         /// </summary>
-        public TableBuilder(DbTableModel table)
+        public TableBuilder(DbTableModel table, string? resourceLabel)
         {
             Definition = table;
+            _resourceLabel = resourceLabel;
             Columns = new List<DbColumnModel>(table.Columns);
             Constraints = new List<TableConstraint>(table.Constraints);
 
             foreach (var column in table.Columns)
             {
-                _columnSources[column.ColumnName.Value] = column.SourceJsonPath;
+                _columnOrigins[column.ColumnName.Value] = new ColumnCollisionInfo(
+                    column.ColumnName.Value,
+                    BuildOrigin(column.ColumnName, column.SourceJsonPath)
+                );
             }
 
             foreach (var keyColumn in table.Key.Columns)
             {
-                _columnSources.TryAdd(keyColumn.ColumnName.Value, null);
+                _columnOrigins.TryAdd(
+                    keyColumn.ColumnName.Value,
+                    new ColumnCollisionInfo(
+                        keyColumn.ColumnName.Value,
+                        BuildOrigin(keyColumn.ColumnName, null)
+                    )
+                );
             }
         }
 
@@ -782,22 +852,57 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         /// Adds a column, failing fast when a physical column name collides across different JSON source
         /// paths.
         /// </summary>
-        public void AddColumn(DbColumnModel column)
+        public void AddColumn(
+            DbColumnModel column,
+            string? originalName = null,
+            IdentifierCollisionOrigin? origin = null
+        )
         {
-            if (_columnSources.TryGetValue(column.ColumnName.Value, out var existingSource))
+            if (_columnOrigins.TryGetValue(column.ColumnName.Value, out var existing))
             {
-                var tableName = Definition.Table.Name;
-                var existingPath = ResolveSourcePath(existingSource);
-                var incomingPath = ResolveSourcePath(column.SourceJsonPath);
+                var resolvedOriginal = string.IsNullOrWhiteSpace(originalName)
+                    ? column.ColumnName.Value
+                    : originalName;
+                var resolvedOrigin = origin ?? BuildOrigin(column.ColumnName, column.SourceJsonPath);
+                var scope = new IdentifierCollisionScope(
+                    IdentifierCollisionKind.Column,
+                    Definition.Table.Schema.Value,
+                    Definition.Table.Name
+                );
+                IdentifierCollisionSource[] sources =
+                [
+                    new IdentifierCollisionSource(
+                        existing.OriginalName,
+                        column.ColumnName.Value,
+                        existing.Origin
+                    ),
+                    new IdentifierCollisionSource(resolvedOriginal, column.ColumnName.Value, resolvedOrigin),
+                ];
+
+                var orderedSources = sources
+                    .OrderBy(source => source.OriginalIdentifier, StringComparer.Ordinal)
+                    .ThenBy(source => source.Origin.Description, StringComparer.Ordinal)
+                    .ThenBy(source => source.Origin.ResourceLabel ?? string.Empty, StringComparer.Ordinal)
+                    .ThenBy(source => source.Origin.JsonPath ?? string.Empty, StringComparer.Ordinal)
+                    .ToArray();
+
+                var record = new IdentifierCollisionRecord(
+                    IdentifierCollisionStage.AfterOverrideNormalization,
+                    scope,
+                    orderedSources
+                );
 
                 throw new InvalidOperationException(
-                    $"Column name '{column.ColumnName.Value}' is already defined on table '{tableName}'. "
-                        + $"Colliding source paths '{existingPath}' and '{incomingPath}'. "
-                        + "Use relational.nameOverrides to resolve the collision."
+                    "Identifier override collisions detected: " + record.Format()
                 );
             }
 
-            _columnSources.Add(column.ColumnName.Value, column.SourceJsonPath);
+            var finalOriginal = string.IsNullOrWhiteSpace(originalName)
+                ? column.ColumnName.Value
+                : originalName;
+            var finalOrigin = origin ?? BuildOrigin(column.ColumnName, column.SourceJsonPath);
+
+            _columnOrigins.Add(column.ColumnName.Value, new ColumnCollisionInfo(finalOriginal, finalOrigin));
             Columns.Add(column);
         }
 
@@ -821,9 +926,15 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         /// <summary>
         /// Converts a column source path into the most helpful canonical JSONPath for collision messages.
         /// </summary>
-        private string ResolveSourcePath(JsonPathExpression? sourcePath)
+        private IdentifierCollisionOrigin BuildOrigin(DbColumnName columnName, JsonPathExpression? sourcePath)
         {
-            return (sourcePath ?? Definition.JsonScope).Canonical;
+            var description =
+                $"column {Definition.Table.Schema.Value}.{Definition.Table.Name}.{columnName.Value}";
+            var resolvedPath = sourcePath ?? Definition.JsonScope;
+
+            return new IdentifierCollisionOrigin(description, _resourceLabel, resolvedPath.Canonical);
         }
+
+        private sealed record ColumnCollisionInfo(string OriginalName, IdentifierCollisionOrigin Origin);
     }
 }

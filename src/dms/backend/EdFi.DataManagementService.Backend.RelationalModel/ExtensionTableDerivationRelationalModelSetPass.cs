@@ -30,6 +30,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             context.ConcreteResourcesInNameOrder,
             static (index, model) => new BaseResourceEntry(index, model)
         );
+        var baseSchemasByName = context
+            .EnumerateConcreteResourceSchemasInNameOrder()
+            .Where(resourceContext => !IsResourceExtension(resourceContext))
+            .ToDictionary(resourceContext => resourceContext.ResourceName, StringComparer.Ordinal);
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
@@ -59,6 +63,19 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 static entry => entry.Model.ResourceKey.Resource
             );
             var baseModel = context.ConcreteResourcesInNameOrder[baseEntry.Index];
+            if (!baseSchemasByName.TryGetValue(resourceContext.ResourceName, out var baseSchemaContext))
+            {
+                throw new InvalidOperationException(
+                    $"Base resource schema not found for extension '{FormatResource(resource)}'."
+                );
+            }
+
+            var baseOverrideContext = context.GetOrCreateResourceBuilderContext(baseSchemaContext);
+            var extensionOverrideContext = context.GetOrCreateResourceBuilderContext(resourceContext);
+            var overrideProvider = new CompositeNameOverrideProvider(
+                extensionOverrideContext,
+                baseOverrideContext
+            );
             var extensionContext = BuildExtensionContext(
                 context,
                 resourceContext,
@@ -67,6 +84,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
             var extensionResult = DeriveExtensionTables(
                 extensionContext,
+                overrideProvider,
+                $"{resource.ProjectName}:{resource.ResourceName}",
                 baseModel.RelationalModel,
                 resourceContext.Project.ProjectSchema
             );
@@ -111,6 +130,7 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             ResourceEndpointName = resourceContext.ResourceEndpointName,
             DescriptorPathSource = DescriptorPathSource.Precomputed,
             DescriptorPathsByJsonPath = descriptorPaths,
+            OverrideCollisionDetector = context.OverrideCollisionDetector,
         };
 
         new ExtractInputsStep().Execute(builderContext);
@@ -124,6 +144,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
     /// </summary>
     private static ExtensionDerivationResult DeriveExtensionTables(
         RelationalModelBuilderContext extensionContext,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         RelationalResourceModel baseModel,
         ProjectSchemaInfo extensionProject
     )
@@ -167,7 +189,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             [],
             "$",
             hasOptionalAncestor: false,
+            hasOverriddenAncestor: false,
             extensionContext,
+            overrideProvider,
+            resourceLabel,
             extensionProject,
             baseRootBaseName,
             extensionRootBaseName,
@@ -222,7 +247,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<string> columnSegments,
         string schemaPath,
         bool hasOptionalAncestor,
+        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         ProjectSchemaInfo extensionProject,
         string baseRootBaseName,
         string extensionRootBaseName,
@@ -247,7 +275,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     columnSegments,
                     schemaPath,
                     hasOptionalAncestor,
+                    hasOverriddenAncestor,
                     context,
+                    overrideProvider,
+                    resourceLabel,
                     extensionProject,
                     baseRootBaseName,
                     extensionRootBaseName,
@@ -267,6 +298,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     pathSegments,
                     schemaPath,
                     context,
+                    overrideProvider,
+                    resourceLabel,
                     extensionProject,
                     baseRootBaseName,
                     extensionRootBaseName,
@@ -276,7 +309,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     referenceIdentityPaths,
                     referenceObjectPaths,
                     usedDescriptorPaths,
-                    descriptorEdgeSources
+                    descriptorEdgeSources,
+                    hasOverriddenAncestor
                 );
                 break;
             case SchemaKind.Scalar:
@@ -297,7 +331,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<string> columnSegments,
         string schemaPath,
         bool hasOptionalAncestor,
+        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         ProjectSchemaInfo extensionProject,
         string baseRootBaseName,
         string extensionRootBaseName,
@@ -344,7 +381,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     schemaPath,
                     requiredProperties,
                     hasOptionalAncestor,
+                    hasOverriddenAncestor,
                     context,
+                    overrideProvider,
+                    resourceLabel,
                     extensionProject,
                     baseRootBaseName,
                     extensionRootBaseName,
@@ -388,7 +428,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                         propertyColumnSegments,
                         propertySchemaPath,
                         nextHasOptionalAncestor,
+                        hasOverriddenAncestor,
                         context,
+                        overrideProvider,
+                        resourceLabel,
                         extensionProject,
                         baseRootBaseName,
                         extensionRootBaseName,
@@ -419,6 +462,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                         propertyPath,
                         isNullable,
                         context,
+                        overrideProvider,
+                        resourceLabel,
                         identityPaths,
                         referenceIdentityPaths,
                         usedDescriptorPaths,
@@ -441,7 +486,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         string schemaPath,
         HashSet<string> requiredProperties,
         bool hasOptionalAncestor,
+        bool hasOverriddenAncestor,
         RelationalModelBuilderContext context,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         ProjectSchemaInfo extensionProject,
         string baseRootBaseName,
         string extensionRootBaseName,
@@ -520,7 +568,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             extensionRootBaseName,
             baseTablesByScope,
             extensionTablesByScope,
-            extensionProject
+            extensionProject,
+            overrideProvider,
+            resourceLabel,
+            context.OverrideCollisionDetector
         );
 
         WalkSchema(
@@ -530,7 +581,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             [],
             projectSchemaPath,
             projectHasOptionalAncestor,
+            hasOverriddenAncestor,
             context,
+            overrideProvider,
+            resourceLabel,
             extensionProject,
             baseRootBaseName,
             extensionRootBaseName,
@@ -554,6 +608,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<JsonPathSegment> propertySegments,
         string schemaPath,
         RelationalModelBuilderContext context,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         ProjectSchemaInfo extensionProject,
         string baseRootBaseName,
         string extensionRootBaseName,
@@ -563,7 +619,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         IReadOnlySet<string> referenceIdentityPaths,
         IReadOnlySet<string> referenceObjectPaths,
         HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        List<DescriptorEdgeSource> descriptorEdgeSources,
+        bool hasOverriddenAncestor
     )
     {
         var arrayPath = JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
@@ -582,8 +639,24 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         JsonSchemaUnsupportedKeywordValidator.Validate(itemsSchema, itemsSchemaPath);
 
+        if (propertySegments.Count == 0 || propertySegments[^1] is not JsonPathSegment.Property property)
+        {
+            throw new InvalidOperationException("Array schema must be rooted at a property segment.");
+        }
+
         List<JsonPathSegment> arraySegments = [.. propertySegments, new JsonPathSegment.AnyArrayElement()];
-        var arrayScope = JsonPathExpressionCompiler.FromSegments(arraySegments).Canonical;
+        var arrayPathExpression = JsonPathExpressionCompiler.FromSegments(arraySegments);
+        var arrayScope = arrayPathExpression.Canonical;
+        var defaultCollectionBaseName = RelationalNameConventions.ToCollectionBaseName(property.Name);
+        var parentSuffix = tableBuilder is null
+            ? string.Empty
+            : string.Concat(tableBuilder.CollectionBaseNames);
+        var hasOverride = overrideProvider.TryGetNameOverride(
+            arrayPathExpression,
+            NameOverrideKind.Collection,
+            out var overrideName
+        );
+        var nextHasOverriddenAncestor = hasOverriddenAncestor || hasOverride;
 
         var itemsKind = JsonSchemaTraversalConventions.DetermineSchemaKind(itemsSchema);
 
@@ -598,7 +671,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     [],
                     itemsSchemaPath,
                     hasOptionalAncestor: false,
+                    hasOverriddenAncestor: nextHasOverriddenAncestor,
                     context,
+                    overrideProvider,
+                    resourceLabel,
                     extensionProject,
                     baseRootBaseName,
                     extensionRootBaseName,
@@ -626,6 +702,39 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             return;
         }
 
+        if (!hasOverride && hasOverriddenAncestor)
+        {
+            throw new InvalidOperationException(
+                $"relational.nameOverrides entry is required for descendant collection scope "
+                    + $"'{arrayPathExpression.Canonical}' on resource '{resourceLabel}'."
+            );
+        }
+
+        var collectionBaseName = defaultCollectionBaseName;
+
+        if (hasOverride)
+        {
+            if (!overrideName.StartsWith(parentSuffix, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry for '{arrayPathExpression.Canonical}' on resource "
+                        + $"'{resourceLabel}' must start with '{parentSuffix}'."
+                );
+            }
+
+            var remainder = overrideName[parentSuffix.Length..];
+
+            if (string.IsNullOrWhiteSpace(remainder))
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry for '{arrayPathExpression.Canonical}' on resource "
+                        + $"'{resourceLabel}' must extend the parent collection suffix."
+                );
+            }
+
+            collectionBaseName = remainder;
+        }
+
         if (itemsKind == SchemaKind.Object && HasExtensionProperty(itemsSchema))
         {
             WalkSchema(
@@ -635,7 +744,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 [],
                 itemsSchemaPath,
                 hasOptionalAncestor: false,
+                hasOverriddenAncestor: nextHasOverriddenAncestor,
                 context,
+                overrideProvider,
+                resourceLabel,
                 extensionProject,
                 baseRootBaseName,
                 extensionRootBaseName,
@@ -658,7 +770,11 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 arraySegments,
                 baseRootBaseName,
                 extensionRootBaseName,
-                extensionProject
+                extensionProject,
+                collectionBaseName,
+                defaultCollectionBaseName,
+                context.OverrideCollisionDetector,
+                resourceLabel
             );
             extensionTablesByScope[arrayScope] = childTable;
         }
@@ -673,7 +789,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     [],
                     itemsSchemaPath,
                     hasOptionalAncestor: false,
+                    hasOverriddenAncestor: nextHasOverriddenAncestor,
                     context,
+                    overrideProvider,
+                    resourceLabel,
                     extensionProject,
                     baseRootBaseName,
                     extensionRootBaseName,
@@ -693,6 +812,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                     propertySegments,
                     arraySegments,
                     context,
+                    overrideProvider,
+                    resourceLabel,
                     identityPaths,
                     referenceIdentityPaths,
                     usedDescriptorPaths,
@@ -718,7 +839,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         string extensionRootBaseName,
         IReadOnlyDictionary<string, DbTableModel> baseTablesByScope,
         Dictionary<string, ExtensionTableBuilder> extensionTablesByScope,
-        ProjectSchemaInfo extensionProject
+        ProjectSchemaInfo extensionProject,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
+        OverrideCollisionDetector? collisionDetector
     )
     {
         if (extensionTablesByScope.TryGetValue(projectPath.Canonical, out var existing))
@@ -738,7 +862,11 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             );
         }
 
-        var collectionBaseNames = BuildCollectionBaseNames(baseTableScopeSegments);
+        var (collectionBaseNames, defaultCollectionBaseNames) = BuildCollectionBaseNames(
+            baseTableScopeSegments,
+            overrideProvider,
+            resourceLabel
+        );
         var tableName = new DbTableName(
             extensionProject.PhysicalSchema,
             extensionRootBaseName + string.Concat(collectionBaseNames)
@@ -747,6 +875,10 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             collectionBaseNames.Count == 0
                 ? BuildRootTableKey()
                 : BuildChildTableKey(baseRootBaseName, collectionBaseNames);
+        var originalKey =
+            defaultCollectionBaseNames.Count == 0
+                ? BuildRootTableKey()
+                : BuildChildTableKey(baseRootBaseName, defaultCollectionBaseNames);
 
         var keyColumns = BuildKeyColumns(tableKey.Columns);
         var fkColumns = tableKey.Columns.Select(column => column.ColumnName).ToArray();
@@ -764,7 +896,28 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         ];
 
         var table = new DbTableModel(tableName, projectPath, tableKey, keyColumns, constraints);
-        var builder = new ExtensionTableBuilder(table, collectionBaseNames);
+        var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
+
+        collisionDetector?.RegisterTable(
+            tableName,
+            originalTableName,
+            BuildTableOrigin(tableName, resourceLabel, projectPath)
+        );
+
+        for (var index = 0; index < tableKey.Columns.Count; index++)
+        {
+            var finalColumn = tableKey.Columns[index].ColumnName;
+            var originalColumn = originalKey.Columns[index].ColumnName;
+
+            collisionDetector?.RegisterColumn(
+                tableName,
+                finalColumn,
+                originalColumn.Value,
+                BuildColumnOrigin(tableName, finalColumn, resourceLabel, projectPath)
+            );
+        }
+
+        var builder = new ExtensionTableBuilder(table, collectionBaseNames, defaultCollectionBaseNames);
 
         extensionTablesByScope[projectPath.Canonical] = builder;
 
@@ -780,22 +933,24 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<JsonPathSegment> arraySegments,
         string baseRootBaseName,
         string extensionRootBaseName,
-        ProjectSchemaInfo extensionProject
+        ProjectSchemaInfo extensionProject,
+        string collectionBaseName,
+        string defaultCollectionBaseName,
+        OverrideCollisionDetector? collisionDetector,
+        string resourceLabel
     )
     {
-        if (propertySegments.Count == 0 || propertySegments[^1] is not JsonPathSegment.Property property)
-        {
-            throw new InvalidOperationException("Array schema must be rooted at a property segment.");
-        }
-
-        var collectionBaseName = RelationalNameConventions.ToCollectionBaseName(property.Name);
         var collectionBaseNames = parent.CollectionBaseNames.Concat(new[] { collectionBaseName }).ToArray();
+        var defaultCollectionBaseNames = parent
+            .DefaultCollectionBaseNames.Concat(new[] { defaultCollectionBaseName })
+            .ToArray();
 
         var tableName = new DbTableName(
             extensionProject.PhysicalSchema,
             extensionRootBaseName + string.Concat(collectionBaseNames)
         );
         var tableKey = BuildChildTableKey(baseRootBaseName, collectionBaseNames);
+        var originalKey = BuildChildTableKey(baseRootBaseName, defaultCollectionBaseNames);
         var keyColumns = BuildKeyColumns(tableKey.Columns);
 
         var parentKeyColumns = BuildParentKeyColumnNames(baseRootBaseName, parent.CollectionBaseNames);
@@ -815,15 +970,42 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         var jsonScope = JsonPathExpressionCompiler.FromSegments(arraySegments);
         var table = new DbTableModel(tableName, jsonScope, tableKey, keyColumns, constraints);
 
-        return new ExtensionTableBuilder(table, collectionBaseNames);
+        var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
+
+        collisionDetector?.RegisterTable(
+            tableName,
+            originalTableName,
+            BuildTableOrigin(tableName, resourceLabel, jsonScope)
+        );
+
+        for (var index = 0; index < tableKey.Columns.Count; index++)
+        {
+            var finalColumn = tableKey.Columns[index].ColumnName;
+            var originalColumn = originalKey.Columns[index].ColumnName;
+
+            collisionDetector?.RegisterColumn(
+                tableName,
+                finalColumn,
+                originalColumn.Value,
+                BuildColumnOrigin(tableName, finalColumn, resourceLabel, jsonScope)
+            );
+        }
+
+        return new ExtensionTableBuilder(table, collectionBaseNames, defaultCollectionBaseNames);
     }
 
     /// <summary>
     /// Builds the ordered collection base names for a table scope from its property/array segments.
     /// </summary>
-    private static IReadOnlyList<string> BuildCollectionBaseNames(IReadOnlyList<JsonPathSegment> segments)
+    private static (IReadOnlyList<string> Effective, IReadOnlyList<string> Default) BuildCollectionBaseNames(
+        IReadOnlyList<JsonPathSegment> segments,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel
+    )
     {
-        List<string> baseNames = [];
+        List<string> effective = [];
+        List<string> defaults = [];
+        var hasOverriddenAncestor = false;
 
         for (var index = 0; index < segments.Count - 1; index++)
         {
@@ -832,11 +1014,79 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 && segments[index + 1] is JsonPathSegment.AnyArrayElement
             )
             {
-                baseNames.Add(RelationalNameConventions.ToCollectionBaseName(property.Name));
+                var defaultBaseName = RelationalNameConventions.ToCollectionBaseName(property.Name);
+                var arraySegments = segments.Take(index + 2).ToArray();
+                var arrayPath = JsonPathExpressionCompiler.FromSegments(arraySegments);
+                var parentSuffix = string.Concat(effective);
+                var hasOverride = overrideProvider.TryGetNameOverride(
+                    arrayPath,
+                    NameOverrideKind.Collection,
+                    out var overrideName
+                );
+
+                if (!hasOverride && hasOverriddenAncestor)
+                {
+                    throw new InvalidOperationException(
+                        $"relational.nameOverrides entry is required for descendant collection scope "
+                            + $"'{arrayPath.Canonical}' on resource '{resourceLabel}'."
+                    );
+                }
+
+                var baseName = defaultBaseName;
+
+                if (hasOverride)
+                {
+                    if (!overrideName.StartsWith(parentSuffix, StringComparison.Ordinal))
+                    {
+                        throw new InvalidOperationException(
+                            $"relational.nameOverrides entry for '{arrayPath.Canonical}' on resource "
+                                + $"'{resourceLabel}' must start with '{parentSuffix}'."
+                        );
+                    }
+
+                    var remainder = overrideName[parentSuffix.Length..];
+
+                    if (string.IsNullOrWhiteSpace(remainder))
+                    {
+                        throw new InvalidOperationException(
+                            $"relational.nameOverrides entry for '{arrayPath.Canonical}' on resource "
+                                + $"'{resourceLabel}' must extend the parent collection suffix."
+                        );
+                    }
+
+                    baseName = remainder;
+                }
+
+                hasOverriddenAncestor = hasOverriddenAncestor || hasOverride;
+                effective.Add(baseName);
+                defaults.Add(defaultBaseName);
             }
         }
 
-        return baseNames.ToArray();
+        return (effective.ToArray(), defaults.ToArray());
+    }
+
+    private static IdentifierCollisionOrigin BuildTableOrigin(
+        DbTableName tableName,
+        string resourceLabel,
+        JsonPathExpression jsonScope
+    )
+    {
+        var description = $"table {tableName.Schema.Value}.{tableName.Name}";
+
+        return new IdentifierCollisionOrigin(description, resourceLabel, jsonScope.Canonical);
+    }
+
+    private static IdentifierCollisionOrigin BuildColumnOrigin(
+        DbTableName tableName,
+        DbColumnName columnName,
+        string resourceLabel,
+        JsonPathExpression jsonScope
+    )
+    {
+        var description = $"column {tableName.Schema.Value}.{tableName.Name}.{columnName.Value}";
+
+        return new IdentifierCollisionOrigin(description, resourceLabel, jsonScope.Canonical);
     }
 
     /// <summary>
@@ -993,6 +1243,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         List<JsonPathSegment> propertySegments,
         List<JsonPathSegment> arraySegments,
         RelationalModelBuilderContext context,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         HashSet<string> identityPaths,
         IReadOnlySet<string> referenceIdentityPaths,
         HashSet<string> usedDescriptorPaths,
@@ -1018,6 +1270,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             elementPath,
             isNullable,
             context,
+            overrideProvider,
+            resourceLabel,
             identityPaths,
             referenceIdentityPaths,
             usedDescriptorPaths,
@@ -1053,6 +1307,8 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         JsonPathExpression sourcePath,
         bool isNullable,
         RelationalModelBuilderContext context,
+        INameOverrideProvider overrideProvider,
+        string resourceLabel,
         HashSet<string> identityPaths,
         IReadOnlySet<string> referenceIdentityPaths,
         HashSet<string> usedDescriptorPaths,
@@ -1071,8 +1327,16 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
 
         if (context.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
         {
-            var descriptorBaseName = BuildColumnBaseName(columnSegments);
+            var descriptorBaseName = ResolveColumnBaseName(
+                overrideProvider,
+                sourcePath,
+                columnSegments,
+                out var originalDescriptorBaseName
+            );
             var columnName = RelationalNameConventions.DescriptorIdColumnName(descriptorBaseName);
+            var originalColumnName = RelationalNameConventions.DescriptorIdColumnName(
+                originalDescriptorBaseName
+            );
             var column = new DbColumnModel(
                 columnName,
                 ColumnKind.DescriptorFk,
@@ -1082,7 +1346,27 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
                 descriptorPathInfo.DescriptorResource
             );
 
-            tableBuilder.AddColumn(column);
+            tableBuilder.AddColumn(
+                column,
+                originalColumnName.Value,
+                BuildCollisionOrigin(
+                    tableBuilder.Definition.Table,
+                    columnName,
+                    descriptorPathInfo.DescriptorValuePath,
+                    resourceLabel
+                )
+            );
+            context.OverrideCollisionDetector?.RegisterColumn(
+                tableBuilder.Definition.Table,
+                columnName,
+                originalColumnName.Value,
+                BuildCollisionOrigin(
+                    tableBuilder.Definition.Table,
+                    columnName,
+                    descriptorPathInfo.DescriptorValuePath,
+                    resourceLabel
+                )
+            );
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
                     ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
@@ -1110,8 +1394,14 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         }
 
         var scalarType = ResolveScalarType(schema, sourcePath, context);
+        var scalarBaseName = ResolveColumnBaseName(
+            overrideProvider,
+            sourcePath,
+            columnSegments,
+            out var originalBaseName
+        );
         var scalarColumn = new DbColumnModel(
-            new DbColumnName(BuildColumnBaseName(columnSegments)),
+            new DbColumnName(scalarBaseName),
             ColumnKind.Scalar,
             scalarType,
             isNullable,
@@ -1119,7 +1409,53 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
             null
         );
 
-        tableBuilder.AddColumn(scalarColumn);
+        tableBuilder.AddColumn(
+            scalarColumn,
+            originalBaseName,
+            BuildCollisionOrigin(
+                tableBuilder.Definition.Table,
+                scalarColumn.ColumnName,
+                sourcePath,
+                resourceLabel
+            )
+        );
+        context.OverrideCollisionDetector?.RegisterColumn(
+            tableBuilder.Definition.Table,
+            scalarColumn.ColumnName,
+            originalBaseName,
+            BuildCollisionOrigin(
+                tableBuilder.Definition.Table,
+                scalarColumn.ColumnName,
+                sourcePath,
+                resourceLabel
+            )
+        );
+    }
+
+    private static string ResolveColumnBaseName(
+        INameOverrideProvider overrideProvider,
+        JsonPathExpression sourcePath,
+        IReadOnlyList<string> columnSegments,
+        out string originalBaseName
+    )
+    {
+        originalBaseName = BuildColumnBaseName(columnSegments);
+
+        return overrideProvider.TryGetNameOverride(sourcePath, NameOverrideKind.Column, out var overrideName)
+            ? overrideName
+            : originalBaseName;
+    }
+
+    private static IdentifierCollisionOrigin BuildCollisionOrigin(
+        DbTableName tableName,
+        DbColumnName columnName,
+        JsonPathExpression sourcePath,
+        string resourceLabel
+    )
+    {
+        var description = $"column {tableName.Schema.Value}.{tableName.Name}.{columnName.Value}";
+
+        return new IdentifierCollisionOrigin(description, resourceLabel, sourcePath.Canonical);
     }
 
     /// <summary>
@@ -1655,10 +1991,15 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         /// <summary>
         /// Creates a builder for the supplied table definition and collection scope.
         /// </summary>
-        public ExtensionTableBuilder(DbTableModel table, IReadOnlyList<string> collectionBaseNames)
+        public ExtensionTableBuilder(
+            DbTableModel table,
+            IReadOnlyList<string> collectionBaseNames,
+            IReadOnlyList<string> defaultCollectionBaseNames
+        )
         {
             _accumulator = new TableColumnAccumulator(table);
             CollectionBaseNames = collectionBaseNames;
+            DefaultCollectionBaseNames = defaultCollectionBaseNames;
         }
 
         /// <summary>
@@ -1672,11 +2013,20 @@ public sealed class ExtensionTableDerivationRelationalModelSetPass : IRelational
         public IReadOnlyList<string> CollectionBaseNames { get; }
 
         /// <summary>
+        /// The default collection base name chain used for pre-override collision detection.
+        /// </summary>
+        public IReadOnlyList<string> DefaultCollectionBaseNames { get; }
+
+        /// <summary>
         /// Adds a column to the table being built.
         /// </summary>
-        public void AddColumn(DbColumnModel column)
+        public void AddColumn(
+            DbColumnModel column,
+            string? originalName = null,
+            IdentifierCollisionOrigin? origin = null
+        )
         {
-            _accumulator.AddColumn(column);
+            _accumulator.AddColumn(column, originalName, origin);
         }
 
         /// <summary>

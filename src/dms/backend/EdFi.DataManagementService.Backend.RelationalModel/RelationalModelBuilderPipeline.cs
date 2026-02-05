@@ -25,8 +25,10 @@ public interface IRelationalModelBuilderStep
 /// This context aggregates schema inputs, extracted metadata, and derived outputs. Pipeline steps are expected
 /// to validate required inputs at their entry points and fail fast with actionable errors.
 /// </summary>
-public sealed class RelationalModelBuilderContext
+public sealed class RelationalModelBuilderContext : INameOverrideProvider
 {
+    private readonly HashSet<string> _usedNameOverrides = new(StringComparer.Ordinal);
+
     /// <summary>
     /// Controls whether descriptor path inference should be computed from schema inputs or supplied
     /// externally (for example, from a set-level derivation pass).
@@ -102,19 +104,10 @@ public sealed class RelationalModelBuilderContext
         Array.Empty<ArrayUniquenessConstraintInput>();
 
     /// <summary>
-    /// Reference base-name overrides keyed by canonical JSONPath.
+    /// Normalized relational name overrides keyed by canonical JSONPath.
     /// </summary>
-    public IReadOnlyDictionary<string, string> ReferenceNameOverridesByPath { get; set; } =
-        new Dictionary<string, string>(StringComparer.Ordinal);
-
-    /// <summary>
-    /// Captures <c>relational.nameOverrides</c> entries that are not yet supported by the relational model builder.
-    ///
-    /// DMS-931 must apply these overrides when non-reference paths (for example, array/table scopes) become
-    /// supported.
-    /// </summary>
-    public IReadOnlyDictionary<string, string> NameOverridesDeferredToNextStory { get; set; } =
-        new Dictionary<string, string>(StringComparer.Ordinal);
+    public IReadOnlyDictionary<string, NameOverrideEntry> NameOverridesByPath { get; set; } =
+        new Dictionary<string, NameOverrideEntry>(StringComparer.Ordinal);
 
     /// <summary>
     /// Descriptor value paths keyed by canonical JSONPath, used to derive descriptor FK columns instead of
@@ -143,6 +136,11 @@ public sealed class RelationalModelBuilderContext
         new HashSet<string>(StringComparer.Ordinal);
 
     /// <summary>
+    /// Optional override-collision detector used during naming.
+    /// </summary>
+    internal OverrideCollisionDetector? OverrideCollisionDetector { get; set; }
+
+    /// <summary>
     /// The derived resource model produced by pipeline steps (tables, columns, constraints, edges).
     /// </summary>
     public RelationalResourceModel? ResourceModel { get; set; }
@@ -164,6 +162,38 @@ public sealed class RelationalModelBuilderContext
         }
 
         return DescriptorPathsByJsonPath.TryGetValue(path.Canonical, out descriptorPathInfo);
+    }
+
+    /// <summary>
+    /// Attempts to resolve a name override for the supplied JSONPath.
+    /// </summary>
+    public bool TryGetNameOverride(JsonPathExpression path, NameOverrideKind kind, out string overrideName)
+    {
+        if (NameOverridesByPath.TryGetValue(path.Canonical, out var entry) && entry.Kind == kind)
+        {
+            _usedNameOverrides.Add(entry.CanonicalPath);
+            overrideName = entry.NormalizedName;
+            return true;
+        }
+
+        overrideName = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns name override entries that have not been used by derivation.
+    /// </summary>
+    internal IReadOnlyList<NameOverrideEntry> GetUnusedNameOverrides()
+    {
+        if (NameOverridesByPath.Count == 0)
+        {
+            return Array.Empty<NameOverrideEntry>();
+        }
+
+        return NameOverridesByPath
+            .Values.Where(entry => !_usedNameOverrides.Contains(entry.CanonicalPath))
+            .OrderBy(entry => entry.CanonicalPath, StringComparer.Ordinal)
+            .ToArray();
     }
 
     /// <summary>

@@ -108,7 +108,10 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         );
         var nameOverrides = ExtractNameOverrides(
             relationalObject,
-            documentPathsMapping.ReferenceObjectPaths,
+            documentPathsMapping.ReferenceMappings,
+            isResourceExtension,
+            jsonSchemaForInsert,
+            projectEndpointName,
             projectName,
             resourceName
         );
@@ -131,8 +134,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
         context.AllowIdentityUpdates = allowIdentityUpdates;
         context.DocumentReferenceMappings = documentPathsMapping.ReferenceMappings;
         context.ArrayUniquenessConstraints = arrayUniquenessConstraints;
-        context.ReferenceNameOverridesByPath = nameOverrides.ReferenceNameOverridesByPath;
-        context.NameOverridesDeferredToNextStory = nameOverrides.DeferredNameOverrides;
+        context.NameOverridesByPath = nameOverrides;
         context.DescriptorPathsByJsonPath = descriptorPathsByJsonPath;
         context.DecimalPropertyValidationInfosByPath = decimalPropertyValidationInfosByPath;
         context.StringMaxLengthOmissionPaths = stringMaxLengthOmissionPaths;
@@ -715,14 +717,6 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Extracts reference base-name overrides from <c>resourceSchema.relational.nameOverrides</c>.
-    /// </summary>
-    private sealed record NameOverridesExtractionResult(
-        IReadOnlyDictionary<string, string> ReferenceNameOverridesByPath,
-        IReadOnlyDictionary<string, string> DeferredNameOverrides
-    );
-
-    /// <summary>
     /// Resolves the <c>relational</c> block for a resource, validating descriptor restrictions.
     /// </summary>
     private static JsonObject? GetRelationalObject(
@@ -834,37 +828,31 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     }
 
     /// <summary>
-    /// Extracts reference base-name overrides from <c>resourceSchema.relational.nameOverrides</c>.
+    /// Extracts and normalizes <c>resourceSchema.relational.nameOverrides</c> entries.
     /// </summary>
-    private static NameOverridesExtractionResult ExtractNameOverrides(
+    private static IReadOnlyDictionary<string, NameOverrideEntry> ExtractNameOverrides(
         JsonObject? relationalObject,
-        IReadOnlySet<string> referenceObjectPaths,
+        IReadOnlyList<DocumentReferenceMapping> referenceMappings,
+        bool isResourceExtension,
+        JsonNode jsonSchemaForInsert,
+        string projectEndpointName,
         string projectName,
         string resourceName
     )
     {
         if (relationalObject is null)
         {
-            return new NameOverridesExtractionResult(
-                new Dictionary<string, string>(StringComparer.Ordinal),
-                new Dictionary<string, string>(StringComparer.Ordinal)
-            );
+            return new Dictionary<string, NameOverrideEntry>(StringComparer.Ordinal);
         }
 
         if (!relationalObject.TryGetPropertyValue("nameOverrides", out var nameOverridesNode))
         {
-            return new NameOverridesExtractionResult(
-                new Dictionary<string, string>(StringComparer.Ordinal),
-                new Dictionary<string, string>(StringComparer.Ordinal)
-            );
+            return new Dictionary<string, NameOverrideEntry>(StringComparer.Ordinal);
         }
 
         if (nameOverridesNode is null)
         {
-            return new NameOverridesExtractionResult(
-                new Dictionary<string, string>(StringComparer.Ordinal),
-                new Dictionary<string, string>(StringComparer.Ordinal)
-            );
+            return new Dictionary<string, NameOverrideEntry>(StringComparer.Ordinal);
         }
 
         if (nameOverridesNode is not JsonObject nameOverridesObject)
@@ -875,8 +863,8 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
             );
         }
 
-        Dictionary<string, string> overrides = new(StringComparer.Ordinal);
-        Dictionary<string, string> deferredOverrides = new(StringComparer.Ordinal);
+        Dictionary<string, NameOverrideEntry> overrides = new(StringComparer.Ordinal);
+        string? extensionProjectKey = null;
 
         foreach (var overrideEntry in nameOverridesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
@@ -896,7 +884,18 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 );
             }
 
-            var canonicalPath = compiledPath.Canonical;
+            var resolvedPath = compiledPath;
+
+            if (isResourceExtension && !IsExtensionRootPath(compiledPath))
+            {
+                extensionProjectKey ??= ResolveExtensionProjectKey(
+                    jsonSchemaForInsert,
+                    projectEndpointName,
+                    projectName,
+                    resourceName
+                );
+                resolvedPath = PrefixExtensionRoot(compiledPath, extensionProjectKey);
+            }
 
             var overrideNode = overrideEntry.Value;
 
@@ -926,18 +925,234 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
                 );
             }
 
-            if (referenceObjectPaths.Contains(canonicalPath))
+            var normalizedOverride = RelationalNameConventions.ToPascalCase(overrideText);
+
+            if (string.IsNullOrWhiteSpace(normalizedOverride))
             {
-                overrides[canonicalPath] = overrideText;
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry '{overrideKey}' must normalize to a non-empty "
+                        + $"name on resource '{projectName}:{resourceName}'."
+                );
+            }
+
+            if (IsInsideReferenceObjectPath(resolvedPath, referenceMappings, out var referencePath))
+            {
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry '{overrideKey}' (canonical '{resolvedPath.Canonical}') "
+                        + $"on resource '{projectName}:{resourceName}' targets a path inside reference "
+                        + $"object '{referencePath}'. Only reference object paths may be overridden."
+                );
+            }
+
+            var overrideKind =
+                resolvedPath.Segments.Count > 0
+                && resolvedPath.Segments[^1] is JsonPathSegment.AnyArrayElement
+                    ? NameOverrideKind.Collection
+                    : NameOverrideKind.Column;
+
+            if (
+                !overrides.TryAdd(
+                    resolvedPath.Canonical,
+                    new NameOverrideEntry(
+                        overrideKey,
+                        resolvedPath.Canonical,
+                        normalizedOverride,
+                        overrideKind
+                    )
+                )
+            )
+            {
+                var existing = overrides[resolvedPath.Canonical];
+
+                throw new InvalidOperationException(
+                    $"relational.nameOverrides entry '{overrideKey}' (canonical '{resolvedPath.Canonical}') "
+                        + $"duplicates '{existing.RawKey}' on resource '{projectName}:{resourceName}'."
+                );
+            }
+        }
+
+        return overrides;
+    }
+
+    private static bool IsExtensionRootPath(JsonPathExpression path)
+    {
+        return path.Segments.Count > 0 && path.Segments[0] is JsonPathSegment.Property { Name: "_ext" };
+    }
+
+    private static JsonPathExpression PrefixExtensionRoot(JsonPathExpression path, string projectKey)
+    {
+        List<JsonPathSegment> segments =
+        [
+            new JsonPathSegment.Property("_ext"),
+            new JsonPathSegment.Property(projectKey),
+        ];
+
+        segments.AddRange(path.Segments);
+
+        return JsonPathExpressionCompiler.FromSegments(segments);
+    }
+
+    private static string ResolveExtensionProjectKey(
+        JsonNode jsonSchemaForInsert,
+        string projectEndpointName,
+        string projectName,
+        string resourceName
+    )
+    {
+        if (jsonSchemaForInsert is not JsonObject rootSchema)
+        {
+            throw new InvalidOperationException(
+                $"Expected jsonSchemaForInsert to be an object on resource '{projectName}:{resourceName}'."
+            );
+        }
+
+        if (!rootSchema.TryGetPropertyValue("properties", out var propertiesNode))
+        {
+            throw new InvalidOperationException(
+                $"Extension resource '{projectName}:{resourceName}' is missing jsonSchemaForInsert.properties."
+            );
+        }
+
+        if (propertiesNode is not JsonObject propertiesObject)
+        {
+            throw new InvalidOperationException(
+                $"Expected jsonSchemaForInsert.properties to be an object on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        if (!propertiesObject.TryGetPropertyValue("_ext", out var extNode) || extNode is null)
+        {
+            throw new InvalidOperationException(
+                $"Extension resource '{projectName}:{resourceName}' is missing jsonSchemaForInsert.properties._ext."
+            );
+        }
+
+        if (extNode is not JsonObject extSchema)
+        {
+            throw new InvalidOperationException(
+                $"Expected jsonSchemaForInsert.properties._ext to be an object on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        if (!extSchema.TryGetPropertyValue("properties", out var projectKeysNode))
+        {
+            throw new InvalidOperationException(
+                $"Extension resource '{projectName}:{resourceName}' is missing "
+                    + "jsonSchemaForInsert.properties._ext.properties."
+            );
+        }
+
+        if (projectKeysNode is not JsonObject projectKeysObject)
+        {
+            throw new InvalidOperationException(
+                $"Expected jsonSchemaForInsert.properties._ext.properties to be an object on resource "
+                    + $"'{projectName}:{resourceName}'."
+            );
+        }
+
+        var endpointKey = FindMatchingProjectKey(projectKeysObject, projectEndpointName);
+
+        if (endpointKey is not null)
+        {
+            return endpointKey;
+        }
+
+        var nameKey = FindMatchingProjectKey(projectKeysObject, projectName);
+
+        if (nameKey is not null)
+        {
+            return nameKey;
+        }
+
+        throw new InvalidOperationException(
+            $"Extension project key '{projectEndpointName}' not found under jsonSchemaForInsert "
+                + $"._ext on resource '{projectName}:{resourceName}'."
+        );
+    }
+
+    private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match)
+    {
+        foreach (var entry in projectKeysObject)
+        {
+            if (string.Equals(entry.Key, match, StringComparison.Ordinal))
+            {
+                return entry.Key;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool IsInsideReferenceObjectPath(
+        JsonPathExpression path,
+        IReadOnlyList<DocumentReferenceMapping> referenceMappings,
+        out string referencePath
+    )
+    {
+        foreach (var mapping in referenceMappings)
+        {
+            var referenceObjectPath = mapping.ReferenceObjectPath;
+
+            if (path.Segments.Count <= referenceObjectPath.Segments.Count)
+            {
                 continue;
             }
 
-            // DMS-931 must apply these overrides when non-reference paths (for example, array/table scopes)
-            // become supported.
-            deferredOverrides[canonicalPath] = overrideText;
+            if (IsSegmentPrefix(referenceObjectPath.Segments, path.Segments))
+            {
+                referencePath = referenceObjectPath.Canonical;
+                return true;
+            }
         }
 
-        return new NameOverridesExtractionResult(overrides, deferredOverrides);
+        referencePath = string.Empty;
+        return false;
+    }
+
+    private static bool IsSegmentPrefix(
+        IReadOnlyList<JsonPathSegment> prefix,
+        IReadOnlyList<JsonPathSegment> candidate
+    )
+    {
+        if (prefix.Count > candidate.Count)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < prefix.Count; index++)
+        {
+            var prefixSegment = prefix[index];
+            var candidateSegment = candidate[index];
+
+            if (prefixSegment is JsonPathSegment.Property prefixProperty)
+            {
+                if (
+                    candidateSegment is not JsonPathSegment.Property candidateProperty
+                    || !string.Equals(prefixProperty.Name, candidateProperty.Name, StringComparison.Ordinal)
+                )
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (prefixSegment is JsonPathSegment.AnyArrayElement)
+            {
+                if (candidateSegment is not JsonPathSegment.AnyArrayElement)
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>

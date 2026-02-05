@@ -1137,18 +1137,19 @@ public class Given_A_Relational_NameOverride_For_NonReference_Path
     }
 
     /// <summary>
-    /// It should defer the override until DMS-931.
+    /// It should capture the override.
     /// </summary>
     [Test]
-    public void It_should_defer_the_override_until_DMS_931()
+    public void It_should_capture_the_override()
     {
         _context.Should().NotBeNull();
-        _context!.ReferenceNameOverridesByPath.Should().NotContainKey("$.schoolId");
-        _context
-            .NameOverridesDeferredToNextStory.Should()
-            .ContainKey("$.schoolId")
-            .WhoseValue.Should()
-            .Be("School");
+        _context!.NameOverridesByPath.Should().ContainKey("$.schoolId");
+
+        var entry = _context.NameOverridesByPath["$.schoolId"];
+        entry.RawKey.Should().Be("$.schoolId");
+        entry.CanonicalPath.Should().Be("$.schoolId");
+        entry.NormalizedName.Should().Be("School");
+        entry.Kind.Should().Be(NameOverrideKind.Column);
     }
 }
 
@@ -1206,11 +1207,74 @@ public class Given_A_Relational_NameOverride_For_A_Reference_Path
     public void It_should_apply_the_override()
     {
         _context.Should().NotBeNull();
-        _context!
-            .ReferenceNameOverridesByPath.Should()
-            .ContainKey("$.schoolReference")
-            .WhoseValue.Should()
-            .Be("SchoolReferenceOverride");
+        _context!.NameOverridesByPath.Should().ContainKey("$.schoolReference");
+
+        var entry = _context.NameOverridesByPath["$.schoolReference"];
+        entry.RawKey.Should().Be("$.schoolReference");
+        entry.CanonicalPath.Should().Be("$.schoolReference");
+        entry.NormalizedName.Should().Be("SchoolReferenceOverride");
+        entry.Kind.Should().Be(NameOverrideKind.Column);
+    }
+}
+
+/// <summary>
+/// Test fixture for a relational name override inside a reference object.
+/// </summary>
+[TestFixture]
+public class Given_A_Relational_NameOverride_Inside_A_Reference_Object
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var documentPathsMapping = new JsonObject
+        {
+            ["School"] = new JsonObject
+            {
+                ["isReference"] = true,
+                ["isDescriptor"] = false,
+                ["isPartOfIdentity"] = false,
+                ["isRequired"] = false,
+                ["projectName"] = "Ed-Fi",
+                ["resourceName"] = "School",
+                ["referenceJsonPaths"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["identityJsonPath"] = "$.schoolId",
+                        ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                    },
+                },
+            },
+        };
+
+        var relational = new JsonObject
+        {
+            ["nameOverrides"] = new JsonObject { ["$.schoolReference.schoolId"] = "SchoolIdOverride" },
+        };
+
+        _exception = SchemaInputValidationHelpers.CaptureExtractInputsException(
+            identityJsonPaths: new JsonArray(),
+            documentPathsMapping: documentPathsMapping,
+            jsonSchemaForInsert: new JsonObject(),
+            relational: relational
+        );
+    }
+
+    /// <summary>
+    /// It should fail fast when the override targets inside the reference object.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_for_inside_reference_object_paths()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("inside reference object");
+        _exception.Message.Should().Contain("$.schoolReference.schoolId");
+        _exception.Message.Should().Contain("$.schoolReference");
     }
 }
 
