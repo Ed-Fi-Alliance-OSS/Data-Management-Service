@@ -1078,7 +1078,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             segments.Count >= 2
             && segments[0] is JsonPathSegment.Property { Name: ExtensionPropertyName }
             && segments[1] is JsonPathSegment.Property projectSegment
-            && string.Equals(projectSegment.Name, projectKey, StringComparison.Ordinal)
+            && ExtensionProjectKeyComparer.Equals(projectSegment.Name, projectKey)
         )
         {
             return segments.Skip(2).ToArray();
@@ -1149,13 +1149,13 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Finds a matching project key in a <c>_ext</c> object using ordinal string comparison.
+    /// Finds a matching project key in a <c>_ext</c> object using case-insensitive comparison.
     /// </summary>
     private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match)
     {
         foreach (var entry in projectKeysObject)
         {
-            if (string.Equals(entry.Key, match, StringComparison.Ordinal))
+            if (ExtensionProjectKeyComparer.Equals(entry.Key, match))
             {
                 return entry.Key;
             }

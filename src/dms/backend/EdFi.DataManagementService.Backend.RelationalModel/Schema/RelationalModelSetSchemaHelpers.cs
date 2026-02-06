@@ -15,6 +15,11 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 internal static class RelationalModelSetSchemaHelpers
 {
     /// <summary>
+    /// Comparer used for matching extension project keys under <c>_ext</c>.
+    /// </summary>
+    internal static StringComparer ExtensionProjectKeyComparer { get; } = StringComparer.OrdinalIgnoreCase;
+
+    /// <summary>
     /// Requires that the supplied node is a non-null <see cref="JsonObject"/>.
     /// </summary>
     /// <param name="node">The node to validate.</param>

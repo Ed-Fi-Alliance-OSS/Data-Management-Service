@@ -43,7 +43,7 @@ public sealed class RelationalModelSetBuilderContext
         IReadOnlyList<ExtensionSite>
     > _extensionSitesByResource = new();
     private readonly Dictionary<string, ProjectSchemaInfo> _extensionProjectsByKey = new(
-        StringComparer.Ordinal
+        ExtensionProjectKeyComparer
     );
     private static readonly IReadOnlyList<ExtensionSite> _emptyExtensionSites = Array.Empty<ExtensionSite>();
     private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> _emptyDescriptorPaths =
@@ -808,9 +808,7 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         var endpointMatches = ProjectSchemasInEndpointOrder
-            .Where(project =>
-                string.Equals(project.ProjectEndpointName, projectKey, StringComparison.Ordinal)
-            )
+            .Where(project => ExtensionProjectKeyComparer.Equals(project.ProjectEndpointName, projectKey))
             .ToArray();
 
         if (endpointMatches.Length > 1)
@@ -828,7 +826,7 @@ public sealed class RelationalModelSetBuilderContext
         }
 
         var projectNameMatches = ProjectSchemasInEndpointOrder
-            .Where(project => string.Equals(project.ProjectName, projectKey, StringComparison.Ordinal))
+            .Where(project => ExtensionProjectKeyComparer.Equals(project.ProjectName, projectKey))
             .ToArray();
 
         if (projectNameMatches.Length > 1)
