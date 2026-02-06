@@ -19,6 +19,11 @@ public sealed class DescriptorResourceMappingRelationalModelSetPass : IRelationa
     {
         ArgumentNullException.ThrowIfNull(context);
 
+        // Build lookup dictionary once to avoid O(n × m) complexity
+        var schemaLookup = context
+            .EnumerateConcreteResourceSchemasInNameOrder()
+            .ToDictionary(rc => (rc.Project.ProjectSchema.ProjectName, rc.ResourceName), rc => rc);
+
         var descriptorResources =
             new List<(int Index, QualifiedResourceName ResourceName, DescriptorMetadata Metadata)>();
 
@@ -40,17 +45,7 @@ public sealed class DescriptorResourceMappingRelationalModelSetPass : IRelationa
                 }
             }
 
-            var resourceContext = context
-                .EnumerateConcreteResourceSchemasInNameOrder()
-                .FirstOrDefault(rc =>
-                    rc.ResourceName.Equals(qname.ResourceName, StringComparison.Ordinal)
-                    && rc.Project.ProjectSchema.ProjectName.Equals(
-                        qname.ProjectName,
-                        StringComparison.Ordinal
-                    )
-                );
-
-            if (resourceContext is null)
+            if (!schemaLookup.TryGetValue((qname.ProjectName, qname.ResourceName), out var resourceContext))
             {
                 continue;
             }
