@@ -75,25 +75,14 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         foreach (var projectSchema in projectSchemas)
         {
-            try
+            var resourceNode = projectSchema.FindResourceSchemaNodeByResourceName(
+                new ResourceName(resourceName)
+            );
+            if (resourceNode is not null)
             {
-                var endpointName = projectSchema.GetEndpointNameFromResourceName(
-                    new ResourceName(resourceName)
-                );
-                var resourceNode = projectSchema.FindResourceSchemaNodeByEndpointName(endpointName);
-
-                if (resourceNode is not null)
-                {
-                    return true;
-                }
-            }
-            catch (Exception)
-            {
-                // If GetEndpointNameFromResourceName throws an exception, the resource doesn't exist in this schema
-                // Continue checking other schemas
+                return true;
             }
         }
-
         return false;
     }
 
@@ -112,20 +101,12 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             JsonNode? resourceSchemaNode = null;
             foreach (var projectSchema in projectSchemas)
             {
-                try
+                resourceSchemaNode = projectSchema.FindResourceSchemaNodeByResourceName(
+                    new ResourceName(resourceProfile.ResourceName)
+                );
+                if (resourceSchemaNode is not null)
                 {
-                    var endpointName = projectSchema.GetEndpointNameFromResourceName(
-                        new ResourceName(resourceProfile.ResourceName)
-                    );
-                    resourceSchemaNode = projectSchema.FindResourceSchemaNodeByEndpointName(endpointName);
-                    if (resourceSchemaNode is not null)
-                    {
-                        break;
-                    }
-                }
-                catch (Exception)
-                {
-                    // Resource not in this schema, continue
+                    break;
                 }
             }
 
