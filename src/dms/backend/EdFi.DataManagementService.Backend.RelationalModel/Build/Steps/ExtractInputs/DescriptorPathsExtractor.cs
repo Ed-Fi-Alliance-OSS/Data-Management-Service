@@ -8,6 +8,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.Extr
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Extracts inferred descriptor JSONPath mappings for a resource.
+/// </summary>
 internal static class DescriptorPathsExtractor
 {
     /// <summary>

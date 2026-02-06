@@ -10,31 +10,18 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
 /// <summary>
 /// Derives scalar columns (and descriptor foreign keys) for each previously-discovered table scope.
-/// <para>
+///
 /// This step walks <c>resourceSchema.jsonSchemaForInsert</c> and:
-/// </para>
-/// <list type="bullet">
-/// <item>
-/// <description>
+///
 /// Inlines object properties (except <c>_ext</c>) by prefixing descendant scalar property names.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
+///
 /// Routes array item properties to the child table at that array's JSONPath scope.
-/// </description>
-/// </item>
-/// <item>
-/// <description>
+///
 /// Converts descriptor value paths provided by <see cref="RelationalModelBuilderContext.DescriptorPathsByJsonPath"/>
 /// into <c>*_DescriptorId</c> FK columns and records <see cref="DescriptorEdgeSource"/> metadata.
-/// </description>
-/// </item>
-/// </list>
-/// <para>
+///
 /// Nullability is derived from JSON Schema required-ness, <c>x-nullable</c>, and whether the value has an
 /// optional ancestor object.
-/// </para>
 /// </summary>
 public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBuilderStep
 {

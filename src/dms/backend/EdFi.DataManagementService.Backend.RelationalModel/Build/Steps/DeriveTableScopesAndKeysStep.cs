@@ -8,22 +8,17 @@ using System.Text.Json.Nodes;
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
 /// <summary>
-/// <para>
 /// Derives the base set of relational table scopes from <c>resourceSchema.jsonSchemaForInsert</c>.
-/// </para>
-/// <para>
+///
 /// This step is responsible for creating the root table (<c>$</c>) and one child table per array path
 /// (including nested arrays). Child table primary keys are a composite of the root document id,
 /// ancestor ordinals, and the current <c>Ordinal</c> column.
-/// </para>
-/// <para>
+///
 /// Object schemas are treated as inline containers and do not create new tables. The <c>_ext</c> property
 /// is intentionally skipped here and handled by extension-specific mapping steps.
-/// </para>
-/// <para>
+///
 /// The traversal is deterministic: property iteration is ordinal-sorted, and no logic depends on dictionary
 /// enumeration order.
-/// </para>
 /// </summary>
 public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
 {

@@ -8,6 +8,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.Extr
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Extracts and validates compiled identity JSONPaths for a resource schema.
+/// </summary>
 internal static class IdentityJsonPathsExtractor
 {
     /// <summary>

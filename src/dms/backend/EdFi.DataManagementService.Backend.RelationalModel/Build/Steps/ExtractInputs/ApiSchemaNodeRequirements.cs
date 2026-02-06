@@ -7,6 +7,9 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Provides helper methods for reading ApiSchema JSON nodes with consistent validation errors.
+/// </summary>
 internal static class ApiSchemaNodeRequirements
 {
     /// <summary>
