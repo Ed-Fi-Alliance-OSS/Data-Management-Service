@@ -176,7 +176,7 @@ internal static class DescriptorSchemaValidator
             "namespace" => true,
             "codeValue" => true,
             "shortDescription" => true,
-            _ => fieldName.EndsWith("Id", StringComparison.Ordinal),
+            _ => false,
         };
     }
 }
