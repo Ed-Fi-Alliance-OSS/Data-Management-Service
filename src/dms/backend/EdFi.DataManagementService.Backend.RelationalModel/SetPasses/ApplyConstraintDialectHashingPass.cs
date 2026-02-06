@@ -80,6 +80,8 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
     )
     {
         changed = false;
+        var updatedKey = ApplyToPrimaryKey(table.Table, table.Key, dialectRules, out var keyChanged);
+        changed |= keyChanged;
 
         var updatedConstraints = new TableConstraint[table.Constraints.Count];
 
@@ -98,7 +100,37 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
 
         return table with
         {
+            Key = updatedKey,
             Constraints = updatedConstraints,
+        };
+    }
+
+    private static TableKey ApplyToPrimaryKey(
+        DbTableName table,
+        TableKey key,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        var keyName = string.IsNullOrWhiteSpace(key.ConstraintName)
+            ? ConstraintNaming.BuildPrimaryKeyName(table)
+            : key.ConstraintName;
+        var identity = ConstraintIdentity.ForPrimaryKey(
+            table,
+            key.Columns.Select(column => column.ColumnName).ToArray()
+        );
+        var updatedName = ConstraintNaming.ApplyDialectLimit(keyName, identity, dialectRules);
+
+        changed = !string.Equals(updatedName, key.ConstraintName, StringComparison.Ordinal);
+
+        if (!changed)
+        {
+            return key;
+        }
+
+        return key with
+        {
+            ConstraintName = updatedName,
         };
     }
 

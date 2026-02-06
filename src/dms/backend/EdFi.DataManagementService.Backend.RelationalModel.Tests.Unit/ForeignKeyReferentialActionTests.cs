@@ -71,7 +71,7 @@ public class Given_A_Reference_Identity_Foreign_Key
         var table = new DbTableModel(
             tableName,
             JsonPathExpressionCompiler.Compile("$"),
-            new TableKey([keyColumn]),
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
             columns,
             new TableConstraint[] { foreignKey }
         );

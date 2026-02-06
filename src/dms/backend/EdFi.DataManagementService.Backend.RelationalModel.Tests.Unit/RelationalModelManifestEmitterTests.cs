@@ -220,7 +220,13 @@ public class Given_A_Relational_Model_Manifest_Emitter
             ),
         };
 
-        var table = new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
+            columns,
+            constraints
+        );
 
         var resourceModel = new RelationalResourceModel(
             new QualifiedResourceName("Ed-Fi", "School"),

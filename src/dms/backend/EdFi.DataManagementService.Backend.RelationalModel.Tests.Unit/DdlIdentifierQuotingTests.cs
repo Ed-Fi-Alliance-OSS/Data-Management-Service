@@ -119,7 +119,7 @@ internal static class ReservedIdentifierFixture
         var tableModel = new DbTableModel(
             table,
             jsonScope,
-            new TableKey(new[] { new DbKeyColumn(column, ColumnKind.ParentKeyPart) }),
+            new TableKey($"PK_{table.Name}", new[] { new DbKeyColumn(column, ColumnKind.ParentKeyPart) }),
             new[] { new DbColumnModel(column, ColumnKind.ParentKeyPart, null, false, null, null) },
             new[]
             {

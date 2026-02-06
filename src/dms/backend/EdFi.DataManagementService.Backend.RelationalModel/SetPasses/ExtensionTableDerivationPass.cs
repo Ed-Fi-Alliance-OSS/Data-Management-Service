@@ -858,12 +858,14 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         );
         var tableKey =
             collectionBaseNames.Count == 0
-                ? BuildRootTableKey()
-                : BuildChildTableKey(baseRootBaseName, collectionBaseNames);
+                ? BuildRootTableKey(tableName)
+                : BuildChildTableKey(tableName, baseRootBaseName, collectionBaseNames);
+        var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
+        var originalTable = new DbTableName(extensionProject.PhysicalSchema, originalTableName);
         var originalKey =
             defaultCollectionBaseNames.Count == 0
-                ? BuildRootTableKey()
-                : BuildChildTableKey(baseRootBaseName, defaultCollectionBaseNames);
+                ? BuildRootTableKey(originalTable)
+                : BuildChildTableKey(originalTable, baseRootBaseName, defaultCollectionBaseNames);
 
         var keyColumns = BuildKeyColumns(tableKey.Columns);
         var fkColumns = tableKey.Columns.Select(column => column.ColumnName).ToArray();
@@ -881,8 +883,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         ];
 
         var table = new DbTableModel(tableName, projectPath, tableKey, keyColumns, constraints);
-        var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
-
         collisionDetector?.RegisterTable(
             tableName,
             originalTableName,
@@ -934,8 +934,13 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             extensionProject.PhysicalSchema,
             extensionRootBaseName + string.Concat(collectionBaseNames)
         );
-        var tableKey = BuildChildTableKey(baseRootBaseName, collectionBaseNames);
-        var originalKey = BuildChildTableKey(baseRootBaseName, defaultCollectionBaseNames);
+        var tableKey = BuildChildTableKey(tableName, baseRootBaseName, collectionBaseNames);
+        var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
+        var originalKey = BuildChildTableKey(
+            new DbTableName(extensionProject.PhysicalSchema, originalTableName),
+            baseRootBaseName,
+            defaultCollectionBaseNames
+        );
         var keyColumns = BuildKeyColumns(tableKey.Columns);
 
         var parentKeyColumns = BuildParentKeyColumnNames(baseRootBaseName, parent.CollectionBaseNames);
@@ -954,8 +959,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 
         var jsonScope = JsonPathExpressionCompiler.FromSegments(arraySegments);
         var table = new DbTableModel(tableName, jsonScope, tableKey, keyColumns, constraints);
-
-        var originalTableName = extensionRootBaseName + string.Concat(defaultCollectionBaseNames);
 
         collisionDetector?.RegisterTable(
             tableName,
@@ -1771,9 +1774,10 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     /// <summary>
     /// Builds the root table key for an extension table aligned to the base root scope.
     /// </summary>
-    private static TableKey BuildRootTableKey()
+    private static TableKey BuildRootTableKey(DbTableName tableName)
     {
         return new TableKey(
+            ConstraintNaming.BuildPrimaryKeyName(tableName),
             new[]
             {
                 new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
@@ -1785,6 +1789,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     /// Builds a child table key for an extension collection table aligned to a base collection scope.
     /// </summary>
     private static TableKey BuildChildTableKey(
+        DbTableName tableName,
         string baseRootBaseName,
         IReadOnlyList<string> collectionBaseNames
     )
@@ -1809,7 +1814,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 
         keyColumns.Add(new DbKeyColumn(RelationalNameConventions.OrdinalColumnName, ColumnKind.Ordinal));
 
-        return new TableKey(keyColumns.ToArray());
+        return new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), keyColumns.ToArray());
     }
 
     /// <summary>

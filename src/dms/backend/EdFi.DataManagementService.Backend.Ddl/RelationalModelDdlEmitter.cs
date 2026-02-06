@@ -82,7 +82,9 @@ public sealed class RelationalModelDdlEmitter
 
         if (table.Key.Columns.Count > 0)
         {
-            definitions.Add($"PRIMARY KEY ({FormatColumnList(table.Key.Columns)})");
+            definitions.Add(
+                $"CONSTRAINT {Quote(ResolvePrimaryKeyConstraintName(table))} PRIMARY KEY ({FormatColumnList(table.Key.Columns)})"
+            );
         }
 
         foreach (var constraint in table.Constraints)
@@ -267,6 +269,13 @@ public sealed class RelationalModelDdlEmitter
     private string FormatColumnList(IReadOnlyList<DbKeyColumn> columns)
     {
         return string.Join(", ", columns.Select(column => Quote(column.ColumnName)));
+    }
+
+    private static string ResolvePrimaryKeyConstraintName(DbTableModel table)
+    {
+        return string.IsNullOrWhiteSpace(table.Key.ConstraintName)
+            ? $"PK_{table.Table.Name}"
+            : table.Key.ConstraintName;
     }
 
     private string Quote(string identifier)

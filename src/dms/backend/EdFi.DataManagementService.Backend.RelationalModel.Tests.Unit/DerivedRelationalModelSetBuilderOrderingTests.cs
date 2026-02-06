@@ -248,6 +248,7 @@ public class Given_Unordered_Derived_Collections
         {
             var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
             var key = new TableKey(
+                $"PK_{tableName}",
                 new[]
                 {
                     new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),

@@ -302,7 +302,7 @@ public class Given_Duplicate_SourceJsonPath_Columns
         var table = new DbTableModel(
             tableName,
             jsonScope,
-            new TableKey(Array.Empty<DbKeyColumn>()),
+            new TableKey($"PK_{tableName.Name}", Array.Empty<DbKeyColumn>()),
             columns,
             Array.Empty<TableConstraint>()
         );
@@ -360,7 +360,7 @@ public class Given_Duplicate_SourceJsonPath_Columns_With_Mixed_Kinds
         var table = new DbTableModel(
             tableName,
             jsonScope,
-            new TableKey(Array.Empty<DbKeyColumn>()),
+            new TableKey($"PK_{tableName.Name}", Array.Empty<DbKeyColumn>()),
             columns,
             Array.Empty<TableConstraint>()
         );
@@ -1146,6 +1146,7 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
             var itemsScope = JsonPathExpressionCompiler.Compile("$.items[*]");
 
             var rootKey = new TableKey(
+                $"PK_{ResourceName}",
                 new[]
                 {
                     new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
@@ -1171,6 +1172,7 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
             );
 
             var childKey = new TableKey(
+                "PK_Items",
                 new[]
                 {
                     new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),

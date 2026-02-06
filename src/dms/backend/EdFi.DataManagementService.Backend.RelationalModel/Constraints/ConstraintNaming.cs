@@ -32,6 +32,11 @@ internal static class ConstraintNaming
         return BuildName("UX", table, tokens);
     }
 
+    internal static string BuildPrimaryKeyName(DbTableName table)
+    {
+        return BuildName("PK", table, []);
+    }
+
     internal static string BuildForeignKeyName(DbTableName table, params string[] tokens)
     {
         return BuildName("FK", table, tokens);
