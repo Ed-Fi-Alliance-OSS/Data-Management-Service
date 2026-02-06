@@ -6,7 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
+using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 

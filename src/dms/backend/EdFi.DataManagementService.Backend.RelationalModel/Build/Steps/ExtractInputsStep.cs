@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
 /// <summary>
 /// Extracts the API schema inputs required to build a relational resource model and populates the

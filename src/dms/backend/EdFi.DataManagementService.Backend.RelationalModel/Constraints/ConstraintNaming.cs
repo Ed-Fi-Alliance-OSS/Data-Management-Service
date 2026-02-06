@@ -5,7 +5,7 @@
 
 using System.Text;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Constraints;
 
 internal static class ConstraintNaming
 {

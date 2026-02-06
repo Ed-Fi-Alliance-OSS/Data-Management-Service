@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
 /// <summary>
 /// Discovers extension sites in <see cref="RelationalModelBuilderContext.JsonSchemaForInsert"/> and records them in
