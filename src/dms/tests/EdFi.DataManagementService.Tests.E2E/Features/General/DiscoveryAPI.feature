@@ -180,8 +180,11 @@ Feature: The Discovery API provides information about the application version, s
                       {
                           "name": "E2E-Test-Calendar-Write-IncludeOnly",
                           "endpointUri": "http://localhost:8080/metadata/specifications/profiles/E2E-Test-Calendar-Write-IncludeOnly/resources-spec.json",
-                          "prefix": "Profiles"
-                      }
+                          "prefix": "Profiles"                      },
+                      {
+                          "name": "E2E-Warning-ExcludeIdentity",
+                          "endpointUri": "{BASE_URL}/metadata/specifications/profiles/E2E-Warning-ExcludeIdentity/resources-spec.json",
+                          "prefix": "Profiles"                      }
                   ]
                   """
 

@@ -662,30 +662,59 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Validate extensions with member selection
         foreach (var extension in contentType.Extensions)
         {
-            if (
-                extension.MemberSelection != MemberSelection.IncludeAll
-                && schemaProperties.ContainsKey("_ext")
-            )
+            if (extension.MemberSelection != MemberSelection.IncludeAll)
             {
-                var extNode = schemaProperties["_ext"] as JsonObject;
-                var extProperties = extNode?["properties"] as JsonObject;
-                var extensionSchemaNode = extProperties?[extension.Name] as JsonObject;
-                if (extensionSchemaNode is not null)
+                if (!schemaProperties.ContainsKey("_ext"))
                 {
-                    var extensionSchemaProperties = extensionSchemaNode["properties"] as JsonObject;
-                    if (extensionSchemaProperties is not null)
+                    // No _ext property means no extensions exist
+                    var severity = GetValidationSeverity(extension.MemberSelection);
+                    failures.Add(
+                        new ValidationFailure(
+                            severity,
+                            profileName,
+                            resourceName,
+                            $"_ext.{extension.Name}",
+                            $"Extension '{extension.Name}' in {contentTypeName} content type does not exist in resource '{resourceName}'."
+                        )
+                    );
+                }
+                else
+                {
+                    var extNode = schemaProperties["_ext"] as JsonObject;
+                    var extProperties = extNode?["properties"] as JsonObject;
+                    var extensionSchemaNode = extProperties?[extension.Name] as JsonObject;
+
+                    if (extensionSchemaNode is null)
                     {
-                        failures.AddRange(
-                            ValidateExtensionRuleMembers(
-                                extension,
-                                extensionSchemaProperties,
+                        // Extension doesn't exist in schema
+                        var severity = GetValidationSeverity(extension.MemberSelection);
+                        failures.Add(
+                            new ValidationFailure(
+                                severity,
                                 profileName,
                                 resourceName,
-                                contentTypeName,
-                                resourceSchema,
-                                $"_ext.{extension.Name}."
+                                $"_ext.{extension.Name}",
+                                $"Extension '{extension.Name}' in {contentTypeName} content type does not exist in resource '{resourceName}'."
                             )
                         );
+                    }
+                    else
+                    {
+                        var extensionSchemaProperties = extensionSchemaNode["properties"] as JsonObject;
+                        if (extensionSchemaProperties is not null)
+                        {
+                            failures.AddRange(
+                                ValidateExtensionRuleMembers(
+                                    extension,
+                                    extensionSchemaProperties,
+                                    profileName,
+                                    resourceName,
+                                    contentTypeName,
+                                    resourceSchema,
+                                    $"_ext.{extension.Name}."
+                                )
+                            );
+                        }
                     }
                 }
             }
