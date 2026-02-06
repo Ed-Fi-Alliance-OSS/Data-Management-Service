@@ -376,5 +376,29 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`."
     ],
     "completed": false
+  },
+  {
+    "category": "Backend",
+    "description": "Bugfix: Correct document-reference propagated identity column naming to be derived from the reference object's identity-field paths (relative to `referenceObjectPath`) instead of concatenating the target resource identity JSONPath segments. This prevents intermediate `*Reference` segments from leaking into column names and avoids unnecessary dialect shortening/hashing caused by inflated identifiers. Acceptance: (1) Add a helper (e.g., `BuildReferenceIdentityFieldBaseName(referenceObjectPath, referenceValuePath)`) that validates `referenceValuePath` is under `referenceObjectPath`, strips the shared prefix segments, rejects array segments in the remainder, and produces a PascalCased base name from the remaining property segments; (2) `ReferenceBindingPass` and `ReferenceConstraintPass` use the reference-relative base name for `{ReferenceBaseName}_{IdentityFieldBaseName}` identity columns, while still using the target `IdentityJsonPath` only for semantic binding/descriptor detection; (3) the derived model no longer emits names like `ClassPeriod_SchoolReferenceSchoolId` or `Calendar_SchoolYearTypeReferenceSchoolYear` and instead emits `ClassPeriod_SchoolId` and `Calendar_SchoolYear`; (4) the `StudentHomelessProgramAssociation` -> `Program` FK identity column no longer includes the substring `EducationOrganizationReference` and is emitted as `ProgramProgram_EducationOrganizationId` (and therefore does not require shortening solely due to the leaked substring); (5) non-reference scalar/identity column naming behavior is unchanged.",
+    "steps-to-verify": [
+      "Implement the reference-relative identity-field base-name helper in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Schema/RelationalModelSetSchemaHelpers.cs` with fail-fast validation when the reference value path is not a descendant of the reference object path or when the remainder is empty/contains array segments.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs` to derive `identityPartBaseName` from the reference-side path (relative to `mapping.ReferenceObjectPath`), not from `identityBinding.IdentityJsonPath`.",
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` to resolve identity binding columns using the same reference-relative base-name rule so constraint derivation matches the updated column names.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "Regression: Add explicit coverage and update authoritative expected outputs for reference identity column naming to ensure `*Reference` substrings never appear in propagated identity column names unless they are part of the actual reference field path. Acceptance: (1) Unit/regression coverage includes at least one case where the target identity path includes nested reference objects (e.g., `...SchoolReference.schoolId`) but the reference object supplies flattened identity fields (e.g., `...schoolId`), and asserts the column uses the flattened identity field name; (2) Update authoritative `ds-5.2` expected manifest so it contains `ClassPeriod_SchoolId`, `Calendar_SchoolYear`, and `ProgramProgram_EducationOrganizationId` (no `EducationOrganizationReference` substring and no hash shortening caused only by the leaked substring); (3) `UPDATE_GOLDENS=1` test run produces a stable, minimal diff and a subsequent plain test run passes; (4) `dotnet build` succeeds for the DMS solution.",
+    "steps-to-verify": [
+      "Add/extend unit tests under `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/` to cover reference-relative identity-field naming (including at least one `SchoolId`, `SchoolYear`, and `EducationOrganizationId`-style identity component).",
+      "Regenerate goldens: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Verify the regenerated `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/expected/authoritative-relational-model.derived.manifest.json` includes `ClassPeriod_SchoolId`, `Calendar_SchoolYear`, and `ProgramProgram_EducationOrganizationId` and does not include the incorrect `*Reference*`-inflated variants for those sites.",
+      "Run again without updates to confirm determinism: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
