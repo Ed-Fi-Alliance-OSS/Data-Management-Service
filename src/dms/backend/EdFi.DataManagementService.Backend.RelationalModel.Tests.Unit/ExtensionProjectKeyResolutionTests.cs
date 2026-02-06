@@ -127,6 +127,162 @@ public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name_With_
 }
 
 /// <summary>
+/// Test fixture for deterministic extension project key resolution across casing variants.
+/// </summary>
+[TestFixture]
+public class Given_An_Extension_Project_Key_Resolved_With_Multiple_Casing_Variants
+{
+    private ProjectSchemaInfo _lowerCaseProject = default!;
+    private ProjectSchemaInfo _mixedCaseProject = default!;
+    private ProjectSchemaInfo _upperCaseProject = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "sample-ext",
+                "Sample",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("schoolExtensions", "SchoolExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("Sample", "SchoolExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+
+        _lowerCaseProject = context.ResolveExtensionProjectKey(
+            "sample-ext",
+            ExtensionProjectKeyFixture.CreateExtensionSite("sample-ext"),
+            resource
+        );
+
+        _mixedCaseProject = context.ResolveExtensionProjectKey(
+            "SaMpLe-ExT",
+            ExtensionProjectKeyFixture.CreateExtensionSite("SaMpLe-ExT"),
+            resource
+        );
+
+        _upperCaseProject = context.ResolveExtensionProjectKey(
+            "SAMPLE-EXT",
+            ExtensionProjectKeyFixture.CreateExtensionSite("SAMPLE-EXT"),
+            resource
+        );
+    }
+
+    /// <summary>
+    /// It should resolve to the same endpoint for all casing variants.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_to_the_same_endpoint_for_all_casing_variants()
+    {
+        _lowerCaseProject.ProjectEndpointName.Should().Be("sample-ext");
+        _mixedCaseProject.ProjectEndpointName.Should().Be("sample-ext");
+        _upperCaseProject.ProjectEndpointName.Should().Be("sample-ext");
+    }
+
+    /// <summary>
+    /// It should resolve deterministically regardless of key casing.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_deterministically_regardless_of_key_casing()
+    {
+        _mixedCaseProject.ProjectName.Should().Be(_lowerCaseProject.ProjectName);
+        _upperCaseProject.ProjectName.Should().Be(_lowerCaseProject.ProjectName);
+        _mixedCaseProject.ProjectEndpointName.Should().Be(_lowerCaseProject.ProjectEndpointName);
+        _upperCaseProject.ProjectEndpointName.Should().Be(_lowerCaseProject.ProjectEndpointName);
+    }
+}
+
+/// <summary>
+/// Test fixture for a mixed-case extension project key that does not match any configured project.
+/// </summary>
+[TestFixture]
+public class Given_A_Mixed_Case_Extension_Project_Key_That_Does_Not_Match_Any_Project
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "sample-ext",
+                "Sample",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("schoolExtensions", "SchoolExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("Sample", "SchoolExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("UnKnOwN-ExT");
+
+        try
+        {
+            context.ResolveExtensionProjectKey(
+                "UnKnOwN-ExT",
+                extensionSite,
+                new QualifiedResourceName("Ed-Fi", "School")
+            );
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail when mixed-case project key does not match any configured project.
+    /// </summary>
+    [Test]
+    public void It_should_fail_when_mixed_case_project_key_does_not_match_any_configured_project()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("UnKnOwN-ExT");
+        _exception.Message.Should().Contain("does not match any configured project");
+        _exception.Message.Should().Contain("resource 'Ed-Fi:School'");
+        _exception.Message.Should().Contain("owning scope '$'");
+        _exception.Message.Should().Contain("extension path '$._ext'");
+    }
+}
+
+/// <summary>
 /// Test fixture for an extension project key matching project name.
 /// </summary>
 [TestFixture]
