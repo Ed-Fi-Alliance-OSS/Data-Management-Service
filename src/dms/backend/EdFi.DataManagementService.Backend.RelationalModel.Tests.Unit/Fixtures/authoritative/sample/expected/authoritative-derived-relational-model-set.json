@@ -2579,7 +2579,7 @@
               "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName"
             },
             {
-              "name": "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
+              "name": "AssessmentBatteryPart_AssessmentIdentifier",
               "kind": "Scalar",
               "type": {
                 "kind": "String",
@@ -2589,7 +2589,7 @@
               "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier"
             },
             {
-              "name": "AssessmentBatteryPart_AssessmentReferenceNamespace",
+              "name": "AssessmentBatteryPart_Namespace",
               "kind": "Scalar",
               "type": {
                 "kind": "String",
@@ -2611,12 +2611,12 @@
           "constraints": [
             {
               "kind": "ForeignKey",
-              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_Ass_714f559b37",
+              "name": "FK_AssessmentAdministrationAssessmentBatteryPart_Ass_a9c1679c61",
               "columns": [
                 "AssessmentBatteryPart_DocumentId",
                 "AssessmentBatteryPart_AssessmentBatteryPartName",
-                "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
-                "AssessmentBatteryPart_AssessmentReferenceNamespace"
+                "AssessmentBatteryPart_AssessmentIdentifier",
+                "AssessmentBatteryPart_Namespace"
               ],
               "target_table": {
                 "schema": "edfi",
@@ -2649,12 +2649,12 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_AssessmentAdministrationAssessmentBatteryPart_Ass_037720886f",
+              "name": "CK_AssessmentAdministrationAssessmentBatteryPart_Ass_1e5a040b5b",
               "fk_column": "AssessmentBatteryPart_DocumentId",
               "dependent_columns": [
                 "AssessmentBatteryPart_AssessmentBatteryPartName",
-                "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier",
-                "AssessmentBatteryPart_AssessmentReferenceNamespace"
+                "AssessmentBatteryPart_AssessmentIdentifier",
+                "AssessmentBatteryPart_Namespace"
               ]
             }
           ]
@@ -2759,11 +2759,11 @@
             },
             {
               "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
-              "column": "AssessmentBatteryPart_AssessmentReferenceAssessmentIdentifier"
+              "column": "AssessmentBatteryPart_AssessmentIdentifier"
             },
             {
               "reference_json_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
-              "column": "AssessmentBatteryPart_AssessmentReferenceNamespace"
+              "column": "AssessmentBatteryPart_Namespace"
             }
           ]
         },
@@ -2933,7 +2933,7 @@
               "source_path": "$.calendarReference.calendarCode"
             },
             {
-              "name": "Calendar_SchoolReferenceSchoolId",
+              "name": "Calendar_SchoolId",
               "kind": "Scalar",
               "type": {
                 "kind": "Int32"
@@ -2942,7 +2942,7 @@
               "source_path": "$.calendarReference.schoolId"
             },
             {
-              "name": "Calendar_SchoolYearTypeReferenceSchoolYear",
+              "name": "Calendar_SchoolYear",
               "kind": "Scalar",
               "type": {
                 "kind": "Int32"
@@ -2998,7 +2998,7 @@
               "source_path": "$.fullTimeEquivalency"
             },
             {
-              "name": "GraduationPlan_EducationOrganizationReferenceEducati_e0f9422cb7",
+              "name": "GraduationPlan_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
                 "kind": "Int32"
@@ -3007,7 +3007,7 @@
               "source_path": "$.graduationPlanReference.educationOrganizationId"
             },
             {
-              "name": "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear",
+              "name": "GraduationPlan_GraduationSchoolYear",
               "kind": "Scalar",
               "type": {
                 "kind": "Int32"
@@ -3187,8 +3187,8 @@
               "columns": [
                 "Calendar_DocumentId",
                 "Calendar_CalendarCode",
-                "Calendar_SchoolReferenceSchoolId",
-                "Calendar_SchoolYearTypeReferenceSchoolYear"
+                "Calendar_SchoolId",
+                "Calendar_SchoolYear"
               ],
               "target_table": {
                 "schema": "edfi",
@@ -3338,9 +3338,9 @@
               "name": "FK_StudentSchoolAssociation_GraduationPlan_RefKey",
               "columns": [
                 "GraduationPlan_DocumentId",
-                "GraduationPlan_EducationOrganizationReferenceEducati_e0f9422cb7",
+                "GraduationPlan_EducationOrganizationId",
                 "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-                "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+                "GraduationPlan_GraduationSchoolYear"
               ],
               "target_table": {
                 "schema": "edfi",
@@ -3481,8 +3481,8 @@
               "fk_column": "Calendar_DocumentId",
               "dependent_columns": [
                 "Calendar_CalendarCode",
-                "Calendar_SchoolReferenceSchoolId",
-                "Calendar_SchoolYearTypeReferenceSchoolYear"
+                "Calendar_SchoolId",
+                "Calendar_SchoolYear"
               ]
             },
             {
@@ -3498,9 +3498,9 @@
               "name": "CK_StudentSchoolAssociation_GraduationPlan_AllNone",
               "fk_column": "GraduationPlan_DocumentId",
               "dependent_columns": [
-                "GraduationPlan_EducationOrganizationReferenceEducati_e0f9422cb7",
+                "GraduationPlan_EducationOrganizationId",
                 "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-                "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+                "GraduationPlan_GraduationSchoolYear"
               ]
             },
             {
@@ -3645,7 +3645,7 @@
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
             },
             {
-              "name": "AlternativeGraduationPlan_EducationOrganizationRefer_c847b569c8",
+              "name": "AlternativeGraduationPlan_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
                 "kind": "Int32"
@@ -3654,7 +3654,7 @@
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
             },
             {
-              "name": "AlternativeGraduationPlan_GraduationSchoolYearTypeRe_5a62cb796f",
+              "name": "AlternativeGraduationPlan_GraduationSchoolYear",
               "kind": "Scalar",
               "type": {
                 "kind": "Int32"
@@ -3707,12 +3707,12 @@
             },
             {
               "kind": "ForeignKey",
-              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_c8e6ad28cf",
+              "name": "FK_StudentSchoolAssociationAlternativeGraduationPlan_b8b8d7c306",
               "columns": [
                 "AlternativeGraduationPlan_DocumentId",
-                "AlternativeGraduationPlan_EducationOrganizationRefer_c847b569c8",
+                "AlternativeGraduationPlan_EducationOrganizationId",
                 "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
-                "AlternativeGraduationPlan_GraduationSchoolYearTypeRe_5a62cb796f"
+                "AlternativeGraduationPlan_GraduationSchoolYear"
               ],
               "target_table": {
                 "schema": "edfi",
@@ -3729,12 +3729,12 @@
             },
             {
               "kind": "AllOrNoneNullability",
-              "name": "CK_StudentSchoolAssociationAlternativeGraduationPlan_b2426d5a91",
+              "name": "CK_StudentSchoolAssociationAlternativeGraduationPlan_b9e2a28562",
               "fk_column": "AlternativeGraduationPlan_DocumentId",
               "dependent_columns": [
-                "AlternativeGraduationPlan_EducationOrganizationRefer_c847b569c8",
+                "AlternativeGraduationPlan_EducationOrganizationId",
                 "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
-                "AlternativeGraduationPlan_GraduationSchoolYearTypeRe_5a62cb796f"
+                "AlternativeGraduationPlan_GraduationSchoolYear"
               ]
             }
           ]
@@ -3842,7 +3842,7 @@
           "identity_bindings": [
             {
               "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
-              "column": "AlternativeGraduationPlan_EducationOrganizationRefer_c847b569c8"
+              "column": "AlternativeGraduationPlan_EducationOrganizationId"
             },
             {
               "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
@@ -3850,7 +3850,7 @@
             },
             {
               "reference_json_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear",
-              "column": "AlternativeGraduationPlan_GraduationSchoolYearTypeRe_5a62cb796f"
+              "column": "AlternativeGraduationPlan_GraduationSchoolYear"
             }
           ]
         },
@@ -3873,11 +3873,11 @@
             },
             {
               "reference_json_path": "$.calendarReference.schoolId",
-              "column": "Calendar_SchoolReferenceSchoolId"
+              "column": "Calendar_SchoolId"
             },
             {
               "reference_json_path": "$.calendarReference.schoolYear",
-              "column": "Calendar_SchoolYearTypeReferenceSchoolYear"
+              "column": "Calendar_SchoolYear"
             }
           ]
         },
@@ -3915,7 +3915,7 @@
           "identity_bindings": [
             {
               "reference_json_path": "$.graduationPlanReference.educationOrganizationId",
-              "column": "GraduationPlan_EducationOrganizationReferenceEducati_e0f9422cb7"
+              "column": "GraduationPlan_EducationOrganizationId"
             },
             {
               "reference_json_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
@@ -3923,7 +3923,7 @@
             },
             {
               "reference_json_path": "$.graduationPlanReference.graduationSchoolYear",
-              "column": "GraduationPlan_GraduationSchoolYearTypeReferenceSchoolYear"
+              "column": "GraduationPlan_GraduationSchoolYear"
             }
           ]
         },

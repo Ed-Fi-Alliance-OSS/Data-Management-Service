@@ -138,6 +138,10 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
             var referenceBaseName = ResolveReferenceBaseName(mapping, builderContext);
             var tableBuilder = ResolveOwningTableBuilder(mapping.ReferenceObjectPath, tableScopes, resource);
             var isNullable = !mapping.IsRequired;
+            var referenceIdentityFieldBaseNameCounts = BuildReferenceIdentityFieldBaseNameCounts(
+                mapping.ReferenceObjectPath,
+                mapping.ReferenceJsonPaths
+            );
 
             var fkColumnName = BuildReferenceDocumentIdColumnName(referenceBaseName);
             var originalFkColumnName = BuildReferenceDocumentIdColumnName(originalReferenceBaseName);
@@ -156,7 +160,11 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
             foreach (var identityBinding in mapping.ReferenceJsonPaths)
             {
-                var identityPartBaseName = BuildIdentityPartBaseName(identityBinding.IdentityJsonPath);
+                var identityPartBaseName = ResolveReferenceIdentityPartBaseName(
+                    mapping.ReferenceObjectPath,
+                    identityBinding,
+                    referenceIdentityFieldBaseNameCounts
+                );
 
                 if (
                     builderContext.TryGetNameOverride(
