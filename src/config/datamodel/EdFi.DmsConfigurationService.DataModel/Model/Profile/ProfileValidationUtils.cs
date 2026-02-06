@@ -16,7 +16,7 @@ namespace EdFi.DmsConfigurationService.DataModel.Model.Profile;
 /// <summary>
 /// Represents the result of XML validation.
 /// </summary>
-public record ValidationResult(bool IsValid, IReadOnlyList<string> Errors);
+public record ProfileXmlValidationResult(bool IsValid, IReadOnlyList<string> Errors);
 
 /// <summary>
 /// Provides validation utilities for Ed-Fi API Profile XML documents.
@@ -48,8 +48,8 @@ public static class ProfileValidationUtils
     /// Validates that the XML conforms to the Ed-Fi ODS API Profile XSD schema.
     /// </summary>
     /// <param name="xml">The XML string to validate.</param>
-    /// <returns>A <see cref="ValidationResult"/> containing validation status and any errors.</returns>
-    public static ValidationResult ValidateProfileXml(string xml)
+    /// <returns>A <see cref="ProfileXmlValidationResult"/> containing validation status and any errors.</returns>
+    public static ProfileXmlValidationResult ValidateProfileXml(string xml)
     {
         try
         {
@@ -79,11 +79,11 @@ public static class ProfileValidationUtils
             using var xmlReader = XmlReader.Create(stringReader, settings);
             while (xmlReader.Read()) { } // Read through the entire document to trigger validation
 
-            return new ValidationResult(isValid, errors);
+            return new ProfileXmlValidationResult(isValid, errors);
         }
         catch (Exception ex)
         {
-            return new ValidationResult(false, [$"XML parsing error: {ex.Message}"]);
+            return new ProfileXmlValidationResult(false, [$"XML parsing error: {ex.Message}"]);
         }
     }
 
