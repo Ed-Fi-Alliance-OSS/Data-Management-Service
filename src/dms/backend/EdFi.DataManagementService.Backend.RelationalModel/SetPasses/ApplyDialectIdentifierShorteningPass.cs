@@ -189,7 +189,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             changed = true;
         }
 
-        var updatedKey = ApplyToKey(table.Key, dialectRules, out var keyChanged);
+        var updatedKey = ApplyToKey(table.Table, table.Key, dialectRules, out var keyChanged);
         changed |= keyChanged;
 
         var updatedColumns = new DbColumnModel[table.Columns.Count];
@@ -228,9 +228,24 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
-    private static TableKey ApplyToKey(TableKey key, ISqlDialectRules dialectRules, out bool changed)
+    private static TableKey ApplyToKey(
+        DbTableName table,
+        TableKey key,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
     {
         changed = false;
+        var keyName = string.IsNullOrWhiteSpace(key.ConstraintName)
+            ? ConstraintNaming.BuildPrimaryKeyName(table)
+            : key.ConstraintName;
+        var updatedConstraintName = dialectRules.ShortenIdentifier(keyName);
+
+        if (!string.Equals(updatedConstraintName, key.ConstraintName, StringComparison.Ordinal))
+        {
+            changed = true;
+        }
+
         var updatedColumns = new DbKeyColumn[key.Columns.Count];
 
         for (var index = 0; index < key.Columns.Count; index++)
@@ -253,6 +268,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
 
         return key with
         {
+            ConstraintName = updatedConstraintName,
             Columns = updatedColumns,
         };
     }
@@ -647,6 +663,19 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     );
                 }
 
+                var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(table.Table, table.Key);
+
+                detector.RegisterConstraint(
+                    table.Table,
+                    primaryKeyConstraintName,
+                    BuildOrigin(
+                        $"primary key constraint {primaryKeyConstraintName} on {FormatTable(table.Table)}",
+                        resourceLabel,
+                        null,
+                        table.JsonScope
+                    )
+                );
+
                 foreach (var constraint in table.Constraints)
                 {
                     var constraintName = GetConstraintName(constraint);
@@ -691,6 +720,19 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     )
                 );
             }
+
+            var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(tableModel.Table, tableModel.Key);
+
+            detector.RegisterConstraint(
+                tableModel.Table,
+                primaryKeyConstraintName,
+                BuildOrigin(
+                    $"primary key constraint {primaryKeyConstraintName} on {FormatTable(tableModel.Table)} (abstract identity)",
+                    resourceLabel,
+                    null,
+                    tableModel.JsonScope
+                )
+            );
 
             foreach (var constraint in tableModel.Constraints)
             {
@@ -870,6 +912,13 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     private static string FormatColumn(DbTableName table, DbColumnName column)
     {
         return $"{FormatTable(table)}.{column.Value}";
+    }
+
+    private static string ResolvePrimaryKeyConstraintName(DbTableName table, TableKey key)
+    {
+        return string.IsNullOrWhiteSpace(key.ConstraintName)
+            ? ConstraintNaming.BuildPrimaryKeyName(table)
+            : key.ConstraintName;
     }
 
     private static string GetConstraintName(TableConstraint constraint)

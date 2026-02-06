@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 public class Given_Constraint_Names_Within_Dialect_Limits
 {
     private string _foreignKeyName = default!;
+    private string _primaryKeyName = default!;
     private string _uniqueName = default!;
 
     /// <summary>
@@ -43,6 +44,11 @@ public class Given_Constraint_Names_Within_Dialect_Limits
         );
         _foreignKeyName = ConstraintNaming.ApplyDialectLimit(fkBase, fkIdentity, dialectRules);
 
+        var primaryColumns = new[] { RelationalNameConventions.DocumentIdColumnName };
+        var primaryBase = ConstraintNaming.BuildPrimaryKeyName(table);
+        var primaryIdentity = ConstraintIdentity.ForPrimaryKey(table, primaryColumns);
+        _primaryKeyName = ConstraintNaming.ApplyDialectLimit(primaryBase, primaryIdentity, dialectRules);
+
         var uniqueBase = ConstraintNaming.BuildNaturalKeyUniqueName(table);
         var uniqueIdentity = ConstraintIdentity.ForUnique(table, new[] { new DbColumnName("SchoolId") });
         _uniqueName = ConstraintNaming.ApplyDialectLimit(uniqueBase, uniqueIdentity, dialectRules);
@@ -55,6 +61,15 @@ public class Given_Constraint_Names_Within_Dialect_Limits
     public void It_should_not_append_hash_for_foreign_keys_within_limits()
     {
         _foreignKeyName.Should().Be("FK_School_Student");
+    }
+
+    /// <summary>
+    /// It should not append hash for primary keys within limits.
+    /// </summary>
+    [Test]
+    public void It_should_not_append_hash_for_primary_keys_within_limits()
+    {
+        _primaryKeyName.Should().Be("PK_School");
     }
 
     /// <summary>
@@ -74,8 +89,10 @@ public class Given_Constraint_Names_Within_Dialect_Limits
 public class Given_Constraint_Names_Exceeding_Dialect_Limits
 {
     private string _foreignKeyName = default!;
+    private string _primaryKeyName = default!;
     private string _uniqueName = default!;
     private string _foreignKeyHash = default!;
+    private string _primaryKeyHash = default!;
     private string _uniqueHash = default!;
     private PgsqlDialectRules _dialectRules = default!;
 
@@ -112,6 +129,15 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
         );
         _foreignKeyName = ConstraintNaming.ApplyDialectLimit(fkBase, fkIdentity, _dialectRules);
 
+        var primaryColumns = new[]
+        {
+            RelationalNameConventions.DocumentIdColumnName,
+            new DbColumnName("Ordinal"),
+        };
+        var primaryBase = ConstraintNaming.BuildPrimaryKeyName(table);
+        var primaryIdentity = ConstraintIdentity.ForPrimaryKey(table, primaryColumns);
+        _primaryKeyName = ConstraintNaming.ApplyDialectLimit(primaryBase, primaryIdentity, _dialectRules);
+
         var uniqueColumns = new[]
         {
             new DbColumnName(new string('D', 32)),
@@ -124,6 +150,7 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
         _foreignKeyHash = ComputeHash(
             BuildForeignKeySignature(table, localColumns, targetTable, targetColumns)
         );
+        _primaryKeyHash = ComputeHash(BuildPrimaryKeySignature(table, primaryColumns));
         _uniqueHash = ComputeHash(BuildUniqueSignature(table, uniqueColumns));
     }
 
@@ -135,6 +162,16 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
     {
         _foreignKeyName.Should().EndWith($"_{_foreignKeyHash}");
         _foreignKeyName.Length.Should().BeLessOrEqualTo(_dialectRules.MaxIdentifierLength);
+    }
+
+    /// <summary>
+    /// It should append hash for primary keys exceeding limits.
+    /// </summary>
+    [Test]
+    public void It_should_append_hash_for_primary_keys_exceeding_limits()
+    {
+        _primaryKeyName.Should().EndWith($"_{_primaryKeyHash}");
+        _primaryKeyName.Length.Should().BeLessOrEqualTo(_dialectRules.MaxIdentifierLength);
     }
 
     /// <summary>
@@ -160,6 +197,11 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
     private static string BuildUniqueSignature(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
         return $"Unique|{table}|{string.Join(",", columns.Select(column => column.Value))}";
+    }
+
+    private static string BuildPrimaryKeySignature(DbTableName table, IReadOnlyList<DbColumnName> columns)
+    {
+        return $"PrimaryKey|{table}|{string.Join(",", columns.Select(column => column.Value))}";
     }
 
     private static string ComputeHash(string signature)

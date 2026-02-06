@@ -97,6 +97,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
                 var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
                 var key = new TableKey(
+                    ConstraintNaming.BuildPrimaryKeyName(tableName),
                     new[]
                     {
                         new DbKeyColumn(

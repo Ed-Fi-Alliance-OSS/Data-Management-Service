@@ -358,10 +358,11 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
                 TargetResource: null
             ),
         };
+        var tableName = new DbTableName(schema, resource.ResourceName);
         var table = new DbTableModel(
-            new DbTableName(schema, resource.ResourceName),
+            tableName,
             JsonPathExpressionCompiler.Compile("$"),
-            new TableKey([keyColumn]),
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
             columns,
             Array.Empty<TableConstraint>()
         );

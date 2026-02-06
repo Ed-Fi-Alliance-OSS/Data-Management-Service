@@ -7,6 +7,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel;
 
 internal enum ConstraintIdentityKind
 {
+    PrimaryKey,
     Unique,
     ForeignKey,
     AllOrNone,
@@ -54,6 +55,20 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
     public IReadOnlyList<DbColumnName> TargetColumns => _targetColumns;
 
     public IReadOnlyList<DbColumnName> DependentColumns => _dependentColumns;
+
+    public static ConstraintIdentity ForPrimaryKey(DbTableName table, IReadOnlyList<DbColumnName> columns)
+    {
+        return new ConstraintIdentity(
+            ConstraintIdentityKind.PrimaryKey,
+            table,
+            CopyColumns(columns),
+            targetTable: null,
+            Array.Empty<DbColumnName>(),
+            Array.Empty<DbColumnName>(),
+            ReferentialAction.NoAction,
+            ReferentialAction.NoAction
+        );
+    }
 
     public static ConstraintIdentity ForUnique(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {

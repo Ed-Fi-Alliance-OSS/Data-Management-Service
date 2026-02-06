@@ -229,6 +229,7 @@ internal static class IdentifierShorteningAssertions
 
         var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
         var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedPrimaryKey = dialectRules.ShortenIdentifier($"PK_{identifiers.TableName}");
         var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
         var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
         var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
@@ -239,6 +240,9 @@ internal static class IdentifierShorteningAssertions
         var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
         var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
         var expectedAbstractTable = dialectRules.ShortenIdentifier(identifiers.AbstractTableName);
+        var expectedAbstractPrimaryKey = dialectRules.ShortenIdentifier(
+            $"PK_{identifiers.AbstractTableName}"
+        );
         var expectedAbstractColumn = dialectRules.ShortenIdentifier(identifiers.AbstractColumnName);
         var expectedView = dialectRules.ShortenIdentifier(identifiers.ViewName);
         var expectedViewColumn = dialectRules.ShortenIdentifier(identifiers.ViewColumnName);
@@ -254,6 +258,7 @@ internal static class IdentifierShorteningAssertions
         resourceModel.PhysicalSchema.Value.Should().Be(expectedSchema);
         resourceModel.Root.Table.Schema.Value.Should().Be(expectedSchema);
         resourceModel.Root.Table.Name.Should().Be(expectedTable);
+        resourceModel.Root.Key.ConstraintName.Should().Be(expectedPrimaryKey);
         resourceModel.Root.Key.Columns.Single().ColumnName.Value.Should().Be(expectedKey);
         resourceModel
             .Root.Columns.Single(column => column.ColumnName.Value == expectedKey)
@@ -304,6 +309,7 @@ internal static class IdentifierShorteningAssertions
         var abstractTable = result.AbstractIdentityTablesInNameOrder.Single();
         abstractTable.TableModel.Table.Schema.Value.Should().Be(expectedSchema);
         abstractTable.TableModel.Table.Name.Should().Be(expectedAbstractTable);
+        abstractTable.TableModel.Key.ConstraintName.Should().Be(expectedAbstractPrimaryKey);
         abstractTable.TableModel.Key.Columns.Single().ColumnName.Value.Should().Be(expectedAbstractColumn);
 
         var abstractView = result.AbstractUnionViewsInNameOrder.Single();
@@ -413,7 +419,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
         var table = new DbTableModel(
             tableName,
             JsonPathExpressionCompiler.Compile("$"),
-            new TableKey([keyColumn]),
+            new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), [keyColumn]),
             columns,
             constraints
         );
@@ -455,10 +461,12 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new ConcreteResourceModel(_resourceKey, ResourceStorageKind.RelationalTables, resourceModel)
         );
 
+        var abstractTableName = new DbTableName(schema, _identifiers.AbstractTableName);
         var abstractTable = new DbTableModel(
-            new DbTableName(schema, _identifiers.AbstractTableName),
+            abstractTableName,
             JsonPathExpressionCompiler.Compile("$"),
             new TableKey(
+                ConstraintNaming.BuildPrimaryKeyName(abstractTableName),
                 new[]
                 {
                     new DbKeyColumn(
