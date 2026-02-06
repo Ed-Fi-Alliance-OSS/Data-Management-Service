@@ -341,5 +341,40 @@
       "Review `git diff --name-status` to ensure file moves/renames align with the approved mapping and no unrelated files were modified."
     ],
     "completed": true
+  },
+  {
+    "category": "Backend",
+    "description": "DMS-931 follow-up: Make `_ext` project-key resolution case-insensitive across all derivation paths. Acceptance: (1) `_ext` endpoint/project-name matching uses case-insensitive comparison semantics (or a single canonical normalization) in every resolution path, including `RelationalModelSetBuilderContext`, `ExtractInputsStep`, and `ExtensionTableDerivationPass`; (2) mixed-case project keys (for example `EdFi.TPDM_ext` vs `edfi.tpdm_ext`) resolve to the same extension project and do not fail derivation/startup; (3) behavior is consistent between schema input extraction and extension table derivation; (4) non-extension matching behavior is unchanged.",
+    "steps-to-verify": [
+      "Replace case-sensitive `_ext` project-name matching in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetBuilderContext.cs`, `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputsStep.cs`, and `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs` with a single case-insensitive strategy.",
+      "Add/adjust unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ExtensionProjectKeyResolutionTests.cs` to assert mixed-case `_ext` keys resolve successfully through the affected code paths.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Backend",
+    "description": "DMS-931 follow-up: Implement deterministic primary-key constraint naming and include PK constraints in dialect hashing/shortening flows. Acceptance: (1) relational model types carry PK constraint names (not just key columns) so PK identity is part of the derived model contract; (2) PK names are generated deterministically as `PK_{TableName}` before dialect processing; (3) PK constraint identifiers participate in the same hashing/shortening/collision handling as other named constraints; (4) emitted DDL includes explicit named PK constraints and uses the final dialect-safe identifier; (5) behavior is covered by unit tests for both normal and overlong/collision-prone table names.",
+    "steps-to-verify": [
+      "Extend relational model contracts in `./src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` and corresponding builder code so each table primary key has a constraint name.",
+      "Update passes in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyConstraintDialectHashingPass.cs` and `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs` to process PK constraints alongside other named constraints.",
+      "Update DDL emission in `./src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs` to emit `CONSTRAINT <name> PRIMARY KEY (...)` using the finalized identifier.",
+      "Add/adjust unit tests in RelationalModel and DDL test projects to assert deterministic PK naming, dialect shortening/hashing participation, and emitted SQL text.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "DMS-931 follow-up: Add explicit regression coverage for case-insensitive `_ext` project-key resolution requirements from extensions design docs. Acceptance: (1) tests include at least one mixed-case `_ext` key scenario that previously failed under `StringComparison.Ordinal`; (2) tests verify resolution succeeds regardless of casing and remains deterministic; (3) tests include at least one negative case where the project key truly does not match and still fails with expected diagnostics.",
+    "steps-to-verify": [
+      "Add new test cases to `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ExtensionProjectKeyResolutionTests.cs` covering mixed-case positive and true-mismatch negative scenarios.",
+      "Ensure expected diagnostics/assertions reflect case-insensitive matching semantics for `_ext` keys.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`."
+    ],
+    "completed": false
   }
 ]
