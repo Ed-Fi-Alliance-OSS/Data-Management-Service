@@ -7,7 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
 
 /// <summary>
 /// Provides helper methods for reading normalized ApiSchema JSON nodes with consistent validation errors.

@@ -61,7 +61,7 @@ public sealed record SqlScalarTypeDefaults(
 /// </summary>
 public sealed class PgsqlDialectRules : ISqlDialectRules
 {
-    private static readonly SqlScalarTypeDefaults Defaults = new(
+    private static readonly SqlScalarTypeDefaults _defaults = new(
         StringType: "varchar",
         Int32Type: "integer",
         Int64Type: "bigint",
@@ -79,7 +79,7 @@ public sealed class PgsqlDialectRules : ISqlDialectRules
     public int MaxIdentifierLength => 63;
 
     /// <inheritdoc />
-    public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+    public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
 
     /// <inheritdoc />
     public string ShortenIdentifier(string identifier)
@@ -97,7 +97,7 @@ public sealed class PgsqlDialectRules : ISqlDialectRules
 /// </summary>
 public sealed class MssqlDialectRules : ISqlDialectRules
 {
-    private static readonly SqlScalarTypeDefaults Defaults = new(
+    private static readonly SqlScalarTypeDefaults _defaults = new(
         StringType: "nvarchar",
         Int32Type: "int",
         Int64Type: "bigint",
@@ -115,7 +115,7 @@ public sealed class MssqlDialectRules : ISqlDialectRules
     public int MaxIdentifierLength => 128;
 
     /// <inheritdoc />
-    public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+    public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
 
     /// <inheritdoc />
     public string ShortenIdentifier(string identifier)

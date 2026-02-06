@@ -6,9 +6,9 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
+using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
 
 /// <summary>
 /// The normalized project schema contexts and public schema infos derived from an effective schema set.

@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
 
 /// <summary>
 /// The high-level schema shape needed by the relational model derivation traversal.

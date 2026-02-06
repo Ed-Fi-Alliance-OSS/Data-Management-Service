@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Validation;
 
 /// <summary>
 /// Validates that <c>jsonSchemaForInsert</c> is fully dereferenced/expanded and does not contain schema

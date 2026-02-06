@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 /// <summary>
 /// Provides factory methods for the canonical set-level relational model derivation passes.

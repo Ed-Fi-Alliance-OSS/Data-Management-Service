@@ -5,9 +5,9 @@
 
 using System.Text;
 using System.Text.Json.Nodes;
-using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
+using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
 /// Derives extension tables (<c>_ext</c>) from resource-extension schemas and aligns them to base scopes.

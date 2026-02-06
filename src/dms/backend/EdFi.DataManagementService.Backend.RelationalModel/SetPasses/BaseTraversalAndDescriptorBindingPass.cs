@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json.Nodes;
-using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
+using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
 /// Executes base schema traversal and descriptor binding for each concrete, non-extension resource in the

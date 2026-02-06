@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
 
 /// <summary>
 /// Resolves relational scalar type metadata from a JSON Schema node and the precomputed validation metadata

@@ -7,7 +7,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.DescriptorPaths;
 
 /// <summary>
 /// Result of building descriptor path maps for a schema set, separated into base (non-<c>_ext</c>) and

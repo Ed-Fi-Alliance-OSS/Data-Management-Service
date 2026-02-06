@@ -5,7 +5,7 @@
 
 using System.Text;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 /// <summary>
 /// Deterministic naming helpers used when deriving physical schemas, tables, columns, and constraints from

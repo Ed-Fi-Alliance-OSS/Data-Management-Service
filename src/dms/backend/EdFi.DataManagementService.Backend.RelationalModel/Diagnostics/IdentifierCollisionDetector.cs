@@ -5,7 +5,7 @@
 
 using System;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Diagnostics;
 
 /// <summary>
 /// Detects collisions introduced by deterministic identifier shortening.

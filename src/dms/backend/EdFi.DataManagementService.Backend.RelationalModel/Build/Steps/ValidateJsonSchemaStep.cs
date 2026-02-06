@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
 /// <summary>
 /// Validates <c>resourceSchema.jsonSchemaForInsert</c> for the assumptions required by relational model

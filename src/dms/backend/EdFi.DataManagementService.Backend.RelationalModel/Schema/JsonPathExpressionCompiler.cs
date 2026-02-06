@@ -5,7 +5,7 @@
 
 using System.Text;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Schema;
 
 /// <summary>
 /// Compiles and canonicalizes a constrained JSONPath syntax used throughout relational model derivation.

@@ -7,7 +7,7 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 /// <summary>
 /// Emits a deterministic JSON manifest for a relational resource model build, intended for diagnostics

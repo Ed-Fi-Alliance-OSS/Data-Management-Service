@@ -6,7 +6,7 @@
 using System.Text;
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps;
 
 /// <summary>
 /// Derives scalar columns (and descriptor foreign keys) for each previously-discovered table scope.

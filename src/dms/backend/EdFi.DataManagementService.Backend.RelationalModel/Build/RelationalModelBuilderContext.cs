@@ -5,7 +5,7 @@
 
 using System.Text.Json.Nodes;
 
-namespace EdFi.DataManagementService.Backend.RelationalModel;
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 /// <summary>
 /// Shared mutable context passed through the relational model builder pipeline.
