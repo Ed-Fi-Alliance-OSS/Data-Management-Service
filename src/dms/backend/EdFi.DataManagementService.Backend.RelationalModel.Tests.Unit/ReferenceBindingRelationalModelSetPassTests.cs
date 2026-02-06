@@ -119,13 +119,11 @@ public class Given_Reference_Binding
     [Test]
     public void It_should_use_expanded_identity_naming_for_nested_paths()
     {
-        var personColumn = _rootTable.Columns.Single(column =>
-            column.ColumnName.Value == "Person_NameFirstName"
-        );
+        var personColumn = _rootTable.Columns.Single(column => column.ColumnName.Value == "Person_FirstName");
 
         personColumn.SourceJsonPath.Should().NotBeNull();
         personColumn.SourceJsonPath!.Value.Canonical.Should().Be("$.personReference.name.firstName");
-        _personBinding.IdentityBindings.Single().Column.Value.Should().Be("Person_NameFirstName");
+        _personBinding.IdentityBindings.Single().Column.Value.Should().Be("Person_FirstName");
     }
 
     /// <summary>

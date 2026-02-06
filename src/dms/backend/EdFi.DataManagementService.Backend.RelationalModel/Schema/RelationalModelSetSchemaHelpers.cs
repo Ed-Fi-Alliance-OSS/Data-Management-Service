@@ -199,6 +199,114 @@ internal static class RelationalModelSetSchemaHelpers
     }
 
     /// <summary>
+    /// Builds the propagated reference identity field base name from the reference-side value path relative to
+    /// the reference object path.
+    /// </summary>
+    /// <param name="referenceObjectPath">The JSONPath to the reference object.</param>
+    /// <param name="referenceValuePath">The JSONPath to the identity value under the reference object.</param>
+    /// <returns>The base name for propagated reference identity column naming.</returns>
+    internal static string BuildReferenceIdentityFieldBaseName(
+        JsonPathExpression referenceObjectPath,
+        JsonPathExpression referenceValuePath
+    )
+    {
+        if (!IsPrefixOf(referenceObjectPath.Segments, referenceValuePath.Segments))
+        {
+            throw new InvalidOperationException(
+                $"Reference identity value path '{referenceValuePath.Canonical}' must be under reference object "
+                    + $"path '{referenceObjectPath.Canonical}'."
+            );
+        }
+
+        var prefixSegmentCount = referenceObjectPath.Segments.Count;
+        var valueSegmentCount = referenceValuePath.Segments.Count;
+
+        if (prefixSegmentCount >= valueSegmentCount)
+        {
+            throw new InvalidOperationException(
+                $"Reference identity value path '{referenceValuePath.Canonical}' must extend reference object "
+                    + $"path '{referenceObjectPath.Canonical}' with at least one property segment."
+            );
+        }
+
+        StringBuilder builder = new();
+
+        for (var index = prefixSegmentCount; index < valueSegmentCount; index++)
+        {
+            switch (referenceValuePath.Segments[index])
+            {
+                case JsonPathSegment.Property property:
+                    builder.Append(RelationalNameConventions.ToPascalCase(property.Name));
+                    break;
+                case JsonPathSegment.AnyArrayElement:
+                    throw new InvalidOperationException(
+                        $"Reference identity value path '{referenceValuePath.Canonical}' must not include array "
+                            + $"segments after reference object path '{referenceObjectPath.Canonical}'."
+                    );
+            }
+        }
+
+        if (builder.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Reference identity value path '{referenceValuePath.Canonical}' must include at least one "
+                    + $"property segment after reference object path '{referenceObjectPath.Canonical}'."
+            );
+        }
+
+        return builder.ToString();
+    }
+
+    /// <summary>
+    /// Builds occurrence counts for reference-relative identity field base names within a reference mapping.
+    /// </summary>
+    internal static IReadOnlyDictionary<string, int> BuildReferenceIdentityFieldBaseNameCounts(
+        JsonPathExpression referenceObjectPath,
+        IReadOnlyList<ReferenceJsonPathBinding> referenceJsonPaths
+    )
+    {
+        Dictionary<string, int> counts = new(StringComparer.Ordinal);
+
+        foreach (var binding in referenceJsonPaths)
+        {
+            var baseName = BuildReferenceIdentityFieldBaseName(
+                referenceObjectPath,
+                binding.ReferenceJsonPath
+            );
+            counts[baseName] = counts.TryGetValue(baseName, out var existing) ? existing + 1 : 1;
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Resolves a propagated reference identity-part base name, preferring the reference-relative field name and
+    /// falling back to the target identity-path name only when multiple bindings share the same field name.
+    /// </summary>
+    internal static string ResolveReferenceIdentityPartBaseName(
+        JsonPathExpression referenceObjectPath,
+        ReferenceJsonPathBinding binding,
+        IReadOnlyDictionary<string, int> referenceFieldBaseNameCounts
+    )
+    {
+        var referenceFieldBaseName = BuildReferenceIdentityFieldBaseName(
+            referenceObjectPath,
+            binding.ReferenceJsonPath
+        );
+
+        if (!referenceFieldBaseNameCounts.TryGetValue(referenceFieldBaseName, out var count) || count <= 1)
+        {
+            return referenceFieldBaseName;
+        }
+
+        var identityPathBaseName = BuildIdentityPartBaseName(binding.IdentityJsonPath);
+
+        return string.Equals(identityPathBaseName, referenceFieldBaseName, StringComparison.Ordinal)
+            ? referenceFieldBaseName
+            : identityPathBaseName;
+    }
+
+    /// <summary>
     /// Builds a set of canonical reference identity JSONPaths from the document reference mappings.
     /// </summary>
     internal static HashSet<string> BuildReferenceIdentityPathSet(

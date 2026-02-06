@@ -344,10 +344,18 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
 
         Dictionary<string, JsonPathExpression> referencePathsByIdentityPath = new(StringComparer.Ordinal);
         Dictionary<string, DbColumnName> localColumnsByIdentityPath = new(StringComparer.Ordinal);
+        var referenceIdentityFieldBaseNameCounts = BuildReferenceIdentityFieldBaseNameCounts(
+            mapping.ReferenceObjectPath,
+            mapping.ReferenceJsonPaths
+        );
 
         foreach (var path in mapping.ReferenceJsonPaths)
         {
-            var identityPartBaseName = BuildIdentityPartBaseName(path.IdentityJsonPath);
+            var identityPartBaseName = ResolveReferenceIdentityPartBaseName(
+                mapping.ReferenceObjectPath,
+                path,
+                referenceIdentityFieldBaseNameCounts
+            );
 
             if (
                 builderContext.TryGetNameOverride(
