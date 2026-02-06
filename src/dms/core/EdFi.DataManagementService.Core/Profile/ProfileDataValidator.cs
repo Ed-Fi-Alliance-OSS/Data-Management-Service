@@ -29,9 +29,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         // Suppress unused parameter warning - will be used in future validation logic
         _ = logger;
 
-        var failures = ValidateResourceExistence(profileDefinition, effectiveApiSchemaProvider)
-            .Concat(ValidateMemberSelection(profileDefinition, effectiveApiSchemaProvider))
-            .ToList();
+        var failures = ValidateResources(profileDefinition, effectiveApiSchemaProvider);
 
         return failures.Count == 0
             ? ProfileValidationResult.Success
@@ -48,30 +46,62 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         );
     }
 
-    private static List<ValidationFailure> ValidateResourceExistence(
+    /// <summary>
+    /// Validates all resources in the profile definition in a single pass.
+    /// Checks both resource existence and member selection validation.
+    /// </summary>
+    private static List<ValidationFailure> ValidateResources(
         ProfileDefinition profileDefinition,
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider
     )
     {
+        var failures = new List<ValidationFailure>();
         var apiSchemaDocuments = effectiveApiSchemaProvider.Documents;
-        var projectSchemas = GetProjectSchemas(apiSchemaDocuments);
+        var projectSchemas = GetProjectSchemas(apiSchemaDocuments).ToList();
 
-        // Build list of validation failures for resources that don't exist
-        return profileDefinition
-            .Resources.Where(resourceProfile =>
-                !IsResourceInSchemas(resourceProfile.ResourceName, projectSchemas)
-            )
-            .Select(resourceProfile => new ValidationFailure(
-                ValidationSeverity.Error,
-                profileDefinition.ProfileName,
+        foreach (var resourceProfile in profileDefinition.Resources)
+        {
+            // Find the resource schema across core and extensions (single traversal)
+            JsonNode? resourceSchemaNode = FindResourceSchemaNode(
                 resourceProfile.ResourceName,
-                null,
-                $"Resource '{resourceProfile.ResourceName}' does not exist in the API schema."
-            ))
-            .ToList();
+                projectSchemas
+            );
+
+            // Resource doesn't exist - add error and skip member validation
+            if (resourceSchemaNode is null)
+            {
+                failures.Add(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        profileDefinition.ProfileName,
+                        resourceProfile.ResourceName,
+                        null,
+                        $"Resource '{resourceProfile.ResourceName}' does not exist in the API schema."
+                    )
+                );
+                continue;
+            }
+
+            // Resource exists - validate member selection
+            failures.AddRange(
+                ValidateResourceMemberSelection(
+                    resourceProfile,
+                    resourceSchemaNode,
+                    profileDefinition.ProfileName
+                )
+            );
+        }
+
+        return failures;
     }
 
-    private static bool IsResourceInSchemas(string resourceName, IEnumerable<ProjectSchema> projectSchemas)
+    /// <summary>
+    /// Finds the resource schema node by searching through all project schemas once.
+    /// </summary>
+    private static JsonNode? FindResourceSchemaNode(
+        string resourceName,
+        IEnumerable<ProjectSchema> projectSchemas
+    )
     {
         foreach (var projectSchema in projectSchemas)
         {
@@ -80,83 +110,63 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             );
             if (resourceNode is not null)
             {
-                return true;
+                return resourceNode;
             }
         }
-        return false;
+        return null;
     }
 
-    private static List<ValidationFailure> ValidateMemberSelection(
-        ProfileDefinition profileDefinition,
-        IEffectiveApiSchemaProvider effectiveApiSchemaProvider
+    /// <summary>
+    /// Validates member selection for a single resource profile.
+    /// </summary>
+    private static List<ValidationFailure> ValidateResourceMemberSelection(
+        ResourceProfile resourceProfile,
+        JsonNode resourceSchemaNode,
+        string profileName
     )
     {
         var failures = new List<ValidationFailure>();
-        var apiSchemaDocuments = effectiveApiSchemaProvider.Documents;
-        var projectSchemas = GetProjectSchemas(apiSchemaDocuments);
 
-        foreach (var resourceProfile in profileDefinition.Resources)
+        // Get the JSON schema properties
+        var jsonSchema = resourceSchemaNode["jsonSchemaForInsert"] as JsonObject;
+        var propertiesNode = jsonSchema?["properties"] as JsonObject;
+
+        if (propertiesNode is null)
         {
-            // Find the resource schema across core and extensions
-            JsonNode? resourceSchemaNode = null;
-            foreach (var projectSchema in projectSchemas)
-            {
-                resourceSchemaNode = projectSchema.FindResourceSchemaNodeByResourceName(
-                    new ResourceName(resourceProfile.ResourceName)
-                );
-                if (resourceSchemaNode is not null)
-                {
-                    break;
-                }
-            }
+            return failures;
+        }
 
-            // If resource doesn't exist, skip member validation (already caught by resource existence validation)
-            if (resourceSchemaNode is null)
-            {
-                continue;
-            }
+        // Get resource schema to access identity paths
+        var resourceSchema = new ResourceSchema(resourceSchemaNode);
 
-            // Get the JSON schema properties
-            var jsonSchema = resourceSchemaNode["jsonSchemaForInsert"] as JsonObject;
-            var propertiesNode = jsonSchema?["properties"] as JsonObject;
+        // Validate ReadContentType members
+        if (resourceProfile.ReadContentType is not null)
+        {
+            failures.AddRange(
+                ValidateContentTypeMembers(
+                    resourceProfile.ReadContentType,
+                    propertiesNode,
+                    profileName,
+                    resourceProfile.ResourceName,
+                    "read",
+                    resourceSchema
+                )
+            );
+        }
 
-            if (propertiesNode is null)
-            {
-                continue;
-            }
-
-            // Get resource schema to access identity paths
-            var resourceSchema = new ResourceSchema(resourceSchemaNode);
-
-            // Validate ReadContentType members
-            if (resourceProfile.ReadContentType is not null)
-            {
-                failures.AddRange(
-                    ValidateContentTypeMembers(
-                        resourceProfile.ReadContentType,
-                        propertiesNode,
-                        profileDefinition.ProfileName,
-                        resourceProfile.ResourceName,
-                        "read",
-                        resourceSchema
-                    )
-                );
-            }
-
-            // Validate WriteContentType members
-            if (resourceProfile.WriteContentType is not null)
-            {
-                failures.AddRange(
-                    ValidateContentTypeMembers(
-                        resourceProfile.WriteContentType,
-                        propertiesNode,
-                        profileDefinition.ProfileName,
-                        resourceProfile.ResourceName,
-                        "write",
-                        resourceSchema
-                    )
-                );
-            }
+        // Validate WriteContentType members
+        if (resourceProfile.WriteContentType is not null)
+        {
+            failures.AddRange(
+                ValidateContentTypeMembers(
+                    resourceProfile.WriteContentType,
+                    propertiesNode,
+                    profileName,
+                    resourceProfile.ResourceName,
+                    "write",
+                    resourceSchema
+                )
+            );
         }
 
         return failures;
