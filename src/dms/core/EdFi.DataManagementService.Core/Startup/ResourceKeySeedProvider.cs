@@ -63,33 +63,49 @@ internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) 
             }
         }
 
-        // Sort by (ProjectName, ResourceName) using ordinal comparison
-        seedEntries.Sort(
-            (a, b) =>
+        // Sort by (ProjectName, ResourceName) using ordinal comparison (stable sort)
+        var sortedEntries = seedEntries
+            .OrderBy(e => e.ProjectName, StringComparer.Ordinal)
+            .ThenBy(e => e.ResourceName, StringComparer.Ordinal)
+            .ToList();
+
+        // Detect duplicate (ProjectName, ResourceName) entries — indicates a schema problem
+        for (var i = 1; i < sortedEntries.Count; i++)
+        {
+            if (
+                string.Equals(
+                    sortedEntries[i].ProjectName,
+                    sortedEntries[i - 1].ProjectName,
+                    StringComparison.Ordinal
+                )
+                && string.Equals(
+                    sortedEntries[i].ResourceName,
+                    sortedEntries[i - 1].ResourceName,
+                    StringComparison.Ordinal
+                )
+            )
             {
-                var projectCompare = string.Compare(a.ProjectName, b.ProjectName, StringComparison.Ordinal);
-                if (projectCompare != 0)
-                {
-                    return projectCompare;
-                }
-                return string.Compare(a.ResourceName, b.ResourceName, StringComparison.Ordinal);
+                throw new InvalidOperationException(
+                    $"Duplicate resource key seed detected: ({sortedEntries[i].ProjectName}, {sortedEntries[i].ResourceName}). "
+                        + "Each (ProjectName, ResourceName) pair must be unique in the schema."
+                );
             }
-        );
+        }
 
         // Validate count does not exceed smallint max
-        if (seedEntries.Count > MaxResourceKeyCount)
+        if (sortedEntries.Count > MaxResourceKeyCount)
         {
             throw new InvalidOperationException(
-                $"Resource key count ({seedEntries.Count}) exceeds maximum allowed ({MaxResourceKeyCount}). "
+                $"Resource key count ({sortedEntries.Count}) exceeds maximum allowed ({MaxResourceKeyCount}). "
                     + "The number of resources in the schema exceeds the smallint limit for ResourceKeyId."
             );
         }
 
         // Assign sequential ResourceKeyId from 1..N
-        var seeds = new List<ResourceKeySeed>(seedEntries.Count);
-        for (var i = 0; i < seedEntries.Count; i++)
+        var seeds = new List<ResourceKeySeed>(sortedEntries.Count);
+        for (var i = 0; i < sortedEntries.Count; i++)
         {
-            var entry = seedEntries[i];
+            var entry = sortedEntries[i];
             seeds.Add(
                 new ResourceKeySeed(
                     ResourceKeyId: (short)(i + 1),

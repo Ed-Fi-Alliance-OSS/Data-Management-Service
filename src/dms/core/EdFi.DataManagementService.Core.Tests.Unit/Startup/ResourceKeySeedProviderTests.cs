@@ -561,6 +561,43 @@ public class ResourceKeySeedProviderTests
     }
 
     [TestFixture]
+    public class Given_Schema_With_Duplicate_Resource_Names : ResourceKeySeedProviderTests
+    {
+        private ResourceKeySeedProvider _provider = null!;
+        private ApiSchemaDocumentNodes _nodes = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _provider = new ResourceKeySeedProvider(NullLogger<ResourceKeySeedProvider>.Instance);
+
+            // Create a schema where a concrete and abstract resource share the same name
+            var resourceSchemas = new JsonObject { ["students"] = CreateResourceSchema("Student") };
+
+            var abstractResources = new JsonObject
+            {
+                ["Student"] = new JsonObject { ["identityJsonPaths"] = new JsonArray("$.id") },
+            };
+
+            var schema = CreateMinimalSchema(
+                resourceSchemas: resourceSchemas,
+                abstractResources: abstractResources
+            );
+
+            _nodes = new ApiSchemaDocumentNodes(schema, []);
+        }
+
+        [Test]
+        public void It_throws_on_duplicate_project_and_resource_name()
+        {
+            var act = () => _provider.GetSeeds(_nodes);
+            act.Should()
+                .Throw<InvalidOperationException>()
+                .WithMessage("*Duplicate resource key seed*Ed-Fi*Student*");
+        }
+    }
+
+    [TestFixture]
     public class Given_Case_Sensitive_Ordinal_Sorting : ResourceKeySeedProviderTests
     {
         private ResourceKeySeedProvider _provider = null!;
