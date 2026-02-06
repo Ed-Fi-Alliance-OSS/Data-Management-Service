@@ -59,6 +59,9 @@ internal sealed class OverrideCollisionDetector
         );
     }
 
+    /// <summary>
+    /// Registers an override-normalized identifier, ensuring the original name is captured for diagnostics.
+    /// </summary>
     private void Register(
         IdentifierCollisionScope scope,
         string originalName,
@@ -71,6 +74,9 @@ internal sealed class OverrideCollisionDetector
         _core.Register(scope, finalName, new IdentifierCollisionSource(resolvedOriginal, finalName, origin));
     }
 
+    /// <summary>
+    /// Determines whether an origin should be treated as a shared descriptor element for collision reporting.
+    /// </summary>
     private static bool IsSharedDescriptorElement(
         IdentifierCollisionScope scope,
         string finalName,

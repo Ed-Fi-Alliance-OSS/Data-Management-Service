@@ -10,6 +10,9 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Naming;
 /// </summary>
 internal interface INameOverrideProvider
 {
+    /// <summary>
+    /// Attempts to resolve an override for the specified canonical JSONPath and override kind.
+    /// </summary>
     bool TryGetNameOverride(JsonPathExpression path, NameOverrideKind kind, out string overrideName);
 }
 
@@ -23,6 +26,9 @@ internal sealed class CompositeNameOverrideProvider : INameOverrideProvider
     private readonly string _primaryLabel;
     private readonly string _secondaryLabel;
 
+    /// <summary>
+    /// Creates a composite provider that searches overrides in the primary context first, then the secondary.
+    /// </summary>
     public CompositeNameOverrideProvider(
         RelationalModelBuilderContext primary,
         RelationalModelBuilderContext secondary
@@ -36,6 +42,9 @@ internal sealed class CompositeNameOverrideProvider : INameOverrideProvider
         ValidateNoConflicts();
     }
 
+    /// <summary>
+    /// Attempts to resolve an override from either source, preferring the primary context.
+    /// </summary>
     public bool TryGetNameOverride(JsonPathExpression path, NameOverrideKind kind, out string overrideName)
     {
         if (_primary.TryGetNameOverride(path, kind, out overrideName))
@@ -52,6 +61,9 @@ internal sealed class CompositeNameOverrideProvider : INameOverrideProvider
         return false;
     }
 
+    /// <summary>
+    /// Validates that primary and secondary contexts do not target the same canonical override key.
+    /// </summary>
     private void ValidateNoConflicts()
     {
         if (_primary.NameOverridesByPath.Count == 0 || _secondary.NameOverridesByPath.Count == 0)

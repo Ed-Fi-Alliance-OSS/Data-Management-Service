@@ -9,6 +9,9 @@ using System.Linq;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Diagnostics;
 
+/// <summary>
+/// Aggregates identifier sources by scope and final name, and emits deterministic collision diagnostics.
+/// </summary>
 internal sealed class CollisionDetectorCore
 {
     private readonly Dictionary<
@@ -16,6 +19,9 @@ internal sealed class CollisionDetectorCore
         Dictionary<string, List<IdentifierCollisionSource>>
     > _sources = new();
 
+    /// <summary>
+    /// Registers a single identifier source under the specified collision scope.
+    /// </summary>
     public void Register(
         IdentifierCollisionScope scope,
         string finalIdentifier,
@@ -37,6 +43,9 @@ internal sealed class CollisionDetectorCore
         sources.Add(source);
     }
 
+    /// <summary>
+    /// Throws an <see cref="InvalidOperationException"/> when any collisions are detected.
+    /// </summary>
     public void ThrowIfCollisions(
         IdentifierCollisionStage stage,
         string messagePrefix,
@@ -57,6 +66,9 @@ internal sealed class CollisionDetectorCore
         );
     }
 
+    /// <summary>
+    /// Collects collision records where a single final identifier maps to multiple distinct origins.
+    /// </summary>
     public IReadOnlyList<IdentifierCollisionRecord> CollectCollisions(
         IdentifierCollisionStage stage,
         Func<IdentifierCollisionScope, string, IdentifierCollisionOrigin, bool> isSharedDescriptorElement
@@ -102,11 +114,18 @@ internal sealed class CollisionDetectorCore
         return collisions;
     }
 
+    /// <summary>
+    /// Normalizes an optional origin value for deterministic sorting.
+    /// </summary>
     private static string NormalizeOriginPart(string? value)
     {
         return string.IsNullOrWhiteSpace(value) ? string.Empty : value;
     }
 
+    /// <summary>
+    /// Builds a de-duplication key for a collision origin, optionally collapsing known shared descriptor
+    /// elements across resources.
+    /// </summary>
     private static (string Description, string ResourceLabel, string JsonPath) BuildOriginKey(
         IdentifierCollisionScope scope,
         string finalName,

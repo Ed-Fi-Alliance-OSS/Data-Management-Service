@@ -8,16 +8,31 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
+/// <summary>
+/// Emits dialect-specific DDL (schemas, tables, indexes, and triggers) from a derived relational model set.
+/// </summary>
 public sealed class RelationalModelDdlEmitter
 {
     private readonly ISqlDialectRules _dialectRules;
 
+    /// <summary>
+    /// Initializes a new DDL emitter using the specified SQL dialect rules.
+    /// </summary>
+    /// <param name="dialectRules">The dialect rules used for quoting and scalar type defaults.</param>
     public RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     {
         ArgumentNullException.ThrowIfNull(dialectRules);
         _dialectRules = dialectRules;
     }
 
+    /// <summary>
+    /// Builds a SQL script that creates all schemas, tables, indexes, and triggers in the model set.
+    /// </summary>
+    /// <param name="modelSet">The derived relational model set to emit.</param>
+    /// <returns>The emitted DDL script.</returns>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the model set dialect does not match the emitter dialect rules.
+    /// </exception>
     public string Emit(DerivedRelationalModelSet modelSet)
     {
         ArgumentNullException.ThrowIfNull(modelSet);
@@ -39,6 +54,9 @@ public sealed class RelationalModelDdlEmitter
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Appends <c>CREATE SCHEMA</c> statements for each project schema.
+    /// </summary>
     private void AppendSchemas(StringBuilder builder, IReadOnlyList<ProjectSchemaInfo> schemas)
     {
         foreach (var schema in schemas)
@@ -54,6 +72,9 @@ public sealed class RelationalModelDdlEmitter
         }
     }
 
+    /// <summary>
+    /// Appends <c>CREATE TABLE</c> statements for each table in each concrete resource model.
+    /// </summary>
     private void AppendTables(StringBuilder builder, IReadOnlyList<ConcreteResourceModel> resources)
     {
         foreach (var resource in resources)
@@ -65,6 +86,9 @@ public sealed class RelationalModelDdlEmitter
         }
     }
 
+    /// <summary>
+    /// Appends a <c>CREATE TABLE</c> statement including columns, key, and table constraints.
+    /// </summary>
     private void AppendCreateTable(StringBuilder builder, DbTableModel table)
     {
         builder.Append("CREATE TABLE ");
@@ -109,6 +133,9 @@ public sealed class RelationalModelDdlEmitter
         builder.AppendLine();
     }
 
+    /// <summary>
+    /// Appends <c>CREATE INDEX</c> statements for each index in create-order.
+    /// </summary>
     private void AppendIndexes(StringBuilder builder, IReadOnlyList<DbIndexInfo> indexes)
     {
         foreach (var index in indexes)
@@ -127,6 +154,9 @@ public sealed class RelationalModelDdlEmitter
         }
     }
 
+    /// <summary>
+    /// Appends <c>CREATE TRIGGER</c> statements for each trigger in create-order.
+    /// </summary>
     private void AppendTriggers(StringBuilder builder, IReadOnlyList<DbTriggerInfo> triggers)
     {
         foreach (var trigger in triggers)
@@ -141,6 +171,9 @@ public sealed class RelationalModelDdlEmitter
         }
     }
 
+    /// <summary>
+    /// Builds a dialect-specific trigger body statement.
+    /// </summary>
     private string BuildTriggerBody()
     {
         var body = _dialectRules.Dialect switch
@@ -157,6 +190,9 @@ public sealed class RelationalModelDdlEmitter
         return body;
     }
 
+    /// <summary>
+    /// Resolves the SQL type for a column using explicit scalar type metadata or dialect defaults.
+    /// </summary>
     private string ResolveColumnType(DbColumnModel column)
     {
         var scalarType = column.ScalarType;
@@ -188,6 +224,9 @@ public sealed class RelationalModelDdlEmitter
         };
     }
 
+    /// <summary>
+    /// Formats a string scalar type including a length specifier when present.
+    /// </summary>
     private string FormatStringType(RelationalScalarType scalarType)
     {
         if (scalarType.MaxLength is null)
@@ -198,6 +237,9 @@ public sealed class RelationalModelDdlEmitter
         return $"{_dialectRules.ScalarTypeDefaults.StringType}({scalarType.MaxLength.Value})";
     }
 
+    /// <summary>
+    /// Formats a decimal scalar type including precision and scale when present.
+    /// </summary>
     private string FormatDecimalType(RelationalScalarType scalarType)
     {
         if (scalarType.Decimal is null)
@@ -209,6 +251,9 @@ public sealed class RelationalModelDdlEmitter
         return $"{_dialectRules.ScalarTypeDefaults.DecimalType}({precision},{scale})";
     }
 
+    /// <summary>
+    /// Formats a table constraint for inclusion within a <c>CREATE TABLE</c> statement.
+    /// </summary>
     private string FormatConstraint(TableConstraint constraint)
     {
         return constraint switch
@@ -229,6 +274,9 @@ public sealed class RelationalModelDdlEmitter
         };
     }
 
+    /// <summary>
+    /// Formats the expression for an all-or-none nullability check constraint.
+    /// </summary>
     private string FormatAllOrNoneCheck(TableConstraint.AllOrNoneNullability constraint)
     {
         var dependencies = string.Join(
@@ -239,6 +287,9 @@ public sealed class RelationalModelDdlEmitter
         return $"({Quote(constraint.FkColumn)} IS NULL) OR ({dependencies})";
     }
 
+    /// <summary>
+    /// Formats <c>ON DELETE</c> and <c>ON UPDATE</c> clauses for a foreign key constraint.
+    /// </summary>
     private string FormatReferentialActions(TableConstraint.ForeignKey foreignKey)
     {
         var deleteAction = FormatReferentialAction("DELETE", foreignKey.OnDelete);
@@ -247,6 +298,9 @@ public sealed class RelationalModelDdlEmitter
         return $"{deleteAction}{updateAction}";
     }
 
+    /// <summary>
+    /// Formats a referential action keyword clause when the action is not the dialect default.
+    /// </summary>
     private static string FormatReferentialAction(string keyword, ReferentialAction action)
     {
         return action switch
@@ -261,16 +315,25 @@ public sealed class RelationalModelDdlEmitter
         };
     }
 
+    /// <summary>
+    /// Formats a comma-separated list of quoted column names.
+    /// </summary>
     private string FormatColumnList(IReadOnlyList<DbColumnName> columns)
     {
         return string.Join(", ", columns.Select(Quote));
     }
 
+    /// <summary>
+    /// Formats a comma-separated list of quoted key column names.
+    /// </summary>
     private string FormatColumnList(IReadOnlyList<DbKeyColumn> columns)
     {
         return string.Join(", ", columns.Select(column => Quote(column.ColumnName)));
     }
 
+    /// <summary>
+    /// Resolves the primary key constraint name, falling back to a conventional default when unset.
+    /// </summary>
     private static string ResolvePrimaryKeyConstraintName(DbTableModel table)
     {
         return string.IsNullOrWhiteSpace(table.Key.ConstraintName)
@@ -278,31 +341,49 @@ public sealed class RelationalModelDdlEmitter
             : table.Key.ConstraintName;
     }
 
+    /// <summary>
+    /// Quotes a raw identifier using the configured dialect rules.
+    /// </summary>
     private string Quote(string identifier)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, identifier);
     }
 
+    /// <summary>
+    /// Quotes a schema name using the configured dialect rules.
+    /// </summary>
     private string Quote(DbSchemaName schema)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, schema);
     }
 
+    /// <summary>
+    /// Quotes a fully-qualified table name using the configured dialect rules.
+    /// </summary>
     private string Quote(DbTableName table)
     {
         return SqlIdentifierQuoter.QuoteTableName(_dialectRules.Dialect, table);
     }
 
+    /// <summary>
+    /// Quotes a column name using the configured dialect rules.
+    /// </summary>
     private string Quote(DbColumnName column)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, column);
     }
 
+    /// <summary>
+    /// Quotes an index name using the configured dialect rules.
+    /// </summary>
     private string Quote(DbIndexName index)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, index);
     }
 
+    /// <summary>
+    /// Quotes a trigger name using the configured dialect rules.
+    /// </summary>
     private string Quote(DbTriggerName trigger)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, trigger);
