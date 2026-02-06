@@ -259,7 +259,19 @@ public class ProfileModuleTests
     public async Task GetAllProfiles_ShouldReturnOk()
     {
         A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
-            .Returns(new[] { new ProfileGetResult.Success(new ProfileResponse { Name = "TestProfile" }) });
+            .Returns(
+                new[]
+                {
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Name = "TestProfile",
+                            Definition =
+                                @"<Profile name=""TestProfile""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
+                        }
+                    ),
+                }
+            );
         using var client = SetUpClient();
         var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -269,7 +281,17 @@ public class ProfileModuleTests
     public async Task GetProfileById_Valid_ShouldReturnOk()
     {
         A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
-            .Returns(new ProfileGetResult.Success(new ProfileResponse { Id = 1, Name = "TestProfile" }));
+            .Returns(
+                new ProfileGetResult.Success(
+                    new ProfileResponse
+                    {
+                        Id = 1,
+                        Name = "TestProfile",
+                        Definition =
+                            "<Profile name=\"TestProfile\"><Resource name=\"Resource1\"></Resource></Profile>",
+                    }
+                )
+            );
         using var client = SetUpClient();
         var response = await client.GetAsync("/v2/profiles/1");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
@@ -496,9 +518,33 @@ public class ProfileModuleTests
             .Returns(
                 new[]
                 {
-                    new ProfileGetResult.Success(new ProfileResponse { Id = 1, Name = "Profile1" }),
-                    new ProfileGetResult.Success(new ProfileResponse { Id = 2, Name = "Profile2" }),
-                    new ProfileGetResult.Success(new ProfileResponse { Id = 3, Name = "Profile3" }),
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 1,
+                            Name = "Profile1",
+                            Definition =
+                                @"<Profile name=""Profile1""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
+                        }
+                    ),
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 2,
+                            Name = "Profile2",
+                            Definition =
+                                @"<Profile name=""Profile2""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
+                        }
+                    ),
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 3,
+                            Name = "Profile3",
+                            Definition =
+                                @"<Profile name=""Profile3""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
+                        }
+                    ),
                 }
             );
         using var client = SetUpClient();
@@ -591,5 +637,136 @@ public class ProfileModuleTests
         var response = await client.DeleteAsync("/v2/profiles/1");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+    }
+
+    [Test]
+    public async Task GetAllProfiles_WithInvalidProfiles_ShouldFilterOutInvalidProfiles()
+    {
+        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+            .Returns(
+                new[]
+                {
+                    // Valid profile
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 1,
+                            Name = "ValidProfile",
+                            Definition =
+                                @"<Profile name=""ValidProfile""><Resource name=""School""><ReadContentType memberSelection=""IncludeOnly""><Property name=""NameOfInstitution"" /></ReadContentType></Resource></Profile>",
+                        }
+                    ),
+                    // Invalid profile (missing required attribute)
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 2,
+                            Name = "InvalidProfile",
+                            Definition = @"<Profile><Resource name=""School""></Resource></Profile>",
+                        }
+                    ),
+                    // Another valid profile
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 3,
+                            Name = "AnotherValidProfile",
+                            Definition =
+                                @"<Profile name=""AnotherValidProfile""><Resource name=""Student""><ReadContentType memberSelection=""IncludeAll"" /></Resource></Profile>",
+                        }
+                    ),
+                }
+            );
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+
+        var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var profiles = actualResponse!.AsArray();
+        profiles.Should().HaveCount(2);
+        profiles[0]!["id"]!.GetValue<int>().Should().Be(1);
+        profiles[0]!["name"]!.GetValue<string>().Should().Be("ValidProfile");
+        profiles[1]!["id"]!.GetValue<int>().Should().Be(3);
+        profiles[1]!["name"]!.GetValue<string>().Should().Be("AnotherValidProfile");
+    }
+
+    [Test]
+    public async Task GetAllProfiles_AllInvalidProfiles_ShouldReturnEmptyArray()
+    {
+        A.CallTo(() => _profileRepository.QueryProfiles(A<PagingQuery>.Ignored))
+            .Returns(
+                new[]
+                {
+                    // Invalid profile (malformed XML)
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 1,
+                            Name = "InvalidProfile1",
+                            Definition =
+                                @"<Profile name=""InvalidProfile1""><Resource name=""School""></Resource>", // Missing closing tag
+                        }
+                    ),
+                    // Invalid profile (missing required attribute)
+                    new ProfileGetResult.Success(
+                        new ProfileResponse
+                        {
+                            Id = 2,
+                            Name = "InvalidProfile2",
+                            Definition = @"<Profile><Resource name=""Student""></Resource></Profile>",
+                        }
+                    ),
+                }
+            );
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v2/profiles?limit=10&offset=0");
+
+        var actualResponse = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var profiles = actualResponse!.AsArray();
+        profiles.Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task GetProfileById_InvalidProfile_ShouldReturnNotFound()
+    {
+        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            .Returns(
+                new ProfileGetResult.Success(
+                    new ProfileResponse
+                    {
+                        Id = 1,
+                        Name = "InvalidProfile",
+                        Definition = @"<Profile><Resource name=""School""></Resource></Profile>", // Missing required name attribute
+                    }
+                )
+            );
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v2/profiles/1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task GetProfileById_InvalidXmlProfile_ShouldReturnNotFound()
+    {
+        A.CallTo(() => _profileRepository.GetProfile(A<long>.Ignored))
+            .Returns(
+                new ProfileGetResult.Success(
+                    new ProfileResponse
+                    {
+                        Id = 2,
+                        Name = "MalformedXmlProfile",
+                        Definition =
+                            @"<Profile name=""MalformedXmlProfile""><Resource name=""School""></Resource>", // Missing closing tag
+                    }
+                )
+            );
+        using var client = SetUpClient();
+        var response = await client.GetAsync("/v2/profiles/2");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 }
