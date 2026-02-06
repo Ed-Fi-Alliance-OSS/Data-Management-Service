@@ -1087,7 +1087,7 @@ public sealed class ExtractInputsStep : IRelationalModelBuilderStep
     {
         foreach (var entry in projectKeysObject)
         {
-            if (string.Equals(entry.Key, match, StringComparison.Ordinal))
+            if (RelationalModelSetSchemaHelpers.ExtensionProjectKeyComparer.Equals(entry.Key, match))
             {
                 return entry.Key;
             }

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using FluentAssertions;
 using NUnit.Framework;
@@ -62,6 +63,64 @@ public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name
     /// </summary>
     [Test]
     public void It_should_resolve_to_the_matching_endpoint_name()
+    {
+        _project.ProjectEndpointName.Should().Be("sample-ext");
+    }
+}
+
+/// <summary>
+/// Test fixture for an extension project key matching endpoint name with mixed casing.
+/// </summary>
+[TestFixture]
+public class Given_An_Extension_Project_Key_Matching_Project_Endpoint_Name_With_Mixed_Casing
+{
+    private ProjectSchemaInfo _project = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projects = new[]
+        {
+            new EffectiveProjectSchema(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false))
+            ),
+            new EffectiveProjectSchema(
+                "sample-ext",
+                "Sample",
+                "1.0.0",
+                true,
+                EffectiveSchemaFixture.CreateProjectSchema(("schoolExtensions", "SchoolExtension", true))
+            ),
+        };
+
+        var resourceKeys = new[]
+        {
+            new ResourceKeyEntry(1, new QualifiedResourceName("Ed-Fi", "School"), "1.0.0", false),
+            new ResourceKeyEntry(2, new QualifiedResourceName("Sample", "SchoolExtension"), "1.0.0", false),
+        };
+
+        var context = ExtensionProjectKeyFixture.CreateContext(projects, resourceKeys);
+        var extensionSite = ExtensionProjectKeyFixture.CreateExtensionSite("SaMpLe-ExT");
+
+        _project = context.ResolveExtensionProjectKey(
+            "SaMpLe-ExT",
+            extensionSite,
+            new QualifiedResourceName("Ed-Fi", "School")
+        );
+    }
+
+    /// <summary>
+    /// It should resolve to the matching endpoint name ignoring key casing.
+    /// </summary>
+    [Test]
+    public void It_should_resolve_to_the_matching_endpoint_name_ignoring_key_casing()
     {
         _project.ProjectEndpointName.Should().Be("sample-ext");
     }
@@ -418,6 +477,66 @@ public class Given_An_EffectiveSchemaSet_With_An_Ambiguous_Extension_Project_Key
 }
 
 /// <summary>
+/// Test fixture for mixed-case extension project keys during full set derivation.
+/// </summary>
+[TestFixture]
+public class Given_A_Mixed_Case_Extension_Project_Key_During_Set_Derivation
+{
+    private DbTableModel _extensionTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixtures(
+            new (string FileName, bool IsExtensionProject)[]
+            {
+                ("hand-authored-name-override-extension-core-api-schema.json", false),
+                ("hand-authored-name-override-extension-project-api-schema.json", true),
+            }
+        );
+
+        ExtensionProjectKeyFixture.ReplaceExtensionProjectKey(effectiveSchemaSet, "sample", "SaMpLe");
+
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var derived = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var schoolModel = derived
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && resource.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel;
+
+        _extensionTable = schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension"
+        );
+    }
+
+    /// <summary>
+    /// It should derive extension tables even when _ext keys differ only by casing.
+    /// </summary>
+    [Test]
+    public void It_should_derive_extension_tables_when_extension_project_keys_have_mixed_casing()
+    {
+        _extensionTable.JsonScope.Canonical.Should().Be("$._ext.SaMpLe");
+    }
+
+    /// <summary>
+    /// It should apply relative extension name overrides with mixed-case key resolution.
+    /// </summary>
+    [Test]
+    public void It_should_apply_relative_extension_name_overrides_with_mixed_case_project_keys()
+    {
+        _extensionTable
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Contain("ExtensionFieldOverride");
+    }
+}
+
+/// <summary>
 /// Test type extension project key fixture.
 /// </summary>
 internal static class ExtensionProjectKeyFixture
@@ -480,5 +599,86 @@ internal static class ExtensionProjectKeyFixture
         );
 
         return new EffectiveSchemaSet(effectiveSchemaInfo, projects);
+    }
+
+    /// <summary>
+    /// Replaces extension project-key names under <c>_ext</c> in all project schemas.
+    /// </summary>
+    public static void ReplaceExtensionProjectKey(
+        EffectiveSchemaSet effectiveSchemaSet,
+        string originalProjectKey,
+        string replacementProjectKey
+    )
+    {
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
+        {
+            RewriteExtensionProjectKey(project.ProjectSchema, originalProjectKey, replacementProjectKey);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites extension project-key names under <c>_ext</c> recursively in a schema node.
+    /// </summary>
+    private static void RewriteExtensionProjectKey(
+        JsonNode? schemaNode,
+        string originalProjectKey,
+        string replacementProjectKey
+    )
+    {
+        if (schemaNode is JsonArray schemaArray)
+        {
+            foreach (var item in schemaArray)
+            {
+                RewriteExtensionProjectKey(item, originalProjectKey, replacementProjectKey);
+            }
+
+            return;
+        }
+
+        if (schemaNode is not JsonObject schemaObject)
+        {
+            return;
+        }
+
+        if (
+            schemaObject.TryGetPropertyValue("properties", out var propertiesNode)
+            && propertiesNode is JsonObject propertiesObject
+        )
+        {
+            RewriteExtensionProjectKeyOnProperties(
+                propertiesObject,
+                originalProjectKey,
+                replacementProjectKey
+            );
+        }
+
+        foreach (var property in schemaObject)
+        {
+            RewriteExtensionProjectKey(property.Value, originalProjectKey, replacementProjectKey);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites a direct <c>_ext.properties.{projectKey}</c> key on a properties object when present.
+    /// </summary>
+    private static void RewriteExtensionProjectKeyOnProperties(
+        JsonObject propertiesObject,
+        string originalProjectKey,
+        string replacementProjectKey
+    )
+    {
+        if (
+            !propertiesObject.TryGetPropertyValue("_ext", out var extNode)
+            || extNode is not JsonObject extObject
+            || !extObject.TryGetPropertyValue("properties", out var extensionPropertiesNode)
+            || extensionPropertiesNode is not JsonObject extensionProperties
+            || !extensionProperties.TryGetPropertyValue(originalProjectKey, out var projectSchema)
+        )
+        {
+            return;
+        }
+
+        extensionProperties.Remove(originalProjectKey);
+        extensionProperties[replacementProjectKey] = projectSchema;
     }
 }
