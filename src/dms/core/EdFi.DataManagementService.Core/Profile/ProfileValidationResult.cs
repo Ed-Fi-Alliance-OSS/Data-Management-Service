@@ -39,26 +39,38 @@ public record ValidationFailure(
 
 /// <summary>
 /// The result of validating a profile definition against the API schema.
+/// Contains all validation failures with appropriate severity levels.
 /// </summary>
+/// <remarks>
+/// Validation Behavior:
+/// - Errors prevent profile loading and usage
+/// - Warnings allow profile loading but log issues for monitoring
+/// - IsValid returns true only if no errors exist (warnings are allowed)
+/// - All failures include contextual information (profile, resource, member names)
+/// </remarks>
 public record ProfileValidationResult
 {
     /// <summary>
     /// Gets the list of validation failures found during validation.
+    /// May contain both errors and warnings.
     /// </summary>
     public IReadOnlyList<ValidationFailure> Failures { get; }
 
     /// <summary>
     /// Gets whether the validation found any errors (severity Error).
+    /// Errors prevent the profile from being loaded into the cache.
     /// </summary>
     public bool HasErrors { get; }
 
     /// <summary>
     /// Gets whether the validation found any warnings (severity Warning).
+    /// Warnings allow the profile to be loaded but issues are logged.
     /// </summary>
     public bool HasWarnings { get; }
 
     /// <summary>
-    /// Gets whether the validation passed (no errors). Warnings do not affect validity.
+    /// Gets whether the validation passed (no errors).
+    /// Warnings do not affect validity - only errors block profile loading.
     /// </summary>
     public bool IsValid => !HasErrors;
 
@@ -71,6 +83,7 @@ public record ProfileValidationResult
 
     /// <summary>
     /// Creates a successful validation result with no failures.
+    /// Indicates the profile is fully valid with no errors or warnings.
     /// </summary>
     public static ProfileValidationResult Success => new([]);
 
@@ -81,6 +94,7 @@ public record ProfileValidationResult
 
     /// <summary>
     /// Creates a validation result with multiple failures.
+    /// Failures may include both errors and warnings.
     /// </summary>
     public static ProfileValidationResult Failure(IEnumerable<ValidationFailure> failures) =>
         new(failures.ToList());

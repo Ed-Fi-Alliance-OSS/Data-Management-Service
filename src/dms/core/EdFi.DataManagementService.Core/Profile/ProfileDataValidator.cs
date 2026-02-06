@@ -12,28 +12,76 @@ namespace EdFi.DataManagementService.Core.Profile;
 
 /// <summary>
 /// Validates profile definitions against the API schema to ensure they reference valid resources and members.
+/// Provides detailed validation with error and warning severity levels.
+/// Errors prevent profile loading, while warnings allow loading but are logged.
 /// </summary>
 internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IProfileDataValidator
 {
     /// <summary>
-    /// Validates a profile definition against the API schema.
+    /// Validates a profile definition against the effective API schema.
+    /// Performs comprehensive validation of all resources, properties, and extensions
+    /// according to IncludeOnly and ExcludeOnly rules.
     /// </summary>
     /// <param name="profileDefinition">The parsed profile definition to validate.</param>
     /// <param name="effectiveApiSchemaProvider">Provider for accessing the effective API schema documents.</param>
     /// <returns>A validation result containing any errors or warnings found.</returns>
+    /// <remarks>
+    /// Validation Rules:
+    /// - IncludeOnly mode: All references must exist (errors if not)
+    /// - ExcludeOnly mode: References may not exist (warnings if not), but identity members cannot be excluded (errors)
+    /// - Empty profiles are valid
+    /// - Multiple resources are validated independently
+    /// - Both ReadContentType and WriteContentType are validated
+    /// </remarks>
     public ProfileValidationResult Validate(
         ProfileDefinition profileDefinition,
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider
     )
     {
-        // Suppress unused parameter warning - will be used in future validation logic
-        _ = logger;
+        using var scope = logger.BeginScope(
+            "Profile validation for '{ProfileName}'",
+            profileDefinition.ProfileName
+        );
+
+        logger.LogDebug("Starting validation of profile '{ProfileName}'", profileDefinition.ProfileName);
 
         var failures = ValidateResources(profileDefinition, effectiveApiSchemaProvider);
 
-        return failures.Count == 0
-            ? ProfileValidationResult.Success
-            : ProfileValidationResult.Failure(failures);
+        var errorCount = failures.Count(f => f.Severity == ValidationSeverity.Error);
+        var warningCount = failures.Count(f => f.Severity == ValidationSeverity.Warning);
+
+        if (failures.Count == 0)
+        {
+            logger.LogDebug(
+                "Profile '{ProfileName}' validation successful - no errors or warnings",
+                profileDefinition.ProfileName
+            );
+            return ProfileValidationResult.Success;
+        }
+
+        logger.LogInformation(
+            "Profile '{ProfileName}' validation completed with {ErrorCount} errors and {WarningCount} warnings",
+            profileDefinition.ProfileName,
+            errorCount,
+            warningCount
+        );
+
+        // Log individual failures
+        foreach (var failure in failures)
+        {
+            var logLevel = failure.Severity == ValidationSeverity.Error ? LogLevel.Error : LogLevel.Warning;
+            logger.Log(
+                logLevel,
+                "Profile validation {Severity}: {Message} (Profile: {ProfileName}, Resource: {ResourceName}, Member: {MemberName})",
+                failure.Severity.ToString().ToLower(),
+                failure.Message,
+                failure.ProfileName,
+                failure.ResourceName ?? "N/A",
+                failure.MemberName ?? "N/A"
+            );
+        }
+
+        return ProfileValidationResult.Failure(failures);
     }
 
     /// <summary>
