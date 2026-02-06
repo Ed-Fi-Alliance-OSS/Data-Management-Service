@@ -23,6 +23,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         ApplyDialectShortening(context, context.DialectRules);
     }
 
+    /// <summary>
+    /// Applies dialect-specific shortening to all identifiers tracked in the builder context.
+    /// </summary>
     private static void ApplyDialectShortening(
         RelationalModelSetBuilderContext context,
         ISqlDialectRules dialectRules
@@ -96,6 +99,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
     }
 
+    /// <summary>
+    /// Updates project schema names using dialect shortening rules.
+    /// </summary>
     private static void UpdateProjectSchemas(
         RelationalModelSetBuilderContext context,
         ISqlDialectRules dialectRules
@@ -114,6 +120,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         });
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a single resource model and reports whether any identifiers changed.
+    /// </summary>
     private static RelationalResourceModel ApplyToResource(
         RelationalResourceModel resourceModel,
         ISqlDialectRules dialectRules,
@@ -174,6 +183,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a single table model and reports whether any identifiers changed.
+    /// </summary>
     private static DbTableModel ApplyToTable(
         DbTableModel table,
         ISqlDialectRules dialectRules,
@@ -228,6 +240,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a table key (constraint name and key column names) and reports whether it changed.
+    /// </summary>
     private static TableKey ApplyToKey(
         DbTableName table,
         TableKey key,
@@ -273,6 +288,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a single column model and reports whether it changed.
+    /// </summary>
     private static DbColumnModel ApplyToColumn(
         DbColumnModel column,
         ISqlDialectRules dialectRules,
@@ -293,6 +311,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a table constraint and reports whether it changed.
+    /// </summary>
     private static TableConstraint ApplyToConstraint(
         TableConstraint constraint,
         ISqlDialectRules dialectRules,
@@ -385,6 +406,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a column name collection and reports whether any element changed.
+    /// </summary>
     private static IReadOnlyList<DbColumnName> ShortenColumns(
         IReadOnlyList<DbColumnName> columns,
         ISqlDialectRules dialectRules,
@@ -410,6 +434,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return changed ? updatedColumns : columns;
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a document reference binding and reports whether it changed.
+    /// </summary>
     private static DocumentReferenceBinding ApplyToBinding(
         DocumentReferenceBinding binding,
         ISqlDialectRules dialectRules,
@@ -454,6 +481,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a descriptor edge source and reports whether it changed.
+    /// </summary>
     private static DescriptorEdgeSource ApplyToDescriptorEdge(
         DescriptorEdgeSource edge,
         ISqlDialectRules dialectRules,
@@ -476,6 +506,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to an abstract union view and reports whether it changed.
+    /// </summary>
     private static AbstractUnionViewInfo ApplyToUnionView(
         AbstractUnionViewInfo view,
         ISqlDialectRules dialectRules,
@@ -511,6 +544,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to an index and reports whether it changed.
+    /// </summary>
     private static DbIndexInfo ApplyToIndex(
         DbIndexInfo index,
         ISqlDialectRules dialectRules,
@@ -536,6 +572,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Applies dialect shortening to a trigger and reports whether it changed.
+    /// </summary>
     private static DbTriggerInfo ApplyToTrigger(
         DbTriggerInfo trigger,
         ISqlDialectRules dialectRules,
@@ -561,6 +600,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         };
     }
 
+    /// <summary>
+    /// Shortens a schema identifier using dialect rules.
+    /// </summary>
     private static DbSchemaName ShortenSchema(DbSchemaName schema, ISqlDialectRules dialectRules)
     {
         var shortened = dialectRules.ShortenIdentifier(schema.Value);
@@ -569,6 +611,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             : new DbSchemaName(shortened);
     }
 
+    /// <summary>
+    /// Shortens a schema-qualified table identifier using dialect rules.
+    /// </summary>
     private static DbTableName ShortenTable(DbTableName table, ISqlDialectRules dialectRules)
     {
         var updatedSchema = ShortenSchema(table.Schema, dialectRules);
@@ -585,6 +630,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return new DbTableName(updatedSchema, updatedName);
     }
 
+    /// <summary>
+    /// Shortens a column identifier using dialect rules.
+    /// </summary>
     private static DbColumnName ShortenColumn(DbColumnName column, ISqlDialectRules dialectRules)
     {
         var updated = dialectRules.ShortenIdentifier(column.Value);
@@ -593,6 +641,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             : new DbColumnName(updated);
     }
 
+    /// <summary>
+    /// Validates that dialect shortening does not introduce collisions across derived identifiers.
+    /// </summary>
     private static void ValidateIdentifierShorteningCollisions(RelationalModelSetBuilderContext context)
     {
         var detector = new IdentifierCollisionDetector(
@@ -794,6 +845,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         detector.ThrowIfCollisions();
     }
 
+    /// <summary>
+    /// Registers schema identifiers that may be produced by derived models for collision detection.
+    /// </summary>
     private static void RegisterSchemaCollisions(
         RelationalModelSetBuilderContext context,
         IdentifierCollisionDetector detector
@@ -893,6 +947,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
     }
 
+    /// <summary>
+    /// Builds an <see cref="IdentifierCollisionOrigin"/> for a derived identifier registration.
+    /// </summary>
     private static IdentifierCollisionOrigin BuildOrigin(
         string description,
         string? resourceLabel,
@@ -904,16 +961,25 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return new IdentifierCollisionOrigin(description, resourceLabel, resolvedPath?.Canonical);
     }
 
+    /// <summary>
+    /// Formats a table name for diagnostics.
+    /// </summary>
     private static string FormatTable(DbTableName table)
     {
         return $"{table.Schema.Value}.{table.Name}";
     }
 
+    /// <summary>
+    /// Formats a column name for diagnostics.
+    /// </summary>
     private static string FormatColumn(DbTableName table, DbColumnName column)
     {
         return $"{FormatTable(table)}.{column.Value}";
     }
 
+    /// <summary>
+    /// Resolves a primary key constraint name for collision registration.
+    /// </summary>
     private static string ResolvePrimaryKeyConstraintName(DbTableName table, TableKey key)
     {
         return string.IsNullOrWhiteSpace(key.ConstraintName)
@@ -921,6 +987,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             : key.ConstraintName;
     }
 
+    /// <summary>
+    /// Extracts a name from the constraint for collision registration.
+    /// </summary>
     private static string GetConstraintName(TableConstraint constraint)
     {
         return constraint switch

@@ -5,20 +5,44 @@
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Constraints;
 
+/// <summary>
+/// Identifies the semantic kind of constraint for name generation and collision detection.
+/// </summary>
 internal enum ConstraintIdentityKind
 {
+    /// <summary>
+    /// Primary key constraint identity.
+    /// </summary>
     PrimaryKey,
+
+    /// <summary>
+    /// Unique constraint identity.
+    /// </summary>
     Unique,
+
+    /// <summary>
+    /// Foreign key constraint identity.
+    /// </summary>
     ForeignKey,
+
+    /// <summary>
+    /// All-or-none nullability check constraint identity.
+    /// </summary>
     AllOrNone,
 }
 
+/// <summary>
+/// Represents a constraint's semantic identity independent of its rendered name.
+/// </summary>
 internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
 {
     private readonly DbColumnName[] _columns;
     private readonly DbColumnName[] _targetColumns;
     private readonly DbColumnName[] _dependentColumns;
 
+    /// <summary>
+    /// Initializes a new <see cref="ConstraintIdentity"/> instance.
+    /// </summary>
     private ConstraintIdentity(
         ConstraintIdentityKind kind,
         DbTableName table,
@@ -40,22 +64,49 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         OnUpdate = onUpdate;
     }
 
+    /// <summary>
+    /// Gets the constraint kind.
+    /// </summary>
     public ConstraintIdentityKind Kind { get; }
 
+    /// <summary>
+    /// Gets the table that owns the constraint.
+    /// </summary>
     public DbTableName Table { get; }
 
+    /// <summary>
+    /// Gets the referenced table for foreign key constraints.
+    /// </summary>
     public DbTableName? TargetTable { get; }
 
+    /// <summary>
+    /// Gets the foreign key <c>ON DELETE</c> referential action.
+    /// </summary>
     public ReferentialAction OnDelete { get; }
 
+    /// <summary>
+    /// Gets the foreign key <c>ON UPDATE</c> referential action.
+    /// </summary>
     public ReferentialAction OnUpdate { get; }
 
+    /// <summary>
+    /// Gets the local columns that participate in the constraint.
+    /// </summary>
     public IReadOnlyList<DbColumnName> Columns => _columns;
 
+    /// <summary>
+    /// Gets the target columns referenced by a foreign key constraint.
+    /// </summary>
     public IReadOnlyList<DbColumnName> TargetColumns => _targetColumns;
 
+    /// <summary>
+    /// Gets the dependent columns used by an all-or-none constraint.
+    /// </summary>
     public IReadOnlyList<DbColumnName> DependentColumns => _dependentColumns;
 
+    /// <summary>
+    /// Creates a primary key identity for the specified table and columns.
+    /// </summary>
     public static ConstraintIdentity ForPrimaryKey(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
         return new ConstraintIdentity(
@@ -70,6 +121,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         );
     }
 
+    /// <summary>
+    /// Creates a unique constraint identity for the specified table and columns.
+    /// </summary>
     public static ConstraintIdentity ForUnique(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
         return new ConstraintIdentity(
@@ -84,6 +138,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         );
     }
 
+    /// <summary>
+    /// Creates a foreign key identity for the specified relationship and referential actions.
+    /// </summary>
     public static ConstraintIdentity ForForeignKey(
         DbTableName table,
         IReadOnlyList<DbColumnName> columns,
@@ -105,6 +162,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         );
     }
 
+    /// <summary>
+    /// Creates an all-or-none nullability check identity for a dependent group keyed by an FK column.
+    /// </summary>
     public static ConstraintIdentity ForAllOrNone(
         DbTableName table,
         DbColumnName fkColumn,
@@ -123,6 +183,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         );
     }
 
+    /// <summary>
+    /// Compares this identity to another identity for semantic equality.
+    /// </summary>
     public bool Equals(ConstraintIdentity? other)
     {
         if (other is null)
@@ -179,11 +242,17 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         return true;
     }
 
+    /// <summary>
+    /// Determines whether this identity equals another object.
+    /// </summary>
     public override bool Equals(object? obj)
     {
         return obj is ConstraintIdentity other && Equals(other);
     }
 
+    /// <summary>
+    /// Computes a hash code based on the identity components.
+    /// </summary>
     public override int GetHashCode()
     {
         var hash = new HashCode();
@@ -207,6 +276,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         return hash.ToHashCode();
     }
 
+    /// <summary>
+    /// Adds a set of columns into a running <see cref="HashCode"/> computation.
+    /// </summary>
     private static void AddColumns(ref HashCode hash, IReadOnlyList<DbColumnName> columns)
     {
         hash.Add(columns.Count);
@@ -217,6 +289,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         }
     }
 
+    /// <summary>
+    /// Copies columns into an array to ensure identity immutability for callers using pooled collections.
+    /// </summary>
     private static DbColumnName[] CopyColumns(IReadOnlyList<DbColumnName> columns)
     {
         return columns.Count == 0 ? Array.Empty<DbColumnName>() : columns.ToArray();

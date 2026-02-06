@@ -146,5 +146,8 @@ internal sealed class TableColumnAccumulator
         return new IdentifierCollisionOrigin(description, _resourceLabel, resolvedPath.Canonical);
     }
 
+    /// <summary>
+    /// Captures the original identifier and origin metadata for collision diagnostics.
+    /// </summary>
     private sealed record ColumnCollisionInfo(string OriginalName, IdentifierCollisionOrigin Origin);
 }

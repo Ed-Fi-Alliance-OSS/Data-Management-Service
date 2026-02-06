@@ -44,6 +44,9 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
         }
     }
 
+    /// <summary>
+    /// Applies constraint name hashing to a single resource model, returning the original instance when unchanged.
+    /// </summary>
     private static RelationalResourceModel ApplyToResource(
         RelationalResourceModel resourceModel,
         ISqlDialectRules dialectRules
@@ -73,6 +76,9 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
         };
     }
 
+    /// <summary>
+    /// Applies constraint name hashing to a single table model and indicates whether any changes occurred.
+    /// </summary>
     private static DbTableModel ApplyToTable(
         DbTableModel table,
         ISqlDialectRules dialectRules,
@@ -105,6 +111,9 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
         };
     }
 
+    /// <summary>
+    /// Applies dialect length handling to the primary key constraint name and indicates whether it changed.
+    /// </summary>
     private static TableKey ApplyToPrimaryKey(
         DbTableName table,
         TableKey key,
@@ -134,6 +143,9 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
         };
     }
 
+    /// <summary>
+    /// Applies dialect length handling to a table constraint name and indicates whether it changed.
+    /// </summary>
     private static TableConstraint ApplyToConstraint(
         DbTableName table,
         TableConstraint constraint,

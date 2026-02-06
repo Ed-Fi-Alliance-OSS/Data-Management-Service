@@ -147,6 +147,9 @@ internal sealed class IdentifierCollisionDetector
         );
     }
 
+    /// <summary>
+    /// Builds the dialect-specific collision scope for index identifiers.
+    /// </summary>
     private IdentifierCollisionScope BuildIndexScope(DbTableName table)
     {
         return _dialectRules.Dialect switch
@@ -169,6 +172,9 @@ internal sealed class IdentifierCollisionDetector
         };
     }
 
+    /// <summary>
+    /// Builds the dialect-specific collision scope for trigger identifiers.
+    /// </summary>
     private IdentifierCollisionScope BuildTriggerScope(DbTableName table)
     {
         return _dialectRules.Dialect switch
@@ -191,6 +197,9 @@ internal sealed class IdentifierCollisionDetector
         };
     }
 
+    /// <summary>
+    /// Determines whether an origin should be treated as a shared descriptor element for collision reporting.
+    /// </summary>
     private static bool IsSharedDescriptorElement(
         IdentifierCollisionScope scope,
         string finalName,

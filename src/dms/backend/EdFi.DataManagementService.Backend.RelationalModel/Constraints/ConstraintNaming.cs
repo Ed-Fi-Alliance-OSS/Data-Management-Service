@@ -7,6 +7,9 @@ using System.Text;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Constraints;
 
+/// <summary>
+/// Builds conventional constraint names and applies dialect length limits via stable hashing.
+/// </summary>
 internal static class ConstraintNaming
 {
     internal const string NaturalKeyToken = "NK";
@@ -16,32 +19,51 @@ internal static class ConstraintNaming
 
     private const string DescriptorIdSuffix = "_DescriptorId";
 
+    /// <summary>
+    /// Builds a unique constraint name for a table natural key.
+    /// </summary>
     internal static string BuildNaturalKeyUniqueName(DbTableName table)
     {
         return BuildName("UX", table, [NaturalKeyToken]);
     }
 
+    /// <summary>
+    /// Builds a unique constraint name for a reference key on a table.
+    /// </summary>
     internal static string BuildReferenceKeyUniqueName(DbTableName table)
     {
         return BuildName("UX", table, [ReferenceKeyToken]);
     }
 
+    /// <summary>
+    /// Builds a unique constraint name for an array uniqueness constraint using the participating columns.
+    /// </summary>
     internal static string BuildArrayUniquenessName(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
         var tokens = BuildColumnTokens(columns);
         return BuildName("UX", table, tokens);
     }
 
+    /// <summary>
+    /// Builds the primary key constraint name for a table.
+    /// </summary>
     internal static string BuildPrimaryKeyName(DbTableName table)
     {
         return BuildName("PK", table, []);
     }
 
+    /// <summary>
+    /// Builds a foreign key constraint name using the supplied tokens.
+    /// </summary>
     internal static string BuildForeignKeyName(DbTableName table, params string[] tokens)
     {
         return BuildName("FK", table, tokens);
     }
 
+    /// <summary>
+    /// Builds a foreign key constraint name for a reference binding, appending a reference-key token when
+    /// the relationship is composite.
+    /// </summary>
     internal static string BuildReferenceForeignKeyName(
         DbTableName table,
         string referenceBaseName,
@@ -53,17 +75,27 @@ internal static class ConstraintNaming
             : BuildName("FK", table, [referenceBaseName]);
     }
 
+    /// <summary>
+    /// Builds a foreign key constraint name for a descriptor reference by trimming the <c>_DescriptorId</c>
+    /// suffix from the column name.
+    /// </summary>
     internal static string BuildDescriptorForeignKeyName(DbTableName table, DbColumnName descriptorColumn)
     {
         var baseName = TrimSuffix(descriptorColumn.Value, DescriptorIdSuffix);
         return BuildName("FK", table, [baseName]);
     }
 
+    /// <summary>
+    /// Builds the all-or-none check constraint name for a reference binding.
+    /// </summary>
     internal static string BuildAllOrNoneName(DbTableName table, string referenceBaseName)
     {
         return BuildName("CK", table, [referenceBaseName, AllNoneToken]);
     }
 
+    /// <summary>
+    /// Applies dialect identifier limits to a constraint name by shortening it with a signature hash.
+    /// </summary>
     internal static string ApplyDialectLimit(
         string baseName,
         ConstraintIdentity identity,
@@ -76,6 +108,9 @@ internal static class ConstraintNaming
         return SqlIdentifierShortening.ApplyDialectLimit(baseName, BuildSignature(identity), dialectRules);
     }
 
+    /// <summary>
+    /// Builds a stable signature string for a constraint identity to use as hash input.
+    /// </summary>
     internal static string BuildSignature(ConstraintIdentity identity)
     {
         ArgumentNullException.ThrowIfNull(identity);
@@ -108,6 +143,9 @@ internal static class ConstraintNaming
         return builder.ToString();
     }
 
+    /// <summary>
+    /// Builds a constraint name using a prefix and the table name, with optional token segments.
+    /// </summary>
     private static string BuildName(string prefix, DbTableName table, IReadOnlyList<string> tokens)
     {
         if (string.IsNullOrWhiteSpace(prefix))
@@ -136,6 +174,9 @@ internal static class ConstraintNaming
         return $"{prefix}_{table.Name}_{string.Join("_", tokens)}";
     }
 
+    /// <summary>
+    /// Builds token segments for column-based unique constraints by grouping on the final underscore.
+    /// </summary>
     private static IReadOnlyList<string> BuildColumnTokens(IReadOnlyList<DbColumnName> columns)
     {
         if (columns.Count == 0)
@@ -179,6 +220,9 @@ internal static class ConstraintNaming
         return tokens;
     }
 
+    /// <summary>
+    /// Splits a column name into a prefix and suffix based on the final underscore.
+    /// </summary>
     private static (string Prefix, string Suffix) SplitColumnName(string columnName)
     {
         var splitIndex = columnName.LastIndexOf('_');
@@ -191,6 +235,9 @@ internal static class ConstraintNaming
         return (columnName[..splitIndex], columnName[(splitIndex + 1)..]);
     }
 
+    /// <summary>
+    /// Trims a suffix from the supplied string when present.
+    /// </summary>
     private static string TrimSuffix(string value, string suffix)
     {
         if (!value.EndsWith(suffix, StringComparison.Ordinal))
@@ -201,6 +248,9 @@ internal static class ConstraintNaming
         return value[..^suffix.Length];
     }
 
+    /// <summary>
+    /// Appends a comma-separated list of column values into a signature buffer.
+    /// </summary>
     private static void AppendColumns(StringBuilder builder, IReadOnlyList<DbColumnName> columns)
     {
         for (var index = 0; index < columns.Count; index++)
