@@ -172,6 +172,325 @@ public class Given_Reference_Binding
 }
 
 /// <summary>
+/// Test fixture for reference-relative naming when target identity paths include nested reference segments.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
+{
+    private RelationalResourceModel _model = default!;
+    private DocumentReferenceBinding _classPeriodBinding = default!;
+    private DocumentReferenceBinding _calendarBinding = default!;
+    private DocumentReferenceBinding _programProgramBinding = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ReferenceBindingPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _model = result
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "StudentHomelessProgramAssociation"
+            )
+            .RelationalModel;
+
+        _classPeriodBinding = _model.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.classPeriodReference"
+        );
+        _calendarBinding = _model.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.calendarReference"
+        );
+        _programProgramBinding = _model.DocumentReferenceBindings.Single(binding =>
+            binding.ReferenceObjectPath.Canonical == "$.programProgramReference"
+        );
+    }
+
+    /// <summary>
+    /// It should derive identity column names from reference-relative paths instead of target identity paths.
+    /// </summary>
+    [Test]
+    public void It_should_use_reference_relative_names_for_nested_target_identity_paths()
+    {
+        var rootColumns = _model.Root.Columns.Select(column => column.ColumnName.Value).ToArray();
+
+        rootColumns.Should().Contain("ClassPeriod_SchoolId");
+        rootColumns.Should().Contain("Calendar_SchoolYear");
+        rootColumns.Should().Contain("ProgramProgram_EducationOrganizationId");
+
+        rootColumns.Should().NotContain("ClassPeriod_SchoolReferenceSchoolId");
+        rootColumns.Should().NotContain("Calendar_SchoolYearTypeReferenceSchoolYear");
+        rootColumns
+            .Should()
+            .NotContain("ProgramProgram_EducationOrganizationReferenceEducationOrganizationId");
+        rootColumns
+            .Should()
+            .NotContain(column =>
+                column.Contains("EducationOrganizationReference", StringComparison.Ordinal)
+            );
+
+        _classPeriodBinding.IdentityBindings.Single().Column.Value.Should().Be("ClassPeriod_SchoolId");
+        _calendarBinding.IdentityBindings.Single().Column.Value.Should().Be("Calendar_SchoolYear");
+        _programProgramBinding
+            .IdentityBindings.Single()
+            .Column.Value.Should()
+            .Be("ProgramProgram_EducationOrganizationId");
+    }
+
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["studentHomelessProgramAssociations"] = BuildStudentHomelessProgramAssociationSchema(),
+                ["classPeriods"] = BuildClassPeriodSchema(),
+                ["calendars"] = BuildCalendarSchema(),
+                ["programPrograms"] = BuildProgramProgramSchema(),
+            },
+        };
+    }
+
+    private static JsonObject BuildStudentHomelessProgramAssociationSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["classPeriodReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["calendarReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["schoolYear"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["programProgramReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "StudentHomelessProgramAssociation",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["ClassPeriod"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "ClassPeriod",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolReference.schoolId",
+                            ["referenceJsonPath"] = "$.classPeriodReference.schoolId",
+                        },
+                    },
+                },
+                ["Calendar"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Calendar",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolYearTypeReference.schoolYear",
+                            ["referenceJsonPath"] = "$.calendarReference.schoolYear",
+                        },
+                    },
+                },
+                ["ProgramProgram"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "ProgramProgram",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.educationOrganizationReference.educationOrganizationId",
+                            ["referenceJsonPath"] = "$.programProgramReference.educationOrganizationId",
+                        },
+                    },
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildClassPeriodSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ClassPeriod",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolReference.schoolId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.schoolReference.schoolId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer" },
+                        },
+                        ["required"] = new JsonArray { "schoolId" },
+                    },
+                },
+                ["required"] = new JsonArray { "schoolReference" },
+            },
+        };
+    }
+
+    private static JsonObject BuildCalendarSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Calendar",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.schoolYearTypeReference.schoolYear" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolYear"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.schoolYearTypeReference.schoolYear",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["schoolYearTypeReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolYear"] = new JsonObject { ["type"] = "integer" },
+                        },
+                        ["required"] = new JsonArray { "schoolYear" },
+                    },
+                },
+                ["required"] = new JsonArray { "schoolYearTypeReference" },
+            },
+        };
+    }
+
+    private static JsonObject BuildProgramProgramSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ProgramProgram",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.educationOrganizationReference.educationOrganizationId",
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isPartOfIdentity"] = true,
+                    ["isRequired"] = true,
+                    ["path"] = "$.educationOrganizationReference.educationOrganizationId",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["educationOrganizationReference"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                        },
+                        ["required"] = new JsonArray { "educationOrganizationId" },
+                    },
+                },
+                ["required"] = new JsonArray { "educationOrganizationReference" },
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test fixture for inside-reference identity overrides during reference binding.
 /// </summary>
 [TestFixture]

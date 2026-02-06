@@ -22,6 +22,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
 {
     private string _diffOutput = default!;
+    private string _manifest = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -62,6 +63,7 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
         var derivedSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
 
         var manifest = BuildProjectManifest(derivedSet, extensionSiteCapture, endpointMappings);
+        _manifest = manifest;
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
@@ -91,6 +93,21 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
         {
             Assert.Fail(_diffOutput);
         }
+    }
+
+    /// <summary>
+    /// It should use reference-relative identity names for known nested-target identity sites.
+    /// </summary>
+    [Test]
+    public void It_should_use_reference_relative_identity_names_for_known_nested_target_sites()
+    {
+        _manifest.Should().Contain("\"ClassPeriod_SchoolId\"");
+        _manifest.Should().Contain("\"Calendar_SchoolYear\"");
+        _manifest.Should().Contain("\"ProgramProgram_EducationOrganizationId\"");
+
+        _manifest.Should().NotContain("ClassPeriod_SchoolReferenceSchoolId");
+        _manifest.Should().NotContain("Calendar_SchoolYearTypeReferenceSchoolYear");
+        _manifest.Should().NotContain("ProgramProgram_EducationOrganizationReferenceEducationOrganizationId");
     }
 
     /// <summary>
