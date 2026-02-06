@@ -8,6 +8,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.Extr
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Extracts decimal validation metadata keyed by canonical JSONPath.
+/// </summary>
 internal static class DecimalPropertyValidationInfosExtractor
 {
     /// <summary>

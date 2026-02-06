@@ -7,6 +7,9 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Extracts and validates relational overrides (root table name overrides and name overrides).
+/// </summary>
 internal static class RelationalOverridesExtractor
 {
     /// <summary>

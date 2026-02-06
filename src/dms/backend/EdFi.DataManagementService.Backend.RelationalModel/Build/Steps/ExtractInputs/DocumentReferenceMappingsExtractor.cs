@@ -8,6 +8,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.Extr
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Extracts and validates <c>documentPathsMapping</c> reference bindings for a resource schema.
+/// </summary>
 internal static class DocumentReferenceMappingsExtractor
 {
     /// <summary>

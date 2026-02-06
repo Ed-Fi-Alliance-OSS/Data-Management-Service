@@ -7,6 +7,9 @@ using System.Text.Json.Nodes;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 
+/// <summary>
+/// Extracts array uniqueness constraints and validates reference-identity coverage.
+/// </summary>
 internal static class ArrayUniquenessConstraintsExtractor
 {
     /// <summary>
