@@ -106,7 +106,7 @@
               "format": "date"
             }
           },
-          "required": ["extensionDescriptorId", "namespace", "codeValue", "shortDescription"]
+          "required": ["namespace", "codeValue", "shortDescription"]
         }
       }
     }

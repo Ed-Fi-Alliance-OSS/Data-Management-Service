@@ -114,7 +114,7 @@
               "format": "date"
             }
           },
-          "required": ["schoolTypeDescriptorId", "namespace", "codeValue", "shortDescription"]
+          "required": ["namespace", "codeValue", "shortDescription"]
         }
       }
     }
