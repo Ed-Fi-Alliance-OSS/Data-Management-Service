@@ -6,7 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using NUnit.Framework;
-using static EdFi.DataManagementService.Backend.RelationalModel.RelationalModelSetSchemaHelpers;
+using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
@@ -40,6 +40,54 @@ internal static class EffectiveSchemaSetFixtureBuilder
         EffectiveProjectSchema[] projects = reverseProjectOrder
             ? [extensionProject, coreProject]
             : [coreProject, extensionProject];
+
+        return CreateEffectiveSchemaSet(projects);
+    }
+
+    /// <summary>
+    /// Create an effective schema set from a single fixture file.
+    /// </summary>
+    public static EffectiveSchemaSet CreateEffectiveSchemaSetFromFixture(
+        string fileName,
+        bool isExtensionProject = false,
+        bool reverseResourceOrder = false
+    )
+    {
+        var projectSchema = LoadProjectSchema(fileName, reverseResourceOrder);
+        var project = CreateEffectiveProjectSchema(projectSchema, isExtensionProject);
+
+        return CreateEffectiveSchemaSet(new[] { project });
+    }
+
+    /// <summary>
+    /// Create an effective schema set from multiple fixture files.
+    /// </summary>
+    public static EffectiveSchemaSet CreateEffectiveSchemaSetFromFixtures(
+        IReadOnlyList<(string FileName, bool IsExtensionProject)> fixtures,
+        bool reverseProjectOrder = false,
+        bool reverseResourceOrder = false
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fixtures);
+
+        if (fixtures.Count == 0)
+        {
+            throw new ArgumentException("At least one fixture must be provided.", nameof(fixtures));
+        }
+
+        List<EffectiveProjectSchema> projects = new(fixtures.Count);
+
+        foreach (var fixture in fixtures)
+        {
+            var projectSchema = LoadProjectSchema(fixture.FileName, reverseResourceOrder);
+            var project = CreateEffectiveProjectSchema(projectSchema, fixture.IsExtensionProject);
+            projects.Add(project);
+        }
+
+        if (reverseProjectOrder)
+        {
+            projects.Reverse();
+        }
 
         return CreateEffectiveSchemaSet(projects);
     }

@@ -3,9 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Security.Cryptography;
-using System.Text;
-
 namespace EdFi.DataManagementService.Backend.External;
 
 /// <summary>
@@ -64,7 +61,7 @@ public sealed record SqlScalarTypeDefaults(
 /// </summary>
 public sealed class PgsqlDialectRules : ISqlDialectRules
 {
-    private static readonly SqlScalarTypeDefaults Defaults = new(
+    private static readonly SqlScalarTypeDefaults _defaults = new(
         StringType: "varchar",
         Int32Type: "integer",
         Int64Type: "bigint",
@@ -82,7 +79,7 @@ public sealed class PgsqlDialectRules : ISqlDialectRules
     public int MaxIdentifierLength => 63;
 
     /// <inheritdoc />
-    public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+    public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
 
     /// <inheritdoc />
     public string ShortenIdentifier(string identifier)
@@ -100,7 +97,7 @@ public sealed class PgsqlDialectRules : ISqlDialectRules
 /// </summary>
 public sealed class MssqlDialectRules : ISqlDialectRules
 {
-    private static readonly SqlScalarTypeDefaults Defaults = new(
+    private static readonly SqlScalarTypeDefaults _defaults = new(
         StringType: "nvarchar",
         Int32Type: "int",
         Int64Type: "bigint",
@@ -118,7 +115,7 @@ public sealed class MssqlDialectRules : ISqlDialectRules
     public int MaxIdentifierLength => 128;
 
     /// <inheritdoc />
-    public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+    public SqlScalarTypeDefaults ScalarTypeDefaults => _defaults;
 
     /// <inheritdoc />
     public string ShortenIdentifier(string identifier)
@@ -145,8 +142,6 @@ internal enum IdentifierLengthUnit
 /// </summary>
 internal static class SqlDialectRulesUtilities
 {
-    private const int HashSegmentLength = 10;
-
     /// <summary>
     /// Applies deterministic identifier shortening based on the dialect's length constraints.
     /// </summary>
@@ -164,116 +159,6 @@ internal static class SqlDialectRulesUtilities
         IdentifierLengthUnit lengthUnit
     )
     {
-        if (identifier is null)
-        {
-            throw new ArgumentNullException(nameof(identifier));
-        }
-
-        if (maxLength <= 0)
-        {
-            throw new ArgumentOutOfRangeException(
-                nameof(maxLength),
-                maxLength,
-                "Identifier length limit must be positive."
-            );
-        }
-
-        var identifierLength = GetIdentifierLength(identifier, lengthUnit);
-
-        if (identifierLength <= maxLength)
-        {
-            return identifier;
-        }
-
-        var hash = ComputeSha256Hex(identifier);
-        var suffix = $"_{hash[..HashSegmentLength]}";
-        var prefixLength = maxLength - suffix.Length;
-
-        if (prefixLength <= 0)
-        {
-            return suffix.Length > maxLength ? suffix[..maxLength] : suffix;
-        }
-
-        var prefix = lengthUnit switch
-        {
-            IdentifierLengthUnit.Characters => identifier[..prefixLength],
-            IdentifierLengthUnit.Bytes => TruncateToUtf8Bytes(identifier, prefixLength),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(lengthUnit),
-                lengthUnit,
-                "Unsupported identifier length unit."
-            ),
-        };
-
-        return $"{prefix}{suffix}";
-    }
-
-    /// <summary>
-    /// Gets the identifier length according to the specified length unit.
-    /// </summary>
-    /// <param name="identifier">The identifier to measure.</param>
-    /// <param name="lengthUnit">The measurement unit to apply.</param>
-    /// <returns>The identifier length.</returns>
-    private static int GetIdentifierLength(string identifier, IdentifierLengthUnit lengthUnit)
-    {
-        var length = lengthUnit switch
-        {
-            IdentifierLengthUnit.Characters => identifier.Length,
-            IdentifierLengthUnit.Bytes => Encoding.UTF8.GetByteCount(identifier),
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(lengthUnit),
-                lengthUnit,
-                "Unsupported identifier length unit."
-            ),
-        };
-
-        return length;
-    }
-
-    /// <summary>
-    /// Computes a lowercase SHA-256 hexadecimal string for the supplied identifier.
-    /// </summary>
-    /// <param name="identifier">The identifier to hash.</param>
-    /// <returns>A lowercase SHA-256 hex string.</returns>
-    private static string ComputeSha256Hex(string identifier)
-    {
-        using var sha256 = SHA256.Create();
-        var bytes = Encoding.UTF8.GetBytes(identifier);
-        var hash = sha256.ComputeHash(bytes);
-
-        return Convert.ToHexString(hash).ToLowerInvariant();
-    }
-
-    /// <summary>
-    /// Truncates a string so that its UTF-8 encoded byte length does not exceed the specified limit.
-    /// </summary>
-    /// <param name="value">The value to truncate.</param>
-    /// <param name="maxBytes">The maximum UTF-8 byte length.</param>
-    /// <returns>A truncated string whose UTF-8 byte length is at most <paramref name="maxBytes"/>.</returns>
-    private static string TruncateToUtf8Bytes(string value, int maxBytes)
-    {
-        if (value.Length == 0 || maxBytes <= 0)
-        {
-            return string.Empty;
-        }
-
-        StringBuilder builder = new(value.Length);
-        var currentBytes = 0;
-
-        foreach (var rune in value.EnumerateRunes())
-        {
-            var runeString = rune.ToString();
-            var runeBytes = Encoding.UTF8.GetByteCount(runeString);
-
-            if (currentBytes + runeBytes > maxBytes)
-            {
-                break;
-            }
-
-            builder.Append(runeString);
-            currentBytes += runeBytes;
-        }
-
-        return builder.ToString();
+        return SqlIdentifierShortening.Apply(identifier, identifier, maxLength, lengthUnit);
     }
 }

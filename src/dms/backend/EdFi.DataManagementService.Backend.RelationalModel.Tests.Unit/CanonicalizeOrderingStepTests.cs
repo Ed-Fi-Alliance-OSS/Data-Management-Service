@@ -311,7 +311,13 @@ public class Given_Mixed_Constraint_Types
             ),
         };
 
-        var table = new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
+            columns,
+            constraints
+        );
 
         var resourceModel = new RelationalResourceModel(
             new QualifiedResourceName("Ed-Fi", "School"),

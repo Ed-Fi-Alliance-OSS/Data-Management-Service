@@ -89,7 +89,9 @@ Add an optional `relational` section to each `resourceSchema`:
 
     "nameOverrides": {
       "$.someVeryLongPropertyName...": "ShortColumnName",
-      "$.addresses[*]": "Address",
+      "$.schoolReference": "School",
+      "$.schoolReference.schoolId": "CampusId",
+      "$.indicators[*]": "Indicator",
       "$.addresses[*].periods[*]": "AddressPeriod"
     }
   }
@@ -101,6 +103,9 @@ Semantics:
 - `nameOverrides`: maps a **JSONPath** (property/array path) to a stable physical base name (column or table suffix).
   - `$.x.y` targets a column base name (before suffixes like `_DocumentId`/`_DescriptorId`).
   - `$.arr[*]` targets a child-table base name.
+  - Reference paths support two forms:
+    - reference object path (e.g., `$.schoolReference`) renames the reference bundle base name
+    - reference identity path inside the reference object (e.g., `$.schoolReference.schoolId`) renames that propagated identity column base name
 
 ### 3.3 Strict rules for `nameOverrides`
 
@@ -117,8 +122,14 @@ To keep the mapping deterministic, portable, and validatable, `nameOverrides` mu
 
 3. **Meaning depends on whether the key ends with `[*]`**:
    - If the key **ends with `[*]`**, it overrides the **collection table base name** for that array path (e.g., `$.addresses[*].periods[*]` → `SchoolAddressPeriod`).
+     - The override value is interpreted as the collection segment/base name.
+     - Nested collection overrides do **not** need to start with the parent suffix, and ancestor overrides do **not** require descendant overrides.
+     - For compatibility, override values may be segment-only (`AddressPeriod`) or fully-qualified (`StudentAddressAddressPeriod`); if fully-qualified, deterministically strip already-implied root/ancestor prefixes to derive the effective segment/base name.
    - Otherwise, it overrides the **column base name** at that JSONPath (before suffixes like `_DocumentId` / `_DescriptorId`).
-     - For **document references**, the relevant path is the **reference object path** (e.g., `$.schoolReference`), not the identity field paths inside it (e.g., `$.schoolReference.schoolId`).
+     - For **document references**, two forms are supported:
+       - reference object path (e.g., `$.schoolReference`) renames the reference bundle (FK `..._DocumentId`, propagated bindings, and any naming tokens derived from that base name)
+       - reference identity path (e.g., `$.schoolReference.schoolId`) renames the propagated identity column base name for that identity component
+     - Any other key inside a reference object (e.g., `$.schoolReference.link`) is invalid.
 
 4. **Overrides cannot create collisions**:
    - After applying overrides and the standard identifier normalization/truncation rules, table/column names must still be unique.

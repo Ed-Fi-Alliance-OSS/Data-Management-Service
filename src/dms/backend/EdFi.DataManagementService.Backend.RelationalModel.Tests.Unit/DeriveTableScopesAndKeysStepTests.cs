@@ -98,6 +98,17 @@ public class Given_A_JsonSchema_With_Nested_Collections
     }
 
     /// <summary>
+    /// It should assign deterministic primary key constraint names.
+    /// </summary>
+    [Test]
+    public void It_should_assign_deterministic_primary_key_constraint_names()
+    {
+        _rootTable.Key.ConstraintName.Should().Be("PK_School");
+        _addressTable.Key.ConstraintName.Should().Be("PK_SchoolAddress");
+        _periodTable.Key.ConstraintName.Should().Be("PK_SchoolAddressPeriod");
+    }
+
+    /// <summary>
     /// It should seed key columns in column inventory.
     /// </summary>
     [Test]
@@ -306,6 +317,15 @@ public class Given_A_Descriptor_Resource
             .TablesInDependencyOrder.Select(table => table.Table.Name)
             .Should()
             .NotContain("AcademicSubjectDescriptor");
+    }
+
+    /// <summary>
+    /// It should assign deterministic descriptor primary key constraint name.
+    /// </summary>
+    [Test]
+    public void It_should_assign_deterministic_descriptor_primary_key_constraint_name()
+    {
+        _resourceModel.Root.Key.ConstraintName.Should().Be("PK_Descriptor");
     }
 
     /// <summary>

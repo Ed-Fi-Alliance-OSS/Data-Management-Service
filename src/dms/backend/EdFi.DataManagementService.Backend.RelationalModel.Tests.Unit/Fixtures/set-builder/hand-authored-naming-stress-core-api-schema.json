@@ -1,0 +1,201 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "99-select",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "people": {
+        "resourceName": "Person",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.personId"
+        ],
+        "documentPathsMapping": {
+          "PersonId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.personId"
+          },
+          "School": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "School",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "personId": {
+              "type": "integer"
+            },
+            "select": {
+              "type": "string",
+              "maxLength": 20
+            },
+            "this_is_a_very_long_property_name_that_should_trigger_shortening_in_postgresql": {
+              "type": "string",
+              "maxLength": 200
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "object",
+                  "properties": {
+                    "street": {
+                      "type": "string",
+                      "maxLength": 30
+                    }
+                  }
+                }
+              }
+            },
+            "schoolReference": {
+              "type": "object",
+              "properties": {
+                "schoolId": {
+                  "type": "integer"
+                }
+              }
+            },
+            "addresses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addressType": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "periods": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "beginDate": {
+                          "type": "string",
+                          "format": "date"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "stress": {
+                  "type": "object",
+                  "properties": {
+                    "extensionField": {
+                      "type": "string",
+                      "maxLength": 20
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "personId"
+          ]
+        },
+        "relational": {
+          "nameOverrides": {
+            "$.profile.address.street": "street_name",
+            "$.schoolReference": "campus",
+            "$.schoolReference.schoolId": "id",
+            "$.addresses[*]": "site",
+            "$.addresses[*].periods[*]": "window"
+          }
+        }
+      },
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        }
+      },
+      "longNames": {
+        "resourceName": "LongNameResource",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.longNameResourceId"
+        ],
+        "documentPathsMapping": {
+          "LongNameResourceId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.longNameResourceId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "longNameResourceId": {
+              "type": "integer"
+            },
+            "another_ridiculously_long_property_name_to_force_column_shortening_because_it_exceeds_the_postgresql_identifier_limit": {
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          "required": [
+            "longNameResourceId"
+          ]
+        },
+        "relational": {
+          "rootTableNameOverride": "very_long_root_table_name_for_naming_stress_fixture_exceeds_postgres_limit_again"
+        }
+      }
+    }
+  }
+}

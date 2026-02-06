@@ -1,0 +1,76 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "students": {
+        "resourceName": "Student",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.studentUniqueId"
+        ],
+        "documentPathsMapping": {
+          "StudentUniqueId": {
+            "isReference": false,
+            "path": "$.studentUniqueId"
+          }
+        },
+        "relational": {
+          "rootTableNameOverride": "person"
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "studentUniqueId": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "studentUniqueId"
+          ]
+        }
+      },
+      "staffs": {
+        "resourceName": "Staff",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.staffUniqueId"
+        ],
+        "documentPathsMapping": {
+          "StaffUniqueId": {
+            "isReference": false,
+            "path": "$.staffUniqueId"
+          }
+        },
+        "relational": {
+          "rootTableNameOverride": "person"
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "staffUniqueId": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "staffUniqueId"
+          ]
+        }
+      }
+    }
+  }
+}

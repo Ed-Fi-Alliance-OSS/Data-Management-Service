@@ -143,7 +143,13 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
 
         var constraints = new TableConstraint[] { foreignKey, unique };
 
-        return new DbTableModel(tableName, jsonScope, new TableKey([keyColumn]), columns, constraints);
+        return new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
+            columns,
+            constraints
+        );
     }
 
     /// <summary>
@@ -202,7 +208,13 @@ public class Given_A_Canonicalized_Model_When_Emitting_A_Manifest
         );
         var constraints = new TableConstraint[] { foreignKey, unique };
 
-        return new DbTableModel(tableName, jsonScope, new TableKey(keyColumns), columns, constraints);
+        return new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", keyColumns),
+            columns,
+            constraints
+        );
     }
 
     /// <summary>

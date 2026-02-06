@@ -40,13 +40,13 @@ public class Given_A_Relational_Model_Build_With_Shared_Input_Extraction
 
         IRelationalModelSetPass[] passes =
         [
-            new BaseTraversalAndDescriptorBindingRelationalModelSetPass(pipeline),
-            new ExtensionTableDerivationRelationalModelSetPass(),
-            new AbstractIdentityTableDerivationRelationalModelSetPass(),
-            new ReferenceBindingRelationalModelSetPass(),
-            new RootIdentityConstraintRelationalModelSetPass(),
-            new ReferenceConstraintRelationalModelSetPass(),
-            new ArrayUniquenessConstraintRelationalModelSetPass(),
+            new BaseTraversalAndDescriptorBindingPass(pipeline),
+            new ExtensionTableDerivationPass(),
+            new AbstractIdentityTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
         ];
 
         var context = new RelationalModelSetBuilderContext(

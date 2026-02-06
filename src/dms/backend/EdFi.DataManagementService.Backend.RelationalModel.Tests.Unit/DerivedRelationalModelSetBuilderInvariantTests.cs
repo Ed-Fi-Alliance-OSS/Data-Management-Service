@@ -103,7 +103,7 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateIndexNamesPass() }
+            new IRelationalModelSetPass[] { new DuplicateIndexNamesAcrossTablesPass() }
         );
 
         try
@@ -117,38 +117,55 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
     }
 
     /// <summary>
-    /// It should fail with duplicate index names per table.
+    /// It should fail with duplicate index names per schema.
     /// </summary>
     [Test]
-    public void It_should_fail_with_duplicate_index_names_per_table()
+    public void It_should_fail_with_duplicate_index_names_per_schema()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
         _exception!.Message.Should().Contain("Duplicate index names");
-        _exception.Message.Should().Contain("edfi.School:IX_School");
+        _exception.Message.Should().Contain("edfi:IX_Common");
+    }
+}
+
+/// <summary>
+/// Test fixture for duplicate index names across tables in SQL Server.
+/// </summary>
+[TestFixture]
+public class Given_Duplicate_Index_Names_Across_Tables_For_Mssql
+{
+    private Exception? _exception;
+    private DerivedRelationalModelSet? _result;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[] { new DuplicateIndexNamesAcrossTablesPass() }
+        );
+
+        try
+        {
+            _result = builder.Build(effectiveSchemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
     }
 
     /// <summary>
-    /// Test type duplicate index names pass.
+    /// It should allow duplicate index names across tables.
     /// </summary>
-    private sealed class DuplicateIndexNamesPass : IRelationalModelSetPass
+    [Test]
+    public void It_should_allow_duplicate_index_names_across_tables()
     {
-        /// <summary>
-        /// Execute.
-        /// </summary>
-        public void Execute(RelationalModelSetBuilderContext context)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-
-            var schema = new DbSchemaName("edfi");
-            var table = new DbTableName(schema, "School");
-
-            context.IndexInventory.Add(
-                new DbIndexInfo(new DbIndexName("IX_School"), table, [], false, DbIndexKind.ForeignKeySupport)
-            );
-            context.IndexInventory.Add(
-                new DbIndexInfo(new DbIndexName("IX_School"), table, [], false, DbIndexKind.ForeignKeySupport)
-            );
-        }
+        _exception.Should().BeNull();
+        _result.Should().NotBeNull();
     }
 }
 
@@ -218,6 +235,88 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
 }
 
 /// <summary>
+/// Test fixture for duplicate trigger names across tables in PostgreSQL.
+/// </summary>
+[TestFixture]
+public class Given_Duplicate_Trigger_Names_Across_Tables_For_Pgsql
+{
+    private Exception? _exception;
+    private DerivedRelationalModelSet? _result;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[] { new DuplicateTriggerNamesAcrossTablesPass() }
+        );
+
+        try
+        {
+            _result = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should allow duplicate trigger names across tables.
+    /// </summary>
+    [Test]
+    public void It_should_allow_duplicate_trigger_names_across_tables()
+    {
+        _exception.Should().BeNull();
+        _result.Should().NotBeNull();
+    }
+}
+
+/// <summary>
+/// Test fixture for duplicate trigger names across tables in SQL Server.
+/// </summary>
+[TestFixture]
+public class Given_Duplicate_Trigger_Names_Across_Tables_For_Mssql
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[] { new DuplicateTriggerNamesAcrossTablesPass() }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with duplicate trigger names per schema.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_duplicate_trigger_names_per_schema()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Duplicate trigger names");
+        _exception.Message.Should().Contain("edfi:TR_Common");
+    }
+}
+
+/// <summary>
 /// Test type derived relational model set invariant test helpers.
 /// </summary>
 internal static class DerivedRelationalModelSetInvariantTestHelpers
@@ -259,10 +358,11 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
                 TargetResource: null
             ),
         };
+        var tableName = new DbTableName(schema, resource.ResourceName);
         var table = new DbTableModel(
-            new DbTableName(schema, resource.ResourceName),
+            tableName,
             JsonPathExpressionCompiler.Compile("$"),
-            new TableKey([keyColumn]),
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
             columns,
             Array.Empty<TableConstraint>()
         );
@@ -275,6 +375,56 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
             [table],
             Array.Empty<DocumentReferenceBinding>(),
             Array.Empty<DescriptorEdgeSource>()
+        );
+    }
+}
+
+file sealed class DuplicateIndexNamesAcrossTablesPass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var schema = new DbSchemaName("edfi");
+        var tableAlpha = new DbTableName(schema, "School");
+        var tableBeta = new DbTableName(schema, "Student");
+
+        context.IndexInventory.Add(
+            new DbIndexInfo(
+                new DbIndexName("IX_Common"),
+                tableAlpha,
+                [],
+                false,
+                DbIndexKind.ForeignKeySupport
+            )
+        );
+        context.IndexInventory.Add(
+            new DbIndexInfo(new DbIndexName("IX_Common"), tableBeta, [], false, DbIndexKind.ForeignKeySupport)
+        );
+    }
+}
+
+file sealed class DuplicateTriggerNamesAcrossTablesPass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var schema = new DbSchemaName("edfi");
+        var tableAlpha = new DbTableName(schema, "School");
+        var tableBeta = new DbTableName(schema, "Student");
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(new DbTriggerName("TR_Common"), tableAlpha, DbTriggerKind.DocumentStamping, [])
+        );
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(new DbTriggerName("TR_Common"), tableBeta, DbTriggerKind.DocumentStamping, [])
         );
     }
 }

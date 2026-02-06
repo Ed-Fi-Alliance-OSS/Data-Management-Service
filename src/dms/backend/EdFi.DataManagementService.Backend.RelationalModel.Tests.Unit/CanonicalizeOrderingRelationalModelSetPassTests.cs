@@ -33,9 +33,9 @@ public class Given_Set_Level_Canonicalization_When_Reference_Mappings_Are_Out_Of
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
         IRelationalModelSetPass[] passes =
         [
-            new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
-            new ReferenceBindingRelationalModelSetPass(),
-            new CanonicalizeOrderingRelationalModelSetPass(),
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new CanonicalizeOrderingPass(),
         ];
 
         var builder = new DerivedRelationalModelSetBuilder(passes);
