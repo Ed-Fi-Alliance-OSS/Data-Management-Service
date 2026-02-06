@@ -39,8 +39,8 @@ public class ProfileModule : IEndpointModule
             logger.LogWarning(
                 $"Profile definition failed XSD validation{contextMessage}. ProfileId: {{ProfileId}}, Name: {{Name}}, ValidationErrors: {{ValidationErrors}}",
                 profile.Id,
-                profile.Name,
-                string.Join("; ", validationResult.Errors)
+                LoggingUtility.SanitizeForLog(profile.Name),
+                LoggingUtility.SanitizeForLog(string.Join("; ", validationResult.Errors))
             );
             return false;
         }
