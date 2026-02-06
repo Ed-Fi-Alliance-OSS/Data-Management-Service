@@ -6,15 +6,7 @@ Feature: Profile Definition Validation
     Rule: Profiles with non-existent resource names are rejected
 
         Scenario: 01 Profile referencing non-existent resource is not loaded
-            Given a profile "E2E-Invalid-NonExistentResource" is created with XML
-                  """
-                  <Profile name="E2E-Invalid-NonExistentResource">
-                      <Resource name="NonExistentResource">
-                          <ReadContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-NonExistentResource" and namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-NonExistentResource" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -42,19 +34,7 @@ Feature: Profile Definition Validation
     Rule: Profiles with non-existent properties in IncludeOnly mode are rejected
 
         Scenario: 02 Profile with invalid IncludeOnly property is not loaded
-            Given a profile "E2E-Invalid-IncludeOnlyProperty" is created with XML
-                  """
-                  <Profile name="E2E-Invalid-IncludeOnlyProperty">
-                      <Resource name="School">
-                          <ReadContentType memberSelection="IncludeOnly">
-                              <Property name="nameOfInstitution"/>
-                              <Property name="nonExistentProperty"/>
-                          </ReadContentType>
-                          <WriteContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyProperty" and namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyProperty" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -82,19 +62,7 @@ Feature: Profile Definition Validation
     Rule: Profiles with non-existent objects in IncludeOnly mode are rejected
 
         Scenario: 03 Profile with invalid IncludeOnly nested object is not loaded
-            Given a profile "E2E-Invalid-IncludeOnlyObject" is created with XML
-                  """
-                  <Profile name="E2E-Invalid-IncludeOnlyObject">
-                      <Resource name="School">
-                          <ReadContentType memberSelection="IncludeOnly">
-                              <Property name="nameOfInstitution"/>
-                              <Object name="nonExistentObject" memberSelection="IncludeAll"/>
-                          </ReadContentType>
-                          <WriteContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyObject" and namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyObject" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -122,19 +90,7 @@ Feature: Profile Definition Validation
     Rule: Profiles with non-existent collections in IncludeOnly mode are rejected
 
         Scenario: 04 Profile with invalid IncludeOnly collection is not loaded
-            Given a profile "E2E-Invalid-IncludeOnlyCollection" is created with XML
-                  """
-                  <Profile name="E2E-Invalid-IncludeOnlyCollection">
-                      <Resource name="School">
-                          <ReadContentType memberSelection="IncludeOnly">
-                              <Property name="nameOfInstitution"/>
-                              <Collection name="nonExistentCollection" memberSelection="IncludeAll"/>
-                          </ReadContentType>
-                          <WriteContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyCollection" and namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-IncludeOnlyCollection" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -162,20 +118,7 @@ Feature: Profile Definition Validation
     Rule: Profiles with non-existent extension properties in IncludeOnly mode are rejected
 
         Scenario: 05 Profile with invalid IncludeOnly extension property is not loaded
-            Given a profile "E2E-Invalid-ExtensionProperty" is created with XML
-                  """
-                  <Profile name="E2E-Invalid-ExtensionProperty">
-                      <Resource name="School">
-                          <ReadContentType memberSelection="IncludeAll">
-                              <Extension name="Sample" memberSelection="IncludeOnly">
-                                  <Property name="nonExistentExtensionField"/>
-                              </Extension>
-                          </ReadContentType>
-                          <WriteContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-ExtensionProperty" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-ExtensionProperty" and namespacePrefixes "uri://ed-fi.org, uri://sample.ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -203,18 +146,7 @@ Feature: Profile Definition Validation
     Rule: Profiles with ExcludeOnly excluding identity members produce warnings but are loaded
 
         Scenario: 06 Profile with ExcludeOnly excluding identity member is loaded with warning
-            Given a profile "E2E-Warning-ExcludeIdentity" is created with XML
-                  """
-                  <Profile name="E2E-Warning-ExcludeIdentity">
-                      <Resource name="School">
-                          <ReadContentType memberSelection="ExcludeOnly">
-                              <Property name="schoolId"/>
-                          </ReadContentType>
-                          <WriteContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Warning-ExcludeIdentity" and namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Warning-ExcludeIdentity" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
@@ -237,26 +169,12 @@ Feature: Profile Definition Validation
                   }
                   """
              When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.e2e-warning-excludeidentity.readable+json"
-             Then the profile response status is 406
-              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             Then the profile response status is 200
+              And the response body should contain fields "schoolId"
     Rule: Profiles with nested invalid properties in collections are rejected
 
         Scenario: 07 Profile with invalid property in nested collection is not loaded
-            Given a profile "E2E-Invalid-NestedCollectionProperty" is created with XML
-                  """
-                  <Profile name="E2E-Invalid-NestedCollectionProperty">
-                      <Resource name="School">
-                          <ReadContentType memberSelection="IncludeAll">
-                              <Collection name="gradeLevels" memberSelection="IncludeOnly">
-                                  <Property name="gradeLevelDescriptor"/>
-                                  <Property name="invalidNestedProperty"/>
-                              </Collection>
-                          </ReadContentType>
-                          <WriteContentType memberSelection="IncludeAll"/>
-                      </Resource>
-                  </Profile>
-                  """
-              And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-NestedCollectionProperty" and namespacePrefixes "uri://ed-fi.org"
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "E2E-Invalid-NestedCollectionProperty" and namespacePrefixes "uri://ed-fi.org"
               And the system has these descriptors
                   | descriptorValue                                                |
                   | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |

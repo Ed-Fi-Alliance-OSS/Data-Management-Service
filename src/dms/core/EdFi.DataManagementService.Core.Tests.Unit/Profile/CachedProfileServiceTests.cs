@@ -60,6 +60,28 @@ public class CachedProfileServiceTests
 
     private const string InvalidProfileXml = "<Invalid>Not a valid profile</Invalid>";
 
+    private const string WarningProfileXml = """
+        <Profile name="WarningProfile">
+            <Resource name="School">
+                <ReadContentType memberSelection="ExcludeOnly">
+                    <Property name="schoolId"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    private const string ErrorProfileXml = """
+        <Profile name="ErrorProfile">
+            <Resource name="School">
+                <ReadContentType memberSelection="ExcludeOnly">
+                    <Property name="schoolId"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
     protected static HybridCache CreateHybridCache()
     {
         var services = new ServiceCollection();
@@ -783,6 +805,152 @@ public class CachedProfileServiceTests
                 result.Should().Contain("StudentProfile");
                 result.Should().Contain("SchoolProfile");
                 result.Should().NotContain("InvalidProfile");
+            }
+
+            [Test]
+            public async Task It_includes_profiles_with_warnings_only()
+            {
+                // Arrange - Set up fake CMS provider
+                var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
+                A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
+                    .Returns(
+                        Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml),
+                            new CmsProfileResponse(2, "WarningProfile", WarningProfileXml),
+                        ])
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(2, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(2, "WarningProfile", WarningProfileXml)
+                        )
+                    );
+
+                // Arrange - Set up validator that returns warnings for WarningProfile
+                var fakeValidator = A.Fake<IProfileDataValidator>();
+                A.CallTo(() =>
+                        fakeValidator.Validate(
+                            A<ProfileDefinition>.That.Matches(p => p.ProfileName == "StudentProfile"),
+                            A<IEffectiveApiSchemaProvider>._
+                        )
+                    )
+                    .Returns(ProfileValidationResult.Success);
+
+                A.CallTo(() =>
+                        fakeValidator.Validate(
+                            A<ProfileDefinition>.That.Matches(p => p.ProfileName == "WarningProfile"),
+                            A<IEffectiveApiSchemaProvider>._
+                        )
+                    )
+                    .Returns(
+                        new ProfileValidationResult([
+                            new ValidationFailure(
+                                ValidationSeverity.Warning,
+                                "WarningProfile",
+                                "School",
+                                "schoolId",
+                                "ExcludeOnly excluding identity member"
+                            ),
+                        ])
+                    );
+
+                var service = CreateService(fakeCmsProvider, profileDataValidator: fakeValidator);
+
+                // Act
+                var profileNames = await service.GetProfileNamesAsync(null);
+                var profileDefinition = await service.GetProfileDefinitionAsync("WarningProfile", null);
+
+                // Assert - Profile with warnings should be included in catalog
+                profileNames.Should().HaveCount(2);
+                profileNames.Should().Contain("StudentProfile");
+                profileNames.Should().Contain("WarningProfile");
+
+                // Assert - Profile with warnings should be retrievable
+                profileDefinition.Should().NotBeNull();
+                profileDefinition!.ProfileName.Should().Be("WarningProfile");
+                profileDefinition.Resources.Should().HaveCount(1);
+                profileDefinition.Resources[0].ResourceName.Should().Be("School");
+            }
+
+            [Test]
+            public async Task It_excludes_profiles_with_errors_even_if_warnings_present()
+            {
+                // Arrange - Set up fake CMS provider
+                var fakeCmsProvider = A.Fake<IProfileCmsProvider>();
+                A.CallTo(() => fakeCmsProvider.GetProfilesAsync(A<string?>._))
+                    .Returns(
+                        Task.FromResult<IReadOnlyList<CmsProfileResponse>>([
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml),
+                            new CmsProfileResponse(2, "ErrorProfile", ErrorProfileXml),
+                        ])
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(1, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(1, "StudentProfile", StudentProfileXml)
+                        )
+                    );
+                A.CallTo(() => fakeCmsProvider.GetProfileAsync(2, A<string?>._))
+                    .Returns(
+                        Task.FromResult<CmsProfileResponse?>(
+                            new CmsProfileResponse(2, "ErrorProfile", ErrorProfileXml)
+                        )
+                    );
+
+                // Arrange - Set up validator that returns both errors and warnings
+                var fakeValidator = A.Fake<IProfileDataValidator>();
+                A.CallTo(() =>
+                        fakeValidator.Validate(
+                            A<ProfileDefinition>.That.Matches(p => p.ProfileName == "StudentProfile"),
+                            A<IEffectiveApiSchemaProvider>._
+                        )
+                    )
+                    .Returns(ProfileValidationResult.Success);
+
+                A.CallTo(() =>
+                        fakeValidator.Validate(
+                            A<ProfileDefinition>.That.Matches(p => p.ProfileName == "ErrorProfile"),
+                            A<IEffectiveApiSchemaProvider>._
+                        )
+                    )
+                    .Returns(
+                        new ProfileValidationResult([
+                            new ValidationFailure(
+                                ValidationSeverity.Error,
+                                "ErrorProfile",
+                                "School",
+                                "invalidProperty",
+                                "Property does not exist"
+                            ),
+                            new ValidationFailure(
+                                ValidationSeverity.Warning,
+                                "ErrorProfile",
+                                "School",
+                                "schoolId",
+                                "ExcludeOnly excluding identity member"
+                            ),
+                        ])
+                    );
+
+                var service = CreateService(fakeCmsProvider, profileDataValidator: fakeValidator);
+
+                // Act
+                var profileNames = await service.GetProfileNamesAsync(null);
+                var profileDefinition = await service.GetProfileDefinitionAsync("ErrorProfile", null);
+
+                // Assert - Profile with errors should be excluded from catalog
+                profileNames.Should().HaveCount(1);
+                profileNames.Should().Contain("StudentProfile");
+                profileNames.Should().NotContain("ErrorProfile");
+
+                // Assert - Profile with errors should not be retrievable
+                profileDefinition.Should().BeNull();
             }
 
             [Test]
