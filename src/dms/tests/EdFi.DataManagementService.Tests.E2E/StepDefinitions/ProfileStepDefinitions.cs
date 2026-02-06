@@ -46,7 +46,7 @@ public class ProfileStepDefinitions(
     {
         try
         {
-            _logger.log.Information($"Creating test profile: {profileName}");
+            _logger.log.Information("Creating test profile: {ProfileName}", profileName);
 
             int profileId = await ProfileAwareAuthorizationProvider.CreateProfile(
                 profileName,
@@ -56,11 +56,15 @@ public class ProfileStepDefinitions(
 
             ProfileTestData.RegisterProfile(profileName, profileId);
 
-            _logger.log.Information($"Profile '{profileName}' created with ID: {profileId}");
+            _logger.log.Information(
+                "Profile '{ProfileName}' created with ID: {ProfileId}",
+                profileName,
+                profileId
+            );
         }
         catch (Exception ex)
         {
-            _logger.log.Error($"Failed to create profile '{profileName}': {ex.Message}");
+            _logger.log.Error(ex, "Failed to create profile '{ProfileName}'", profileName);
             throw;
         }
     }
