@@ -40,23 +40,34 @@ public record ValidationFailure(
 /// <summary>
 /// The result of validating a profile definition against the API schema.
 /// </summary>
-/// <param name="Failures">The list of validation failures found during validation.</param>
-public record ProfileValidationResult(IReadOnlyList<ValidationFailure> Failures)
+public record ProfileValidationResult
 {
+    /// <summary>
+    /// Gets the list of validation failures found during validation.
+    /// </summary>
+    public IReadOnlyList<ValidationFailure> Failures { get; }
+
     /// <summary>
     /// Gets whether the validation found any errors (severity Error).
     /// </summary>
-    public bool HasErrors => Failures.Any(f => f.Severity == ValidationSeverity.Error);
+    public bool HasErrors { get; }
 
     /// <summary>
     /// Gets whether the validation found any warnings (severity Warning).
     /// </summary>
-    public bool HasWarnings => Failures.Any(f => f.Severity == ValidationSeverity.Warning);
+    public bool HasWarnings { get; }
 
     /// <summary>
     /// Gets whether the validation passed (no errors). Warnings do not affect validity.
     /// </summary>
     public bool IsValid => !HasErrors;
+
+    public ProfileValidationResult(IReadOnlyList<ValidationFailure> failures)
+    {
+        Failures = failures;
+        HasErrors = failures.Any(f => f.Severity == ValidationSeverity.Error);
+        HasWarnings = failures.Any(f => f.Severity == ValidationSeverity.Warning);
+    }
 
     /// <summary>
     /// Creates a successful validation result with no failures.
