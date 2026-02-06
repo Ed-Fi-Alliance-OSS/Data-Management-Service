@@ -19,6 +19,7 @@ public static class RelationalModelSetPasses
         IRelationalModelSetPass[] passes =
         [
             new BaseTraversalAndDescriptorBindingRelationalModelSetPass(),
+            new DescriptorResourceMappingRelationalModelSetPass(),
             new ExtensionTableDerivationRelationalModelSetPass(),
             new AbstractIdentityTableDerivationRelationalModelSetPass(),
             new ReferenceBindingRelationalModelSetPass(),

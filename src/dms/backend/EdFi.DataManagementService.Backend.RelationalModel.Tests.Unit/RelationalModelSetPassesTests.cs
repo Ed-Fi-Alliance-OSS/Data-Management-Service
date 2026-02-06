@@ -38,6 +38,7 @@ public class Given_Default_RelationalModelSet_Passes
             .Should()
             .Equal(
                 typeof(BaseTraversalAndDescriptorBindingRelationalModelSetPass),
+                typeof(DescriptorResourceMappingRelationalModelSetPass),
                 typeof(ExtensionTableDerivationRelationalModelSetPass),
                 typeof(AbstractIdentityTableDerivationRelationalModelSetPass),
                 typeof(ReferenceBindingRelationalModelSetPass),

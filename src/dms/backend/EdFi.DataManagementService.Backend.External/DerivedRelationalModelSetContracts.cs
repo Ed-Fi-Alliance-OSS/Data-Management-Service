@@ -22,15 +22,70 @@ public sealed record ProjectSchemaInfo(
 );
 
 /// <summary>
+/// Classifies the discriminator strategy for descriptor resources.
+/// </summary>
+public enum DiscriminatorStrategy
+{
+    /// <summary>
+    /// Use <c>dms.Document.ResourceKeyId</c> as the primary resource-type discriminator.
+    /// </summary>
+    ResourceKeyId,
+
+    /// <summary>
+    /// Use <c>dms.Descriptor.Discriminator</c> column as a secondary discriminator.
+    /// </summary>
+    DescriptorColumn,
+
+    /// <summary>
+    /// Both discriminator strategies are recorded for flexibility.
+    /// </summary>
+    Both,
+}
+
+/// <summary>
+/// Defines the canonical descriptor column contract for the shared <c>dms.Descriptor</c> table.
+/// </summary>
+/// <param name="Namespace">The namespace column name.</param>
+/// <param name="CodeValue">The code value column name.</param>
+/// <param name="ShortDescription">The short description column name (optional).</param>
+/// <param name="Description">The description column name (optional).</param>
+/// <param name="EffectiveBeginDate">The effective begin date column name (optional).</param>
+/// <param name="EffectiveEndDate">The effective end date column name (optional).</param>
+/// <param name="Discriminator">The discriminator column name (optional).</param>
+public sealed record DescriptorColumnContract(
+    DbColumnName Namespace,
+    DbColumnName CodeValue,
+    DbColumnName? ShortDescription,
+    DbColumnName? Description,
+    DbColumnName? EffectiveBeginDate,
+    DbColumnName? EffectiveEndDate,
+    DbColumnName? Discriminator
+);
+
+/// <summary>
+/// Metadata for descriptor resources stored in the shared <c>dms.Descriptor</c> table.
+/// </summary>
+/// <param name="ColumnContract">The descriptor column contract.</param>
+/// <param name="DiscriminatorStrategy">The discriminator strategy for resource-type identification.</param>
+public sealed record DescriptorMetadata(
+    DescriptorColumnContract ColumnContract,
+    DiscriminatorStrategy DiscriminatorStrategy
+);
+
+/// <summary>
 /// The derived relational model for a concrete resource.
 /// </summary>
 /// <param name="ResourceKey">The resource key entry for the resource.</param>
 /// <param name="StorageKind">The storage strategy for the resource.</param>
 /// <param name="RelationalModel">The relational model inventory for the resource.</param>
+/// <param name="DescriptorMetadata">
+/// Descriptor-specific metadata when <paramref name="StorageKind"/> is <see cref="ResourceStorageKind.SharedDescriptorTable"/>.
+/// </param>
 public sealed record ConcreteResourceModel(
     ResourceKeyEntry ResourceKey,
     ResourceStorageKind StorageKind,
-    RelationalResourceModel RelationalModel
+    RelationalResourceModel RelationalModel,
+    DescriptorMetadata? DescriptorMetadata = null
 );
 
 /// <summary>
