@@ -110,16 +110,17 @@ internal class LoadAndBuildEffectiveSchemaTask(
 
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Step 4: Derive resource key seeds (no-op for now, future DMS-926)
+        // Step 4: Derive resource key seeds
         _logger.LogDebug("Deriving resource key seeds");
         var seeds = _seedProvider.GetSeeds(normalizedNodes);
         if (seeds.Count > 0)
         {
-            var seedHash = _seedProvider.ComputeSeedHash(seeds);
+            var seedHashBytes = _seedProvider.ComputeSeedHash(seeds);
+            var seedHashHex = Convert.ToHexStringLower(seedHashBytes);
             _logger.LogInformation(
                 "Resource key seeds: {SeedCount} entries, hash: {Hash}",
                 seeds.Count,
-                seedHash
+                seedHashHex
             );
         }
 

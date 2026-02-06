@@ -22,4 +22,10 @@ public static class SchemaHashConstants
     /// This value MUST match the relational_mapping_version used in .mpack files.
     /// </summary>
     public const string RelationalMappingVersion = "v1";
+
+    /// <summary>
+    /// Version identifier for the resource key seed hash algorithm format.
+    /// Changing this forces hash recalculation even with identical seed content.
+    /// </summary>
+    public const string ResourceKeySeedHashVersion = "resource-key-seed-hash:v1";
 }

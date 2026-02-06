@@ -157,8 +157,6 @@ resource-key-seed-hash:v1\n
 ...
 ```
 
-Entries are emitted in the same order as `resource_keys` (ascending `resource_key_id`).
-
 ### 5.3 Runtime validation against database
 
 Consumers MUST validate that the target database’s `dms.ResourceKey` contents match the pack’s embedded seed mapping for the same effective schema.
