@@ -283,4 +283,78 @@ public sealed class PgsqlDialect : SqlDialectBase
             $uuidv5$;
             """;
     }
+
+    // ── Core-table type properties ──────────────────────────────────────
+
+    /// <inheritdoc />
+    public override string SmallintColumnType => "smallint";
+
+    /// <inheritdoc />
+    public override string UuidColumnType => "uuid";
+
+    /// <inheritdoc />
+    public override string JsonColumnType => "jsonb";
+
+    /// <inheritdoc />
+    public override string IdentityBigintColumnType => "bigint GENERATED ALWAYS AS IDENTITY";
+
+    /// <inheritdoc />
+    public override string CurrentTimestampDefaultExpression => "now()";
+
+    // ── Core-table type methods ─────────────────────────────────────────
+
+    /// <inheritdoc />
+    public override string RenderBinaryColumnType(int length)
+    {
+        // PostgreSQL bytea is variable-length; the length parameter is
+        // enforced via a CHECK constraint, not the type itself.
+        return "bytea";
+    }
+
+    /// <inheritdoc />
+    public override string RenderSequenceDefaultExpression(DbSchemaName schema, string sequenceName)
+    {
+        ArgumentNullException.ThrowIfNull(sequenceName);
+
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(sequenceName)}";
+        return $"nextval('{qualifiedName}')";
+    }
+
+    /// <inheritdoc />
+    public override string RenderColumnDefinitionWithNamedDefault(
+        DbColumnName columnName,
+        string sqlType,
+        bool isNullable,
+        string? constraintName,
+        string? defaultExpression
+    )
+    {
+        // PostgreSQL does not support named default constraints;
+        // delegate to the standard column definition.
+        return RenderColumnDefinition(columnName, sqlType, isNullable, defaultExpression);
+    }
+
+    /// <inheritdoc />
+    public override string RenderNamedPrimaryKeyClause(
+        string constraintName,
+        IReadOnlyList<DbColumnName> columns,
+        bool clustered = true
+    )
+    {
+        ArgumentNullException.ThrowIfNull(constraintName);
+        ArgumentNullException.ThrowIfNull(columns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one column is required for a primary key.",
+                nameof(columns)
+            );
+        }
+
+        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
+
+        // PostgreSQL does not support CLUSTERED/NONCLUSTERED.
+        return $"CONSTRAINT {QuoteIdentifier(constraintName)} PRIMARY KEY ({columnList})";
+    }
 }

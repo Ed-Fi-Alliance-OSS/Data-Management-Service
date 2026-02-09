@@ -135,6 +135,15 @@ public abstract class SqlDialectBase : ISqlDialect
     }
 
     /// <inheritdoc />
+    public abstract string RenderColumnDefinitionWithNamedDefault(
+        DbColumnName columnName,
+        string sqlType,
+        bool isNullable,
+        string? constraintName,
+        string? defaultExpression
+    );
+
+    /// <inheritdoc />
     public virtual string RenderPrimaryKeyClause(IReadOnlyList<DbColumnName> columns)
     {
         ArgumentNullException.ThrowIfNull(columns);
@@ -150,6 +159,13 @@ public abstract class SqlDialectBase : ISqlDialect
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
         return $"PRIMARY KEY ({columnList})";
     }
+
+    /// <inheritdoc />
+    public abstract string RenderNamedPrimaryKeyClause(
+        string constraintName,
+        IReadOnlyList<DbColumnName> columns,
+        bool clustered = true
+    );
 
     /// <inheritdoc />
     public virtual string RenderReferentialAction(ReferentialAction action)
@@ -171,4 +187,29 @@ public abstract class SqlDialectBase : ISqlDialect
 
     /// <inheritdoc />
     public abstract string CreateUuidv5Function(DbSchemaName schema);
+
+    // ── Core-table type properties ──────────────────────────────────────
+
+    /// <inheritdoc />
+    public abstract string SmallintColumnType { get; }
+
+    /// <inheritdoc />
+    public abstract string UuidColumnType { get; }
+
+    /// <inheritdoc />
+    public abstract string JsonColumnType { get; }
+
+    /// <inheritdoc />
+    public abstract string IdentityBigintColumnType { get; }
+
+    /// <inheritdoc />
+    public abstract string CurrentTimestampDefaultExpression { get; }
+
+    // ── Core-table type methods ─────────────────────────────────────────
+
+    /// <inheritdoc />
+    public abstract string RenderBinaryColumnType(int length);
+
+    /// <inheritdoc />
+    public abstract string RenderSequenceDefaultExpression(DbSchemaName schema, string sequenceName);
 }

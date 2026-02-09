@@ -169,11 +169,49 @@ public interface ISqlDialect
     );
 
     /// <summary>
+    /// Renders a column definition with an optional named default constraint.
+    /// SQL Server emits <c>CONSTRAINT [name] DEFAULT (expr)</c>; PostgreSQL ignores
+    /// the constraint name and emits a plain <c>DEFAULT expr</c>.
+    /// </summary>
+    /// <param name="columnName">The column name.</param>
+    /// <param name="sqlType">The SQL type string.</param>
+    /// <param name="isNullable">Whether the column allows NULL values.</param>
+    /// <param name="constraintName">
+    /// Optional constraint name for the default (used by SQL Server; ignored by PostgreSQL).
+    /// </param>
+    /// <param name="defaultExpression">Optional default expression.</param>
+    /// <returns>The complete column definition.</returns>
+    string RenderColumnDefinitionWithNamedDefault(
+        DbColumnName columnName,
+        string sqlType,
+        bool isNullable,
+        string? constraintName,
+        string? defaultExpression
+    );
+
+    /// <summary>
     /// Renders a PRIMARY KEY constraint clause for use in CREATE TABLE statements.
     /// </summary>
     /// <param name="columns">The primary key columns in order.</param>
     /// <returns>The PRIMARY KEY clause (e.g., PRIMARY KEY ("col1", "col2")).</returns>
     string RenderPrimaryKeyClause(IReadOnlyList<DbColumnName> columns);
+
+    /// <summary>
+    /// Renders a named PRIMARY KEY constraint clause with optional clustered storage.
+    /// SQL Server uses <c>CLUSTERED</c> or <c>NONCLUSTERED</c>; PostgreSQL ignores the
+    /// clustered parameter.
+    /// </summary>
+    /// <param name="constraintName">The constraint name.</param>
+    /// <param name="columns">The primary key columns in order.</param>
+    /// <param name="clustered">
+    /// Whether the index uses clustered storage (SQL Server only; ignored by PostgreSQL).
+    /// </param>
+    /// <returns>The named PRIMARY KEY constraint clause.</returns>
+    string RenderNamedPrimaryKeyClause(
+        string constraintName,
+        IReadOnlyList<DbColumnName> columns,
+        bool clustered = true
+    );
 
     /// <summary>
     /// Renders the referential action keyword for foreign key constraints.
@@ -198,4 +236,54 @@ public interface ISqlDialect
     /// <param name="schema">The schema to create the function in (typically "dms").</param>
     /// <returns>The complete CREATE FUNCTION statement.</returns>
     string CreateUuidv5Function(DbSchemaName schema);
+
+    // ── Core-table type properties ──────────────────────────────────────
+
+    /// <summary>
+    /// Gets the dialect's type for smallint columns.
+    /// </summary>
+    string SmallintColumnType { get; }
+
+    /// <summary>
+    /// Gets the dialect's type for UUID columns (uuid / uniqueidentifier).
+    /// </summary>
+    string UuidColumnType { get; }
+
+    /// <summary>
+    /// Gets the dialect's type for JSON document columns (jsonb / nvarchar(max)).
+    /// </summary>
+    string JsonColumnType { get; }
+
+    /// <summary>
+    /// Gets the dialect's identity bigint column type declaration.
+    /// PostgreSQL: <c>bigint GENERATED ALWAYS AS IDENTITY</c>.
+    /// SQL Server: <c>bigint IDENTITY(1,1)</c>.
+    /// </summary>
+    string IdentityBigintColumnType { get; }
+
+    /// <summary>
+    /// Gets the dialect's DEFAULT expression for the current UTC timestamp.
+    /// PostgreSQL: <c>now()</c>. SQL Server: <c>(sysutcdatetime())</c>.
+    /// </summary>
+    string CurrentTimestampDefaultExpression { get; }
+
+    // ── Core-table type methods ─────────────────────────────────────────
+
+    /// <summary>
+    /// Renders the binary column type for a fixed-length byte array.
+    /// PostgreSQL returns <c>bytea</c> (ignores length); SQL Server returns <c>binary(n)</c>.
+    /// </summary>
+    /// <param name="length">The fixed byte length (used by SQL Server).</param>
+    /// <returns>The binary column type string.</returns>
+    string RenderBinaryColumnType(int length);
+
+    /// <summary>
+    /// Renders a DEFAULT expression that references the next value from a sequence.
+    /// PostgreSQL: <c>nextval('"schema"."sequence"')</c>.
+    /// SQL Server: <c>(NEXT VALUE FOR [schema].[sequence])</c>.
+    /// </summary>
+    /// <param name="schema">The schema containing the sequence.</param>
+    /// <param name="sequenceName">The sequence name.</param>
+    /// <returns>The sequence default expression.</returns>
+    string RenderSequenceDefaultExpression(DbSchemaName schema, string sequenceName);
 }

@@ -323,4 +323,96 @@ public sealed class MssqlDialect : SqlDialectBase
             END;
             """;
     }
+
+    // ── Core-table type properties ──────────────────────────────────────
+
+    /// <inheritdoc />
+    public override string SmallintColumnType => "smallint";
+
+    /// <inheritdoc />
+    public override string UuidColumnType => "uniqueidentifier";
+
+    /// <inheritdoc />
+    public override string JsonColumnType => "nvarchar(max)";
+
+    /// <inheritdoc />
+    public override string IdentityBigintColumnType => "bigint IDENTITY(1,1)";
+
+    /// <inheritdoc />
+    public override string CurrentTimestampDefaultExpression => "(sysutcdatetime())";
+
+    // ── Core-table type methods ─────────────────────────────────────────
+
+    /// <inheritdoc />
+    public override string RenderBinaryColumnType(int length)
+    {
+        if (length <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                length,
+                "Binary column length must be positive."
+            );
+        }
+
+        return $"binary({length})";
+    }
+
+    /// <inheritdoc />
+    public override string RenderSequenceDefaultExpression(DbSchemaName schema, string sequenceName)
+    {
+        ArgumentNullException.ThrowIfNull(sequenceName);
+
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(sequenceName)}";
+        return $"(NEXT VALUE FOR {qualifiedName})";
+    }
+
+    /// <inheritdoc />
+    public override string RenderColumnDefinitionWithNamedDefault(
+        DbColumnName columnName,
+        string sqlType,
+        bool isNullable,
+        string? constraintName,
+        string? defaultExpression
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sqlType);
+
+        var nullability = isNullable ? "NULL" : "NOT NULL";
+
+        if (defaultExpression is null)
+        {
+            return $"{QuoteIdentifier(columnName.Value)} {sqlType} {nullability}";
+        }
+
+        var defaultClause = constraintName is not null
+            ? $" CONSTRAINT {QuoteIdentifier(constraintName)} DEFAULT {defaultExpression}"
+            : $" DEFAULT {defaultExpression}";
+
+        return $"{QuoteIdentifier(columnName.Value)} {sqlType} {nullability}{defaultClause}";
+    }
+
+    /// <inheritdoc />
+    public override string RenderNamedPrimaryKeyClause(
+        string constraintName,
+        IReadOnlyList<DbColumnName> columns,
+        bool clustered = true
+    )
+    {
+        ArgumentNullException.ThrowIfNull(constraintName);
+        ArgumentNullException.ThrowIfNull(columns);
+
+        if (columns.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one column is required for a primary key.",
+                nameof(columns)
+            );
+        }
+
+        var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
+        var clusterKeyword = clustered ? "CLUSTERED" : "NONCLUSTERED";
+
+        return $"CONSTRAINT {QuoteIdentifier(constraintName)} PRIMARY KEY {clusterKeyword} ({columnList})";
+    }
 }
