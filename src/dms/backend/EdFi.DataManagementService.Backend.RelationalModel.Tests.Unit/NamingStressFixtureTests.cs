@@ -79,6 +79,7 @@ public class Given_A_Naming_Stress_Fixture
         rootColumnNames.Should().Contain("StreetName");
         rootColumnNames.Should().Contain("Campus_DocumentId");
         rootColumnNames.Should().Contain("Campus_Id");
+        // Reserved-keyword overrides are validated end-to-end in DdlIdentifierQuotingTests.
         rootColumnNames.Should().Contain("Select");
 
         var binding = _personModel.DocumentReferenceBindings.Single(reference =>
