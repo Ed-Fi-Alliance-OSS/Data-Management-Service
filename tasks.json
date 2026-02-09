@@ -400,5 +400,149 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Repo Hygiene",
+    "description": "PR 816 review (2026-02-09): Remove temporary `progress.txt` progress-tracking file from the repository and prevent accidental recommit. Acceptance: (1) `progress.txt` is removed from the PR/branch; (2) `.gitignore` contains an entry for `progress.txt` (or a safe pattern) so local notes don’t show up as untracked changes; (3) there are no remaining references to `progress.txt` in repo content.",
+    "steps-to-verify": [
+      "Remove from git: `git rm -- progress.txt` (or delete the file and stage the deletion).",
+      "Add ignore rule to `./.gitignore` for `progress.txt` (or appropriate pattern).",
+      "Confirm the file is no longer tracked: `git ls-files progress.txt` returns no output.",
+      "Confirm the ignore rule works: `git check-ignore -v progress.txt` shows the matching rule.",
+      "Confirm no references remain: `rg -n \"progress\\.txt\" -S .` returns no matches."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Naming",
+    "description": "PR 816 review (2026-02-09): Make `ConstraintNaming.BuildColumnTokens` deterministic regardless of input column ordering by sorting `prefixOrder` before iteration. Acceptance: (1) the same set of columns in any order yields identical token sequences and constraint identifiers; (2) ordering uses `StringComparer.Ordinal`; (3) unit test covers a swapped-input-order scenario and asserts identical results.",
+    "steps-to-verify": [
+      "Update `BuildColumnTokens` in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Constraints/ConstraintNaming.cs` to iterate prefixes in a deterministic order (e.g., `prefixOrder.OrderBy(p => p, StringComparer.Ordinal)`).",
+      "Add/extend unit test coverage to assert that `BuildColumnTokens` (or a higher-level constraint naming API) returns identical output for the same columns provided in different orders.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Backend",
+    "description": "PR 816 review (2026-02-09): Fix `ConstraintIdentity` `Equals`/`GetHashCode` contract mismatch for ForeignKey constraints when `TargetTable` is null. Acceptance: (1) `Equals` and `GetHashCode` agree on null semantics; (2) ForeignKey identities cannot be hashed/compared in an invalid state (either enforce non-null `TargetTable` or throw with a clear message); (3) unit test covers null `TargetTable` behavior and confirms valid identities still hash/compare deterministically.",
+    "steps-to-verify": [
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Constraints/ConstraintIdentity.cs` so ForeignKey hashing does not treat null `TargetTable` as a normal value (enforce/throw or handle consistently with `Equals`).",
+      "Add a unit test that constructs a ForeignKey identity in the invalid state and asserts the chosen behavior (exception or consistent hashing/equals).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Backend",
+    "description": "PR 816 review (2026-02-09): In `TableColumnAccumulator.TryAdd`, validate key-column overlap with existing regular columns instead of silently accepting duplicates. Acceptance: (1) when a key column name already exists, metadata (origin path, type, nullability, etc.) is verified to match; (2) mismatches fail fast with a deterministic exception/diagnostic that includes both origins; (3) unit tests cover both matching-overlap and mismatch-overlap cases.",
+    "steps-to-verify": [
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Diagnostics/TableColumnAccumulator.cs` to validate duplicates when registering key columns that already exist in the regular column set.",
+      "Add unit tests to cover: (a) key column derived from the same regular column metadata (allowed); (b) key column with differing metadata (rejected with clear diagnostics).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "PR 816 review (2026-02-09): Add DDL emitter coverage for reserved-keyword column names and cross-reference it from naming stress tests. Acceptance: (1) CREATE TABLE output quotes reserved keyword columns correctly (`\"Select\"` in PostgreSQL and `[Select]` in SQL Server, or equivalent dialect quoting); (2) tests cover both dialects; (3) `NamingStressFixtureTests` either adds an end-to-end DDL assertion or includes a comment cross-referencing the DDL test so reserved-keyword handling is covered end-to-end.",
+    "steps-to-verify": [
+      "Add tests under `./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/RelationalModelDdlEmitterTests.cs` that emit DDL for a table with a reserved keyword column name (e.g., `Select`) and assert the dialect-specific quoting in the output.",
+      "Add an explicit comment or assertion in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NamingStressFixtureTests.cs` indicating where DDL reserved-keyword quoting is verified end-to-end.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "PR 816 review (2026-02-09): Strengthen override collision diagnostic assertions in `NamingStressFixtureTests` so diagnostics remain complete. Acceptance: (1) collision exception assertions verify both colliding JSONPaths are present; (2) resource context and the collision name are present; (3) assertions are stable/deterministic (order-insensitive contains checks or message normalization).",
+    "steps-to-verify": [
+      "Update the collision test in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NamingStressFixtureTests.cs` to assert the error message includes both colliding paths and the collision name, plus relevant resource context.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "PR 816 review (2026-02-09): Add a reversed-resource-ordering collision test to `NameOverrideTests` to guarantee deterministic collision detection across resource ordering. Acceptance: (1) collision detection produces the same exception type and message with normal and reversed resource ordering; (2) both paths are covered by unit tests to prevent regressions.",
+    "steps-to-verify": [
+      "Following the pattern in `RootTableNameOverrideCollisionTests.cs`, add a parallel test in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NameOverrideTests.cs` that runs the same scenario with reversed resource ordering and asserts an identical exception message.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "PR 816 review (2026-02-09): Add cross-dialect identifier-shortening comparison coverage to ensure PostgreSQL (63-byte) and SQL Server (128-char) limits produce different results for the same long identifier. Acceptance: (1) a single long identifier yields different shortened results across dialects; (2) each result respects its dialect maximum length; (3) test asserts concrete expected behavior and is deterministic.",
+    "steps-to-verify": [
+      "Add a new test case to `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DialectIdentifierShorteningTests.cs` that shortens the same long identifier under both dialect rules and asserts the results differ while still meeting each dialect length constraint.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Diagnostics",
+    "description": "PR 816 review (2026-02-09): Emit a non-fatal warning when a `relational.nameOverrides` value normalizes to a SQL reserved keyword during override extraction. Acceptance: (1) when an override normalizes to a reserved keyword (e.g., `Select`), a warning is produced that includes the override key/path and normalized value; (2) override behavior remains unchanged (still applies); (3) unit test verifies warning output and determinism.",
+    "steps-to-verify": [
+      "Update `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/RelationalOverridesExtractor.cs` to detect reserved keywords after `RelationalNameConventions.ToPascalCase()` normalization.",
+      "Add/extend diagnostics plumbing to surface a warning (not an exception) with enough context to identify the schema and override entry.",
+      "Add a unit test that supplies an override whose normalized name is reserved and asserts the warning is emitted and stable.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "PR 816 review (2026-02-09): Reword the misleading comment in `CollisionDetectorCore` to state that shared descriptor elements are collapsed when `isSharedDescriptorElement` returns true (not \"optionally\"). Acceptance: (1) comment accurately reflects the predicate-driven behavior; (2) no functional code changes.",
+    "steps-to-verify": [
+      "Update the comment in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Diagnostics/CollisionDetectorCore.cs` to remove ambiguity and match behavior.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "PR 816 review (2026-02-09): Reduce allocations in `SqlIdentifierShortening` UTF-8 truncation loop by avoiding `rune.ToString()` per rune. Acceptance: (1) truncation no longer allocates a new string per rune (use `Rune.EncodeToUtf16`/spans or equivalent); (2) behavior is unchanged for ASCII and non-ASCII identifiers; (3) tests pass and include coverage for multi-byte UTF-8 identifiers if currently missing.",
+    "steps-to-verify": [
+      "Update the UTF-8 truncation loop in `./src/dms/backend/EdFi.DataManagementService.Backend.External/SqlIdentifierShortening.cs` to compute byte counts from encoded UTF-16 spans instead of `rune.ToString()`.",
+      "Add/extend unit tests to cover truncation with multi-byte characters and confirm outputs match prior behavior.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Diagnostics",
+    "description": "PR 816 review (2026-02-09): Improve `DescriptorPathInference` conflict error message so it clearly indicates conflicting descriptor resources for the same path. Acceptance: (1) message includes the canonical path plus both the existing and encountered descriptor resource names; (2) message text is validated by a unit test; (3) no behavior change beyond clearer diagnostics.",
+    "steps-to-verify": [
+      "Update the conflict diagnostic message in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DescriptorPaths/DescriptorPathInference.cs` to explicitly name both descriptor resources and the canonical path.",
+      "Update/add a unit test to assert the new message content for a conflict scenario.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Diagnostics",
+    "description": "PR 816 review (2026-02-09): When validating schema projects lists, include the index of any null project entry in the error message to aid debugging. Acceptance: (1) exception message includes the 0-based index (or explicitly documented indexing) of the null entry; (2) unit test covers null-at-index scenario and asserts the message includes the index.",
+    "steps-to-verify": [
+      "Update projects list validation in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/DescriptorPaths/DescriptorPathInference.cs` (or the relevant validation helper it calls) to track and report the index when encountering a null entry.",
+      "Update/add a unit test asserting the error message includes the offending index.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Testing",
+    "description": "PR 816 review (2026-02-09): Add a positive end-to-end test validating a valid `relational.nameOverrides` entry is captured and applied with correct metadata. Acceptance: (1) test builds minimal valid schema input containing a `relational.nameOverrides` entry; (2) asserts `NameOverridesByPath` contains an entry with correct `RawKey`, `CanonicalPath`, `NormalizedName`, and `Kind`; (3) test passes without relying on fixture regeneration.",
+    "steps-to-verify": [
+      "Add a new positive test near the existing coverage in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/SchemaInputValidationTests.cs` to validate override extraction and metadata end-to-end.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
