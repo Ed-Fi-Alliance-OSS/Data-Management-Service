@@ -29,29 +29,38 @@ public class DatabaseSetupFixture
         var createFunction = dialect.CreateUuidv5Function(schema);
 
         var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
-        Uuidv5ParityTestBase.InitializeDataSource(dataSource);
 
-        await using var connection = await dataSource.OpenConnectionAsync();
-
-        await using (var cmd = new NpgsqlCommand(createSchema, connection))
+        try
         {
-            await cmd.ExecuteNonQueryAsync();
+            await using var connection = await dataSource.OpenConnectionAsync();
+
+            await using (var cmd = new NpgsqlCommand(createSchema, connection))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd = new NpgsqlCommand(createExtension, connection))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            await using (var cmd = new NpgsqlCommand(createFunction, connection))
+            {
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            Uuidv5ParityTestBase.InitializeDataSource(dataSource);
         }
-
-        await using (var cmd = new NpgsqlCommand(createExtension, connection))
+        catch
         {
-            await cmd.ExecuteNonQueryAsync();
-        }
-
-        await using (var cmd = new NpgsqlCommand(createFunction, connection))
-        {
-            await cmd.ExecuteNonQueryAsync();
+            await dataSource.DisposeAsync();
+            throw;
         }
     }
 
     [OneTimeTearDown]
-    public void OneTimeTearDown()
+    public async Task OneTimeTearDown()
     {
-        Uuidv5ParityTestBase.DisposeDataSource();
+        await Uuidv5ParityTestBase.DisposeDataSourceAsync();
     }
 }

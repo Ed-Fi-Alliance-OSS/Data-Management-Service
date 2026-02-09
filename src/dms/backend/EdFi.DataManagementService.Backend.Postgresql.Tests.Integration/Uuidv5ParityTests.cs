@@ -13,8 +13,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// <summary>
 /// Parity tests that verify the PostgreSQL dms.uuidv5() helper function produces
 /// byte-for-byte identical output to the .NET Core Deterministic.Create() implementation
-/// used by ReferentialIdCalculator. Covers the "Parity test (Core vs DB compute)"
-/// requirement from the referential-identity-test-plan.
+/// used by ReferentialIdCalculator.
 /// </summary>
 public abstract class Uuidv5ParityTestBase
 {
@@ -38,10 +37,13 @@ public abstract class Uuidv5ParityTestBase
 
     internal static void InitializeDataSource(NpgsqlDataSource dataSource) => _dataSource = dataSource;
 
-    internal static void DisposeDataSource()
+    internal static async ValueTask DisposeDataSourceAsync()
     {
-        _dataSource?.Dispose();
-        _dataSource = null;
+        if (_dataSource is not null)
+        {
+            await _dataSource.DisposeAsync();
+            _dataSource = null;
+        }
     }
 
     protected Guid CoreResult { get; set; }
