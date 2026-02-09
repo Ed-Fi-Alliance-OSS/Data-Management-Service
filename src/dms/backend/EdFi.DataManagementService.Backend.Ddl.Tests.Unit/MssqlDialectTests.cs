@@ -882,6 +882,32 @@ public class Given_MssqlDialect_Create_Extension_If_Not_Exists
 }
 
 [TestFixture]
+public class Given_MssqlDialect_Create_Extension_With_Null_Name
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        try
+        {
+            var dialect = new MssqlDialect(new MssqlDialectRules());
+            dialect.CreateExtensionIfNotExists(null!);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_throw_argument_null_exception()
+    {
+        _exception.Should().BeOfType<ArgumentNullException>();
+    }
+}
+
+[TestFixture]
 public class Given_MssqlDialect_Create_Uuidv5_Function
 {
     private string _ddl = default!;

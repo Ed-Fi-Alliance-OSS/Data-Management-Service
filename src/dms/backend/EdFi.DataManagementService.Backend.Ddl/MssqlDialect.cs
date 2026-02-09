@@ -267,6 +267,8 @@ public sealed class MssqlDialect : SqlDialectBase
     /// <inheritdoc />
     public override string CreateExtensionIfNotExists(string extensionName)
     {
+        ArgumentNullException.ThrowIfNull(extensionName);
+
         // SQL Server does not have a database extension concept.
         return string.Empty;
     }

@@ -28,6 +28,10 @@ public abstract class Uuidv5ParityTestBase
     /// </summary>
     protected static readonly Guid DnsNamespace = new("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
 
+    private static readonly NpgsqlDataSource _dataSource = NpgsqlDataSource.Create(
+        Configuration.DatabaseConnectionString
+    );
+
     protected Guid CoreResult { get; set; }
     protected Guid PgResult { get; set; }
 
@@ -36,10 +40,9 @@ public abstract class Uuidv5ParityTestBase
         return Deterministic.Create(namespaceUuid, name);
     }
 
-    protected static async Task<Guid> ComputePostgres(Guid namespaceUuid, string name)
+    public static async Task<Guid> ComputePostgres(Guid namespaceUuid, string name)
     {
-        await using var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
-        await using var connection = await dataSource.OpenConnectionAsync();
+        await using var connection = await _dataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand("""SELECT dms.uuidv5($1::uuid, $2::text)""", connection);
         cmd.Parameters.AddWithValue(namespaceUuid);
         cmd.Parameters.AddWithValue(name);
@@ -47,12 +50,6 @@ public abstract class Uuidv5ParityTestBase
         var result = await cmd.ExecuteScalarAsync();
         return (Guid)result!;
     }
-
-    /// <summary>
-    /// Public accessor for tests that are not derived from this base class.
-    /// </summary>
-    public static Task<Guid> ComputePostgresPublic(Guid namespaceUuid, string name) =>
-        ComputePostgres(namespaceUuid, name);
 }
 
 [TestFixture]
@@ -145,7 +142,7 @@ public class Given_Empty_Name
     [Test]
     public async Task It_should_still_produce_a_result_in_postgres()
     {
-        var result = await Uuidv5ParityTestBase.ComputePostgresPublic(
+        var result = await Uuidv5ParityTestBase.ComputePostgres(
             Uuidv5ParityTestBase.EdFiNamespace,
             string.Empty
         );
@@ -282,28 +279,13 @@ public class Given_Same_Input_Called_Twice
     private Guid _firstCall;
     private Guid _secondCall;
 
-    private static readonly Guid _namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
     private const string Name = "determinism check";
 
     [SetUp]
     public async Task Setup()
     {
-        await using var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
-        await using var connection = await dataSource.OpenConnectionAsync();
-
-        await using (var cmd = new NpgsqlCommand("SELECT dms.uuidv5($1::uuid, $2::text)", connection))
-        {
-            cmd.Parameters.AddWithValue(_namespace);
-            cmd.Parameters.AddWithValue(Name);
-            _firstCall = (Guid)(await cmd.ExecuteScalarAsync())!;
-        }
-
-        await using (var cmd = new NpgsqlCommand("SELECT dms.uuidv5($1::uuid, $2::text)", connection))
-        {
-            cmd.Parameters.AddWithValue(_namespace);
-            cmd.Parameters.AddWithValue(Name);
-            _secondCall = (Guid)(await cmd.ExecuteScalarAsync())!;
-        }
+        _firstCall = await Uuidv5ParityTestBase.ComputePostgres(Uuidv5ParityTestBase.EdFiNamespace, Name);
+        _secondCall = await Uuidv5ParityTestBase.ComputePostgres(Uuidv5ParityTestBase.EdFiNamespace, Name);
     }
 
     [Test]
