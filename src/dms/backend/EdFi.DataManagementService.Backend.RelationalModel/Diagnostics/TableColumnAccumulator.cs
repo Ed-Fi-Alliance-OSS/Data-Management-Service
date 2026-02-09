@@ -26,6 +26,10 @@ internal sealed class TableColumnAccumulator
         Columns = new List<DbColumnModel>(table.Columns);
         Constraints = new List<TableConstraint>(table.Constraints);
 
+        var columnNames = table
+            .Columns.Select(column => column.ColumnName.Value)
+            .ToHashSet(StringComparer.Ordinal);
+
         foreach (var column in table.Columns)
         {
             _columnOrigins[column.ColumnName.Value] = new ColumnCollisionInfo(
@@ -34,12 +38,16 @@ internal sealed class TableColumnAccumulator
             );
         }
 
+        // Key columns are expected to overlap with DbTableModel.Columns because table column
+        // inventories are seeded from the key definition before any derived columns are added.
         foreach (var keyColumn in table.Key.Columns)
         {
-            _columnOrigins.TryAdd(
-                keyColumn.ColumnName.Value,
-                new ColumnCollisionInfo(keyColumn.ColumnName.Value, BuildOrigin(keyColumn.ColumnName, null))
-            );
+            if (!columnNames.Contains(keyColumn.ColumnName.Value))
+            {
+                throw new InvalidOperationException(
+                    $"Table column inventory invariant failed for '{Definition.Table}': key column '{keyColumn.ColumnName.Value}' is missing from DbTableModel.Columns."
+                );
+            }
         }
     }
 
