@@ -159,8 +159,10 @@ internal static class DescriptorPathInference
                     {
                         if (existingInfo.DescriptorResource != descriptorPathInfo.DescriptorResource)
                         {
-                            throw new InvalidOperationException(
-                                $"Descriptor path '{referencePath.Canonical}' is already defined."
+                            throw CreateDescriptorPathConflictException(
+                                referencePath,
+                                existingInfo.DescriptorResource,
+                                descriptorPathInfo.DescriptorResource
                             );
                         }
 
@@ -278,19 +280,19 @@ internal static class DescriptorPathInference
             var descriptorProjectName = RequireString(mappingObject, "projectName");
             var descriptorResourceName = RequireString(mappingObject, "resourceName");
             var descriptorJsonPath = JsonPathExpressionCompiler.Compile(descriptorPath);
+            var descriptorResource = new QualifiedResourceName(descriptorProjectName, descriptorResourceName);
 
             if (
                 !descriptorPathsByJsonPath.TryAdd(
                     descriptorJsonPath.Canonical,
-                    new DescriptorPathInfo(
-                        descriptorJsonPath,
-                        new QualifiedResourceName(descriptorProjectName, descriptorResourceName)
-                    )
+                    new DescriptorPathInfo(descriptorJsonPath, descriptorResource)
                 )
             )
             {
-                throw new InvalidOperationException(
-                    $"Descriptor path '{descriptorJsonPath.Canonical}' is already defined."
+                throw CreateDescriptorPathConflictException(
+                    descriptorJsonPath,
+                    descriptorPathsByJsonPath[descriptorJsonPath.Canonical].DescriptorResource,
+                    descriptorResource
                 );
             }
         }
@@ -342,8 +344,10 @@ internal static class DescriptorPathInference
                 )
             )
             {
-                throw new InvalidOperationException(
-                    $"Descriptor path '{identityPath.Canonical}' is already defined."
+                throw CreateDescriptorPathConflictException(
+                    identityPath,
+                    descriptorPathsByJsonPath[identityPath.Canonical].DescriptorResource,
+                    descriptorResource
                 );
             }
         }
@@ -384,6 +388,19 @@ internal static class DescriptorPathInference
 
         descriptorResourceName = RelationalNameConventions.ToPascalCase(property.Name);
         return true;
+    }
+
+    private static InvalidOperationException CreateDescriptorPathConflictException(
+        JsonPathExpression path,
+        QualifiedResourceName existingDescriptorResource,
+        QualifiedResourceName encounteredDescriptorResource
+    )
+    {
+        return new InvalidOperationException(
+            $"Descriptor path '{path.Canonical}' has conflicting descriptor resources. "
+                + $"Existing: '{FormatResource(existingDescriptorResource)}'. "
+                + $"Encountered: '{FormatResource(encounteredDescriptorResource)}'."
+        );
     }
 
     /// <summary>
