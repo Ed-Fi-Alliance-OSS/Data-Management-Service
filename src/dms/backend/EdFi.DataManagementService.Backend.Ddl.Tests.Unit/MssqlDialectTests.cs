@@ -966,8 +966,11 @@ public class Given_MssqlDialect_Create_Uuidv5_Function
     }
 
     [Test]
-    public void It_should_convert_name_to_varchar_then_varbinary()
+    public void It_should_convert_name_to_utf8_bytes_via_collation()
     {
-        _ddl.Should().Contain("CAST(CAST(@name_text AS varchar(max)) AS varbinary(max))");
+        _ddl.Should()
+            .Contain(
+                "CAST(CAST(@name_text AS varchar(max) COLLATE Latin1_General_100_CI_AS_SC_UTF8) AS varbinary(max))"
+            );
     }
 }

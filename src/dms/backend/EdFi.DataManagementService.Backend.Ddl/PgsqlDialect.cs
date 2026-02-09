@@ -254,7 +254,7 @@ public sealed class PgsqlDialect : SqlDialectBase
     {
         ArgumentNullException.ThrowIfNull(extensionName);
 
-        return $"CREATE EXTENSION IF NOT EXISTS {extensionName};";
+        return $"CREATE EXTENSION IF NOT EXISTS {QuoteIdentifier(extensionName)};";
     }
 
     /// <inheritdoc />

@@ -292,7 +292,8 @@ public sealed class MssqlDialect : SqlDialectBase
                     + SUBSTRING(@ns_bytes, 8, 1) + SUBSTRING(@ns_bytes, 7, 1)
                     + SUBSTRING(@ns_bytes, 9, 8);
 
-                DECLARE @name_bytes varbinary(max) = CAST(CAST(@name_text AS varchar(max)) AS varbinary(max));
+                -- UTF-8 collation required to match Core (Encoding.UTF8) and PostgreSQL (convert_to ... 'UTF8')
+                DECLARE @name_bytes varbinary(max) = CAST(CAST(@name_text AS varchar(max) COLLATE Latin1_General_100_CI_AS_SC_UTF8) AS varbinary(max));
 
                 DECLARE @hash varbinary(20) = HASHBYTES('SHA1', @ns_be + @name_bytes);
 

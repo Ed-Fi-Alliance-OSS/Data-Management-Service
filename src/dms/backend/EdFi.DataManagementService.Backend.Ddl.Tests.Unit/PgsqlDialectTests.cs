@@ -828,7 +828,7 @@ public class Given_PgsqlDialect_Create_Extension_If_Not_Exists
     [Test]
     public void It_should_use_create_extension_if_not_exists_syntax()
     {
-        _ddl.Should().Be("CREATE EXTENSION IF NOT EXISTS pgcrypto;");
+        _ddl.Should().Be("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";");
     }
 }
 
