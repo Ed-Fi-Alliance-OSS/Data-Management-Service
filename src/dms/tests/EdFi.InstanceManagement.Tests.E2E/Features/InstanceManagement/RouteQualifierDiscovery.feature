@@ -25,6 +25,7 @@ Feature: Route Qualifier Discovery API
                     "dependencies": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/metadata/specifications",
                     "oauth": "http://dms-config-service:8081/connect/token/Tenant_RouteQualifier/255901/2024",
+                    "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/data",
                     "xsdMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/2024/metadata/xsd"
                 }
@@ -39,6 +40,7 @@ Feature: Route Qualifier Discovery API
                     "dependencies": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/metadata/specifications",
                     "oauth": "http://dms-config-service:8081/connect/token/Tenant_RouteQualifier/255901/{schoolYear}",
+                    "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/data",
                     "xsdMetadata": "http://localhost:8080/Tenant_RouteQualifier/255901/{schoolYear}/metadata/xsd"
                 }
@@ -53,6 +55,7 @@ Feature: Route Qualifier Discovery API
                     "dependencies": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/metadata/specifications",
                     "oauth": "http://dms-config-service:8081/connect/token/Tenant_RouteQualifier/{districtId}/{schoolYear}",
+                    "tokenInfo": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/data",
                     "xsdMetadata": "http://localhost:8080/Tenant_RouteQualifier/{districtId}/{schoolYear}/metadata/xsd"
                 }
@@ -67,6 +70,7 @@ Feature: Route Qualifier Discovery API
                     "dependencies": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/dependencies",
                     "openApiMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/specifications",
                     "oauth": "http://dms-config-service:8081/connect/token/{tenant}/{districtId}/{schoolYear}",
+                    "tokenInfo": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/oauth/token_info",
                     "dataManagementApi": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/data",
                     "xsdMetadata": "http://localhost:8080/{tenant}/{districtId}/{schoolYear}/metadata/xsd"
                 }
