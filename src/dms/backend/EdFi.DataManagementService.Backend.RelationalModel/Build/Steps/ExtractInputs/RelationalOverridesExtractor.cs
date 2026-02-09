@@ -224,6 +224,8 @@ internal static class RelationalOverridesExtractor
                 );
             }
 
+            // Normalized override names can be reserved SQL words (for example, "Select").
+            // This is safe because emitted DDL always quotes identifiers; see DdlIdentifierQuotingTests.
             var normalizedOverride = RelationalNameConventions.ToPascalCase(overrideText);
 
             if (string.IsNullOrWhiteSpace(normalizedOverride))

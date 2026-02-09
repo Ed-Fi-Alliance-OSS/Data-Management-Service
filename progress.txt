@@ -186,3 +186,7 @@
   Decisions: Reworded BuildOriginKey XML doc to remove ambiguous "optionally" language; comment now states shared descriptor origin collapsing happens when `isSharedDescriptorElement` predicate returns true. No behavior changes.
   Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Diagnostics/CollisionDetectorCore.cs; tasks.json; progress.txt
   Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed (307/307); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded with existing SyntheticTests warning + transient MSB3026 copy-retry warnings.
+- Task: PR 816 review - reserved-word override docs in RelationalOverridesExtractor (DMS-931 story 02-naming-and-overrides.md)
+  Decisions: Added doc-only comment at nameOverrides normalization: reserved SQL-word outputs are allowed because DDL emitter always quotes identifiers; pointed to DdlIdentifierQuotingTests for coverage. No behavior change.
+  Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/RelationalOverridesExtractor.cs; tasks.json; progress.txt
+  Notes: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj passed (307/307); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln succeeded (existing SyntheticTests warning only).

@@ -479,7 +479,7 @@
       "Add a short comment in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/Steps/ExtractInputs/RelationalOverridesExtractor.cs` near override normalization documenting that reserved words are allowed because identifiers are quoted in DDL emission (cross-reference `DdlIdentifierQuotingTests`).",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Documentation",
