@@ -210,12 +210,7 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
 
         if (Kind == ConstraintIdentityKind.ForeignKey)
         {
-            if (TargetTable is null || other.TargetTable is null)
-            {
-                return false;
-            }
-
-            if (!TargetTable.Value.Equals(other.TargetTable.Value))
+            if (!GetRequiredForeignKeyTargetTable().Equals(other.GetRequiredForeignKeyTargetTable()))
             {
                 return false;
             }
@@ -262,7 +257,7 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
 
         if (Kind == ConstraintIdentityKind.ForeignKey)
         {
-            hash.Add(TargetTable.GetValueOrDefault());
+            hash.Add(GetRequiredForeignKeyTargetTable());
             AddColumns(ref hash, TargetColumns);
             hash.Add(OnDelete);
             hash.Add(OnUpdate);
@@ -295,5 +290,17 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
     private static DbColumnName[] CopyColumns(IReadOnlyList<DbColumnName> columns)
     {
         return columns.Count == 0 ? Array.Empty<DbColumnName>() : columns.ToArray();
+    }
+
+    private DbTableName GetRequiredForeignKeyTargetTable()
+    {
+        if (TargetTable is not null)
+        {
+            return TargetTable.Value;
+        }
+
+        throw new InvalidOperationException(
+            $"Constraint identity of kind {ConstraintIdentityKind.ForeignKey} for table '{Table}' requires a non-null {nameof(TargetTable)}."
+        );
     }
 }
