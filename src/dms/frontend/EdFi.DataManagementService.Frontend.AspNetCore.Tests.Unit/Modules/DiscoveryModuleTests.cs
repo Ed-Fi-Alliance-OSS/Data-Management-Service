@@ -65,7 +65,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
         apiDetails?["applicationName"]?.GetValue<string>().Should().Be("DMS");
         apiDetails?["informationalVersion"]?.GetValue<string>().Should().Be("Release Candidate 1");
         apiDetails?["dataModels"].Should().NotBeNull();
@@ -123,7 +123,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
         var dependenciesUrl = apiDetails?["urls"]?["dependencies"];
         dependenciesUrl.Should().NotBeNull();
         dependenciesUrl?.GetValue<string>().Should().Contain(pathBase);
@@ -188,7 +188,7 @@ public class DiscoveryModuleTests
         // Assert
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         apiDetails.Should().NotBeNull();
-        apiDetails?["urls"]?.AsObject().Count.Should().Be(5);
+        apiDetails?["urls"]?.AsObject().Count.Should().Be(6);
         // Verify URLs include tenant
         apiDetails?["urls"]?["dataManagementApi"]?.GetValue<string>().Should().Contain("valid-tenant");
     }
