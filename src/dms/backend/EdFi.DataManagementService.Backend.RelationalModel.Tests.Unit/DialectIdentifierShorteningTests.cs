@@ -64,6 +64,39 @@ public class Given_Mssql_Identifier_Shortening
 }
 
 /// <summary>
+/// Test fixture for cross-dialect identifier shortening behavior.
+/// </summary>
+[TestFixture]
+public class Given_Cross_Dialect_Identifier_Shortening
+{
+    private static readonly string LongIdentifier = $"CrossDialectIdentifier{new string('A', 80)}";
+
+    /// <summary>
+    /// It should produce different shortened values for Pgsql and Mssql limits.
+    /// </summary>
+    [Test]
+    public void It_should_produce_different_shortened_values_for_pgsql_and_mssql_limits()
+    {
+        var pgsqlRules = new PgsqlDialectRules();
+        var mssqlRules = new MssqlDialectRules();
+
+        LongIdentifier.Length.Should().BeGreaterThan(pgsqlRules.MaxIdentifierLength);
+        LongIdentifier.Length.Should().BeLessThanOrEqualTo(mssqlRules.MaxIdentifierLength);
+
+        var pgsqlShortened = pgsqlRules.ShortenIdentifier(LongIdentifier);
+        var mssqlShortened = mssqlRules.ShortenIdentifier(LongIdentifier);
+
+        pgsqlShortened.Should().NotBe(LongIdentifier);
+        mssqlShortened.Should().Be(LongIdentifier);
+        pgsqlShortened.Should().NotBe(mssqlShortened);
+        pgsqlShortened.Length.Should().BeLessThanOrEqualTo(pgsqlRules.MaxIdentifierLength);
+        mssqlShortened.Length.Should().BeLessThanOrEqualTo(mssqlRules.MaxIdentifierLength);
+        pgsqlRules.ShortenIdentifier(LongIdentifier).Should().Be(pgsqlShortened);
+        mssqlRules.ShortenIdentifier(LongIdentifier).Should().Be(mssqlShortened);
+    }
+}
+
+/// <summary>
 /// Test fixture for schema shortening with a small identifier limit.
 /// </summary>
 [TestFixture]
