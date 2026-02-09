@@ -9,6 +9,7 @@ using System.IO;
 using System.Reflection;
 using System.Xml;
 using System.Xml.Schema;
+using EdFi.DmsConfigurationService.DataModel;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Profile;
 
@@ -52,9 +53,16 @@ public static class ProfileValidationUtils
     {
         try
         {
-            var path = new Uri(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!).LocalPath;
+            var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            if (string.IsNullOrEmpty(assemblyDirectory))
+            {
+                return new ProfileXmlValidationResult(
+                    false,
+                    ["Unable to determine assembly directory for schema validation."]
+                );
+            }
             var schemas = new XmlSchemaSet();
-            schemas.Add("", Path.Combine(path, "Schema", "Ed-Fi-ODS-API-Profile.xsd"));
+            schemas.Add("", Path.Combine(assemblyDirectory, "Schema", "Ed-Fi-ODS-API-Profile.xsd"));
 
             var errors = new List<string>();
             bool isValid = true;
@@ -82,7 +90,8 @@ public static class ProfileValidationUtils
         }
         catch (Exception ex)
         {
-            return new ProfileXmlValidationResult(false, [$"XML parsing error: {ex.Message}"]);
+            string sanitizedMessage = LoggingUtility.SanitizeForLog(ex.Message);
+            return new ProfileXmlValidationResult(false, [$"XML parsing error: {sanitizedMessage}"]);
         }
     }
 

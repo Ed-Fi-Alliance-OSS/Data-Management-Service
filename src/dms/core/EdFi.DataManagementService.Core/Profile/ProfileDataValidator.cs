@@ -77,7 +77,12 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
             logger.Log(
                 logLevel,
                 "Profile validation {Severity}: {Message} (Profile: {ProfileName}, Resource: {ResourceName}, Member: {MemberName})",
-                failure.Severity.ToString().ToLower(),
+                failure.Severity switch
+                {
+                    ValidationSeverity.Error => "error",
+                    ValidationSeverity.Warning => "warning",
+                    _ => "unknown",
+                },
                 sanitizedMessage,
                 sanitizedFailureProfile,
                 sanitizedResource,
@@ -109,7 +114,7 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
     {
         var failures = new List<ValidationFailure>();
         var apiSchemaDocuments = effectiveApiSchemaProvider.Documents;
-        var projectSchemas = GetProjectSchemas(apiSchemaDocuments).ToList();
+        var projectSchemas = GetProjectSchemas(apiSchemaDocuments);
 
         foreach (var resourceProfile in profileDefinition.Resources)
         {

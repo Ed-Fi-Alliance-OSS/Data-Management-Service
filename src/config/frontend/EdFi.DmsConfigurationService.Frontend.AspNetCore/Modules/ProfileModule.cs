@@ -57,9 +57,21 @@ public class ProfileModule : IEndpointModule
     )
     {
         var results = await repository.QueryProfiles(query);
+        var validationCache = new Dictionary<long, bool>();
         var profiles = results
             .OfType<ProfileGetResult.Success>()
-            .Where(r => IsProfileValid(r.Profile, logger, " and will be excluded from results"))
+            .Where(r =>
+            {
+                if (!validationCache.ContainsKey(r.Profile.Id))
+                {
+                    validationCache[r.Profile.Id] = IsProfileValid(
+                        r.Profile,
+                        logger,
+                        " and will be excluded from results"
+                    );
+                }
+                return validationCache[r.Profile.Id];
+            })
             .Select(r => new ProfileListResponse { Id = r.Profile.Id, Name = r.Profile.Name })
             .ToList();
         if (profiles.Count > 0)

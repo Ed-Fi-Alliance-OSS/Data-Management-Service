@@ -87,8 +87,8 @@ ExcludeOnly profiles specify which data elements are excluded. Non-existent refe
 #### Identity Member Exclusion
 
 - **Rule**: Identity members cannot be excluded
-- **Severity**: Error
-- **Example**: `<Property name="schoolId">` (identity) cannot be excluded - blocks profile loading
+- **Severity**: Warning
+- **Example**: `<Property name="schoolId">` (identity) cannot be excluded - logs a warning but profile still loads
 
 ## General Validation Rules
 
