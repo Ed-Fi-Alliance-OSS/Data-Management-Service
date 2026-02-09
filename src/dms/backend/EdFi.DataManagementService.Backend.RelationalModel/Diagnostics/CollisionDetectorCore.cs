@@ -123,8 +123,8 @@ internal sealed class CollisionDetectorCore
     }
 
     /// <summary>
-    /// Builds a de-duplication key for a collision origin, optionally collapsing known shared descriptor
-    /// elements across resources.
+    /// Builds a de-duplication key for a collision origin, collapsing shared descriptor elements across
+    /// resources when <paramref name="isSharedDescriptorElement"/> returns true.
     /// </summary>
     private static (string Description, string ResourceLabel, string JsonPath) BuildOriginKey(
         IdentifierCollisionScope scope,

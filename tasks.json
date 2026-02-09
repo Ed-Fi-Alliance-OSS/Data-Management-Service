@@ -488,7 +488,7 @@
       "Update the comment in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Diagnostics/CollisionDetectorCore.cs` to remove ambiguity and match behavior.",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Diagnostics",
