@@ -3785,7 +3785,7 @@
           "constraints": [
             {
               "kind": "Unique",
-              "name": "UX_StudentSchoolAssociationEducationPlan_StudentScho_ded71a8fc2",
+              "name": "UX_StudentSchoolAssociationEducationPlan_EducationPl_ded71a8fc2",
               "columns": [
                 "StudentSchoolAssociation_DocumentId",
                 "EducationPlanDescriptor_DescriptorId"

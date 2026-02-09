@@ -213,3 +213,47 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
         return Convert.ToHexString(hash).ToLowerInvariant()[..10];
     }
 }
+
+/// <summary>
+/// Test fixture for deterministic array uniqueness naming regardless of input order.
+/// </summary>
+[TestFixture]
+public class Given_Array_Uniqueness_Constraint_Columns_With_Swapped_Order
+{
+    /// <summary>
+    /// It should generate the same unique name for equivalent column sets in different orders.
+    /// </summary>
+    [Test]
+    public void It_should_generate_the_same_unique_name_for_equivalent_column_sets()
+    {
+        var table = new DbTableName(new DbSchemaName("edfi"), "Association");
+
+        var columnsInOriginalOrder = new[]
+        {
+            new DbColumnName("Student_LastSurname"),
+            new DbColumnName("Section_SchoolId"),
+            new DbColumnName("Student_FirstName"),
+        };
+
+        var columnsInSwappedOrder = new[]
+        {
+            new DbColumnName("Student_FirstName"),
+            new DbColumnName("Student_LastSurname"),
+            new DbColumnName("Section_SchoolId"),
+        };
+
+        var uniqueNameInOriginalOrder = ConstraintNaming.BuildArrayUniquenessName(
+            table,
+            columnsInOriginalOrder
+        );
+        var uniqueNameInSwappedOrder = ConstraintNaming.BuildArrayUniquenessName(
+            table,
+            columnsInSwappedOrder
+        );
+
+        uniqueNameInOriginalOrder.Should().Be(uniqueNameInSwappedOrder);
+        uniqueNameInOriginalOrder
+            .Should()
+            .Be("UX_Association_Section_SchoolId_Student_FirstName_LastSurname");
+    }
+}

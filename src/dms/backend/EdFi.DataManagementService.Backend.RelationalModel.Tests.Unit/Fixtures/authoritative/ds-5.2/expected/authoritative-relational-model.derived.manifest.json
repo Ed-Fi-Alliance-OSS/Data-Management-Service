@@ -1934,7 +1934,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentItemPossibleRespons_AssessmentItem_Docu_a4dc68f7c7",
+                "name": "UX_AssessmentItemPossibleRespons_ResponseValue_Asses_a4dc68f7c7",
                 "columns": [
                   "AssessmentItem_DocumentId",
                   "ResponseValue"
@@ -2779,7 +2779,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentAcademicSubject_Assessment_DocumentId_A_55a54903f9",
+                "name": "UX_AssessmentAcademicSubject_AcademicSubjectDescript_55a54903f9",
                 "columns": [
                   "Assessment_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -2952,7 +2952,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_AssessmentAuthor_Assessment_DocumentId_Author",
+                "name": "UX_AssessmentAuthor_Author_Assessment_DocumentId",
                 "columns": [
                   "Assessment_DocumentId",
                   "Author"
@@ -4706,7 +4706,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_BellScheduleDate_BellSchedule_DocumentId_Date",
+                "name": "UX_BellScheduleDate_Date_BellSchedule_DocumentId",
                 "columns": [
                   "BellSchedule_DocumentId",
                   "Date"
@@ -6431,7 +6431,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ClassPeriodMeetingTime_ClassPeriod_DocumentId_End_786d688d6f",
+                "name": "UX_ClassPeriodMeetingTime_EndTime_StartTime_ClassPer_786d688d6f",
                 "columns": [
                   "ClassPeriod_DocumentId",
                   "EndTime",
@@ -7221,7 +7221,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityOrganizationAddress_CommunityOrganizatio_d71814df77",
+                "name": "UX_CommunityOrganizationAddress_City_PostalCode_Stre_d71814df77",
                 "columns": [
                   "CommunityOrganization_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -7864,7 +7864,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityOrganizationInternationalAddress_Communi_320066eeeb",
+                "name": "UX_CommunityOrganizationInternationalAddress_Address_320066eeeb",
                 "columns": [
                   "CommunityOrganization_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -7988,7 +7988,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityOrganizationAddressPeriod_CommunityOrgan_66e9921271",
+                "name": "UX_CommunityOrganizationAddressPeriod_AddressOrdinal_66e9921271",
                 "columns": [
                   "CommunityOrganization_DocumentId",
                   "AddressOrdinal",
@@ -8083,7 +8083,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityOrganizationIndicatorPeriod_CommunityOrg_0f3699d61f",
+                "name": "UX_CommunityOrganizationIndicatorPeriod_BeginDate_In_0f3699d61f",
                 "columns": [
                   "CommunityOrganization_DocumentId",
                   "IndicatorOrdinal",
@@ -8970,7 +8970,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityProviderAddress_CommunityProvider_Docume_953d75d754",
+                "name": "UX_CommunityProviderAddress_City_PostalCode_StreetNu_953d75d754",
                 "columns": [
                   "CommunityProvider_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -9613,7 +9613,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityProviderInternationalAddress_CommunityPr_95703a08f6",
+                "name": "UX_CommunityProviderInternationalAddress_AddressType_95703a08f6",
                 "columns": [
                   "CommunityProvider_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -9737,7 +9737,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityProviderAddressPeriod_CommunityProvider__a48c838b35",
+                "name": "UX_CommunityProviderAddressPeriod_AddressOrdinal_Beg_a48c838b35",
                 "columns": [
                   "CommunityProvider_DocumentId",
                   "AddressOrdinal",
@@ -9832,7 +9832,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CommunityProviderIndicatorPeriod_CommunityProvide_3b986e391c",
+                "name": "UX_CommunityProviderIndicatorPeriod_BeginDate_Indica_3b986e391c",
                 "columns": [
                   "CommunityProvider_DocumentId",
                   "IndicatorOrdinal",
@@ -10756,7 +10756,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ContactAddress_Contact_DocumentId_AddressTypeDesc_e8e80fdb6a",
+                "name": "UX_ContactAddress_City_PostalCode_StreetNumberName_A_e8e80fdb6a",
                 "columns": [
                   "Contact_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -10906,7 +10906,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ContactElectronicMail_Contact_DocumentId_Electron_ed1fae2465",
+                "name": "UX_ContactElectronicMail_ElectronicMailAddress_Conta_ed1fae2465",
                 "columns": [
                   "Contact_DocumentId",
                   "ElectronicMailAddress",
@@ -11080,7 +11080,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ContactInternationalAddress_Contact_DocumentId_Ad_25c947dcf4",
+                "name": "UX_ContactInternationalAddress_AddressTypeDescriptor_25c947dcf4",
                 "columns": [
                   "Contact_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -11617,7 +11617,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ContactTelephone_Contact_DocumentId_TelephoneNumb_a0c4b5a39e",
+                "name": "UX_ContactTelephone_TelephoneNumber_Contact_Document_a0c4b5a39e",
                 "columns": [
                   "Contact_DocumentId",
                   "TelephoneNumber",
@@ -11726,7 +11726,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ContactAddressPeriod_Contact_DocumentId_AddressOr_804d3ddc1b",
+                "name": "UX_ContactAddressPeriod_AddressOrdinal_BeginDate_Con_804d3ddc1b",
                 "columns": [
                   "Contact_DocumentId",
                   "AddressOrdinal",
@@ -11812,7 +11812,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ContactLanguageUs_Contact_DocumentId_LanguageOrdi_e9c6b31698",
+                "name": "UX_ContactLanguageUs_LanguageOrdinal_Contact_Documen_e9c6b31698",
                 "columns": [
                   "Contact_DocumentId",
                   "LanguageOrdinal",
@@ -12511,7 +12511,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseOfferingCourseLevelCharacteristic_CourseOff_2820839f6a",
+                "name": "UX_CourseOfferingCourseLevelCharacteristic_CourseLev_2820839f6a",
                 "columns": [
                   "CourseOffering_DocumentId",
                   "CourseLevelCharacteristicDescriptor_DescriptorId"
@@ -13395,7 +13395,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseTranscriptAcademicSubject_CourseTranscript__5d08deb079",
+                "name": "UX_CourseTranscriptAcademicSubject_AcademicSubjectDe_5d08deb079",
                 "columns": [
                   "CourseTranscript_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -13832,7 +13832,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseTranscriptEarnedAdditionalCredits_CourseTra_cb429c36fa",
+                "name": "UX_CourseTranscriptEarnedAdditionalCredits_Additiona_cb429c36fa",
                 "columns": [
                   "CourseTranscript_DocumentId",
                   "AdditionalCreditTypeDescriptor_DescriptorId"
@@ -13958,7 +13958,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseTranscriptPartialCourseTranscriptAwards_Cou_c46bbb080f",
+                "name": "UX_CourseTranscriptPartialCourseTranscriptAwards_Awa_c46bbb080f",
                 "columns": [
                   "CourseTranscript_DocumentId",
                   "AwardDate"
@@ -14722,7 +14722,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseAcademicSubject_Course_DocumentId_AcademicS_258d86b3b7",
+                "name": "UX_CourseAcademicSubject_AcademicSubjectDescriptor_D_258d86b3b7",
                 "columns": [
                   "Course_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -14808,7 +14808,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CourseCompetencyLevel_Course_DocumentId_Competenc_af7ea0c320",
+                "name": "UX_CourseCompetencyLevel_CompetencyLevelDescriptor_D_af7ea0c320",
                 "columns": [
                   "Course_DocumentId",
                   "CompetencyLevelDescriptor_DescriptorId"
@@ -15683,7 +15683,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CredentialAcademicSubject_Credential_DocumentId_A_b3c5cb7d44",
+                "name": "UX_CredentialAcademicSubject_AcademicSubjectDescript_b3c5cb7d44",
                 "columns": [
                   "Credential_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -15770,7 +15770,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_CredentialEndorsement_Credential_DocumentId_Crede_348e03e2b5",
+                "name": "UX_CredentialEndorsement_CredentialEndorsement_Crede_348e03e2b5",
                 "columns": [
                   "Credential_DocumentId",
                   "CredentialEndorsement"
@@ -17490,7 +17490,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_DisciplineIncidentBehavior_DisciplineIncident_Doc_070583410c",
+                "name": "UX_DisciplineIncidentBehavior_BehaviorDescriptor_Des_070583410c",
                 "columns": [
                   "DisciplineIncident_DocumentId",
                   "BehaviorDescriptor_DescriptorId"
@@ -17596,7 +17596,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_DisciplineIncidentExternalParticipant_DisciplineI_5945b94f16",
+                "name": "UX_DisciplineIncidentExternalParticipant_FirstName_L_5945b94f16",
                 "columns": [
                   "DisciplineIncident_DocumentId",
                   "DisciplineIncidentParticipationCodeDescriptor_DescriptorId",
@@ -18369,7 +18369,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationContentAuthor_EducationContent_DocumentId_Author",
+                "name": "UX_EducationContentAuthor_Author_EducationContent_DocumentId",
                 "columns": [
                   "EducationContent_DocumentId",
                   "Author"
@@ -18609,7 +18609,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationContentDerivativeSourceURI_EducationCont_203dcc70bf",
+                "name": "UX_EducationContentDerivativeSourceURI_DerivativeSou_203dcc70bf",
                 "columns": [
                   "EducationContent_DocumentId",
                   "DerivativeSourceURI"
@@ -19523,7 +19523,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationOrganizationNetworkAddress_EducationOrga_27a935cbcb",
+                "name": "UX_EducationOrganizationNetworkAddress_City_PostalCo_27a935cbcb",
                 "columns": [
                   "EducationOrganizationNetwork_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -20290,7 +20290,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationOrganizationNetworkAddressPeriod_Educati_1a55c0a94c",
+                "name": "UX_EducationOrganizationNetworkAddressPeriod_Address_1a55c0a94c",
                 "columns": [
                   "EducationOrganizationNetwork_DocumentId",
                   "AddressOrdinal",
@@ -20385,7 +20385,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationOrganizationNetworkIndicatorPeriod_Educa_d20d820174",
+                "name": "UX_EducationOrganizationNetworkIndicatorPeriod_Begin_d20d820174",
                 "columns": [
                   "EducationOrganizationNetwork_DocumentId",
                   "IndicatorOrdinal",
@@ -21098,7 +21098,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationServiceCenterAddress_EducationServiceCen_d6a467a3df",
+                "name": "UX_EducationServiceCenterAddress_City_PostalCode_Str_d6a467a3df",
                 "columns": [
                   "EducationServiceCenter_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -21220,7 +21220,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationServiceCenterCategory_EducationServiceCe_fe61275ffc",
+                "name": "UX_EducationServiceCenterCategory_EducationOrganizat_fe61275ffc",
                 "columns": [
                   "EducationServiceCenter_DocumentId",
                   "EducationOrganizationCategoryDescriptor_DescriptorId"
@@ -21741,7 +21741,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationServiceCenterInternationalAddress_Educat_2df23d9c25",
+                "name": "UX_EducationServiceCenterInternationalAddress_Addres_2df23d9c25",
                 "columns": [
                   "EducationServiceCenter_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -21865,7 +21865,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationServiceCenterAddressPeriod_EducationServ_b984eaf6f4",
+                "name": "UX_EducationServiceCenterAddressPeriod_AddressOrdina_b984eaf6f4",
                 "columns": [
                   "EducationServiceCenter_DocumentId",
                   "AddressOrdinal",
@@ -21960,7 +21960,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_EducationServiceCenterIndicatorPeriod_EducationSe_6b1c95bf55",
+                "name": "UX_EducationServiceCenterIndicatorPeriod_BeginDate_I_6b1c95bf55",
                 "columns": [
                   "EducationServiceCenter_DocumentId",
                   "IndicatorOrdinal",
@@ -25019,7 +25019,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_GraduationPlanCreditsByCours_GraduationPlan_Docum_061d2d698a",
+                "name": "UX_GraduationPlanCreditsByCours_CourseSetName_Gradua_061d2d698a",
                 "columns": [
                   "GraduationPlan_DocumentId",
                   "CourseSetName"
@@ -25152,7 +25152,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_GraduationPlanCreditsByCreditCategory_GraduationP_d72eebb787",
+                "name": "UX_GraduationPlanCreditsByCreditCategory_CreditCateg_d72eebb787",
                 "columns": [
                   "GraduationPlan_DocumentId",
                   "CreditCategoryDescriptor_DescriptorId"
@@ -25285,7 +25285,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_GraduationPlanCreditsBySubject_GraduationPlan_Doc_84b3f31eab",
+                "name": "UX_GraduationPlanCreditsBySubject_AcademicSubjectDes_84b3f31eab",
                 "columns": [
                   "GraduationPlan_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -25778,7 +25778,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_GraduationPlanRequiredAssessmentScore_GraduationP_173a5aab54",
+                "name": "UX_GraduationPlanRequiredAssessmentScore_RequiredAss_173a5aab54",
                 "columns": [
                   "GraduationPlan_DocumentId",
                   "RequiredAssessmentOrdinal",
@@ -26495,7 +26495,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionPrescriptionAppropriateGradeLevel_Int_e09e6f005a",
+                "name": "UX_InterventionPrescriptionAppropriateGradeLevel_Gra_e09e6f005a",
                 "columns": [
                   "InterventionPrescription_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -26667,7 +26667,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionPrescriptionDiagnos_InterventionPresc_1f7c5bd11b",
+                "name": "UX_InterventionPrescriptionDiagnos_DiagnosisDescript_1f7c5bd11b",
                 "columns": [
                   "InterventionPrescription_DocumentId",
                   "DiagnosisDescriptor_DescriptorId"
@@ -27009,7 +27009,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionPrescriptionUri_InterventionPrescript_e094abaede",
+                "name": "UX_InterventionPrescriptionUri_Uri_InterventionPresc_e094abaede",
                 "columns": [
                   "InterventionPrescription_DocumentId",
                   "Uri"
@@ -27391,7 +27391,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionStudyAppropriateGradeLevel_Interventi_d06ac47522",
+                "name": "UX_InterventionStudyAppropriateGradeLevel_GradeLevel_d06ac47522",
                 "columns": [
                   "InterventionStudy_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -27697,7 +27697,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionStudyInterventionEffectiveness_Interv_d84d897426",
+                "name": "UX_InterventionStudyInterventionEffectiveness_Diagno_d84d897426",
                 "columns": [
                   "InterventionStudy_DocumentId",
                   "DiagnosisDescriptor_DescriptorId",
@@ -27834,7 +27834,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionStudyLearningResourceMetadataURI_Inte_cefb93e309",
+                "name": "UX_InterventionStudyLearningResourceMetadataURI_Lear_cefb93e309",
                 "columns": [
                   "InterventionStudy_DocumentId",
                   "LearningResourceMetadataURI"
@@ -28077,7 +28077,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionStudyUri_InterventionStudy_DocumentId_Uri",
+                "name": "UX_InterventionStudyUri_Uri_InterventionStudy_DocumentId",
                 "columns": [
                   "InterventionStudy_DocumentId",
                   "Uri"
@@ -28500,7 +28500,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionAppropriateGradeLevel_Intervention_Do_76e6cdb6a4",
+                "name": "UX_InterventionAppropriateGradeLevel_GradeLevelDescr_76e6cdb6a4",
                 "columns": [
                   "Intervention_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -28672,7 +28672,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionDiagnos_Intervention_DocumentId_Diagn_1fcc7db5bb",
+                "name": "UX_InterventionDiagnos_DiagnosisDescriptor_Descripto_1fcc7db5bb",
                 "columns": [
                   "Intervention_DocumentId",
                   "DiagnosisDescriptor_DescriptorId"
@@ -28967,7 +28967,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionLearningResourceMetadataURI_Intervent_0624dd9614",
+                "name": "UX_InterventionLearningResourceMetadataURI_LearningR_0624dd9614",
                 "columns": [
                   "Intervention_DocumentId",
                   "LearningResourceMetadataURI"
@@ -29046,7 +29046,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionMeetingTime_Intervention_DocumentId_E_f76714e7d6",
+                "name": "UX_InterventionMeetingTime_EndTime_StartTime_Interve_f76714e7d6",
                 "columns": [
                   "Intervention_DocumentId",
                   "EndTime",
@@ -29302,7 +29302,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_InterventionUri_Intervention_DocumentId_Uri",
+                "name": "UX_InterventionUri_Uri_Intervention_DocumentId",
                 "columns": [
                   "Intervention_DocumentId",
                   "Uri"
@@ -30127,7 +30127,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LearningStandardAcademicSubject_LearningStandard__a2d19f6d74",
+                "name": "UX_LearningStandardAcademicSubject_AcademicSubjectDe_a2d19f6d74",
                 "columns": [
                   "LearningStandard_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -30214,7 +30214,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LearningStandardAuthor_LearningStandard_DocumentId_Author",
+                "name": "UX_LearningStandardAuthor_Author_LearningStandard_DocumentId",
                 "columns": [
                   "LearningStandard_DocumentId",
                   "Author"
@@ -30284,7 +30284,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LearningStandardGradeLevel_LearningStandard_Docum_ff015843f5",
+                "name": "UX_LearningStandardGradeLevel_GradeLevelDescriptor_D_ff015843f5",
                 "columns": [
                   "LearningStandard_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -30381,7 +30381,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LearningStandardIdentificationCode_LearningStanda_07e0325fcd",
+                "name": "UX_LearningStandardIdentificationCode_ContentStandar_07e0325fcd",
                 "columns": [
                   "LearningStandard_DocumentId",
                   "ContentStandardName",
@@ -32117,7 +32117,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyAddress_LocalEducationAgency__c2fc329650",
+                "name": "UX_LocalEducationAgencyAddress_City_PostalCode_Stree_c2fc329650",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -32239,7 +32239,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyCategory_LocalEducationAgency_99bd89dd4e",
+                "name": "UX_LocalEducationAgencyCategory_EducationOrganizatio_99bd89dd4e",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "EducationOrganizationCategoryDescriptor_DescriptorId"
@@ -32413,7 +32413,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyFederalFunds_LocalEducationAg_60ebb1ef7e",
+                "name": "UX_LocalEducationAgencyFederalFunds_FiscalYear_Local_60ebb1ef7e",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "FiscalYear"
@@ -32493,7 +32493,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyIdentificationCode_LocalEduca_f71ca68ab2",
+                "name": "UX_LocalEducationAgencyIdentificationCode_EducationO_f71ca68ab2",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"
@@ -32617,7 +32617,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyIndicator_LocalEducationAgenc_f833e7bd73",
+                "name": "UX_LocalEducationAgencyIndicator_IndicatorDescriptor_f833e7bd73",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "IndicatorDescriptor_DescriptorId"
@@ -32745,7 +32745,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyInstitutionTelephone_LocalEdu_4a68c151c0",
+                "name": "UX_LocalEducationAgencyInstitutionTelephone_Institut_4a68c151c0",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"
@@ -32918,7 +32918,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyInternationalAddress_LocalEdu_65b83baa0f",
+                "name": "UX_LocalEducationAgencyInternationalAddress_AddressT_65b83baa0f",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -33042,7 +33042,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyAddressPeriod_LocalEducationA_0fd8ff26fd",
+                "name": "UX_LocalEducationAgencyAddressPeriod_AddressOrdinal__0fd8ff26fd",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "AddressOrdinal",
@@ -33137,7 +33137,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_LocalEducationAgencyIndicatorPeriod_LocalEducatio_ecf719d682",
+                "name": "UX_LocalEducationAgencyIndicatorPeriod_BeginDate_Ind_ecf719d682",
                 "columns": [
                   "LocalEducationAgency_DocumentId",
                   "IndicatorOrdinal",
@@ -34909,7 +34909,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ObjectiveAssessmentPerformanceLevel_ObjectiveAsse_a7a5e8b2a9",
+                "name": "UX_ObjectiveAssessmentPerformanceLevel_AssessmentRep_a7a5e8b2a9",
                 "columns": [
                   "ObjectiveAssessment_DocumentId",
                   "AssessmentReportingMethodDescriptor_DescriptorId",
@@ -35057,7 +35057,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ObjectiveAssessmentScore_ObjectiveAssessment_Docu_ee59796298",
+                "name": "UX_ObjectiveAssessmentScore_AssessmentReportingMetho_ee59796298",
                 "columns": [
                   "ObjectiveAssessment_DocumentId",
                   "AssessmentReportingMethodDescriptor_DescriptorId"
@@ -35483,7 +35483,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OpenStaffPositionAcademicSubject_OpenStaffPositio_fb85ce61a9",
+                "name": "UX_OpenStaffPositionAcademicSubject_AcademicSubjectD_fb85ce61a9",
                 "columns": [
                   "OpenStaffPosition_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -35569,7 +35569,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OpenStaffPositionInstructionalGradeLevel_OpenStaf_f8b6d5d312",
+                "name": "UX_OpenStaffPositionInstructionalGradeLevel_GradeLev_f8b6d5d312",
                 "columns": [
                   "OpenStaffPosition_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -36271,7 +36271,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentAddress_OrganizationDepartm_6b17494ddd",
+                "name": "UX_OrganizationDepartmentAddress_City_PostalCode_Str_6b17494ddd",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -36393,7 +36393,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentCategory_OrganizationDepart_fe828c4e3d",
+                "name": "UX_OrganizationDepartmentCategory_EducationOrganizat_fe828c4e3d",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "EducationOrganizationCategoryDescriptor_DescriptorId"
@@ -36489,7 +36489,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentIdentificationCode_Organiza_7b150114ab",
+                "name": "UX_OrganizationDepartmentIdentificationCode_Educatio_7b150114ab",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"
@@ -36613,7 +36613,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentIndicator_OrganizationDepar_1c484cb2d4",
+                "name": "UX_OrganizationDepartmentIndicator_IndicatorDescript_1c484cb2d4",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "IndicatorDescriptor_DescriptorId"
@@ -36741,7 +36741,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentInstitutionTelephone_Organi_12e9ac27b2",
+                "name": "UX_OrganizationDepartmentInstitutionTelephone_Instit_12e9ac27b2",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"
@@ -36914,7 +36914,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentInternationalAddress_Organi_56606da756",
+                "name": "UX_OrganizationDepartmentInternationalAddress_Addres_56606da756",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -37038,7 +37038,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentAddressPeriod_OrganizationD_5b104d25d3",
+                "name": "UX_OrganizationDepartmentAddressPeriod_AddressOrdina_5b104d25d3",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "AddressOrdinal",
@@ -37133,7 +37133,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_OrganizationDepartmentIndicatorPeriod_Organizatio_c1800ddd04",
+                "name": "UX_OrganizationDepartmentIndicatorPeriod_BeginDate_I_c1800ddd04",
                 "columns": [
                   "OrganizationDepartment_DocumentId",
                   "IndicatorOrdinal",
@@ -38149,7 +38149,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionAddress_PostSecondaryInst_10a212d0db",
+                "name": "UX_PostSecondaryInstitutionAddress_City_PostalCode_S_10a212d0db",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -38271,7 +38271,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionCategory_PostSecondaryIns_add6c4803e",
+                "name": "UX_PostSecondaryInstitutionCategory_EducationOrganiz_add6c4803e",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "EducationOrganizationCategoryDescriptor_DescriptorId"
@@ -38367,7 +38367,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionIdentificationCode_PostSe_2eac965986",
+                "name": "UX_PostSecondaryInstitutionIdentificationCode_Educat_2eac965986",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"
@@ -38491,7 +38491,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionIndicator_PostSecondaryIn_0e2712e78e",
+                "name": "UX_PostSecondaryInstitutionIndicator_IndicatorDescri_0e2712e78e",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "IndicatorDescriptor_DescriptorId"
@@ -38619,7 +38619,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionInstitutionTelephone_Post_c87875ca8a",
+                "name": "UX_PostSecondaryInstitutionInstitutionTelephone_Inst_c87875ca8a",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"
@@ -38792,7 +38792,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionInternationalAddress_Post_bca2908f29",
+                "name": "UX_PostSecondaryInstitutionInternationalAddress_Addr_bca2908f29",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -38894,7 +38894,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionMediumOfInstruction_PostS_96af37a553",
+                "name": "UX_PostSecondaryInstitutionMediumOfInstruction_Mediu_96af37a553",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "MediumOfInstructionDescriptor_DescriptorId"
@@ -39002,7 +39002,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionAddressPeriod_PostSeconda_04ad3fddeb",
+                "name": "UX_PostSecondaryInstitutionAddressPeriod_AddressOrdi_04ad3fddeb",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "AddressOrdinal",
@@ -39097,7 +39097,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_PostSecondaryInstitutionIndicatorPeriod_PostSecon_63b2f065b7",
+                "name": "UX_PostSecondaryInstitutionIndicatorPeriod_BeginDate_63b2f065b7",
                 "columns": [
                   "PostSecondaryInstitution_DocumentId",
                   "IndicatorOrdinal",
@@ -42424,7 +42424,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_ReportCardGradePointAverage_ReportCard_DocumentId_f7ccda5429",
+                "name": "UX_ReportCardGradePointAverage_GradePointAverageType_f7ccda5429",
                 "columns": [
                   "ReportCard_DocumentId",
                   "GradePointAverageTypeDescriptor_DescriptorId"
@@ -44393,7 +44393,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolAddress_School_DocumentId_AddressTypeDescri_579dce1ffa",
+                "name": "UX_SchoolAddress_City_PostalCode_StreetNumberName_Ad_579dce1ffa",
                 "columns": [
                   "School_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -44515,7 +44515,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolEducationOrganizationCategory_School_Docume_520165a25c",
+                "name": "UX_SchoolEducationOrganizationCategory_EducationOrga_520165a25c",
                 "columns": [
                   "School_DocumentId",
                   "EducationOrganizationCategoryDescriptor_DescriptorId"
@@ -44601,7 +44601,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolGradeLevel_School_DocumentId_GradeLevelDesc_eda0407c32",
+                "name": "UX_SchoolGradeLevel_GradeLevelDescriptor_DescriptorI_eda0407c32",
                 "columns": [
                   "School_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -44697,7 +44697,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolIdentificationCode_School_DocumentId_Educat_9d725ee89c",
+                "name": "UX_SchoolIdentificationCode_EducationOrganizationIde_9d725ee89c",
                 "columns": [
                   "School_DocumentId",
                   "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"
@@ -44821,7 +44821,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolIndicator_School_DocumentId_IndicatorDescri_7a552118a6",
+                "name": "UX_SchoolIndicator_IndicatorDescriptor_DescriptorId__7a552118a6",
                 "columns": [
                   "School_DocumentId",
                   "IndicatorDescriptor_DescriptorId"
@@ -44949,7 +44949,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolInstitutionTelephone_School_DocumentId_Inst_99719d1596",
+                "name": "UX_SchoolInstitutionTelephone_InstitutionTelephoneNu_99719d1596",
                 "columns": [
                   "School_DocumentId",
                   "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"
@@ -45122,7 +45122,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolInternationalAddress_School_DocumentId_Addr_0b68c8b9cd",
+                "name": "UX_SchoolInternationalAddress_AddressTypeDescriptor__0b68c8b9cd",
                 "columns": [
                   "School_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -45332,7 +45332,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolAddressPeriod_School_DocumentId_AddressOrdi_59b19f56bb",
+                "name": "UX_SchoolAddressPeriod_AddressOrdinal_BeginDate_Scho_59b19f56bb",
                 "columns": [
                   "School_DocumentId",
                   "AddressOrdinal",
@@ -45427,7 +45427,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SchoolIndicatorPeriod_School_DocumentId_Indicator_b65c807fa2",
+                "name": "UX_SchoolIndicatorPeriod_BeginDate_IndicatorOrdinal__b65c807fa2",
                 "columns": [
                   "School_DocumentId",
                   "IndicatorOrdinal",
@@ -46785,7 +46785,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SectionCourseLevelCharacteristic_Section_Document_fee025c1a5",
+                "name": "UX_SectionCourseLevelCharacteristic_CourseLevelChara_fee025c1a5",
                 "columns": [
                   "Section_DocumentId",
                   "CourseLevelCharacteristicDescriptor_DescriptorId"
@@ -46871,7 +46871,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SectionOfferedGradeLevel_Section_DocumentId_Grade_072ebc9985",
+                "name": "UX_SectionOfferedGradeLevel_GradeLevelDescriptor_Des_072ebc9985",
                 "columns": [
                   "Section_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -47894,7 +47894,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SourceDimensionReportingTag_SourceDimension_Docum_c35c71ba1c",
+                "name": "UX_SourceDimensionReportingTag_ReportingTagDescripto_c35c71ba1c",
                 "columns": [
                   "SourceDimension_DocumentId",
                   "ReportingTagDescriptor_DescriptorId"
@@ -50963,7 +50963,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffSchoolAssociationAcademicSubject_StaffSchool_62cfad3d6e",
+                "name": "UX_StaffSchoolAssociationAcademicSubject_AcademicSub_62cfad3d6e",
                 "columns": [
                   "StaffSchoolAssociation_DocumentId",
                   "AcademicSubjectDescriptor_DescriptorId"
@@ -51049,7 +51049,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffSchoolAssociationGradeLevel_StaffSchoolAssoc_fdfd75379f",
+                "name": "UX_StaffSchoolAssociationGradeLevel_GradeLevelDescri_fdfd75379f",
                 "columns": [
                   "StaffSchoolAssociation_DocumentId",
                   "GradeLevelDescriptor_DescriptorId"
@@ -51969,7 +51969,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffAddress_Staff_DocumentId_AddressTypeDescript_8b9487503a",
+                "name": "UX_StaffAddress_City_PostalCode_StreetNumberName_Add_8b9487503a",
                 "columns": [
                   "Staff_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -52091,7 +52091,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffAncestryEthnicOrigin_Staff_DocumentId_Ancest_8b93971b11",
+                "name": "UX_StaffAncestryEthnicOrigin_AncestryEthnicOriginDes_8b93971b11",
                 "columns": [
                   "Staff_DocumentId",
                   "AncestryEthnicOriginDescriptor_DescriptorId"
@@ -52331,7 +52331,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffElectronicMail_Staff_DocumentId_ElectronicMa_ab0243ae4d",
+                "name": "UX_StaffElectronicMail_ElectronicMailAddress_Electro_ab0243ae4d",
                 "columns": [
                   "Staff_DocumentId",
                   "ElectronicMailAddress",
@@ -52581,7 +52581,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffIdentificationDocument_Staff_DocumentId_Iden_7cf1661602",
+                "name": "UX_StaffIdentificationDocument_IdentificationDocumen_7cf1661602",
                 "columns": [
                   "Staff_DocumentId",
                   "IdentificationDocumentUseDescriptor_DescriptorId",
@@ -52787,7 +52787,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffInternationalAddress_Staff_DocumentId_Addres_19e9d85ed4",
+                "name": "UX_StaffInternationalAddress_AddressTypeDescriptor_D_19e9d85ed4",
                 "columns": [
                   "Staff_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -52889,7 +52889,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffLanguage_Staff_DocumentId_LanguageDescriptor_d8941c4f3e",
+                "name": "UX_StaffLanguage_LanguageDescriptor_DescriptorId_Sta_d8941c4f3e",
                 "columns": [
                   "Staff_DocumentId",
                   "LanguageDescriptor_DescriptorId"
@@ -53025,7 +53025,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffOtherName_Staff_DocumentId_OtherNameTypeDesc_1b0d688e47",
+                "name": "UX_StaffOtherName_OtherNameTypeDescriptor_Descriptor_1b0d688e47",
                 "columns": [
                   "Staff_DocumentId",
                   "OtherNameTypeDescriptor_DescriptorId"
@@ -53168,7 +53168,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffPersonalIdentificationDocument_Staff_Documen_197547a9f2",
+                "name": "UX_StaffPersonalIdentificationDocument_Identificatio_197547a9f2",
                 "columns": [
                   "Staff_DocumentId",
                   "IdentificationDocumentUseDescriptor_DescriptorId",
@@ -53287,7 +53287,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffRace_Staff_DocumentId_RaceDescriptor_DescriptorId",
+                "name": "UX_StaffRace_RaceDescriptor_DescriptorId_Staff_DocumentId",
                 "columns": [
                   "Staff_DocumentId",
                   "RaceDescriptor_DescriptorId"
@@ -53490,7 +53490,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffRecognition_Staff_DocumentId_RecognitionType_a1c10efece",
+                "name": "UX_StaffRecognition_RecognitionTypeDescriptor_Descri_a1c10efece",
                 "columns": [
                   "Staff_DocumentId",
                   "RecognitionTypeDescriptor_DescriptorId"
@@ -53629,7 +53629,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffTelephone_Staff_DocumentId_TelephoneNumber_T_866d971e2c",
+                "name": "UX_StaffTelephone_TelephoneNumber_Staff_DocumentId_T_866d971e2c",
                 "columns": [
                   "Staff_DocumentId",
                   "TelephoneNumber",
@@ -53910,7 +53910,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffAddressPeriod_Staff_DocumentId_AddressOrdinal_BeginDate",
+                "name": "UX_StaffAddressPeriod_AddressOrdinal_BeginDate_Staff_DocumentId",
                 "columns": [
                   "Staff_DocumentId",
                   "AddressOrdinal",
@@ -53996,7 +53996,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StaffLanguageUs_Staff_DocumentId_LanguageOrdinal__e8fbfe1576",
+                "name": "UX_StaffLanguageUs_LanguageOrdinal_LanguageUseDescri_e8fbfe1576",
                 "columns": [
                   "Staff_DocumentId",
                   "LanguageOrdinal",
@@ -54839,7 +54839,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyAddress_StateEducationAgency__4dc431df23",
+                "name": "UX_StateEducationAgencyAddress_City_PostalCode_Stree_4dc431df23",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -54961,7 +54961,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyCategory_StateEducationAgency_836b47864c",
+                "name": "UX_StateEducationAgencyCategory_EducationOrganizatio_836b47864c",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "EducationOrganizationCategoryDescriptor_DescriptorId"
@@ -55058,7 +55058,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyFederalFunds_StateEducationAg_acc13c634e",
+                "name": "UX_StateEducationAgencyFederalFunds_FiscalYear_State_acc13c634e",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "FiscalYear"
@@ -55138,7 +55138,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyIdentificationCode_StateEduca_a449a8b727",
+                "name": "UX_StateEducationAgencyIdentificationCode_EducationO_a449a8b727",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "EducationOrganizationIdentificationSystemDescriptor__f63fb21ede"
@@ -55262,7 +55262,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyIndicator_StateEducationAgenc_589ae06347",
+                "name": "UX_StateEducationAgencyIndicator_IndicatorDescriptor_589ae06347",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "IndicatorDescriptor_DescriptorId"
@@ -55390,7 +55390,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyInstitutionTelephone_StateEdu_f14e95bf4c",
+                "name": "UX_StateEducationAgencyInstitutionTelephone_Institut_f14e95bf4c",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "InstitutionTelephoneNumberTypeDescriptor_DescriptorId"
@@ -55563,7 +55563,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyInternationalAddress_StateEdu_6754414552",
+                "name": "UX_StateEducationAgencyInternationalAddress_AddressT_6754414552",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "AddressTypeDescriptor_DescriptorId"
@@ -55687,7 +55687,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyAddressPeriod_StateEducationA_a6ac01f354",
+                "name": "UX_StateEducationAgencyAddressPeriod_AddressOrdinal__a6ac01f354",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "AddressOrdinal",
@@ -55782,7 +55782,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StateEducationAgencyIndicatorPeriod_StateEducatio_3b454cf448",
+                "name": "UX_StateEducationAgencyIndicatorPeriod_BeginDate_Ind_3b454cf448",
                 "columns": [
                   "StateEducationAgency_DocumentId",
                   "IndicatorOrdinal",
@@ -56596,7 +56596,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAcademicRecordAcademicHonor_StudentAcademi_8d2cfb53bd",
+                "name": "UX_StudentAcademicRecordAcademicHonor_HonorDescripti_8d2cfb53bd",
                 "columns": [
                   "StudentAcademicRecord_DocumentId",
                   "AcademicHonorCategoryDescriptor_DescriptorId",
@@ -56834,7 +56834,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAcademicRecordDiploma_StudentAcademicRecor_15d02d7d93",
+                "name": "UX_StudentAcademicRecordDiploma_DiplomaAwardDate_Dip_15d02d7d93",
                 "columns": [
                   "StudentAcademicRecord_DocumentId",
                   "DiplomaAwardDate",
@@ -56984,7 +56984,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAcademicRecordGradePointAverage_StudentAca_9ce932be5d",
+                "name": "UX_StudentAcademicRecordGradePointAverage_GradePoint_9ce932be5d",
                 "columns": [
                   "StudentAcademicRecord_DocumentId",
                   "GradePointAverageTypeDescriptor_DescriptorId"
@@ -57187,7 +57187,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAcademicRecordRecognition_StudentAcademicR_8b9439c1ff",
+                "name": "UX_StudentAcademicRecordRecognition_RecognitionTypeD_8b9439c1ff",
                 "columns": [
                   "StudentAcademicRecord_DocumentId",
                   "RecognitionTypeDescriptor_DescriptorId"
@@ -59502,7 +59502,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAssessmentAccommodation_StudentAssessment__ceeb160577",
+                "name": "UX_StudentAssessmentAccommodation_AccommodationDescr_ceeb160577",
                 "columns": [
                   "StudentAssessment_DocumentId",
                   "AccommodationDescriptor_DescriptorId"
@@ -59839,7 +59839,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAssessmentPerformanceLevel_StudentAssessme_ab647d5bf7",
+                "name": "UX_StudentAssessmentPerformanceLevel_AssessmentRepor_ab647d5bf7",
                 "columns": [
                   "StudentAssessment_DocumentId",
                   "AssessmentReportingMethodDescriptor_DescriptorId",
@@ -59961,7 +59961,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentAssessmentScoreResult_StudentAssessment_Do_124dd62ed1",
+                "name": "UX_StudentAssessmentScoreResult_AssessmentReportingM_124dd62ed1",
                 "columns": [
                   "StudentAssessment_DocumentId",
                   "AssessmentReportingMethodDescriptor_DescriptorId"
@@ -61116,7 +61116,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentCTEProgramAssociationCteProgramService_Stu_06544f28f4",
+                "name": "UX_StudentCTEProgramAssociationCteProgramService_Cte_06544f28f4",
                 "columns": [
                   "StudentCTEProgramAssociation_DocumentId",
                   "CteProgramServiceDescriptor_DescriptorId"
@@ -64229,7 +64229,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentEducationOrganizationAssociationAddress_St_f2b693b72d",
+                "name": "UX_StudentEducationOrganizationAssociationAddress_Ci_f2b693b72d",
                 "columns": [
                   "StudentEducationOrganizationAssociation_DocumentId",
                   "AddressTypeDescriptor_DescriptorId",
@@ -65185,7 +65185,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentEducationOrganizationAssociationLanguage_S_b58e723050",
+                "name": "UX_StudentEducationOrganizationAssociationLanguage_L_b58e723050",
                 "columns": [
                   "StudentEducationOrganizationAssociation_DocumentId",
                   "LanguageDescriptor_DescriptorId"
@@ -65271,7 +65271,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentEducationOrganizationAssociationRace_Stude_bafae5c29e",
+                "name": "UX_StudentEducationOrganizationAssociationRace_RaceD_bafae5c29e",
                 "columns": [
                   "StudentEducationOrganizationAssociation_DocumentId",
                   "RaceDescriptor_DescriptorId"
@@ -67486,7 +67486,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentHealthAdditionalImmunization_StudentHealth_16a975e164",
+                "name": "UX_StudentHealthAdditionalImmunization_ImmunizationN_16a975e164",
                 "columns": [
                   "StudentHealth_DocumentId",
                   "ImmunizationName"
@@ -67575,7 +67575,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentHealthRequiredImmunization_StudentHealth_D_92aa0c7f62",
+                "name": "UX_StudentHealthRequiredImmunization_ImmunizationTyp_92aa0c7f62",
                 "columns": [
                   "StudentHealth_DocumentId",
                   "ImmunizationTypeDescriptor_DescriptorId"
@@ -67674,7 +67674,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentHealthAdditionalImmunizationDate_StudentHe_839687d86d",
+                "name": "UX_StudentHealthAdditionalImmunizationDate_Additiona_839687d86d",
                 "columns": [
                   "StudentHealth_DocumentId",
                   "AdditionalImmunizationOrdinal",
@@ -67760,7 +67760,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentHealthRequiredImmunizationDate_StudentHeal_92c8ed3824",
+                "name": "UX_StudentHealthRequiredImmunizationDate_Immunizatio_92c8ed3824",
                 "columns": [
                   "StudentHealth_DocumentId",
                   "RequiredImmunizationOrdinal",
@@ -71899,7 +71899,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentProgramAssociationService_StudentProgramAs_dfb802217a",
+                "name": "UX_StudentProgramAssociationService_ServiceDescripto_dfb802217a",
                 "columns": [
                   "StudentProgramAssociation_DocumentId",
                   "ServiceDescriptor_DescriptorId"
@@ -72824,7 +72824,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentProgramEvaluationExternalEvaluator_Student_599e6a34e2",
+                "name": "UX_StudentProgramEvaluationExternalEvaluator_Externa_599e6a34e2",
                 "columns": [
                   "StudentProgramEvaluation_DocumentId",
                   "ExternalEvaluator"
@@ -74447,7 +74447,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentSchoolAssociationEducationPlan_StudentScho_ded71a8fc2",
+                "name": "UX_StudentSchoolAssociationEducationPlan_EducationPl_ded71a8fc2",
                 "columns": [
                   "StudentSchoolAssociation_DocumentId",
                   "EducationPlanDescriptor_DescriptorId"
@@ -80551,7 +80551,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentIdentificationDocument_Student_DocumentId__2c52c46619",
+                "name": "UX_StudentIdentificationDocument_IdentificationDocum_2c52c46619",
                 "columns": [
                   "Student_DocumentId",
                   "IdentificationDocumentUseDescriptor_DescriptorId",
@@ -80720,7 +80720,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentOtherName_Student_DocumentId_OtherNameType_b3b3aedc77",
+                "name": "UX_StudentOtherName_OtherNameTypeDescriptor_Descript_b3b3aedc77",
                 "columns": [
                   "Student_DocumentId",
                   "OtherNameTypeDescriptor_DescriptorId"
@@ -80863,7 +80863,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_StudentPersonalIdentificationDocument_Student_Doc_a820a4d2b3",
+                "name": "UX_StudentPersonalIdentificationDocument_Identificat_a820a4d2b3",
                 "columns": [
                   "Student_DocumentId",
                   "IdentificationDocumentUseDescriptor_DescriptorId",
@@ -82388,7 +82388,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SurveyQuestionMatrice_SurveyQuestion_DocumentId_M_fc8406d229",
+                "name": "UX_SurveyQuestionMatrice_MatrixElement_SurveyQuestio_fc8406d229",
                 "columns": [
                   "SurveyQuestion_DocumentId",
                   "MatrixElement"
@@ -82477,7 +82477,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SurveyQuestionResponseChoice_SurveyQuestion_Docum_0f80f8a09f",
+                "name": "UX_SurveyQuestionResponseChoice_SortOrder_SurveyQues_0f80f8a09f",
                 "columns": [
                   "SurveyQuestion_DocumentId",
                   "SortOrder"
@@ -83242,7 +83242,7 @@
             "constraints": [
               {
                 "kind": "Unique",
-                "name": "UX_SurveyResponseSurveyLevel_SurveyResponse_Document_4883faa7dd",
+                "name": "UX_SurveyResponseSurveyLevel_SurveyLevelDescriptor_D_4883faa7dd",
                 "columns": [
                   "SurveyResponse_DocumentId",
                   "SurveyLevelDescriptor_DescriptorId"

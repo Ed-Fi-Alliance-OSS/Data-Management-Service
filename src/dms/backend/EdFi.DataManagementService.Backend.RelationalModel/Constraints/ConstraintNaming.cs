@@ -201,6 +201,13 @@ internal static class ConstraintNaming
             suffixes.Add(suffix);
         }
 
+        prefixOrder.Sort(StringComparer.Ordinal);
+
+        foreach (var suffixes in suffixesByPrefix.Values)
+        {
+            suffixes.Sort(StringComparer.Ordinal);
+        }
+
         List<string> tokens = [];
 
         foreach (var prefix in prefixOrder)
