@@ -248,4 +248,39 @@ public sealed class PgsqlDialect : SqlDialectBase
             END $$;
             """;
     }
+
+    /// <inheritdoc />
+    public override string CreateExtensionIfNotExists(string extensionName)
+    {
+        ArgumentNullException.ThrowIfNull(extensionName);
+
+        return $"CREATE EXTENSION IF NOT EXISTS {extensionName};";
+    }
+
+    /// <inheritdoc />
+    public override string CreateUuidv5Function(DbSchemaName schema)
+    {
+        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("uuidv5")}";
+
+        return $"""
+            CREATE OR REPLACE FUNCTION {qualifiedName}(namespace_uuid uuid, name_text text)
+            RETURNS uuid
+            LANGUAGE plpgsql
+            IMMUTABLE STRICT PARALLEL SAFE
+            AS $uuidv5$
+            DECLARE
+                hash bytea;
+            BEGIN
+                hash := digest(
+                    decode(replace(namespace_uuid::text, '-', ''), 'hex')
+                    || convert_to(name_text, 'UTF8'),
+                    'sha1'
+                );
+                hash := set_byte(hash, 6, (get_byte(hash, 6) & x'0f'::int) | x'50'::int);
+                hash := set_byte(hash, 8, (get_byte(hash, 8) & x'3f'::int) | x'80'::int);
+                RETURN encode(substring(hash from 1 for 16), 'hex')::uuid;
+            END
+            $uuidv5$;
+            """;
+    }
 }

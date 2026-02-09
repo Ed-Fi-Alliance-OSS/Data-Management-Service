@@ -165,4 +165,10 @@ public abstract class SqlDialectBase : ISqlDialect
             ),
         };
     }
+
+    /// <inheritdoc />
+    public abstract string CreateExtensionIfNotExists(string extensionName);
+
+    /// <inheritdoc />
+    public abstract string CreateUuidv5Function(DbSchemaName schema);
 }
