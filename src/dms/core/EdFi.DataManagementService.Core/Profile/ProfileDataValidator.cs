@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Profile;
@@ -38,30 +39,29 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider
     )
     {
-        using var scope = logger.BeginScope(
-            "Profile validation for '{ProfileName}'",
-            profileDefinition.ProfileName
-        );
+        string sanitizedProfileName = LoggingSanitizer.SanitizeForLogging(profileDefinition.ProfileName);
 
-        logger.LogDebug("Starting validation of profile '{ProfileName}'", profileDefinition.ProfileName);
+        using var scope = logger.BeginScope("Profile validation for '{ProfileName}'", sanitizedProfileName);
+
+        logger.LogDebug("Starting validation of profile '{ProfileName}'", sanitizedProfileName);
 
         var failures = ValidateResources(profileDefinition, effectiveApiSchemaProvider);
-
-        var errorCount = failures.Count(f => f.Severity == ValidationSeverity.Error);
-        var warningCount = failures.Count(f => f.Severity == ValidationSeverity.Warning);
 
         if (failures.Count == 0)
         {
             logger.LogDebug(
                 "Profile '{ProfileName}' validation successful - no errors or warnings",
-                profileDefinition.ProfileName
+                sanitizedProfileName
             );
             return ProfileValidationResult.Success;
         }
 
+        var errorCount = failures.Count(f => f.Severity == ValidationSeverity.Error);
+        var warningCount = failures.Count(f => f.Severity == ValidationSeverity.Warning);
+
         logger.LogInformation(
             "Profile '{ProfileName}' validation completed with {ErrorCount} errors and {WarningCount} warnings",
-            profileDefinition.ProfileName,
+            sanitizedProfileName,
             errorCount,
             warningCount
         );
@@ -70,14 +70,18 @@ internal class ProfileDataValidator(ILogger<ProfileDataValidator> logger) : IPro
         foreach (var failure in failures)
         {
             var logLevel = failure.Severity == ValidationSeverity.Error ? LogLevel.Error : LogLevel.Warning;
+            string sanitizedMessage = LoggingSanitizer.SanitizeForLogging(failure.Message);
+            string sanitizedFailureProfile = LoggingSanitizer.SanitizeForLogging(failure.ProfileName);
+            string sanitizedResource = LoggingSanitizer.SanitizeForLogging(failure.ResourceName ?? "N/A");
+            string sanitizedMember = LoggingSanitizer.SanitizeForLogging(failure.MemberName ?? "N/A");
             logger.Log(
                 logLevel,
                 "Profile validation {Severity}: {Message} (Profile: {ProfileName}, Resource: {ResourceName}, Member: {MemberName})",
                 failure.Severity.ToString().ToLower(),
-                failure.Message,
-                failure.ProfileName,
-                failure.ResourceName ?? "N/A",
-                failure.MemberName ?? "N/A"
+                sanitizedMessage,
+                sanitizedFailureProfile,
+                sanitizedResource,
+                sanitizedMember
             );
         }
 
