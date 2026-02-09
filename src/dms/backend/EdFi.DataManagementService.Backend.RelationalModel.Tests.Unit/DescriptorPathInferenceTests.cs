@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.DescriptorPaths;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -263,5 +264,37 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         }
 
         return documentPathsMapping;
+    }
+}
+
+/// <summary>
+/// Test fixture for descriptor path inference with null project entries.
+/// </summary>
+[TestFixture]
+public class Given_DescriptorPathInference_With_Null_Project_Entries
+{
+    private InvalidOperationException _exception = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = new JsonObject { ["resourceSchemas"] = new JsonObject() };
+        IReadOnlyList<DescriptorPathInference.ProjectDescriptorSchema> projects =
+            new DescriptorPathInference.ProjectDescriptorSchema[] { new("Ed-Fi", projectSchema), null! };
+
+        Action act = () => DescriptorPathInference.BuildDescriptorPathsByResource(projects);
+        _exception = act.Should().Throw<InvalidOperationException>().Which;
+    }
+
+    /// <summary>
+    /// It should include null project entry index in diagnostics.
+    /// </summary>
+    [Test]
+    public void It_should_include_null_project_entry_index_in_diagnostics()
+    {
+        _exception.Message.Should().Contain("Null entry at index 1 (0-based)");
     }
 }

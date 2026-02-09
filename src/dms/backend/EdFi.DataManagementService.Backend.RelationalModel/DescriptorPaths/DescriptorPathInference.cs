@@ -39,19 +39,22 @@ internal static class DescriptorPathInference
             new();
         Dictionary<QualifiedResourceName, List<ReferenceJsonPathInfo>> referenceJsonPathsByResource = new();
 
+        for (var index = 0; index < projects.Count; index++)
+        {
+            if (projects[index] is null)
+            {
+                throw new InvalidOperationException(
+                    $"Project descriptor schemas must not contain null entries. Null entry at index {index} (0-based)."
+                );
+            }
+        }
+
         var orderedProjects = projects
-            .OrderBy(project => project?.ProjectName, StringComparer.Ordinal)
+            .OrderBy(project => project.ProjectName, StringComparer.Ordinal)
             .ToArray();
 
         foreach (var project in orderedProjects)
         {
-            if (project is null)
-            {
-                throw new InvalidOperationException(
-                    "Project descriptor schemas must not contain null entries."
-                );
-            }
-
             var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
             var projectSchema =
                 project.ProjectSchema
