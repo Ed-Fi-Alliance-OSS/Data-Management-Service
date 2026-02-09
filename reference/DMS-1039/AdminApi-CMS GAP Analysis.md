@@ -329,3 +329,13 @@ Vendor POST in Admin API returns a `201 Created` with an empty body, while CMS e
 
 * **Tenant endpoints deprecation:** `/v2/tenants`, `/v2/tenants/{tenantName}`, and `/v2/tenants/details` are scheduled for removal once the instance detail payloads fully cover the same information. CMS consumers should treat these routes as legacy and plan to rely on the instance endpoints instead.
 * **Education organization endpoints:** Admin API will expose new education-organization (`edOrg`) endpoints. The shape is still in progress, so parity work should wait for the finalized schema before backfilling or mapping CMS routes.
+
+## Summary
+
+If an Admin API client simply switches its base URL to the CMS service without code changes:
+
+* **Non-existent routes return 404:** Any call to `/v2/resourceClaims*`, `/v2/claimSets/*/resourceClaimActions`, or `/v2/tenants/details` immediately fails because CMS does not expose those endpoints.
+* **Successful calls return incompatible payloads:** Requests to `/v2/applications`, `/v2/apiClients`, `/v2/odsInstances*`, and `/v2/claimSets/{id}/export` will still return `200 OK`, but the JSON shape differs (missing `enabled`, `odsInstanceIds`, sandbox metadata, resource-claim trees). Clients that deserialize Admin DTOs will either throw parsing errors or silently discard required data.
+* **Error handling regresses:** CMS emits Problem Details bodies and often responds with `200` even for validation failures. Callers expecting Admin API status codes (`400/401/403/409`) and the `{ "title": "Validation failed", "errors": { ... } }` envelope will misinterpret failures as success.
+* **Tenant-aware automation stalls:** Logic that looks up tenants by name or relies on `/v2/tenants/details` will either receive 404s or incomplete payloads, causing instance provisioning and routing scripts to fail.
+* **`Location` headers cannot be parsed:** Admin clients extract new resource IDs from relative headers (for example `/profiles/2`). CMS returns absolute URLs (`http://localhost:8081/v2/profiles/2`), so lightweight HTTP clients that concatenate the base URI or regex the relative path will either duplicate segments or fail to capture the identifier.
