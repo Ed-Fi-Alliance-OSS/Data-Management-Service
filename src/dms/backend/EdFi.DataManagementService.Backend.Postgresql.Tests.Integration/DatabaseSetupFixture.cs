@@ -28,7 +28,9 @@ public class DatabaseSetupFixture
         var createExtension = dialect.CreateExtensionIfNotExists("pgcrypto");
         var createFunction = dialect.CreateUuidv5Function(schema);
 
-        await using var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+        var dataSource = NpgsqlDataSource.Create(Configuration.DatabaseConnectionString);
+        Uuidv5ParityTestBase.InitializeDataSource(dataSource);
+
         await using var connection = await dataSource.OpenConnectionAsync();
 
         await using (var cmd = new NpgsqlCommand(createSchema, connection))
@@ -45,5 +47,11 @@ public class DatabaseSetupFixture
         {
             await cmd.ExecuteNonQueryAsync();
         }
+    }
+
+    [OneTimeTearDown]
+    public void OneTimeTearDown()
+    {
+        Uuidv5ParityTestBase.DisposeDataSource();
     }
 }

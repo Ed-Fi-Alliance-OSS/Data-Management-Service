@@ -28,21 +28,33 @@ public abstract class Uuidv5ParityTestBase
     /// </summary>
     protected static readonly Guid DnsNamespace = new("6ba7b810-9dad-11d1-80b4-00c04fd430c8");
 
-    private static readonly NpgsqlDataSource _dataSource = NpgsqlDataSource.Create(
-        Configuration.DatabaseConnectionString
-    );
+    private static NpgsqlDataSource? _dataSource;
+
+    internal static NpgsqlDataSource DataSource =>
+        _dataSource
+        ?? throw new InvalidOperationException(
+            "DataSource has not been initialized. Ensure DatabaseSetupFixture has run."
+        );
+
+    internal static void InitializeDataSource(NpgsqlDataSource dataSource) => _dataSource = dataSource;
+
+    internal static void DisposeDataSource()
+    {
+        _dataSource?.Dispose();
+        _dataSource = null;
+    }
 
     protected Guid CoreResult { get; set; }
     protected Guid PgResult { get; set; }
 
-    protected static Guid ComputeCore(Guid namespaceUuid, string name)
+    public static Guid ComputeCore(Guid namespaceUuid, string name)
     {
         return Deterministic.Create(namespaceUuid, name);
     }
 
     public static async Task<Guid> ComputePostgres(Guid namespaceUuid, string name)
     {
-        await using var connection = await _dataSource.OpenConnectionAsync();
+        await using var connection = await DataSource.OpenConnectionAsync();
         await using var cmd = new NpgsqlCommand("""SELECT dms.uuidv5($1::uuid, $2::text)""", connection);
         cmd.Parameters.AddWithValue(namespaceUuid);
         cmd.Parameters.AddWithValue(name);
@@ -73,9 +85,9 @@ public class Given_Simple_Ascii_Name : Uuidv5ParityTestBase
     [Test]
     public void It_should_produce_a_version_5_uuid()
     {
-        // Version nibble is bits 12-15 of time_hi_and_version (byte 6, high nibble)
+        // In .NET's mixed-endian Guid.ToByteArray(), the version nibble
+        // lives at array index 7 (the high byte of time_hi_and_version).
         var bytes = CoreResult.ToByteArray();
-        // .NET Guid.ToByteArray() uses mixed-endian; byte index 7 holds time_hi high byte
         var version = (bytes[7] >> 4) & 0x0F;
         version.Should().Be(5);
     }
