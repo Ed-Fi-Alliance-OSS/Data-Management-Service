@@ -461,7 +461,7 @@
       "Following the pattern in `RootTableNameOverrideCollisionTests.cs`, add a parallel test in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NameOverrideTests.cs` that runs the same scenario with reversed resource ordering and asserts an identical exception message.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",

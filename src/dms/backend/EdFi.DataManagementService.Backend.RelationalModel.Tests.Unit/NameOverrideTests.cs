@@ -319,3 +319,66 @@ public class Given_Base_And_Extension_NameOverrides_On_The_Same_Path
         _exception.Message.Should().Contain("Ed-Fi:School");
     }
 }
+
+/// <summary>
+/// Test fixture for deterministic collisions across resource ordering.
+/// </summary>
+[TestFixture]
+public class Given_A_Root_Table_NameOverride_Collision_With_Reversed_Resource_Order
+{
+    private Exception? _exception;
+    private Exception? _reverseOrderException;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _exception = BuildCollisionException(reverseResourceOrder: false);
+        _reverseOrderException = BuildCollisionException(reverseResourceOrder: true);
+    }
+
+    /// <summary>
+    /// It should fail fast for the baseline resource ordering.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_for_the_baseline_resource_ordering()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Identifier shortening collisions detected");
+        _exception.Message.Should().Contain("table edfi.Person");
+        _exception.Message.Should().Contain("resource 'Ed-Fi:Student'");
+        _exception.Message.Should().Contain("resource 'Ed-Fi:Staff'");
+    }
+
+    /// <summary>
+    /// It should report an identical collision message when resource order is reversed.
+    /// </summary>
+    [Test]
+    public void It_should_report_the_same_message_when_resource_order_is_reversed()
+    {
+        _reverseOrderException.Should().BeOfType<InvalidOperationException>();
+        _reverseOrderException!.Message.Should().Be(_exception!.Message);
+    }
+
+    private static Exception? BuildCollisionException(bool reverseResourceOrder)
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixture(
+            "hand-authored-root-override-collision-api-schema.json",
+            reverseResourceOrder: reverseResourceOrder
+        );
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            return exception;
+        }
+
+        return null;
+    }
+}
