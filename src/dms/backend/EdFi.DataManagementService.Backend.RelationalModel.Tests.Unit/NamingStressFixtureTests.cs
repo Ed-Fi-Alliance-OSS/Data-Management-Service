@@ -177,11 +177,15 @@ public class Given_A_Naming_Stress_Fixture_With_Override_Collisions
     public void It_should_report_override_collision_diagnostics()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("Identifier override collisions detected");
-        _exception.Message.Should().Contain("AfterOverrideNormalization");
-        _exception.Message.Should().Contain("column name collision");
-        _exception.Message.Should().Contain("table 'edfi.CollisionTest'");
-        _exception.Message.Should().Contain("$.firstName");
-        _exception.Message.Should().Contain("$.lastName");
+        var message = _exception!.Message;
+
+        message.Should().Contain("Identifier override collisions detected");
+        message.Should().Contain("AfterOverrideNormalization");
+        message.Should().Contain("column name collision");
+        message.Should().Contain("table 'edfi.CollisionTest'");
+        message.Should().Contain("FirstName -> Duplicate");
+        message.Should().Contain("LastName -> Duplicate");
+        message.Should().Contain("path '$.firstName'");
+        message.Should().Contain("path '$.lastName'");
     }
 }

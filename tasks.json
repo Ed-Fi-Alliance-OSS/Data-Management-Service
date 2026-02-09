@@ -452,7 +452,7 @@
       "Update the collision test in `./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/NamingStressFixtureTests.cs` to assert the error message includes both colliding paths and the collision identifier `Duplicate`, plus relevant scope context.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Testing",
