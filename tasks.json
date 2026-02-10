@@ -57,5 +57,65 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Implement canonical union-column type selection for abstract identity fields in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` instead of requiring exact `RelationalScalarType` equality across members. Acceptance: (1) for each abstract identity JSONPath, the derived identity-table column and union-view output column use a canonical `RelationalScalarType` that can safely represent every member’s source type (e.g., `Int32`+`Int64` → `Int64`, string max length → max length, decimal precision/scale → max precision/scale), (2) derivation succeeds for members that differ only by widenable type metadata, and (3) derivation still fails fast for incompatible kinds (e.g., scalar vs descriptor FK, or different descriptor target resources).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Add/adjust unit tests to cover two members with mismatched-but-compatible scalar types (e.g., string maxLength 60 vs 255) and assert the canonical output type."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Correctness",
+    "description": "Ensure abstract union views can be emitted with explicit casts per dialect (per `reference/design/backend-redesign/design-docs/data-model.md` and `reference/design/backend-redesign/design-docs/ddl-generation.md`). Acceptance: when/where union-view DDL emission is implemented, each arm’s select list explicitly casts every projected expression to the view output column SQL type (including the `Discriminator` literal) for both Pgsql and Mssql, and the emitted SQL is deterministic (stable arm ordering + select-list ordering).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`",
+      "Add focused unit tests that assert generated view SQL contains the expected `CAST`/`::` for discriminator and any widened identity columns."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Remove duplicated extractor logic in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` by reusing existing shared extractors/helpers (e.g., `IdentityJsonPathsExtractor`, `DecimalPropertyValidationInfosExtractor`, and `RelationalOverridesExtractor`). Acceptance: no behavioral changes in existing fixtures/tests, and `AbstractIdentityTableDerivationPass` no longer contains local copies of these extractors/override-parsing routines.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Strengthen and simplify identity-column resolution in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` by precomputing per-member lookups keyed by canonical `SourceJsonPath` (and throwing on duplicates) instead of repeated `FirstOrDefault` scans and schema-based fallback. Acceptance: (1) resolution is O(1) per identity path per member, (2) duplicate `SourceJsonPath` mappings in a root table fail fast with an actionable error, and (3) missing resolved columns fail fast (do not guess column names via `BuildColumnName`).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Cleanup",
+    "description": "Remove dead/unused fields and parameters introduced for abstract identity derivation (e.g., `ConcreteResourceMetadata.SubclassType`, and any schema/decimal metadata that becomes unused once schema fallback is removed). Acceptance: no unused-variable warnings, `AbstractIdentityTableDerivationPass` stores only the metadata it actually uses, and all existing unit tests continue to pass.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Align design docs with the implemented abstract union view contract and discriminator behavior. Acceptance: (1) `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` reflects the current `AbstractUnionViewInfo` shape (output columns + ordered arms + projection AST), (2) `reference/design/backend-redesign/design-docs/data-model.md` union-view examples and discriminator description match the implemented `\"ProjectName:ResourceName\"` discriminator literal format (or the code is updated to match the docs, with tests updated accordingly), and (3) no contradictory guidance remains in the epic/story docs.",
+    "steps-to-verify": [
+      "Review: `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`",
+      "Review: `reference/design/backend-redesign/design-docs/data-model.md`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Constraints",
+    "description": "Revisit abstract identity-table unique constraint strategy/naming in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs`. Acceptance: decide and implement one consistent approach: either (A) keep a single composite unique constraint and rename it to match `RefKey` naming conventions, or (B) add both a natural-key unique constraint over identity columns (NK) and a composite reference-key unique constraint over (`DocumentId` + identity columns) (RefKey), mirroring concrete resource tables; update unit/golden tests accordingly and ensure reference FKs remain valid.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
