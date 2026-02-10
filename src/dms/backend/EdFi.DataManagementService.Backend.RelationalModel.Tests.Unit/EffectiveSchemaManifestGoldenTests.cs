@@ -158,6 +158,12 @@ public class Given_A_Small_EffectiveSchemaInfo_With_Default_Parameters
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
 
+        File.Exists(expectedPath)
+            .Should()
+            .BeTrue(
+                $"effective-schema no-keys manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
+            );
+
         _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
@@ -295,9 +301,13 @@ file static class EffectiveSchemaManifestGoldenHelpers
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
+
+        // Read both streams asynchronously to avoid deadlock when one stream's buffer fills
+        var outputTask = process.StandardOutput.ReadToEndAsync();
+        var errorTask = process.StandardError.ReadToEndAsync();
         process.WaitForExit();
+        var output = outputTask.Result;
+        var error = errorTask.Result;
 
         if (process.ExitCode == 0)
         {
