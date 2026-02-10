@@ -189,6 +189,119 @@ public class Given_Abstract_Identity_Table_Derivation
 }
 
 /// <summary>
+/// Test fixture for abstract identity table derivation with widenable string max-length mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Widenable_String_Length_Mismatch
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false,
+            localEducationAgencyOrganizationNameMaxLength: 255
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single();
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should choose the widest string max length for the canonical abstract identity column type.
+    /// </summary>
+    [Test]
+    public void It_should_choose_widest_string_max_length_for_canonical_identity_column_type()
+    {
+        var identityColumn = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "OrganizationName"
+        );
+        var outputColumn = _abstractUnionView.OutputColumnsInSelectOrder.Single(column =>
+            column.ColumnName.Value == "OrganizationName"
+        );
+
+        identityColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String, 255));
+        outputColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String, 255));
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract identity table derivation with widenable integer-width mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Widenable_Integer_Widths
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false,
+            schoolEducationOrganizationIdIsInt64: false,
+            localEducationAgencyEducationOrganizationIdIsInt64: true
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single();
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should widen mixed int32/int64 identities to int64 for canonical abstract identity columns.
+    /// </summary>
+    [Test]
+    public void It_should_widen_mixed_int32_and_int64_identities_to_int64()
+    {
+        var identityColumn = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "EducationOrganizationId"
+        );
+        var outputColumn = _abstractUnionView.OutputColumnsInSelectOrder.Single(column =>
+            column.ColumnName.Value == "EducationOrganizationId"
+        );
+
+        identityColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        outputColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+    }
+}
+
+/// <summary>
 /// Test fixture for abstract identity table with mismatched types.
 /// </summary>
 [TestFixture]
@@ -1117,7 +1230,11 @@ internal static class AbstractIdentityTableTestSchemaBuilder
     internal static JsonObject BuildProjectSchema(
         bool mismatchMemberType,
         JsonArray? abstractIdentityJsonPaths = null,
-        JsonArray? localEducationAgencyIdentityJsonPaths = null
+        JsonArray? localEducationAgencyIdentityJsonPaths = null,
+        int schoolOrganizationNameMaxLength = 60,
+        int localEducationAgencyOrganizationNameMaxLength = 60,
+        bool schoolEducationOrganizationIdIsInt64 = true,
+        bool localEducationAgencyEducationOrganizationIdIsInt64 = true
     )
     {
         var identityJsonPaths =
@@ -1136,13 +1253,17 @@ internal static class AbstractIdentityTableTestSchemaBuilder
             ["schools"] = BuildConcreteResourceSchema(
                 "School",
                 organizationNameIsString: true,
-                organizationNameMaxLength: 60
+                organizationNameMaxLength: schoolOrganizationNameMaxLength,
+                educationOrganizationIdIsInt64: schoolEducationOrganizationIdIsInt64
             ),
             ["localEducationAgencies"] = BuildConcreteResourceSchema(
                 "LocalEducationAgency",
                 organizationNameIsString: !mismatchMemberType,
-                organizationNameMaxLength: mismatchMemberType ? 40 : 60,
-                identityJsonPathsOverride: localEducationAgencyIdentityJsonPaths
+                organizationNameMaxLength: mismatchMemberType
+                    ? 40
+                    : localEducationAgencyOrganizationNameMaxLength,
+                identityJsonPathsOverride: localEducationAgencyIdentityJsonPaths,
+                educationOrganizationIdIsInt64: localEducationAgencyEducationOrganizationIdIsInt64
             ),
         };
 
@@ -1163,7 +1284,8 @@ internal static class AbstractIdentityTableTestSchemaBuilder
         string resourceName,
         bool organizationNameIsString,
         int organizationNameMaxLength,
-        JsonArray? identityJsonPathsOverride = null
+        JsonArray? identityJsonPathsOverride = null,
+        bool educationOrganizationIdIsInt64 = true
     )
     {
         var concreteIdentityJsonPaths = identityJsonPathsOverride is null
@@ -1172,7 +1294,9 @@ internal static class AbstractIdentityTableTestSchemaBuilder
 
         var properties = new JsonObject
         {
-            ["educationOrganizationId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+            ["educationOrganizationId"] = educationOrganizationIdIsInt64
+                ? new JsonObject { ["type"] = "integer", ["format"] = "int64" }
+                : new JsonObject { ["type"] = "integer" },
             ["organizationName"] = organizationNameIsString
                 ? new JsonObject { ["type"] = "string", ["maxLength"] = organizationNameMaxLength }
                 : new JsonObject { ["type"] = "integer", ["format"] = "int64" },

@@ -257,13 +257,14 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 {
                     signature = memberSignature;
                 }
-                else if (signature != memberSignature)
+                else
                 {
-                    throw new InvalidOperationException(
-                        $"Abstract identity path '{identityPath.Canonical}' for resource "
-                            + $"'{FormatResource(abstractResource)}' has inconsistent column types. "
-                            + $"Expected {FormatSignature(signature)} but member "
-                            + $"'{FormatResource(member.Resource)}' provides {FormatSignature(memberSignature)}."
+                    signature = ResolveCanonicalColumnSignature(
+                        signature,
+                        memberSignature,
+                        identityPath,
+                        abstractResource,
+                        member.Resource
                     );
                 }
 
@@ -291,6 +292,176 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         }
 
         return derivations;
+    }
+
+    /// <summary>
+    /// Resolves a canonical column signature that can safely represent all participating member signatures.
+    /// </summary>
+    private static ColumnSignature ResolveCanonicalColumnSignature(
+        ColumnSignature currentSignature,
+        ColumnSignature memberSignature,
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource,
+        QualifiedResourceName memberResource
+    )
+    {
+        if (currentSignature.Kind != memberSignature.Kind)
+        {
+            throw CreateInconsistentColumnTypesException(
+                currentSignature,
+                memberSignature,
+                identityPath,
+                abstractResource,
+                memberResource
+            );
+        }
+
+        if (currentSignature.TargetResource != memberSignature.TargetResource)
+        {
+            throw CreateInconsistentColumnTypesException(
+                currentSignature,
+                memberSignature,
+                identityPath,
+                abstractResource,
+                memberResource
+            );
+        }
+
+        var canonicalScalarType = ResolveCanonicalScalarType(
+            currentSignature,
+            memberSignature,
+            identityPath,
+            abstractResource,
+            memberResource
+        );
+
+        return currentSignature with
+        {
+            ScalarType = canonicalScalarType,
+        };
+    }
+
+    /// <summary>
+    /// Resolves a canonical scalar type across two compatible signatures.
+    /// </summary>
+    private static RelationalScalarType ResolveCanonicalScalarType(
+        ColumnSignature currentSignature,
+        ColumnSignature memberSignature,
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource,
+        QualifiedResourceName memberResource
+    )
+    {
+        var currentScalarType = currentSignature.ScalarType;
+        var memberScalarType = memberSignature.ScalarType;
+
+        if (currentScalarType.Kind == memberScalarType.Kind)
+        {
+            return currentScalarType.Kind switch
+            {
+                ScalarKind.String => ResolveCanonicalStringType(currentScalarType, memberScalarType),
+                ScalarKind.Decimal => ResolveCanonicalDecimalType(
+                    currentScalarType,
+                    memberScalarType,
+                    identityPath,
+                    abstractResource
+                ),
+                _ => currentScalarType,
+            };
+        }
+
+        if (
+            (currentScalarType.Kind == ScalarKind.Int32 && memberScalarType.Kind == ScalarKind.Int64)
+            || (currentScalarType.Kind == ScalarKind.Int64 && memberScalarType.Kind == ScalarKind.Int32)
+        )
+        {
+            return new RelationalScalarType(ScalarKind.Int64);
+        }
+
+        throw CreateInconsistentColumnTypesException(
+            currentSignature,
+            memberSignature,
+            identityPath,
+            abstractResource,
+            memberResource
+        );
+    }
+
+    /// <summary>
+    /// Resolves the canonical string type by selecting the largest max length (or unbounded when any member is
+    /// unbounded).
+    /// </summary>
+    private static RelationalScalarType ResolveCanonicalStringType(
+        RelationalScalarType currentScalarType,
+        RelationalScalarType memberScalarType
+    )
+    {
+        int? canonicalMaxLength =
+            currentScalarType.MaxLength is null || memberScalarType.MaxLength is null
+                ? null
+                : Math.Max(currentScalarType.MaxLength.Value, memberScalarType.MaxLength.Value);
+
+        return new RelationalScalarType(ScalarKind.String, canonicalMaxLength);
+    }
+
+    /// <summary>
+    /// Resolves the canonical decimal type by selecting maximum precision and scale across members.
+    /// </summary>
+    private static RelationalScalarType ResolveCanonicalDecimalType(
+        RelationalScalarType currentScalarType,
+        RelationalScalarType memberScalarType,
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource
+    )
+    {
+        if (currentScalarType.Decimal is not { } currentDecimal)
+        {
+            throw new InvalidOperationException(
+                $"Expected decimal type metadata for abstract identity path '{identityPath.Canonical}' on "
+                    + $"resource '{FormatResource(abstractResource)}'."
+            );
+        }
+
+        if (memberScalarType.Decimal is not { } memberDecimal)
+        {
+            throw new InvalidOperationException(
+                $"Expected decimal type metadata for abstract identity path '{identityPath.Canonical}' on "
+                    + $"resource '{FormatResource(abstractResource)}'."
+            );
+        }
+
+        var canonicalPrecision = Math.Max(currentDecimal.Precision, memberDecimal.Precision);
+        var canonicalScale = Math.Max(currentDecimal.Scale, memberDecimal.Scale);
+
+        if (canonicalScale > canonicalPrecision)
+        {
+            throw new InvalidOperationException(
+                $"Canonical decimal type is invalid for abstract identity path '{identityPath.Canonical}' on "
+                    + $"resource '{FormatResource(abstractResource)}'. Precision {canonicalPrecision} must be "
+                    + $"greater than or equal to scale {canonicalScale}."
+            );
+        }
+
+        return new RelationalScalarType(ScalarKind.Decimal, Decimal: (canonicalPrecision, canonicalScale));
+    }
+
+    /// <summary>
+    /// Creates a standardized inconsistent-signature exception for abstract identity type derivation.
+    /// </summary>
+    private static InvalidOperationException CreateInconsistentColumnTypesException(
+        ColumnSignature expectedSignature,
+        ColumnSignature memberSignature,
+        JsonPathExpression identityPath,
+        QualifiedResourceName abstractResource,
+        QualifiedResourceName memberResource
+    )
+    {
+        return new InvalidOperationException(
+            $"Abstract identity path '{identityPath.Canonical}' for resource "
+                + $"'{FormatResource(abstractResource)}' has inconsistent column types. "
+                + $"Expected {FormatSignature(expectedSignature)} but member "
+                + $"'{FormatResource(memberResource)}' provides {FormatSignature(memberSignature)}."
+        );
     }
 
     /// <summary>

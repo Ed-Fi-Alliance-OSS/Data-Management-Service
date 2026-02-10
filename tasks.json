@@ -65,7 +65,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "Add/adjust unit tests to cover two members with mismatched-but-compatible scalar types (e.g., string maxLength 60 vs 255) and assert the canonical output type."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Correctness",
