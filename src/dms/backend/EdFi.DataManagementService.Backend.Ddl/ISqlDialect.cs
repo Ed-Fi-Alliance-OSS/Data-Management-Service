@@ -181,4 +181,21 @@ public interface ISqlDialect
     /// <param name="action">The referential action.</param>
     /// <returns>The SQL keyword (NO ACTION or CASCADE).</returns>
     string RenderReferentialAction(ReferentialAction action);
+
+    /// <summary>
+    /// Returns the CREATE EXTENSION IF NOT EXISTS statement for a database extension.
+    /// Returns an empty string for dialects that do not support extensions (e.g., SQL Server).
+    /// </summary>
+    /// <param name="extensionName">The extension name (e.g., "pgcrypto").</param>
+    /// <returns>The idempotent CREATE EXTENSION statement, or empty string.</returns>
+    string CreateExtensionIfNotExists(string extensionName);
+
+    /// <summary>
+    /// Returns the DDL statement to create the UUIDv5 (RFC 4122) helper function in the
+    /// specified schema. The function accepts a namespace UUID and a name string and returns
+    /// a deterministic UUID that matches DMS Core's ReferentialIdCalculator output byte-for-byte.
+    /// </summary>
+    /// <param name="schema">The schema to create the function in (typically "dms").</param>
+    /// <returns>The complete CREATE FUNCTION statement.</returns>
+    string CreateUuidv5Function(DbSchemaName schema);
 }

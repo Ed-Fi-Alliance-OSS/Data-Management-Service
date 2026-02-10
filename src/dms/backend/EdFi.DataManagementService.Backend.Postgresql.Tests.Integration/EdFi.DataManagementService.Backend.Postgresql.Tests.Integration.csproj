@@ -8,19 +8,16 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
-        <PackageReference Include="Autofac" />
-        <PackageReference Include="Autofac.Extras.FakeItEasy" />
-        <PackageReference Include="FakeItEasy" />
+        <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="coverlet.collector" />
         <PackageReference Include="Microsoft.Extensions.Configuration" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
+        <PackageReference Include="Npgsql" />
         <PackageReference Include="NUnit" />
         <PackageReference Include="NUnit.Analyzers" />
         <PackageReference Include="NUnit3TestAdapter" />
-        <PackageReference Include="ImpromptuInterface" />
-        <PackageReference Include="Respawn" />
         <PackageReference Include="SonarAnalyzer.CSharp">
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
             <PrivateAssets>all</PrivateAssets>
@@ -32,8 +29,7 @@
         </PackageReference>
     </ItemGroup>
     <ItemGroup>
-        <ProjectReference Include="..\..\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
-        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Postgresql\EdFi.DataManagementService.Backend.Postgresql.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
     </ItemGroup>
     <ItemGroup>
         <None Update="appsettings.Test.json">

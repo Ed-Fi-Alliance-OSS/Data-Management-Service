@@ -812,3 +812,145 @@ public class Given_PgsqlDialect_Render_Referential_Actions
         _dialect.RenderReferentialAction(ReferentialAction.Cascade).Should().Be("CASCADE");
     }
 }
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Extension_If_Not_Exists
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateExtensionIfNotExists("pgcrypto");
+    }
+
+    [Test]
+    public void It_should_use_create_extension_if_not_exists_syntax()
+    {
+        _ddl.Should().Be("CREATE EXTENSION IF NOT EXISTS \"pgcrypto\";");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Extension_With_Null_Name
+{
+    private Exception? _exception;
+
+    [SetUp]
+    public void Setup()
+    {
+        try
+        {
+            var dialect = new PgsqlDialect(new PgsqlDialectRules());
+            dialect.CreateExtensionIfNotExists(null!);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    [Test]
+    public void It_should_throw_argument_null_exception()
+    {
+        _exception.Should().BeOfType<ArgumentNullException>();
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Create_Uuidv5_Function
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = new PgsqlDialect(new PgsqlDialectRules());
+        _ddl = dialect.CreateUuidv5Function(new DbSchemaName("dms"));
+    }
+
+    [Test]
+    public void It_should_use_create_or_replace_pattern()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION");
+    }
+
+    [Test]
+    public void It_should_qualify_function_name_with_schema()
+    {
+        _ddl.Should().Contain("\"dms\".\"uuidv5\"");
+    }
+
+    [Test]
+    public void It_should_accept_uuid_and_text_parameters()
+    {
+        _ddl.Should().Contain("namespace_uuid uuid").And.Contain("name_text text");
+    }
+
+    [Test]
+    public void It_should_return_uuid()
+    {
+        _ddl.Should().Contain("RETURNS uuid");
+    }
+
+    [Test]
+    public void It_should_use_plpgsql_language()
+    {
+        _ddl.Should().Contain("LANGUAGE plpgsql");
+    }
+
+    [Test]
+    public void It_should_use_sha1_digest()
+    {
+        _ddl.Should().Contain("digest(").And.Contain("'sha1'");
+    }
+
+    [Test]
+    public void It_should_convert_namespace_to_bytes_via_hex_decode()
+    {
+        _ddl.Should().Contain("decode(replace(namespace_uuid::text, '-', ''), 'hex')");
+    }
+
+    [Test]
+    public void It_should_convert_name_to_utf8()
+    {
+        _ddl.Should().Contain("convert_to(name_text, 'UTF8')");
+    }
+
+    [Test]
+    public void It_should_set_version_5_on_byte_6()
+    {
+        _ddl.Should().Contain("set_byte(hash, 6,").And.Contain("x'50'");
+    }
+
+    [Test]
+    public void It_should_set_variant_rfc4122_on_byte_8()
+    {
+        _ddl.Should().Contain("set_byte(hash, 8,").And.Contain("x'80'");
+    }
+
+    [Test]
+    public void It_should_be_marked_immutable()
+    {
+        _ddl.Should().Contain("IMMUTABLE");
+    }
+
+    [Test]
+    public void It_should_be_marked_strict()
+    {
+        _ddl.Should().Contain("STRICT");
+    }
+
+    [Test]
+    public void It_should_be_marked_parallel_safe()
+    {
+        _ddl.Should().Contain("PARALLEL SAFE");
+    }
+
+    [Test]
+    public void It_should_extract_first_16_bytes_of_hash()
+    {
+        _ddl.Should().Contain("substring(hash from 1 for 16)");
+    }
+}
