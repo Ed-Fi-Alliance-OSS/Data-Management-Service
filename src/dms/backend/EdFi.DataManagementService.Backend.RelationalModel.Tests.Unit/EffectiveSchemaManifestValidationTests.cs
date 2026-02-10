@@ -43,6 +43,168 @@ public class Given_A_Null_EffectiveSchemaInfo
 }
 
 /// <summary>
+/// Test fixture for emitting a manifest with an empty API schema format version.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Empty_ApiSchemaFormatVersion
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var info = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "deadbeef",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: [0x01],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    "ed-fi",
+                    "Ed-Fi",
+                    "5.0.0",
+                    false,
+                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                ),
+            ],
+            ResourceKeysInIdOrder: []
+        );
+
+        try
+        {
+            EffectiveSchemaManifestEmitter.Emit(info);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should throw an ArgumentException.
+    /// </summary>
+    [Test]
+    public void It_should_throw_ArgumentException()
+    {
+        _exception.Should().BeOfType<ArgumentException>();
+        _exception!.Message.Should().Contain("ApiSchemaFormatVersion");
+    }
+}
+
+/// <summary>
+/// Test fixture for emitting a manifest with an empty relational mapping version.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Empty_RelationalMappingVersion
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var info = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "",
+            EffectiveSchemaHash: "deadbeef",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: [0x01],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    "ed-fi",
+                    "Ed-Fi",
+                    "5.0.0",
+                    false,
+                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                ),
+            ],
+            ResourceKeysInIdOrder: []
+        );
+
+        try
+        {
+            EffectiveSchemaManifestEmitter.Emit(info);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should throw an ArgumentException.
+    /// </summary>
+    [Test]
+    public void It_should_throw_ArgumentException()
+    {
+        _exception.Should().BeOfType<ArgumentException>();
+        _exception!.Message.Should().Contain("RelationalMappingVersion");
+    }
+}
+
+/// <summary>
+/// Test fixture for emitting a manifest with an empty resource key seed hash.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaInfo_With_Empty_ResourceKeySeedHash
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var info = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "deadbeef",
+            ResourceKeyCount: 0,
+            ResourceKeySeedHash: [],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    "ed-fi",
+                    "Ed-Fi",
+                    "5.0.0",
+                    false,
+                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                ),
+            ],
+            ResourceKeysInIdOrder: []
+        );
+
+        try
+        {
+            EffectiveSchemaManifestEmitter.Emit(info);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should throw an ArgumentException.
+    /// </summary>
+    [Test]
+    public void It_should_throw_ArgumentException()
+    {
+        _exception.Should().BeOfType<ArgumentException>();
+        _exception!.Message.Should().Contain("ResourceKeySeedHash");
+    }
+}
+
+/// <summary>
 /// Test fixture for emitting a manifest with an empty effective schema hash.
 /// </summary>
 [TestFixture]

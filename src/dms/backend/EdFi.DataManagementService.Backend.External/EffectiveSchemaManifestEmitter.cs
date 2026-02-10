@@ -15,7 +15,8 @@ namespace EdFi.DataManagementService.Backend.External;
 /// </summary>
 public static class EffectiveSchemaManifestEmitter
 {
-    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
+    // Explicit \n ensures deterministic line endings per ddl-generator-testing.md normative requirements
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
 
     /// <summary>
     /// Emits a JSON manifest for the given effective schema info.
