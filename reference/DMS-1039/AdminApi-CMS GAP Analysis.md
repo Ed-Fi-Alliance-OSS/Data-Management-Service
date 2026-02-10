@@ -32,7 +32,7 @@ CMS
 
 ### HTTP status semantics
 
-The Admin API contract relies on specific status codes (for example `201 Created` for POST /vendors and `204 No Content` for DELETE operations).
+The CMS contract relies on specific status codes (for example `201 Created` for POST /vendors and `204 No Content` for DELETE operations). AdminAPI for some POST returns 200. So that, we need to use the same codes for both contracts.
 
 ### `Location` header format
 
@@ -54,9 +54,96 @@ Location: http://localhost:8081/v2/profiles/2
 
 The Admin API schema, DTOs, and query parameters consistently use the `odsInstance` naming. CMS renamed every element to `dmsInstance`. Because these shapes appear throughout applications, API clients, and instance-management routes, the casing and naming must match exactly (for example, `odsInstanceIds` arrays, `instanceName` vs `name`).
 
+| AdminApi                | CMS                        |
+|-------------------------|----------------------------|
+| odsInstance             | dmsInstance                |
+| odsInstanceRouteContexts| dmsInstanceRouteContexts   |
+| odsInstanceDerivatives  | dmsInstanceDerivatives     |
+
+GET AdminApi /v2/odsInstances
+
+```json
+[
+  {
+    "id": 1,
+    "name": "Ods-test",
+    "instanceType": "OdsInstance"
+  }
+]
+```
+
+GET CMS /v2/dmsInstances
+
+```json
+[
+  {
+    "id": 1,
+    "instanceType": "Development",
+    "instanceName": "Local Development Instance",
+    "connectionString": "host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_datamanagementservice;",
+    "dmsInstanceRouteContexts": [],
+    "dmsInstanceDerivatives": [],
+    "tenantId": null
+  }
+]
+```
+
 ### PUT identifier validation
 
 Admin API trusts the identifier supplied in the URL. CMS additionally requires an `id` property in the request body and rejects the call when the values differ. Introducing this validation to Admin API would be a breaking change, so the safer option is for CMS to relax the body requirement when operating in Admin compatibility mode.
+
+CMS
+PUT /v2/vendors/{{vendorId}}
+
+```json
+{
+  "id": {{vendorId}},
+  "company": "Sample Vendor (Updated)",
+  "namespacePrefixes": "uri://sample/vendor",
+  "contactName": "Updated Contact",
+  "contactEmailAddress": "<vendor.owner@example.org>"
+}
+```
+
+Response
+
+```
+HTTP/1.1 204 No Content
+Connection: close
+Date: Tue, 10 Feb 2026 19:00:25 GMT
+Server: Kestrel
+```
+
+If the id is not sent it will fail.
+CMS
+PUT /v2/vendors/{{vendorId}}
+
+```json
+{
+  "company": "Sample Vendor (Updated)",
+  "namespacePrefixes": "uri://sample/vendor",
+  "contactName": "Updated Contact",
+  "contactEmailAddress": "<vendor.owner@example.org>"
+}
+```
+
+Response
+
+```
+{
+  "detail": "Data validation failed. See 'validationErrors' for details.",
+  "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+  "title": "Data Validation Failed",
+  "status": 400,
+  "correlationId": "0HNJ8OCUNQODN:00000001",
+  "validationErrors": {
+    "Id": [
+      "Request body id must match the id in the url."
+    ]
+  },
+  "errors": []
+}
+```
 
 ### Error payload shape
 
@@ -104,9 +191,9 @@ CMS
 
 Admin API accepts spaces in `claimSetName` when creating an application. CMS rejects the same value with a `400` and a validation error (`Claim set name must not contain white spaces.`). For backwards compatibility CMS should align to the Admin validation rules or provide a compatibility flag.
 
-#### GET payload shape
+#### GET Applications
 
-Admin API returns the full `applicationModel`, including `enabled`, `educationOrganizationIds`, `profileIds`, and `odsInstanceIds`. CMS exposes only credentials for a single application record and renames the instance array to `dmsInstanceIds`, so callers lose required context.
+Admin API returns the full `applicationModel`, including `enabled`, `educationOrganizationIds`, `profileIds`, and `odsInstanceIds`. CMS exposes renames the instance array to `dmsInstanceIds`, so callers lose required context.
 
 Admin API
 
@@ -128,42 +215,70 @@ Admin API
 CMS
 
 ```json
-{
-  "id": 2,
-  "key": "f6131a61-b368-4e2e-8df8-f883a0bdfb4b",
-  "secret": "M578tvpppKqOMKPeO4Vugsv25xKUssUW"
-}
+[
+  {
+    "id": 2,
+    "applicationName": "For ed orgs",
+    "vendorId": 3,
+    "claimSetName": "E2E-RelationshipsWithEdOrgsOnlyClaimSet",
+    "educationOrganizationIds": [
+      255,
+      255901
+    ],
+    "dmsInstanceIds": [
+      3
+    ],
+    "profileIds": []
+  }
+]
 ```
 
-#### POST response payload
+### API clients
 
-Admin API returns an `applicationResult` (including `name` and `applicationId`) with `201 Created`. CMS only returns an object with `id`, `key`, and `secret`, so Admin UI flows that display the friendly name or store the numeric application ID cannot function.
+CMS camel-cases every route segment (`/v2/apiClients`), accepts both integers and strings for IDs, omits some fields and renames `odsInstanceIds` to `dmsInstanceIds`. Admin API also returns the newly issued key/secret on POST/PUT/reset, while CMS returns an empty `200`.
+
+#### GET payload shape
+
+Admin API and CMS return different payloads for ApiClient records. CMS renames the instance array to `dmsInstanceIds` and omits some fields, so callers lose required context.
 
 Admin API
 
 ```json
-{
-  "id": 2,
-  "name": "Sample Api Client",
-  "key": "gnDrdsZypzHN",
-  "secret": "4cTdDMY28Dk7PhWOWbVcKUmV",
-  "applicationId": 1
-}
+[
+  {
+    "id": 1,
+    "key": "vhr4ymgjaUdb",
+    "name": "Sample Application (Updated)",
+    "isApproved": true,
+    "useSandbox": false,
+    "sandboxType": 0,
+    "applicationId": 1,
+    "keyStatus": "Active",
+    "educationOrganizationIds": [],
+    "odsInstanceIds": [
+      1
+    ]
+  }
+]
 ```
 
 CMS
 
 ```json
-{
-  "id": 2,
-  "key": "f6131a61-b368-4e2e-8df8-f883a0bdfb4b",
-  "secret": "M578tvpppKqOMKPeO4Vugsv25xKUssUW"
-}
+[
+  {
+    "id": 1,
+    "applicationId": 1,
+    "clientId": "c86b44f2-a80b-450d-be0c-4ecf43397e03",
+    "clientUuid": "cbcf7711-10f8-40e9-8c6e-8746e4a7830a",
+    "name": "For ed orgs",
+    "isApproved": true,
+    "dmsInstanceIds": [
+      2
+    ]
+  }
+]
 ```
-
-### API clients
-
-CMS camel-cases every route segment (`/v2/apiClients`), accepts both integers and strings for IDs, omits `enabled`, `educationOrganizationIds`, `profileIds`, and renames `odsInstanceIds` to `dmsInstanceIds`. Admin API also returns the newly issued key/secret on POST/PUT/reset, while CMS returns an empty `200`.
 
 ### API clients by application
 
@@ -204,6 +319,32 @@ CMS
     "dmsInstanceIds": [1]
   }
 ]
+```
+
+#### POST response payload
+
+Admin API returns an `applicationResult` (including `name` and `applicationId`) with `201 Created`. CMS only returns an object with `id`, `key`, and `secret`, so Admin UI flows that display the friendly name or store the numeric application ID cannot function.
+
+Admin API
+
+```json
+{
+  "id": 2,
+  "name": "Sample Api Client",
+  "key": "gnDrdsZypzHN",
+  "secret": "4cTdDMY28Dk7PhWOWbVcKUmV",
+  "applicationId": 1
+}
+```
+
+CMS
+
+```json
+{
+  "id": 2,
+  "key": "f6131a61-b368-4e2e-8df8-f883a0bdfb4b",
+  "secret": "M578tvpppKqOMKPeO4Vugsv25xKUssUW"
+}
 ```
 
 ### Claim set export
@@ -291,7 +432,7 @@ CMS
 
 `/v2/odsInstances/{odsInstanceId}/applications` in Admin API includes an `enabled` flag for each application. CMS omits that property, so Admin consoles cannot display or toggle application availability per instance. Add the field to the CMS response.
 
-### Tenants
+### Tenants differences
 
 Admin API exposes:
 
