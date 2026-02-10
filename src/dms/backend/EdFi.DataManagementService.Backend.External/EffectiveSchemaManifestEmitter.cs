@@ -24,7 +24,7 @@ public static class EffectiveSchemaManifestEmitter
     /// <param name="effectiveSchema">The effective schema info to serialize.</param>
     /// <param name="includeResourceKeys">Whether to include the resource_keys array in the output.</param>
     /// <returns>The JSON manifest string with a trailing newline.</returns>
-    public static string Emit(EffectiveSchemaInfo effectiveSchema, bool includeResourceKeys = true)
+    public static string Emit(EffectiveSchemaInfo effectiveSchema, bool includeResourceKeys = false)
     {
         ValidateInput(effectiveSchema);
 

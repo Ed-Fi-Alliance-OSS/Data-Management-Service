@@ -128,6 +128,53 @@ public class Given_A_Small_EffectiveSchemaInfo_Without_ResourceKeys
 }
 
 /// <summary>
+/// Test fixture verifying the default Emit behavior excludes resource keys.
+/// </summary>
+[TestFixture]
+public class Given_A_Small_EffectiveSchemaInfo_With_Default_Parameters
+{
+    private string _diffOutput = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
+        var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema-no-keys.manifest.json");
+        var actualPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "effective-schema",
+            "effective-schema-default.manifest.json"
+        );
+
+        var effectiveSchema = EffectiveSchemaManifestGoldenHelpers.BuildSmallEffectiveSchemaInfo();
+        var manifest = EffectiveSchemaManifestEmitter.Emit(effectiveSchema);
+
+        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+        File.WriteAllText(actualPath, manifest);
+
+        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+    }
+
+    /// <summary>
+    /// It should match the no-keys manifest by default.
+    /// </summary>
+    [Test]
+    public void It_should_match_the_no_keys_manifest_by_default()
+    {
+        if (!string.IsNullOrWhiteSpace(_diffOutput))
+        {
+            Assert.Fail(_diffOutput);
+        }
+    }
+}
+
+/// <summary>
 /// Shared helpers for effective schema manifest golden tests.
 /// </summary>
 file static class EffectiveSchemaManifestGoldenHelpers
