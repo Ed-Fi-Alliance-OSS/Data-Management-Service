@@ -73,6 +73,10 @@ CMS
 Location: http://localhost:8081/v2/profiles/2
 ```
 
+### Query Parameter Support (Sort/Limit)
+
+CMS endpoints generally do not support query parameters for sorting or limiting results (such as `offset`, `limit`, `orderBy`, or `direction`). While Admin API provides these options for endpoints like tenants, CMS omits them except where explicitly planned for parity. This can impact client applications that rely on pagination or sorting features present in the Admin API.
+
 ### Instance naming (`ods*` vs `dms*`)
 
 The Admin API schema, DTOs, and query parameters consistently use the `odsInstance` naming. CMS renamed every element to `dmsInstance`. Because these shapes appear throughout applications, API clients, and instance-management routes, the casing and naming must match exactly (for example, `odsInstanceIds` arrays, `instanceName` vs `name`).
