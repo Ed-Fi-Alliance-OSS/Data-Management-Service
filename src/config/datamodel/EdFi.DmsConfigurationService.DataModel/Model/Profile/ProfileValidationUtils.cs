@@ -53,14 +53,7 @@ public static class ProfileValidationUtils
     {
         try
         {
-            var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            if (string.IsNullOrEmpty(assemblyDirectory))
-            {
-                return new ProfileXmlValidationResult(
-                    false,
-                    ["Unable to determine assembly directory for schema validation."]
-                );
-            }
+            var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
             var schemas = new XmlSchemaSet();
             schemas.Add("", Path.Combine(assemblyDirectory, "Schema", "Ed-Fi-ODS-API-Profile.xsd"));
 
