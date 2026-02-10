@@ -321,3 +321,302 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
         }
     }
 }
+
+/// <summary>
+/// Test fixture for abstract union-arm source-table collisions after shortening.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new UnionArmSourceTableCollisionPass(effectiveSchemaSet),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
+        );
+
+        var dialectRules = new UnionArmCollisionDialectRules(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["LongUnionArmTableAlpha"] = "UnionArmTableCollision",
+                ["LongUnionArmTableBeta"] = "UnionArmTableCollision",
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with an abstract union-arm source-table collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_abstract_union_arm_source_table_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("table name collision");
+        _exception!.Message.Should().Contain("LongUnionArmTableAlpha");
+        _exception!.Message.Should().Contain("LongUnionArmTableBeta");
+        _exception!.Message.Should().Contain("UnionArmTableCollision");
+    }
+
+    private sealed class UnionArmSourceTableCollisionPass : IRelationalModelSetPass
+    {
+        private readonly ResourceKeyEntry _abstractResource;
+        private readonly ResourceKeyEntry _memberAlpha;
+        private readonly ResourceKeyEntry _memberBeta;
+
+        public UnionArmSourceTableCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
+        {
+            ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
+
+            _abstractResource = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "SchoolTypeDescriptor"
+            );
+            _memberAlpha = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "School"
+            );
+            _memberBeta = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Sample",
+                "Section"
+            );
+        }
+
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var schema = new DbSchemaName("edfi");
+
+            context.AbstractUnionViewsInNameOrder.Add(
+                new AbstractUnionViewInfo(
+                    _abstractResource,
+                    new DbTableName(schema, "SchoolTypeDescriptor_View"),
+                    new[]
+                    {
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("Discriminator"),
+                            new RelationalScalarType(ScalarKind.String, MaxLength: 256),
+                            SourceJsonPath: null,
+                            TargetResource: null
+                        ),
+                    },
+                    new[]
+                    {
+                        new AbstractUnionViewArm(
+                            _memberAlpha,
+                            new DbTableName(schema, "LongUnionArmTableAlpha"),
+                            new AbstractUnionViewProjectionExpression[]
+                            {
+                                new AbstractUnionViewProjectionExpression.StringLiteral("Alpha"),
+                            }
+                        ),
+                        new AbstractUnionViewArm(
+                            _memberBeta,
+                            new DbTableName(schema, "LongUnionArmTableBeta"),
+                            new AbstractUnionViewProjectionExpression[]
+                            {
+                                new AbstractUnionViewProjectionExpression.StringLiteral("Beta"),
+                            }
+                        ),
+                    }
+                )
+            );
+        }
+    }
+
+    private sealed class UnionArmCollisionDialectRules : ISqlDialectRules
+    {
+        private readonly IReadOnlyDictionary<string, string> _mapping;
+        private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
+
+        public UnionArmCollisionDialectRules(IReadOnlyDictionary<string, string> mapping)
+        {
+            _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
+        }
+
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public int MaxIdentifierLength => 63;
+
+        public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        public string ShortenIdentifier(string identifier)
+        {
+            return _mapping.TryGetValue(identifier, out var updated) ? updated : identifier;
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract union-arm source-column collisions after shortening.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new UnionArmSourceColumnCollisionPass(effectiveSchemaSet),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
+        );
+
+        var dialectRules = new UnionArmColumnCollisionDialectRules(
+            new Dictionary<string, string>(StringComparer.Ordinal)
+            {
+                ["LongUnionArmSourceColumnAlpha"] = "UnionArmSourceColumnCollision",
+                ["LongUnionArmSourceColumnBeta"] = "UnionArmSourceColumnCollision",
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with an abstract union-arm source-column collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_abstract_union_arm_source_column_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("column name collision");
+        _exception!.Message.Should().Contain("LongUnionArmSourceColumnAlpha");
+        _exception!.Message.Should().Contain("LongUnionArmSourceColumnBeta");
+        _exception!.Message.Should().Contain("UnionArmSourceColumnCollision");
+    }
+
+    private sealed class UnionArmSourceColumnCollisionPass : IRelationalModelSetPass
+    {
+        private readonly ResourceKeyEntry _abstractResource;
+        private readonly ResourceKeyEntry _memberAlpha;
+        private readonly ResourceKeyEntry _memberBeta;
+
+        public UnionArmSourceColumnCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
+        {
+            ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
+
+            _abstractResource = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "SchoolTypeDescriptor"
+            );
+            _memberAlpha = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "School"
+            );
+            _memberBeta = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Sample",
+                "Section"
+            );
+        }
+
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var schema = new DbSchemaName("edfi");
+            var sourceTable = new DbTableName(schema, "UnionArmSourceTable");
+
+            context.AbstractUnionViewsInNameOrder.Add(
+                new AbstractUnionViewInfo(
+                    _abstractResource,
+                    new DbTableName(schema, "SchoolTypeDescriptor_View"),
+                    new[]
+                    {
+                        new AbstractUnionViewOutputColumn(
+                            new DbColumnName("DocumentId"),
+                            new RelationalScalarType(ScalarKind.Int64),
+                            SourceJsonPath: null,
+                            TargetResource: null
+                        ),
+                    },
+                    new[]
+                    {
+                        new AbstractUnionViewArm(
+                            _memberAlpha,
+                            sourceTable,
+                            new AbstractUnionViewProjectionExpression[]
+                            {
+                                new AbstractUnionViewProjectionExpression.SourceColumn(
+                                    new DbColumnName("LongUnionArmSourceColumnAlpha")
+                                ),
+                            }
+                        ),
+                        new AbstractUnionViewArm(
+                            _memberBeta,
+                            sourceTable,
+                            new AbstractUnionViewProjectionExpression[]
+                            {
+                                new AbstractUnionViewProjectionExpression.SourceColumn(
+                                    new DbColumnName("LongUnionArmSourceColumnBeta")
+                                ),
+                            }
+                        ),
+                    }
+                )
+            );
+        }
+    }
+
+    private sealed class UnionArmColumnCollisionDialectRules : ISqlDialectRules
+    {
+        private readonly IReadOnlyDictionary<string, string> _mapping;
+        private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
+
+        public UnionArmColumnCollisionDialectRules(IReadOnlyDictionary<string, string> mapping)
+        {
+            _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
+        }
+
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public int MaxIdentifierLength => 63;
+
+        public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        public string ShortenIdentifier(string identifier)
+        {
+            return _mapping.TryGetValue(identifier, out var updated) ? updated : identifier;
+        }
+    }
+}

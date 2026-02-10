@@ -801,6 +801,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
+        var registeredTables = new HashSet<DbTableName>();
+        var registeredColumns = new HashSet<(DbTableName Table, DbColumnName Column)>();
 
         foreach (var resource in orderedConcreteResources)
         {
@@ -812,6 +814,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     table.Table,
                     BuildOrigin($"table {FormatTable(table.Table)}", resourceLabel, table.JsonScope)
                 );
+                registeredTables.Add(table.Table);
 
                 foreach (var column in table.Columns)
                 {
@@ -825,6 +828,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                             table.JsonScope
                         )
                     );
+                    registeredColumns.Add((table.Table, column.ColumnName));
                 }
 
                 var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(table.Table, table.Key);
@@ -870,6 +874,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     tableModel.JsonScope
                 )
             );
+            registeredTables.Add(tableModel.Table);
 
             foreach (var column in tableModel.Columns)
             {
@@ -883,6 +888,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                         tableModel.JsonScope
                     )
                 );
+                registeredColumns.Add((tableModel.Table, column.ColumnName));
             }
 
             var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(tableModel.Table, tableModel.Key);
@@ -922,6 +928,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 view.ViewName,
                 BuildOrigin($"view {FormatTable(view.ViewName)} (abstract union)", resourceLabel, null)
             );
+            registeredTables.Add(view.ViewName);
 
             foreach (var column in view.OutputColumnsInSelectOrder)
             {
@@ -933,6 +940,17 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                         resourceLabel,
                         column.SourceJsonPath
                     )
+                );
+                registeredColumns.Add((view.ViewName, column.ColumnName));
+            }
+
+            foreach (var arm in view.UnionArmsInOrder)
+            {
+                RegisterUnionArmSourceIdentifierCollisions(
+                    detector,
+                    arm,
+                    registeredTables,
+                    registeredColumns
                 );
             }
         }
@@ -956,6 +974,57 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
 
         detector.ThrowIfCollisions();
+    }
+
+    /// <summary>
+    /// Registers source identifiers referenced by abstract union-view arms when not already covered by
+    /// concrete/abstract table registrations.
+    /// </summary>
+    private static void RegisterUnionArmSourceIdentifierCollisions(
+        IdentifierCollisionDetector detector,
+        AbstractUnionViewArm arm,
+        HashSet<DbTableName> registeredTables,
+        HashSet<(DbTableName Table, DbColumnName Column)> registeredColumns
+    )
+    {
+        var resourceLabel = FormatResource(arm.ConcreteMemberResourceKey.Resource);
+
+        if (registeredTables.Add(arm.FromTable))
+        {
+            detector.RegisterTable(
+                arm.FromTable,
+                BuildOrigin(
+                    $"table {FormatTable(arm.FromTable)} (abstract union arm source)",
+                    resourceLabel,
+                    null
+                )
+            );
+        }
+
+        foreach (var projection in arm.ProjectionExpressionsInSelectOrder)
+        {
+            if (projection is not AbstractUnionViewProjectionExpression.SourceColumn sourceColumn)
+            {
+                continue;
+            }
+
+            var columnKey = (arm.FromTable, sourceColumn.ColumnName);
+
+            if (!registeredColumns.Add(columnKey))
+            {
+                continue;
+            }
+
+            detector.RegisterColumn(
+                arm.FromTable,
+                sourceColumn.ColumnName,
+                BuildOrigin(
+                    $"column {FormatColumn(arm.FromTable, sourceColumn.ColumnName)} (abstract union arm source)",
+                    resourceLabel,
+                    null
+                )
+            );
+        }
     }
 
     /// <summary>
