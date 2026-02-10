@@ -99,18 +99,26 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     /// <summary>
-    /// It should include composite unique constraint.
+    /// It should include natural and reference-key unique constraints.
     /// </summary>
     [Test]
-    public void It_should_include_composite_unique_constraint()
+    public void It_should_include_natural_and_reference_key_unique_constraints()
     {
-        var unique = _abstractIdentityTable.TableModel.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueByName = _abstractIdentityTable
+            .TableModel.Constraints.OfType<TableConstraint.Unique>()
+            .ToDictionary(constraint => constraint.Name, StringComparer.Ordinal);
 
-        unique
+        uniqueByName
+            .Keys.Should()
+            .Equal("UX_EducationOrganizationIdentity_NK", "UX_EducationOrganizationIdentity_RefKey");
+        uniqueByName["UX_EducationOrganizationIdentity_NK"]
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("EducationOrganizationId", "OrganizationName");
+        uniqueByName["UX_EducationOrganizationIdentity_RefKey"]
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("DocumentId", "EducationOrganizationId", "OrganizationName");
-        unique.Name.Should().Be("UX_EducationOrganizationIdentity_NK");
     }
 
     /// <summary>

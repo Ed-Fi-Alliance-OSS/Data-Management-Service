@@ -839,23 +839,34 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         IReadOnlyList<DbColumnModel> identityColumns
     )
     {
-        List<DbColumnName> uniqueColumns = [RelationalNameConventions.DocumentIdColumnName];
-        uniqueColumns.AddRange(identityColumns.Select(column => column.ColumnName));
+        List<TableConstraint> constraints = [];
+        var naturalKeyColumns = identityColumns.Select(column => column.ColumnName).ToArray();
 
-        var uniqueName = ConstraintNaming.BuildNaturalKeyUniqueName(tableName);
+        if (naturalKeyColumns.Length > 0)
+        {
+            var naturalKeyName = ConstraintNaming.BuildNaturalKeyUniqueName(tableName);
+            constraints.Add(new TableConstraint.Unique(naturalKeyName, naturalKeyColumns));
+
+            List<DbColumnName> referenceKeyColumns = [RelationalNameConventions.DocumentIdColumnName];
+            referenceKeyColumns.AddRange(naturalKeyColumns);
+
+            var referenceKeyName = ConstraintNaming.BuildReferenceKeyUniqueName(tableName);
+            constraints.Add(new TableConstraint.Unique(referenceKeyName, referenceKeyColumns.ToArray()));
+        }
+
         var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
 
-        return new TableConstraint[]
-        {
-            new TableConstraint.Unique(uniqueName, uniqueColumns.ToArray()),
+        constraints.Add(
             new TableConstraint.ForeignKey(
                 fkName,
                 new[] { RelationalNameConventions.DocumentIdColumnName },
                 _documentTableName,
                 new[] { RelationalNameConventions.DocumentIdColumnName },
                 OnDelete: ReferentialAction.Cascade
-            ),
-        };
+            )
+        );
+
+        return constraints.ToArray();
     }
 
     /// <summary>
