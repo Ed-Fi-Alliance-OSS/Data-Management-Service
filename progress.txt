@@ -23,3 +23,8 @@ Decisions: Updated ordering-fixture union-view builders to create minimal valid 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DerivedRelationalModelSetBuilderOrderingTests.cs; tasks.json.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj PASS (317/317); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj PASS (286/286).
 Blockers/notes: No blockers. Next iteration should execute Tests task for extra polymorphic union-view coverage.
+2026-02-10 - Completed task: Tests (DMS-933, story reference/design/backend-redesign/epics/01-relational-model/04-abstract-union-views.md).
+Decisions: Added focused positive extension-project coverage instead of widening existing fixtures; assert arm inclusion by concrete member identity and discriminator literal to directly cover requirement that extension members participate in abstract union views.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/AbstractIdentityTableDerivationTests.cs; tasks.json.
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj PASS (318/318); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln PASS (same pre-existing Reqnroll warning in EdFi.DataManagementService.Tests.E2E).
+Blockers/notes: No blockers. Next iteration should execute remaining Build task (full validation command set, incl Ddl unit tests).

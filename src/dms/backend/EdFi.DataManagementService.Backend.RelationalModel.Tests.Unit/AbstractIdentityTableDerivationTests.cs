@@ -467,6 +467,168 @@ public class Given_Association_Subclass_With_Superclass_Identity_Rename_Mapping
 }
 
 /// <summary>
+/// Test fixture for abstract identity table derivation with extension project members.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Extension_Project_Member
+{
+    private AbstractUnionViewInfo _abstractUnionView = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            BuildCoreProjectSchema(),
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            BuildExtensionProjectSchema(),
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractUnionView = result.AbstractUnionViewsInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should include extension project members as union arms with project-qualified discriminator values.
+    /// </summary>
+    [Test]
+    public void It_should_include_extension_project_members_as_union_arms_with_project_qualified_discriminator()
+    {
+        _abstractUnionView
+            .UnionArmsInOrder.Select(arm =>
+                (
+                    arm.ConcreteMemberResourceKey.Resource.ProjectName,
+                    arm.ConcreteMemberResourceKey.Resource.ResourceName
+                )
+            )
+            .Should()
+            .Equal(("Sample", "CharterSchool"), ("Ed-Fi", "School"));
+
+        var discriminatorLiterals = _abstractUnionView
+            .UnionArmsInOrder.Select(arm =>
+                arm.ProjectionExpressionsInSelectOrder[^1]
+                    .Should()
+                    .BeOfType<AbstractUnionViewProjectionExpression.StringLiteral>()
+                    .Which.Value
+            )
+            .ToArray();
+
+        discriminatorLiterals.Should().Equal("Sample:CharterSchool", "Ed-Fi:School");
+    }
+
+    /// <summary>
+    /// Build core project schema.
+    /// </summary>
+    private static JsonObject BuildCoreProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["resourceName"] = "EducationOrganization",
+                    ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = BuildConcreteSubclassResourceSchema(
+                    resourceName: "School",
+                    superclassProjectName: "Ed-Fi"
+                ),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build extension project schema.
+    /// </summary>
+    private static JsonObject BuildExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["charterSchools"] = BuildConcreteSubclassResourceSchema(
+                    resourceName: "CharterSchool",
+                    superclassProjectName: "Ed-Fi"
+                ),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build concrete subclass resource schema.
+    /// </summary>
+    private static JsonObject BuildConcreteSubclassResourceSchema(
+        string resourceName,
+        string superclassProjectName
+    )
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = superclassProjectName,
+            ["superclassResourceName"] = "EducationOrganization",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.educationOrganizationId",
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["educationOrganizationId"] = new JsonObject
+                    {
+                        ["type"] = "integer",
+                        ["format"] = "int64",
+                    },
+                },
+                ["required"] = new JsonArray { "educationOrganizationId" },
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test fixture for duplicate concrete member names across projects.
 /// </summary>
 [TestFixture]
