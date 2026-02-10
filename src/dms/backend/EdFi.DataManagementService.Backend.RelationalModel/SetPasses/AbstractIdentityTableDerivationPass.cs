@@ -5,6 +5,7 @@
 
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -50,9 +51,10 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             )
             {
                 var abstractResource = new QualifiedResourceName(projectName, abstractEntry.ResourceName);
-                var identityJsonPaths = ExtractIdentityJsonPaths(
+                var identityJsonPaths = IdentityJsonPathsExtractor.ExtractIdentityJsonPaths(
                     abstractEntry.ResourceSchema,
-                    abstractResource
+                    abstractResource.ProjectName,
+                    abstractResource.ResourceName
                 );
                 var members = concreteMetadataByResource
                     .Values.Where(metadata =>
@@ -170,7 +172,11 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 resourceSchema["jsonSchemaForInsert"],
                 "jsonSchemaForInsert"
             );
-            var identityJsonPaths = ExtractIdentityJsonPaths(resourceSchema, resource);
+            var identityJsonPaths = IdentityJsonPathsExtractor.ExtractIdentityJsonPaths(
+                resourceSchema,
+                resource.ProjectName,
+                resource.ResourceName
+            );
             var subclassType = TryGetOptionalString(resourceSchema, "subclassType");
             var superclassProjectName = TryGetOptionalString(resourceSchema, "superclassProjectName");
             var superclassResourceName = TryGetOptionalString(resourceSchema, "superclassResourceName");
@@ -181,7 +187,9 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             JsonPathExpression? superclassIdentityPath = superclassIdentityJsonPath is null
                 ? null
                 : JsonPathExpressionCompiler.Compile(superclassIdentityJsonPath);
-            var decimalInfos = ExtractDecimalPropertyValidationInfos(resourceSchema);
+            var decimalInfos = DecimalPropertyValidationInfosExtractor.ExtractDecimalPropertyValidationInfos(
+                resourceSchema
+            );
             var rootColumnsBySourcePath = BuildRootColumnsBySourcePath(model.RelationalModel.Root, resource);
 
             if (string.IsNullOrWhiteSpace(superclassProjectName))
@@ -864,166 +872,20 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     /// </summary>
     private static string ResolveRootBaseName(JsonObject resourceSchema, QualifiedResourceName resource)
     {
-        if (!resourceSchema.TryGetPropertyValue("relational", out var relationalNode))
-        {
-            return RelationalNameConventions.ToPascalCase(resource.ResourceName);
-        }
+        var relationalObject = RelationalOverridesExtractor.GetRelationalObject(
+            resourceSchema,
+            resource.ProjectName,
+            resource.ResourceName,
+            isDescriptor: false
+        );
+        var rootTableNameOverride = RelationalOverridesExtractor.ExtractRootTableNameOverride(
+            relationalObject,
+            isResourceExtension: false,
+            resource.ProjectName,
+            resource.ResourceName
+        );
 
-        if (relationalNode is null)
-        {
-            return RelationalNameConventions.ToPascalCase(resource.ResourceName);
-        }
-
-        if (relationalNode is not JsonObject relationalObject)
-        {
-            throw new InvalidOperationException(
-                $"Expected relational to be an object for abstract resource '{FormatResource(resource)}'."
-            );
-        }
-
-        if (!relationalObject.TryGetPropertyValue("rootTableNameOverride", out var overrideNode))
-        {
-            return RelationalNameConventions.ToPascalCase(resource.ResourceName);
-        }
-
-        if (overrideNode is null)
-        {
-            throw new InvalidOperationException(
-                "relational.rootTableNameOverride must be non-empty on abstract resource "
-                    + $"'{FormatResource(resource)}'."
-            );
-        }
-
-        if (overrideNode is not JsonValue overrideValue)
-        {
-            throw new InvalidOperationException(
-                "relational.rootTableNameOverride must be a string on abstract resource "
-                    + $"'{FormatResource(resource)}'."
-            );
-        }
-
-        var overrideText = overrideValue.GetValue<string>();
-
-        if (string.IsNullOrWhiteSpace(overrideText))
-        {
-            throw new InvalidOperationException(
-                "relational.rootTableNameOverride must be non-empty on abstract resource "
-                    + $"'{FormatResource(resource)}'."
-            );
-        }
-
-        var normalized = RelationalNameConventions.ToPascalCase(overrideText);
-
-        if (string.IsNullOrWhiteSpace(normalized))
-        {
-            throw new InvalidOperationException(
-                "relational.rootTableNameOverride must normalize to a non-empty name on abstract resource "
-                    + $"'{FormatResource(resource)}'."
-            );
-        }
-
-        return normalized;
-    }
-
-    /// <summary>
-    /// Extracts and compiles <c>identityJsonPaths</c> from an abstract resource schema, validating duplicates.
-    /// </summary>
-    private static IReadOnlyList<JsonPathExpression> ExtractIdentityJsonPaths(
-        JsonObject resourceSchema,
-        QualifiedResourceName resource
-    )
-    {
-        if (resourceSchema["identityJsonPaths"] is not JsonArray identityJsonPaths)
-        {
-            throw new InvalidOperationException(
-                $"Expected identityJsonPaths to be present on resource '{FormatResource(resource)}'."
-            );
-        }
-
-        List<JsonPathExpression> compiledPaths = new(identityJsonPaths.Count);
-        HashSet<string> seenPaths = new(StringComparer.Ordinal);
-        HashSet<string> duplicatePaths = new(StringComparer.Ordinal);
-
-        foreach (var identityJsonPath in identityJsonPaths)
-        {
-            if (identityJsonPath is null)
-            {
-                throw new InvalidOperationException(
-                    "Expected identityJsonPaths to not contain null entries, invalid ApiSchema."
-                );
-            }
-
-            var identityPath = identityJsonPath.GetValue<string>();
-            var compiledPath = JsonPathExpressionCompiler.Compile(identityPath);
-            compiledPaths.Add(compiledPath);
-
-            if (!seenPaths.Add(compiledPath.Canonical))
-            {
-                duplicatePaths.Add(compiledPath.Canonical);
-            }
-        }
-
-        if (duplicatePaths.Count > 0)
-        {
-            var duplicates = string.Join(", ", duplicatePaths.OrderBy(path => path, StringComparer.Ordinal));
-
-            throw new InvalidOperationException(
-                $"identityJsonPaths on abstract resource '{FormatResource(resource)}' contains duplicate JSONPaths: {duplicates}."
-            );
-        }
-
-        return compiledPaths.ToArray();
-    }
-
-    /// <summary>
-    /// Extracts <c>decimalPropertyValidationInfos</c> into a lookup keyed by canonical JSONPath.
-    /// </summary>
-    private static Dictionary<string, DecimalPropertyValidationInfo> ExtractDecimalPropertyValidationInfos(
-        JsonObject resourceSchema
-    )
-    {
-        Dictionary<string, DecimalPropertyValidationInfo> decimalInfosByPath = new(StringComparer.Ordinal);
-
-        if (resourceSchema["decimalPropertyValidationInfos"] is not JsonArray decimalInfos)
-        {
-            return decimalInfosByPath;
-        }
-
-        foreach (var decimalInfo in decimalInfos)
-        {
-            if (decimalInfo is null)
-            {
-                throw new InvalidOperationException(
-                    "Expected decimalPropertyValidationInfos to not contain null entries, invalid ApiSchema."
-                );
-            }
-
-            if (decimalInfo is not JsonObject decimalInfoObject)
-            {
-                throw new InvalidOperationException(
-                    "Expected decimalPropertyValidationInfos entries to be objects, invalid ApiSchema."
-                );
-            }
-
-            var decimalPath = RequireString(decimalInfoObject, "path");
-            var totalDigits = decimalInfoObject["totalDigits"]?.GetValue<short?>();
-            var decimalPlaces = decimalInfoObject["decimalPlaces"]?.GetValue<short?>();
-            var decimalJsonPath = JsonPathExpressionCompiler.Compile(decimalPath);
-
-            if (
-                !decimalInfosByPath.TryAdd(
-                    decimalJsonPath.Canonical,
-                    new DecimalPropertyValidationInfo(decimalJsonPath, totalDigits, decimalPlaces)
-                )
-            )
-            {
-                throw new InvalidOperationException(
-                    $"Decimal validation info for '{decimalJsonPath.Canonical}' is already defined."
-                );
-            }
-        }
-
-        return decimalInfosByPath;
+        return rootTableNameOverride ?? RelationalNameConventions.ToPascalCase(resource.ResourceName);
     }
 
     /// <summary>
