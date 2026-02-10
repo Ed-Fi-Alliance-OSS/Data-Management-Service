@@ -164,7 +164,7 @@ public sealed class PgsqlDialect : SqlDialectBase
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = '{escapedSchema}.{escapedTable}'::regclass
+                    AND conrelid = to_regclass('{escapedSchema}.{escapedTable}')
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -208,7 +208,7 @@ public sealed class PgsqlDialect : SqlDialectBase
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = '{escapedSchema}.{escapedTable}'::regclass
+                    AND conrelid = to_regclass('{escapedSchema}.{escapedTable}')
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -239,7 +239,7 @@ public sealed class PgsqlDialect : SqlDialectBase
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = '{escapedSchema}.{escapedTable}'::regclass
+                    AND conrelid = to_regclass('{escapedSchema}.{escapedTable}')
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -306,6 +306,15 @@ public sealed class PgsqlDialect : SqlDialectBase
     /// <inheritdoc />
     public override string RenderBinaryColumnType(int length)
     {
+        if (length <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(length),
+                length,
+                "Binary column length must be positive."
+            );
+        }
+
         // PostgreSQL bytea is variable-length; the length parameter is
         // enforced via a CHECK constraint, not the type itself.
         return "bytea";
@@ -317,7 +326,8 @@ public sealed class PgsqlDialect : SqlDialectBase
         ArgumentNullException.ThrowIfNull(sequenceName);
 
         var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier(sequenceName)}";
-        return $"nextval('{qualifiedName}')";
+        var escapedForLiteral = qualifiedName.Replace("'", "''");
+        return $"nextval('{escapedForLiteral}')";
     }
 
     /// <inheritdoc />
