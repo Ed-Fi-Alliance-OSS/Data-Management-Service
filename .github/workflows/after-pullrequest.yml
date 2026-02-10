@@ -20,10 +20,10 @@ jobs:
     if: github.event.workflow_run.conclusion != 'skipped'
 
     permissions:
+      contents: read
       checks: write
       pull-requests: write
       # only needed for private repository
-      # contents: read
       # issues: read
     steps:
       - name: Download and Extract Artifacts
