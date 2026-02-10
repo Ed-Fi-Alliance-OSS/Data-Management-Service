@@ -151,7 +151,16 @@ internal static class ReservedIdentifierFixture
                 "hash",
                 1,
                 new byte[] { 0x01 },
-                new[] { new SchemaComponentInfo("test", "TestProject", "1.0.0", false) },
+                new[]
+                {
+                    new SchemaComponentInfo(
+                        "test",
+                        "TestProject",
+                        "1.0.0",
+                        false,
+                        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    ),
+                },
                 new[] { resourceKey }
             ),
             dialect,

@@ -103,7 +103,8 @@ internal static class EffectiveSchemaSetFixtureBuilder
                 project.ProjectEndpointName,
                 project.ProjectName,
                 project.ProjectVersion,
-                project.IsExtensionProject
+                project.IsExtensionProject,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
             ))
             .ToArray();
 

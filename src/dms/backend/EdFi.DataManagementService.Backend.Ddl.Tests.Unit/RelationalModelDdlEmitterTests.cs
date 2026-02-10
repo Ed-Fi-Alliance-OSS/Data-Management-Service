@@ -97,7 +97,15 @@ internal static class PrimaryKeyFixture
                 "hash",
                 1,
                 [0x01],
-                [new SchemaComponentInfo("ed-fi", "Ed-Fi", "1.0.0", false)],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    ),
+                ],
                 [resourceKey]
             ),
             dialect,

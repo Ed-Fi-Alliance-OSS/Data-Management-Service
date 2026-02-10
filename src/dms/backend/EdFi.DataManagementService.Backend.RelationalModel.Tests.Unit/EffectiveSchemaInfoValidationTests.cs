@@ -363,8 +363,20 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
         var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
         var extraComponents = new[]
         {
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
-            new SchemaComponentInfo("tpdm", "TPDM", "1.0.0", true),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            ),
+            new SchemaComponentInfo(
+                "tpdm",
+                "TPDM",
+                "1.0.0",
+                true,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            ),
         };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
             projectSchema,
@@ -414,8 +426,20 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
         var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
         var duplicateComponents = new[]
         {
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            ),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            ),
         };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
             projectSchema,
@@ -477,8 +501,20 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
 
         var schemaComponents = new[]
         {
-            new SchemaComponentInfo("tpdm", "TPDM", "1.0.0", true),
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+            new SchemaComponentInfo(
+                "tpdm",
+                "TPDM",
+                "1.0.0",
+                true,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            ),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+            ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
@@ -533,7 +569,17 @@ internal static class EffectiveSchemaFixture
     )
     {
         var schemaComponents =
-            schemaComponentsOverride ?? new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+            schemaComponentsOverride
+            ?? new[]
+            {
+                new SchemaComponentInfo(
+                    "ed-fi",
+                    "Ed-Fi",
+                    "5.0.0",
+                    false,
+                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                ),
+            };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",

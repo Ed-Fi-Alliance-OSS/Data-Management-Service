@@ -28,11 +28,13 @@ public enum SqlDialect
 /// <param name="ProjectName">The logical project name (e.g., <c>Ed-Fi</c>).</param>
 /// <param name="ProjectVersion">The project version label.</param>
 /// <param name="IsExtensionProject">Whether the project is an extension.</param>
+/// <param name="ProjectHash">The project content hash (lowercase hex).</param>
 public sealed record SchemaComponentInfo(
     string ProjectEndpointName,
     string ProjectName,
     string ProjectVersion,
-    bool IsExtensionProject
+    bool IsExtensionProject,
+    string ProjectHash
 );
 
 /// <summary>

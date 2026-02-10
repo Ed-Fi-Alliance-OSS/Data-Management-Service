@@ -740,7 +740,8 @@ internal static class ExtensionProjectKeyFixture
                 project.ProjectEndpointName,
                 project.ProjectName,
                 project.ProjectVersion,
-                project.IsExtensionProject
+                project.IsExtensionProject,
+                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
             ))
             .ToArray();
 
