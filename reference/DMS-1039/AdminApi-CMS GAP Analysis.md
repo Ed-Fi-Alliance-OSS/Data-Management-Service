@@ -32,7 +32,30 @@ CMS
 
 ### HTTP status semantics
 
-The CMS contract relies on specific status codes (for example `201 Created` for POST /vendors and `204 No Content` for DELETE operations). AdminAPI for some POST returns 200. So that, we need to use the same codes for both contracts.
+The CMS contract relies on specific status codes (for example `201 Created` for POST /vendors and `204 No Content` for DELETE operations). AdminAPI for some PUT returns 200. So that, we need to use the same codes for both contracts.
+
+PUT /v2/vendors/{{vendorId}}
+
+Response
+
+```
+HTTP/1.1 200 OK
+Server: nginx/1.27.2
+Date: Tue, 10 Feb 2026 19:48:42 GMT
+Content-Length: 0
+Connection: close
+```
+
+PUT /v2/vendors/{{vendorId}}
+
+Response
+
+```
+HTTP/1.1 204 No Content
+Connection: close
+Date: Tue, 10 Feb 2026 19:49:10 GMT
+Server: Kestrel
+```
 
 ### `Location` header format
 
