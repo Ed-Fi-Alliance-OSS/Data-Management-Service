@@ -229,8 +229,9 @@ public sealed record DbTableModel(
 /// <summary>
 /// Primary key definition for a derived table.
 /// </summary>
+/// <param name="ConstraintName">The physical primary-key constraint name.</param>
 /// <param name="Columns">The key columns in order.</param>
-public sealed record TableKey(IReadOnlyList<DbKeyColumn> Columns);
+public sealed record TableKey(string ConstraintName, IReadOnlyList<DbKeyColumn> Columns);
 
 /// <summary>
 /// A primary-key column and its semantic role.

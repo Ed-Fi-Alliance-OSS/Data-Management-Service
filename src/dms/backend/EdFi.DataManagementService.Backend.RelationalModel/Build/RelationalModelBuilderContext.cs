@@ -1,0 +1,221 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json.Nodes;
+
+namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
+
+/// <summary>
+/// Shared mutable context passed through the relational model builder pipeline.
+///
+/// This context aggregates schema inputs, extracted metadata, and derived outputs. Pipeline steps are expected
+/// to validate required inputs at their entry points and fail fast with actionable errors.
+/// </summary>
+public sealed class RelationalModelBuilderContext : INameOverrideProvider
+{
+    private readonly HashSet<string> _usedNameOverrides = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Controls whether descriptor path inference should be computed from schema inputs or supplied
+    /// externally (for example, from a set-level derivation pass).
+    /// </summary>
+    public DescriptorPathSource DescriptorPathSource { get; set; } = DescriptorPathSource.InferFromSchema;
+
+    /// <summary>
+    /// The root <c>ApiSchema.json</c> document node (when building from a full schema payload).
+    /// </summary>
+    public JsonNode? ApiSchemaRoot { get; set; }
+
+    /// <summary>
+    /// The endpoint name for the resource (used for schema selection and naming).
+    /// </summary>
+    public string? ResourceEndpointName { get; set; }
+
+    /// <summary>
+    /// The logical project name (e.g., <c>Ed-Fi</c>).
+    /// </summary>
+    public string? ProjectName { get; set; }
+
+    /// <summary>
+    /// The endpoint name used for physical schema naming (e.g., <c>ed-fi</c>).
+    /// </summary>
+    public string? ProjectEndpointName { get; set; }
+
+    /// <summary>
+    /// The project version (used for effective schema hashing and compatibility checks).
+    /// </summary>
+    public string? ProjectVersion { get; set; }
+
+    /// <summary>
+    /// The logical resource name (e.g., <c>School</c>).
+    /// </summary>
+    public string? ResourceName { get; set; }
+
+    /// <summary>
+    /// Optional superclass resource name for subclass schemas.
+    /// </summary>
+    public string? SuperclassResourceName { get; set; }
+
+    /// <summary>
+    /// Optional override for the root table base name (<c>resourceSchema.relational.rootTableNameOverride</c>).
+    /// </summary>
+    public string? RootTableNameOverride { get; set; }
+
+    /// <summary>
+    /// Whether the resource is a descriptor resource.
+    /// </summary>
+    public bool IsDescriptorResource { get; set; }
+
+    /// <summary>
+    /// The fully dereferenced JSON schema used for inserts/updates (<c>resourceSchema.jsonSchemaForInsert</c>).
+    /// </summary>
+    public JsonNode? JsonSchemaForInsert { get; set; }
+
+    /// <summary>
+    /// Identity JSONPaths for the resource, used for identity-component tracking and constraints.
+    /// </summary>
+    public IReadOnlyList<JsonPathExpression> IdentityJsonPaths { get; set; } =
+        Array.Empty<JsonPathExpression>();
+
+    /// <summary>
+    /// Whether identity updates are allowed for the resource.
+    /// </summary>
+    public bool AllowIdentityUpdates { get; set; }
+
+    /// <summary>
+    /// Document reference mappings derived from <c>documentPathsMapping.referenceJsonPaths</c>.
+    /// </summary>
+    public IReadOnlyList<DocumentReferenceMapping> DocumentReferenceMappings { get; set; } =
+        Array.Empty<DocumentReferenceMapping>();
+
+    /// <summary>
+    /// Uniqueness constraints defined for array scopes.
+    /// </summary>
+    public IReadOnlyList<ArrayUniquenessConstraintInput> ArrayUniquenessConstraints { get; set; } =
+        Array.Empty<ArrayUniquenessConstraintInput>();
+
+    /// <summary>
+    /// Normalized relational name overrides keyed by canonical JSONPath.
+    /// </summary>
+    public IReadOnlyDictionary<string, NameOverrideEntry> NameOverridesByPath { get; set; } =
+        new Dictionary<string, NameOverrideEntry>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Descriptor value paths keyed by canonical JSONPath, used to derive descriptor FK columns instead of
+    /// storing raw descriptor strings.
+    /// </summary>
+    public IReadOnlyDictionary<string, DescriptorPathInfo> DescriptorPathsByJsonPath { get; set; } =
+        new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Decimal validation metadata (precision/scale) keyed by canonical JSONPath, used to map JSON Schema
+    /// <c>number</c> properties to a deterministic relational decimal type.
+    /// </summary>
+#pragma warning disable IDE0055
+    public IReadOnlyDictionary<
+        string,
+        DecimalPropertyValidationInfo
+    > DecimalPropertyValidationInfosByPath { get; set; } =
+        new Dictionary<string, DecimalPropertyValidationInfo>(StringComparer.Ordinal);
+#pragma warning restore IDE0055
+
+    /// <summary>
+    /// Canonical JSONPaths where missing string <c>maxLength</c> is acceptable (e.g., duration and
+    /// enumeration-like strings).
+    /// </summary>
+    public IReadOnlySet<string> StringMaxLengthOmissionPaths { get; set; } =
+        new HashSet<string>(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Optional override-collision detector used during naming.
+    /// </summary>
+    internal OverrideCollisionDetector? OverrideCollisionDetector { get; set; }
+
+    /// <summary>
+    /// The derived resource model produced by pipeline steps (tables, columns, constraints, edges).
+    /// </summary>
+    public RelationalResourceModel? ResourceModel { get; set; }
+
+    /// <summary>
+    /// Derived extension mapping sites discovered during traversal.
+    /// </summary>
+    public List<ExtensionSite> ExtensionSites { get; } = [];
+
+    /// <summary>
+    /// Looks up descriptor metadata for a JSONPath value.
+    /// </summary>
+    public bool TryGetDescriptorPath(JsonPathExpression path, out DescriptorPathInfo descriptorPathInfo)
+    {
+        if (DescriptorPathsByJsonPath.Count == 0)
+        {
+            descriptorPathInfo = default;
+            return false;
+        }
+
+        return DescriptorPathsByJsonPath.TryGetValue(path.Canonical, out descriptorPathInfo);
+    }
+
+    /// <summary>
+    /// Attempts to resolve a name override for the supplied JSONPath.
+    /// </summary>
+    public bool TryGetNameOverride(JsonPathExpression path, NameOverrideKind kind, out string overrideName)
+    {
+        if (NameOverridesByPath.TryGetValue(path.Canonical, out var entry) && entry.Kind == kind)
+        {
+            _usedNameOverrides.Add(entry.CanonicalPath);
+            overrideName = entry.NormalizedName;
+            return true;
+        }
+
+        overrideName = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Returns name override entries that have not been used by derivation.
+    /// </summary>
+    internal IReadOnlyList<NameOverrideEntry> GetUnusedNameOverrides()
+    {
+        if (NameOverridesByPath.Count == 0)
+        {
+            return Array.Empty<NameOverrideEntry>();
+        }
+
+        return NameOverridesByPath
+            .Values.Where(entry => !_usedNameOverrides.Contains(entry.CanonicalPath))
+            .OrderBy(entry => entry.CanonicalPath, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    /// <summary>
+    /// Looks up decimal validation metadata for a JSONPath value.
+    /// </summary>
+    public bool TryGetDecimalPropertyValidationInfo(
+        JsonPathExpression path,
+        out DecimalPropertyValidationInfo validationInfo
+    )
+    {
+        if (DecimalPropertyValidationInfosByPath.Count == 0)
+        {
+            validationInfo = default;
+            return false;
+        }
+
+        return DecimalPropertyValidationInfosByPath.TryGetValue(path.Canonical, out validationInfo);
+    }
+
+    /// <summary>
+    /// Builds the final immutable result object for the pipeline run.
+    /// </summary>
+    public RelationalModelBuildResult BuildResult()
+    {
+        if (ResourceModel is null)
+        {
+            throw new InvalidOperationException("Resource model must be set before building results.");
+        }
+
+        return new RelationalModelBuildResult(ResourceModel, ExtensionSites.ToArray());
+    }
+}

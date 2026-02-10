@@ -1,0 +1,85 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "programs": {
+        "resourceName": "Program",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.programId"
+        ],
+        "documentPathsMapping": {
+          "ProgramId": {
+            "isReference": false,
+            "path": "$.programId"
+          }
+        },
+        "relational": {
+          "rootTableNameOverride": "schoolProgram"
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "programId": {
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          "required": [
+            "programId"
+          ]
+        }
+      },
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "path": "$.schoolId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "string",
+              "maxLength": 32
+            },
+            "programs": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "programName": {
+                    "type": "string",
+                    "maxLength": 50
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        }
+      }
+    }
+  }
+}

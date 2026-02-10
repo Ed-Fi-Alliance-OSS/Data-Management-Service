@@ -5,6 +5,7 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.DescriptorPaths;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -263,5 +264,174 @@ public class Given_DescriptorPathInference_With_Reordered_ResourceSchemas_And_Do
         }
 
         return documentPathsMapping;
+    }
+}
+
+/// <summary>
+/// Test fixture for descriptor path inference conflicts with propagated reference descriptor paths.
+/// </summary>
+[TestFixture]
+public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor_Propagation
+{
+    private InvalidOperationException _exception = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = new JsonObject
+        {
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = CreateSchoolSchema(),
+                ["gradingPeriods"] = CreateGradingPeriodSchema(),
+                ["sections"] = CreateSectionSchema(),
+                ["schoolTypeDescriptors"] = CreateDescriptorSchema("SchoolTypeDescriptor"),
+                ["periodDescriptors"] = CreateDescriptorSchema("PeriodDescriptor"),
+            },
+        };
+
+        IReadOnlyList<DescriptorPathInference.ProjectDescriptorSchema> projects =
+        [
+            new DescriptorPathInference.ProjectDescriptorSchema("Ed-Fi", projectSchema),
+        ];
+
+        Action act = () => DescriptorPathInference.BuildDescriptorPathsByResource(projects);
+        _exception = act.Should().Throw<InvalidOperationException>().Which;
+    }
+
+    /// <summary>
+    /// It should include canonical path and conflicting descriptor resource names in diagnostics.
+    /// </summary>
+    [Test]
+    public void It_should_include_canonical_path_and_conflicting_descriptor_resource_names_in_diagnostics()
+    {
+        _exception.Message.Should().Contain("Descriptor path '$.sharedReference.sharedDescriptor'");
+        _exception.Message.Should().Contain("Existing:");
+        _exception.Message.Should().Contain("Encountered:");
+        _exception.Message.Should().Contain("Ed-Fi:PeriodDescriptor");
+        _exception.Message.Should().Contain("Ed-Fi:SchoolTypeDescriptor");
+    }
+
+    private static JsonObject CreateSchoolSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SchoolTypeDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "SchoolTypeDescriptor",
+                    ["path"] = "$.schoolTypeDescriptor",
+                },
+            },
+        };
+    }
+
+    private static JsonObject CreateGradingPeriodSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "GradingPeriod",
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["PeriodDescriptor"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "PeriodDescriptor",
+                    ["path"] = "$.periodDescriptor",
+                },
+            },
+        };
+    }
+
+    private static JsonObject CreateSectionSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "Section",
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["GradingPeriod"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "GradingPeriod",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.periodDescriptor",
+                            ["referenceJsonPath"] = "$.sharedReference.sharedDescriptor",
+                        },
+                    },
+                },
+                ["School"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolTypeDescriptor",
+                            ["referenceJsonPath"] = "$.sharedReference.sharedDescriptor",
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    private static JsonObject CreateDescriptorSchema(string resourceName)
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["documentPathsMapping"] = new JsonObject(),
+        };
+    }
+}
+
+/// <summary>
+/// Test fixture for descriptor path inference with null project entries.
+/// </summary>
+[TestFixture]
+public class Given_DescriptorPathInference_With_Null_Project_Entries
+{
+    private InvalidOperationException _exception = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = new JsonObject { ["resourceSchemas"] = new JsonObject() };
+        IReadOnlyList<DescriptorPathInference.ProjectDescriptorSchema> projects =
+            new DescriptorPathInference.ProjectDescriptorSchema[] { new("Ed-Fi", projectSchema), null! };
+
+        Action act = () => DescriptorPathInference.BuildDescriptorPathsByResource(projects);
+        _exception = act.Should().Throw<InvalidOperationException>().Which;
+    }
+
+    /// <summary>
+    /// It should include null project entry index in diagnostics.
+    /// </summary>
+    [Test]
+    public void It_should_include_null_project_entry_index_in_diagnostics()
+    {
+        _exception.Message.Should().Contain("Null entry at index 1 (0-based)");
     }
 }

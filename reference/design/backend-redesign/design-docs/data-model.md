@@ -858,14 +858,28 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
 
 ### 5) Constraint, index, and trigger names (stable)
 
-Object names are deterministic and derived from the owning table and column names:
+Object names are deterministic and derived from the owning table plus purpose tokens:
 - Primary key constraints: `PK_{TableName}`
-- Unique constraints: `UX_{TableName}_{Column1}_{Column2}_...` (columns in key order)
-- Foreign keys: `FK_{TableName}_{ColumnName}` (or `FK_{TableName}_{Column1}_{Column2}` for composite FKs)
+- Unique constraints:
+  - Natural key (from `identityJsonPaths`): `UX_{TableName}_NK`
+  - Reference key (document id + identity): `UX_{TableName}_RefKey`
+  - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
+    prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
+- Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
+  - `Document` for FKs to `dms.Document`
+  - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
+  - `{ReferenceBaseName}` for single-column reference FKs
+  - `{ReferenceBaseName}_RefKey` for composite reference FKs (document id + identity columns)
+  - `{ParentTableName}` for parent/extension table links
+- All-or-none checks: `CK_{TableName}_{ReferenceBaseName}_AllNone`
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)
 - Triggers: `TR_{TableName}_{Purpose}`
   - `Purpose` is a small stable token such as `Stamp`, `Journal`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`
   - PostgreSQL trigger functions (when used): `TF_{TableName}_{Purpose}`
+
+Uniqueness scope (dialect-specific):
+- PostgreSQL: index names are schema-scoped; trigger names are table-scoped.
+- SQL Server: index names are scoped to the owning table/view; DML trigger names are schema-scoped.
 
 If a name exceeds the dialect identifier limit, apply truncation + hash as below.
 
@@ -880,6 +894,10 @@ Apply deterministic shortening:
 2. Replace the identifier with: `prefix + "_" + hash[0..10]`
    - `prefix` is the longest leading portion that allows the final name to fit within the dialect limit.
 3. Validate uniqueness after shortening; if a collision still occurs, fail fast and require a `nameOverrides` fix.
+
+For **constraint names**, the hash is computed from a canonical constraint signature
+(kind + table + ordered local columns + target table/columns + referential actions) rather than the raw
+identifier to keep shortening deterministic across renamed identifiers.
 
 ## Type Mapping Defaults (Deterministic, Cross-DB Safe)
 

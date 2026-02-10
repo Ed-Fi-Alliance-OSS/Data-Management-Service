@@ -1,0 +1,47 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Sample",
+    "projectEndpointName": "sample",
+    "projectVersion": "1.0.0",
+    "resourceSchemas": {
+      "schoolExtensions": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": true,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+        ],
+        "documentPathsMapping": {
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "extensionField": {
+                      "type": "string",
+                      "maxLength": 20
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "relational": {
+          "nameOverrides": {
+            "$.extensionField": "extension_field_override"
+          }
+        }
+      }
+    }
+  }
+}

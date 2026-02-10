@@ -1,0 +1,60 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            },
+            "_ext": {
+              "type": "object",
+              "properties": {
+                "sample": {
+                  "type": "object",
+                  "properties": {
+                    "extensionField": {
+                      "type": "string",
+                      "maxLength": 20
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        },
+        "relational": {
+          "nameOverrides": {
+            "$._ext.sample.extensionField": "BaseExtensionField"
+          }
+        }
+      }
+    }
+  }
+}

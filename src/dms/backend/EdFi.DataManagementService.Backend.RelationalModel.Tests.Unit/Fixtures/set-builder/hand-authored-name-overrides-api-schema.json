@@ -1,0 +1,140 @@
+{
+  "apiSchemaVersion": "1.0.0",
+  "projectSchema": {
+    "projectName": "Ed-Fi",
+    "projectEndpointName": "ed-fi",
+    "projectVersion": "5.0.0",
+    "resourceSchemas": {
+      "people": {
+        "resourceName": "Person",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.personId"
+        ],
+        "documentPathsMapping": {
+          "PersonId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.personId"
+          },
+          "School": {
+            "isReference": true,
+            "isDescriptor": false,
+            "isPartOfIdentity": false,
+            "isRequired": false,
+            "projectName": "Ed-Fi",
+            "resourceName": "School",
+            "referenceJsonPaths": [
+              {
+                "identityJsonPath": "$.schoolId",
+                "referenceJsonPath": "$.schoolReference.schoolId"
+              }
+            ]
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "personId": {
+              "type": "integer"
+            },
+            "profile": {
+              "type": "object",
+              "properties": {
+                "address": {
+                  "type": "object",
+                  "properties": {
+                    "street": {
+                      "type": "string",
+                      "maxLength": 30
+                    }
+                  }
+                }
+              }
+            },
+            "schoolReference": {
+              "type": "object",
+              "properties": {
+                "schoolId": {
+                  "type": "integer"
+                }
+              }
+            },
+            "addresses": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "addressType": {
+                    "type": "string",
+                    "maxLength": 20
+                  },
+                  "periods": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "beginDate": {
+                          "type": "string",
+                          "format": "date"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "required": [
+            "personId"
+          ]
+        },
+        "relational": {
+          "nameOverrides": {
+            "$.profile.address.street": "street_name",
+            "$.schoolReference": "campus",
+            "$.addresses[*]": "site",
+            "$.addresses[*].periods[*]": "site_window"
+          }
+        }
+      },
+      "schools": {
+        "resourceName": "School",
+        "isDescriptor": false,
+        "isResourceExtension": false,
+        "isSubclass": false,
+        "allowIdentityUpdates": false,
+        "arrayUniquenessConstraints": [
+        ],
+        "identityJsonPaths": [
+          "$.schoolId"
+        ],
+        "documentPathsMapping": {
+          "SchoolId": {
+            "isReference": false,
+            "isPartOfIdentity": true,
+            "isRequired": true,
+            "path": "$.schoolId"
+          }
+        },
+        "jsonSchemaForInsert": {
+          "type": "object",
+          "properties": {
+            "schoolId": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "schoolId"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -113,11 +113,10 @@ public class Given_Colliding_Column_Names
     public void It_should_include_collision_details_in_the_error_message()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
+        _exception?.Message.Should().Contain("column name collision AfterOverrideNormalization");
         _exception?.Message.Should().Contain("School");
-        _exception?.Message.Should().Contain("AB");
         _exception?.Message.Should().Contain("$.a-b");
         _exception?.Message.Should().Contain("$.a_b");
-        _exception?.Message.Should().Contain("relational.nameOverrides");
     }
 }
 

@@ -79,10 +79,11 @@ public class Given_A_Relational_Model_Pipeline_With_Two_Steps
                 TargetResource: null
             ),
         };
+        var tableName = new DbTableName(schema, "School");
         var table = new DbTableModel(
-            new DbTableName(schema, "School"),
+            tableName,
             JsonPathExpressionCompiler.Compile("$"),
-            new TableKey([keyColumn]),
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
             columns,
             Array.Empty<TableConstraint>()
         );

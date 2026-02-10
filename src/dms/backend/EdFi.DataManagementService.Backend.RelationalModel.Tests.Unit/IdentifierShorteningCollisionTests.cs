@@ -25,7 +25,11 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new IdentifierShorteningCollisionPass(effectiveSchemaSet) }
+            new IRelationalModelSetPass[]
+            {
+                new IdentifierShorteningCollisionPass(effectiveSchemaSet),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
         );
 
         try
@@ -45,10 +49,12 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
     public void It_should_fail_with_identifier_shortening_collision()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("Identifier shortening collisions detected");
-        _exception.Message.Should().Contain("CollisionName");
-        _exception.Message.Should().Contain("LongTableNameAlpha");
-        _exception.Message.Should().Contain("LongTableNameBeta");
+        _exception!.Message.Should().StartWith("Identifier shortening collisions detected: ");
+        _exception!
+            .Message.Should()
+            .Contain("table name collision AfterDialectShortening(Pgsql:8-bytes) in schema 'edfi'");
+        _exception!.Message.Should().Contain("LongTableNameAlpha -> CollisionName");
+        _exception!.Message.Should().Contain("LongTableNameBeta -> CollisionName");
     }
 
     /// <summary>
@@ -123,7 +129,7 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
             var table = new DbTableModel(
                 new DbTableName(schema, tableName),
                 JsonPathExpressionCompiler.Compile("$"),
-                new TableKey([keyColumn]),
+                new TableKey($"PK_{tableName}", [keyColumn]),
                 columns,
                 Array.Empty<TableConstraint>()
             );
@@ -169,6 +175,148 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
         {
             return identifier.Contains("LongTableName", StringComparison.Ordinal)
                 ? "CollisionName"
+                : identifier;
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for primary-key constraint identifier shortening collisions in derived model set.
+/// </summary>
+[TestFixture]
+public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_Set
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new PrimaryKeyIdentifierShorteningCollisionPass(effectiveSchemaSet),
+                new ApplyDialectIdentifierShorteningPass(),
+            }
+        );
+
+        try
+        {
+            _ = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PrimaryKeyCollisionDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail with primary-key constraint shortening collision.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_primary_key_constraint_shortening_collision()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("constraint name collision");
+        _exception!.Message.Should().Contain("PK_LongSchoolAlpha");
+        _exception!.Message.Should().Contain("PK_LongSchoolBeta");
+        _exception!.Message.Should().Contain("PK_Collision");
+    }
+
+    private sealed class PrimaryKeyIdentifierShorteningCollisionPass : IRelationalModelSetPass
+    {
+        private readonly ResourceKeyEntry _resourceOne;
+        private readonly ResourceKeyEntry _resourceTwo;
+
+        public PrimaryKeyIdentifierShorteningCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
+        {
+            _resourceOne = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "School"
+            );
+            _resourceTwo = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "SchoolTypeDescriptor"
+            );
+        }
+
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            context.ConcreteResourcesInNameOrder.Add(
+                new ConcreteResourceModel(
+                    _resourceOne,
+                    ResourceStorageKind.RelationalTables,
+                    CreateModel(_resourceOne.Resource, "LongSchoolAlpha")
+                )
+            );
+            context.ConcreteResourcesInNameOrder.Add(
+                new ConcreteResourceModel(
+                    _resourceTwo,
+                    ResourceStorageKind.RelationalTables,
+                    CreateModel(_resourceTwo.Resource, "LongSchoolBeta")
+                )
+            );
+        }
+
+        private static RelationalResourceModel CreateModel(QualifiedResourceName resource, string tableName)
+        {
+            var schema = new DbSchemaName("edfi");
+            var keyColumn = new DbKeyColumn(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart
+            );
+            var columns = new[]
+            {
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            };
+            var table = new DbTableModel(
+                new DbTableName(schema, tableName),
+                JsonPathExpressionCompiler.Compile("$"),
+                new TableKey($"PK_{tableName}", [keyColumn]),
+                columns,
+                Array.Empty<TableConstraint>()
+            );
+
+            return new RelationalResourceModel(
+                resource,
+                schema,
+                ResourceStorageKind.RelationalTables,
+                table,
+                new[] { table },
+                Array.Empty<DocumentReferenceBinding>(),
+                Array.Empty<DescriptorEdgeSource>()
+            );
+        }
+    }
+
+    private sealed class PrimaryKeyCollisionDialectRules : ISqlDialectRules
+    {
+        private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
+
+        public SqlDialect Dialect => SqlDialect.Pgsql;
+
+        public int MaxIdentifierLength => 63;
+
+        public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
+
+        public string ShortenIdentifier(string identifier)
+        {
+            return identifier.StartsWith("PK_LongSchool", StringComparison.Ordinal)
+                ? "PK_Collision"
                 : identifier;
         }
     }
