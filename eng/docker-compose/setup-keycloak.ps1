@@ -1,4 +1,4 @@
-# SPDX-License-Identifier: Apache-2.0
+﻿# SPDX-License-Identifier: Apache-2.0
 # Licensed to the Ed-Fi Alliance under one or more agreements.
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
@@ -67,14 +67,17 @@ param (
     $TokenLifespan = 1800
 )
 
+# Make TokenLifespan script-scoped for use in all functions
+$script:TokenLifespan = $TokenLifespan
+
 function Get_Access_Token() {
-    $TokenResponse = Invoke-RestMethod -Uri "$KeycloakServer/realms/$AdminRealm/protocol/openid-connect/token" `
+    $TokenResponse = Invoke-RestMethod -Uri "$KeycloakServer/realms/$script:AdminRealm/protocol/openid-connect/token" `
         -Method Post `
         -ContentType "application/x-www-form-urlencoded" `
         -Body @{
-        client_id  = $AdminClientId
-        username   = $AdminUsername
-        password   = $AdminPassword
+        client_id  = $script:AdminClientId
+        username   = $script:AdminUsername
+        password   = $script:AdminPassword
         grant_type = "password"
     }
     return $TokenResponse.access_token
@@ -117,7 +120,7 @@ function Create_Realm() {
             -Body ($RealmData | ConvertTo-Json -Depth 10)
 
         $realmSettingsPayload = @{
-            accessTokenLifespan = $TokenLifespan
+            accessTokenLifespan = $script:TokenLifespan
         } | ConvertTo-Json
 
         Invoke-RestMethod -Uri "$KeycloakServer/admin/realms/$Realm" `
@@ -343,12 +346,12 @@ function Add_Scope([string] $scopeId) {
 function Add_Custom_Claim([string] $ClientId) {
     # Add custom claim for "namespacePrefixes"
     $customClaimProtocolMapperPayload = @{
-        name           = $ClaimName
+        name           = $script:ClaimName
         protocol       = "openid-connect"
         protocolMapper = "oidc-hardcoded-claim-mapper"
         config         = @{
-            "claim.name"           = $ClaimName
-            "claim.value"          = $ClaimValue
+            "claim.name"           = $script:ClaimName
+            "claim.value"          = $script:ClaimValue
             "jsonType.label"       = "String"
             "id.token.claim"       = "true"
             "access.token.claim"   = "true"
@@ -369,8 +372,8 @@ function Create_Client() {
     # Define the new client configuration
     $ClientData = @{
         clientId               = $NewClientId
-        name                   = $NewClientName
-        secret                 = $NewClientSecret
+        name                   = $script:NewClientName
+        secret                 = $script:NewClientSecret
         protocol               = "openid-connect"
         serviceAccountsEnabled = $true
         publicClient           = $false

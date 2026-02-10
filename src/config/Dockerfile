@@ -33,6 +33,9 @@ RUN dotnet publish frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdF
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.1-alpine3.23@sha256:2273b24ea865e253d5e3b66d0eae23ce53529946089819489410849ba62db12c AS runtimebase
 
+# Upgrade OpenSSL to fix CVE-2025-15467
+RUN apk --no-cache upgrade openssl
+
 # bash: used in startup script and debugging
 # postgresql: used to test for PostgreSQL readiness
 RUN apk --no-cache add bash=~5 postgresql16-client=~16
