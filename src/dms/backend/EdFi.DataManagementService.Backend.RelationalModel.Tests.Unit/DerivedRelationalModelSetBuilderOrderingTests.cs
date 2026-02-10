@@ -153,17 +153,18 @@ public class Given_Unordered_Derived_Collections
             );
 
             context.AbstractUnionViewsInNameOrder.Add(
-                new AbstractUnionViewInfo(_section, new DbTableName(sampleSchema, "Section_View"), [])
+                new AbstractUnionViewInfo(_section, new DbTableName(sampleSchema, "Section_View"), [], [])
             );
             context.AbstractUnionViewsInNameOrder.Add(
                 new AbstractUnionViewInfo(
                     _schoolTypeDescriptor,
                     new DbTableName(edfiSchema, "SchoolTypeDescriptor_View"),
+                    [],
                     []
                 )
             );
             context.AbstractUnionViewsInNameOrder.Add(
-                new AbstractUnionViewInfo(_school, new DbTableName(edfiSchema, "School_View"), [])
+                new AbstractUnionViewInfo(_school, new DbTableName(edfiSchema, "School_View"), [], [])
             );
 
             context.IndexInventory.Add(

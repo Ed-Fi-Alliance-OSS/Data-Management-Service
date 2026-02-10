@@ -348,7 +348,17 @@ internal static class IdentifierShorteningAssertions
         var abstractView = result.AbstractUnionViewsInNameOrder.Single();
         abstractView.ViewName.Schema.Value.Should().Be(expectedSchema);
         abstractView.ViewName.Name.Should().Be(expectedView);
-        abstractView.ColumnsInIdentityOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+        abstractView.OutputColumnsInSelectOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+
+        var arm = abstractView.UnionArmsInOrder.Single();
+        arm.FromTable.Schema.Value.Should().Be(expectedSchema);
+        arm.FromTable.Name.Should().Be(expectedTable);
+        var sourceColumnProjection = arm
+            .ProjectionExpressionsInSelectOrder.Single()
+            .Should()
+            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Subject;
+        sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
     }
 }
 
@@ -531,13 +541,24 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new DbTableName(schema, _identifiers.ViewName),
             new[]
             {
-                new DbColumnModel(
+                new AbstractUnionViewOutputColumn(
                     new DbColumnName(_identifiers.ViewColumnName),
-                    ColumnKind.ParentKeyPart,
                     new RelationalScalarType(ScalarKind.Int64),
-                    IsNullable: false,
                     SourceJsonPath: null,
                     TargetResource: null
+                ),
+            },
+            new[]
+            {
+                new AbstractUnionViewArm(
+                    _resourceKey,
+                    tableName,
+                    new AbstractUnionViewProjectionExpression[]
+                    {
+                        new AbstractUnionViewProjectionExpression.SourceColumn(
+                            new DbColumnName(_identifiers.KeyColumnName)
+                        ),
+                    }
                 ),
             }
         );

@@ -100,12 +100,68 @@ public sealed record AbstractIdentityTableInfo(ResourceKeyEntry AbstractResource
 /// </summary>
 /// <param name="AbstractResourceKey">The abstract resource key entry.</param>
 /// <param name="ViewName">The union view name.</param>
-/// <param name="ColumnsInIdentityOrder">Identity columns in key order.</param>
+/// <param name="OutputColumnsInSelectOrder">
+/// Output columns in deterministic select-list order.
+/// </param>
+/// <param name="UnionArmsInOrder">
+/// Fully expanded union arms in deterministic <c>UNION ALL</c> order.
+/// </param>
 public sealed record AbstractUnionViewInfo(
     ResourceKeyEntry AbstractResourceKey,
     DbTableName ViewName,
-    IReadOnlyList<DbColumnModel> ColumnsInIdentityOrder
+    IReadOnlyList<AbstractUnionViewOutputColumn> OutputColumnsInSelectOrder,
+    IReadOnlyList<AbstractUnionViewArm> UnionArmsInOrder
 );
+
+/// <summary>
+/// Output-column metadata for an abstract union view.
+/// </summary>
+/// <param name="ColumnName">The view output column identifier.</param>
+/// <param name="ScalarType">The canonical scalar type emitted for this column.</param>
+/// <param name="SourceJsonPath">
+/// Optional source JSONPath for diagnostics when the column is sourced from resource schema metadata.
+/// </param>
+/// <param name="TargetResource">
+/// Optional referenced resource type for diagnostics when the column models reference/descriptors.
+/// </param>
+public sealed record AbstractUnionViewOutputColumn(
+    DbColumnName ColumnName,
+    RelationalScalarType ScalarType,
+    JsonPathExpression? SourceJsonPath,
+    QualifiedResourceName? TargetResource
+);
+
+/// <summary>
+/// A single concrete-member arm in an abstract union view.
+/// </summary>
+/// <param name="ConcreteMemberResourceKey">The concrete member resource key entry.</param>
+/// <param name="FromTable">The concrete member root table used in the arm <c>FROM</c> clause.</param>
+/// <param name="ProjectionExpressionsInSelectOrder">
+/// Projection expressions aligned 1:1 with <see cref="AbstractUnionViewInfo.OutputColumnsInSelectOrder"/>.
+/// </param>
+public sealed record AbstractUnionViewArm(
+    ResourceKeyEntry ConcreteMemberResourceKey,
+    DbTableName FromTable,
+    IReadOnlyList<AbstractUnionViewProjectionExpression> ProjectionExpressionsInSelectOrder
+);
+
+/// <summary>
+/// SQL-free projection expression model for abstract union-view arm select lists.
+/// </summary>
+public abstract record AbstractUnionViewProjectionExpression
+{
+    /// <summary>
+    /// Projects a source column from the arm's <see cref="AbstractUnionViewArm.FromTable"/>.
+    /// </summary>
+    /// <param name="ColumnName">The concrete source column.</param>
+    public sealed record SourceColumn(DbColumnName ColumnName) : AbstractUnionViewProjectionExpression;
+
+    /// <summary>
+    /// Projects a string literal.
+    /// </summary>
+    /// <param name="Value">The literal string value.</param>
+    public sealed record StringLiteral(string Value) : AbstractUnionViewProjectionExpression;
+}
 
 /// <summary>
 /// Classifies the logical intent of a derived index.
