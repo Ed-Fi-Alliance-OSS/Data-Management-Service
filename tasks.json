@@ -108,7 +108,7 @@
       "Review: `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`",
       "Review: `reference/design/backend-redesign/design-docs/data-model.md`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Constraints",

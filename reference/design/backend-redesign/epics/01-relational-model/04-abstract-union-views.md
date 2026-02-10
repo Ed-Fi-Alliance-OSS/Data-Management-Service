@@ -28,12 +28,12 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
   - table name `{schema}.{AbstractResource}Identity`,
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE),
   - identity columns in `identityJsonPaths` order,
-  - `Discriminator` column (NOT NULL; last).
+  - `Discriminator` column (NOT NULL; last) with value format `ProjectName:ResourceName` (fail fast if value length exceeds 256).
 - When union views are enabled, the view model includes the same select-list contract:
   - `DocumentId`,
   - identity columns in `identityJsonPaths` order,
-  - `Discriminator` column (NOT NULL; last).
-- `UNION ALL` arms are ordered by concrete `ResourceName` ordinal.
+  - `Discriminator` column (NOT NULL; last) with value format `ProjectName:ResourceName`.
+- `UNION ALL` arms are ordered by concrete `ResourceName` ordinal; fail fast if two participating members share the same `ResourceName` across projects.
 - Each arm projects the correct concrete identity columns (including subclass rename rules).
 - Model compilation fails fast if any participating concrete resource cannot supply all abstract identity fields.
 - A small “polymorphic” fixture produces the expected identity-table and (when enabled) view inventory and select-list shape.
