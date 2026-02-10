@@ -175,6 +175,12 @@ The DDL generator must emit document-reference columns and constraints that enab
   - an abstract target identity table key `(DocumentId, <IdentityParts...>)`, using `ON UPDATE CASCADE` (identity tables are trigger-maintained).
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
 
+**Key unification note (overlapping reference identity fields)**
+
+ApiSchema supports “key unification” via `resourceSchema.equalityConstraints`: the same logical natural-key field can appear in multiple reference objects (e.g., `studentUniqueId` appears in both `studentEducationOrganizationAssociationReference` and `studentSchoolAssociationReference` on `StudentAssessmentRegistration` in Ed-Fi DS 5.2).
+
+The baseline relational mapping treats each reference site as self-contained and therefore persists *separate* propagated identity columns per site (e.g., `StudentEducationOrganizationAssociation_StudentUniqueId` and `StudentSchoolAssociation_StudentUniqueId`), relying on request validation to reject mismatched values. This avoids having to share columns across reference groups, which would break “all-or-none” nullability checks and complicate query compilation for optional references.
+
 **Triggers (required)**
 
 In addition to `dms.Document` journal triggers, emit per-table triggers derived from ApiSchema that:
