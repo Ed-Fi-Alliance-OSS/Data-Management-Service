@@ -1176,6 +1176,122 @@ public class Given_Abstract_Identity_Table_With_Nullable_Member_Identity_Source_
 }
 
 /// <summary>
+/// Test fixture for duplicate root-column SourceJsonPath mappings on a concrete member.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Duplicate_Root_Source_JsonPath_Mappings
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ForceRootColumnSourcePathPass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    columnName: "OrganizationName",
+                    sourceJsonPath: "$.educationOrganizationId"
+                ),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when two root columns map to the same SourceJsonPath.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_root_columns_share_source_json_path_mapping()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("duplicate root-column SourceJsonPath mapping");
+        _exception.Message.Should().Contain("$.educationOrganizationId");
+        _exception.Message.Should().Contain("EducationOrganizationId");
+        _exception.Message.Should().Contain("OrganizationName");
+    }
+}
+
+/// <summary>
+/// Test fixture for missing root-column SourceJsonPath mappings on a concrete member.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Missing_Root_Source_JsonPath_Mapping
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ForceRootColumnSourcePathNullPass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    "$.organizationName"
+                ),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when identity paths do not resolve to root-column SourceJsonPath mappings.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_identity_path_mapping_is_missing_from_root_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("did not resolve to a root-column SourceJsonPath mapping");
+        _exception.Message.Should().Contain("$.organizationName");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+    }
+}
+
+/// <summary>
 /// Mutates a single root column to nullable for targeted fail-fast validation tests.
 /// </summary>
 internal sealed class ForceRootColumnNullablePass(QualifiedResourceName resource, string sourceJsonPath)
@@ -1210,6 +1326,147 @@ internal sealed class ForceRootColumnNullablePass(QualifiedResourceName resource
                     : column
             )
             .ToArray();
+
+        var updatedRoot = root with { Columns = updatedColumns };
+        var updatedTables = concrete
+            .RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            )
+            .ToArray();
+        var updatedModel = concrete.RelationalModel with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = updatedTables,
+        };
+
+        context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updatedModel };
+    }
+}
+
+/// <summary>
+/// Rewrites a root column SourceJsonPath for targeted duplicate-mapping fail-fast tests.
+/// </summary>
+internal sealed class ForceRootColumnSourcePathPass(
+    QualifiedResourceName resource,
+    string columnName,
+    string sourceJsonPath
+) : IRelationalModelSetPass
+{
+    /// <inheritdoc />
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+            model.ResourceKey.Resource == resource
+        );
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+            );
+        }
+
+        var canonicalPath = JsonPathExpressionCompiler.Compile(sourceJsonPath);
+        var concrete = context.ConcreteResourcesInNameOrder[index];
+        var root = concrete.RelationalModel.Root;
+        var found = false;
+        DbColumnModel[] updatedColumns = new DbColumnModel[root.Columns.Count];
+
+        for (var i = 0; i < root.Columns.Count; i++)
+        {
+            var column = root.Columns[i];
+
+            if (!string.Equals(column.ColumnName.Value, columnName, StringComparison.Ordinal))
+            {
+                updatedColumns[i] = column;
+                continue;
+            }
+
+            found = true;
+            updatedColumns[i] = column with { SourceJsonPath = canonicalPath };
+        }
+
+        if (!found)
+        {
+            throw new InvalidOperationException(
+                $"Root column '{columnName}' was not found on resource "
+                    + $"'{resource.ProjectName}:{resource.ResourceName}'."
+            );
+        }
+
+        var updatedRoot = root with { Columns = updatedColumns };
+        var updatedTables = concrete
+            .RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            )
+            .ToArray();
+        var updatedModel = concrete.RelationalModel with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = updatedTables,
+        };
+
+        context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updatedModel };
+    }
+}
+
+/// <summary>
+/// Removes SourceJsonPath from a root column for targeted missing-resolution fail-fast tests.
+/// </summary>
+internal sealed class ForceRootColumnSourcePathNullPass(QualifiedResourceName resource, string sourceJsonPath)
+    : IRelationalModelSetPass
+{
+    /// <inheritdoc />
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+            model.ResourceKey.Resource == resource
+        );
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+            );
+        }
+
+        var concrete = context.ConcreteResourcesInNameOrder[index];
+        var root = concrete.RelationalModel.Root;
+        var matched = false;
+        DbColumnModel[] updatedColumns = new DbColumnModel[root.Columns.Count];
+
+        for (var i = 0; i < root.Columns.Count; i++)
+        {
+            var column = root.Columns[i];
+
+            if (
+                column.SourceJsonPath is null
+                || !string.Equals(
+                    column.SourceJsonPath.Value.Canonical,
+                    sourceJsonPath,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                updatedColumns[i] = column;
+                continue;
+            }
+
+            matched = true;
+            updatedColumns[i] = column with { SourceJsonPath = null };
+        }
+
+        if (!matched)
+        {
+            throw new InvalidOperationException(
+                $"Root SourceJsonPath '{sourceJsonPath}' was not found on resource "
+                    + $"'{resource.ProjectName}:{resource.ResourceName}'."
+            );
+        }
 
         var updatedRoot = root with { Columns = updatedColumns };
         var updatedTables = concrete

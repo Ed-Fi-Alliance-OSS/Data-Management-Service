@@ -83,8 +83,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 var identityDerivations = BuildIdentityColumnDerivations(
                     identityJsonPaths,
                     abstractResource,
-                    members,
-                    context
+                    members
                 );
                 var identityColumns = identityDerivations
                     .Select(derivation => derivation.IdentityColumn)
@@ -183,6 +182,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 ? null
                 : JsonPathExpressionCompiler.Compile(superclassIdentityJsonPath);
             var decimalInfos = ExtractDecimalPropertyValidationInfos(resourceSchema);
+            var rootColumnsBySourcePath = BuildRootColumnsBySourcePath(model.RelationalModel.Root, resource);
 
             if (string.IsNullOrWhiteSpace(superclassProjectName))
             {
@@ -222,11 +222,46 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 superclassProjectName,
                 superclassResourceName,
                 superclassIdentityPath,
-                decimalInfos
+                decimalInfos,
+                rootColumnsBySourcePath
             );
         }
 
         return metadataByResource;
+    }
+
+    /// <summary>
+    /// Builds an O(1) lookup of root columns keyed by canonical <c>SourceJsonPath</c>, failing fast when
+    /// duplicate mappings are detected.
+    /// </summary>
+    private static IReadOnlyDictionary<string, DbColumnModel> BuildRootColumnsBySourcePath(
+        DbTableModel rootTable,
+        QualifiedResourceName resource
+    )
+    {
+        Dictionary<string, DbColumnModel> columnsByPath = new(StringComparer.Ordinal);
+
+        foreach (var column in rootTable.Columns)
+        {
+            if (column.SourceJsonPath is not { } sourceJsonPath)
+            {
+                continue;
+            }
+
+            if (!columnsByPath.TryAdd(sourceJsonPath.Canonical, column))
+            {
+                var existingColumn = columnsByPath[sourceJsonPath.Canonical];
+
+                throw new InvalidOperationException(
+                    $"Concrete resource '{FormatResource(resource)}' has duplicate root-column "
+                        + $"SourceJsonPath mapping for '{sourceJsonPath.Canonical}' on table "
+                        + $"'{rootTable.Table}': '{existingColumn.ColumnName.Value}' and "
+                        + $"'{column.ColumnName.Value}'."
+                );
+            }
+        }
+
+        return columnsByPath;
     }
 
     /// <summary>
@@ -236,8 +271,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     private static IReadOnlyList<IdentityColumnDerivation> BuildIdentityColumnDerivations(
         IReadOnlyList<JsonPathExpression> identityJsonPaths,
         QualifiedResourceName abstractResource,
-        IReadOnlyList<ConcreteResourceMetadata> members,
-        RelationalModelSetBuilderContext context
+        IReadOnlyList<ConcreteResourceMetadata> members
     )
     {
         List<IdentityColumnDerivation> derivations = new(identityJsonPaths.Count);
@@ -250,7 +284,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             foreach (var member in members)
             {
                 var mappedPath = MapIdentityPathForMember(member, identityPath, abstractResource);
-                var resolution = ResolveColumnResolution(member, mappedPath, context);
+                var resolution = ResolveColumnResolution(member, mappedPath);
                 var memberSignature = resolution.Signature;
 
                 if (signature is null)
@@ -678,87 +712,42 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     }
 
     /// <summary>
-    /// Resolves the column signature and source column for a member resource at the given identity path,
-    /// consulting both the derived table model and descriptor path maps.
+    /// Resolves the column signature and source column for a member resource at the given identity path using
+    /// the precomputed root-column SourceJsonPath lookup.
     /// </summary>
     private static ColumnResolution ResolveColumnResolution(
         ConcreteResourceMetadata member,
-        JsonPathExpression mappedIdentityPath,
-        RelationalModelSetBuilderContext context
+        JsonPathExpression mappedIdentityPath
     )
     {
-        var column = member.Model.Root.Columns.FirstOrDefault(col =>
-            col.SourceJsonPath is { } sourcePath
-            && string.Equals(sourcePath.Canonical, mappedIdentityPath.Canonical, StringComparison.Ordinal)
-        );
-
-        if (column is not null)
-        {
-            if (column.IsNullable)
-            {
-                throw new InvalidOperationException(
-                    $"Identity path '{mappedIdentityPath.Canonical}' resolved to nullable source column "
-                        + $"'{column.ColumnName.Value}' on resource '{FormatResource(member.Resource)}'."
-                );
-            }
-
-            if (column.ScalarType is null)
-            {
-                throw new InvalidOperationException(
-                    $"Identity path '{mappedIdentityPath.Canonical}' resolved to a non-scalar column on "
-                        + $"resource '{FormatResource(member.Resource)}'."
-                );
-            }
-
-            return new ColumnResolution(
-                new ColumnSignature(column.Kind, column.ScalarType, column.TargetResource),
-                column.ColumnName
-            );
-        }
-
-        var descriptorPaths = context.GetAllDescriptorPathsForResource(member.Resource);
-
-        if (descriptorPaths.TryGetValue(mappedIdentityPath.Canonical, out var descriptorPath))
-        {
-            return new ColumnResolution(
-                new ColumnSignature(
-                    ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
-                    descriptorPath.DescriptorResource
-                ),
-                BuildColumnName(mappedIdentityPath)
-            );
-        }
-
-        var schemaNode = ResolveSchemaForPath(
-            member.JsonSchemaForInsert,
-            mappedIdentityPath,
-            member.Resource,
-            "Identity"
-        );
-        var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(
-            schemaNode,
-            mappedIdentityPath.Canonical,
-            includeTypePathInErrors: true
-        );
-
-        if (schemaKind != SchemaKind.Scalar)
+        if (!member.RootColumnsBySourcePath.TryGetValue(mappedIdentityPath.Canonical, out var column))
         {
             throw new InvalidOperationException(
-                $"Identity path '{mappedIdentityPath.Canonical}' on resource "
-                    + $"'{FormatResource(member.Resource)}' must resolve to a scalar schema."
+                $"Identity path '{mappedIdentityPath.Canonical}' for member "
+                    + $"'{FormatResource(member.Resource)}' did not resolve to a root-column "
+                    + $"SourceJsonPath mapping on table '{member.Model.Root.Table}'."
             );
         }
 
-        var scalarType = RelationalScalarTypeResolver.ResolveScalarType(
-            schemaNode,
-            mappedIdentityPath,
-            member.DecimalPropertyValidationInfos
-        );
+        if (column.IsNullable)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{mappedIdentityPath.Canonical}' resolved to nullable source column "
+                    + $"'{column.ColumnName.Value}' on resource '{FormatResource(member.Resource)}'."
+            );
+        }
+
+        if (column.ScalarType is null)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{mappedIdentityPath.Canonical}' resolved to a non-scalar column on "
+                    + $"resource '{FormatResource(member.Resource)}'."
+            );
+        }
 
         return new ColumnResolution(
-            new ColumnSignature(ColumnKind.Scalar, scalarType, null),
-            BuildColumnName(mappedIdentityPath)
+            new ColumnSignature(column.Kind, column.ScalarType, column.TargetResource),
+            column.ColumnName
         );
     }
 
@@ -1122,6 +1111,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         string? SuperclassProjectName,
         string? SuperclassResourceName,
         JsonPathExpression? SuperclassIdentityJsonPath,
-        IReadOnlyDictionary<string, DecimalPropertyValidationInfo> DecimalPropertyValidationInfos
+        IReadOnlyDictionary<string, DecimalPropertyValidationInfo> DecimalPropertyValidationInfos,
+        IReadOnlyDictionary<string, DbColumnModel> RootColumnsBySourcePath
     );
 }
