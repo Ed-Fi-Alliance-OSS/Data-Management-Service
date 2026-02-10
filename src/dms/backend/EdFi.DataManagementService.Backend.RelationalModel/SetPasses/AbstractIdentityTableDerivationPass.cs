@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPass
 {
     private const string DiscriminatorColumnLabel = "Discriminator";
+    private const int DiscriminatorMaxLength = 256;
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
     private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
 
@@ -77,13 +78,18 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                     );
                 }
 
-                var identityColumns = BuildIdentityColumns(
+                ThrowIfDuplicateMemberResourceNames(members, abstractResource);
+
+                var identityDerivations = BuildIdentityColumnDerivations(
                     identityJsonPaths,
                     abstractResource,
                     members,
                     context
                 );
-                var columns = new List<DbColumnModel>(1 + identityColumns.Count + 1)
+                var identityColumns = identityDerivations
+                    .Select(derivation => derivation.IdentityColumn)
+                    .ToArray();
+                var columns = new List<DbColumnModel>(1 + identityColumns.Length + 1)
                 {
                     BuildDocumentIdColumn(),
                 };
@@ -112,6 +118,14 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
 
                 context.AbstractIdentityTablesInNameOrder.Add(
                     new AbstractIdentityTableInfo(resourceKeyEntry, tableModel)
+                );
+
+                var viewName = new DbTableName(project.ProjectSchema.PhysicalSchema, $"{rootBaseName}_View");
+                var outputColumns = BuildViewOutputColumns(identityDerivations);
+                var unionArms = BuildUnionArms(identityDerivations, members, context);
+
+                context.AbstractUnionViewsInNameOrder.Add(
+                    new AbstractUnionViewInfo(resourceKeyEntry, viewName, outputColumns, unionArms)
                 );
             }
         }
@@ -186,6 +200,18 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
             }
 
+            var superclassResource = new QualifiedResourceName(superclassProjectName, superclassResourceName);
+            var superclassResourceKey = context.GetResourceKeyEntry(superclassResource);
+
+            if (!superclassResourceKey.IsAbstractResource)
+            {
+                throw new InvalidOperationException(
+                    $"Subclass resource '{FormatResource(resource)}' declares superclass "
+                        + $"'{FormatResource(superclassResource)}' that is not abstract. "
+                        + "Subclass-of-subclass is not permitted."
+                );
+            }
+
             metadataByResource[resource] = new ConcreteResourceMetadata(
                 resource,
                 model.RelationalModel,
@@ -204,34 +230,34 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     }
 
     /// <summary>
-    /// Builds the identity column set for an abstract identity table, validating that all concrete members map
-    /// each identity path to a consistent column signature.
+    /// Builds identity column derivations for an abstract resource, including table/view output-column metadata
+    /// and per-member source-column projections.
     /// </summary>
-    private static IReadOnlyList<DbColumnModel> BuildIdentityColumns(
+    private static IReadOnlyList<IdentityColumnDerivation> BuildIdentityColumnDerivations(
         IReadOnlyList<JsonPathExpression> identityJsonPaths,
         QualifiedResourceName abstractResource,
         IReadOnlyList<ConcreteResourceMetadata> members,
         RelationalModelSetBuilderContext context
     )
     {
-        List<DbColumnModel> columns = new(identityJsonPaths.Count);
+        List<IdentityColumnDerivation> derivations = new(identityJsonPaths.Count);
 
         foreach (var identityPath in identityJsonPaths)
         {
             ColumnSignature? signature = null;
+            List<DbColumnName> memberSourceColumns = new(members.Count);
 
             foreach (var member in members)
             {
                 var mappedPath = MapIdentityPathForMember(member, identityPath, abstractResource);
-                var memberSignature = ResolveColumnSignature(member, mappedPath, context);
+                var resolution = ResolveColumnResolution(member, mappedPath, context);
+                var memberSignature = resolution.Signature;
 
                 if (signature is null)
                 {
                     signature = memberSignature;
-                    continue;
                 }
-
-                if (signature != memberSignature)
+                else if (signature != memberSignature)
                 {
                     throw new InvalidOperationException(
                         $"Abstract identity path '{identityPath.Canonical}' for resource "
@@ -240,6 +266,8 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                             + $"'{FormatResource(member.Resource)}' provides {FormatSignature(memberSignature)}."
                     );
                 }
+
+                memberSourceColumns.Add(resolution.SourceColumnName);
             }
 
             if (signature is null)
@@ -250,19 +278,163 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
             }
 
-            columns.Add(
-                new DbColumnModel(
-                    BuildColumnName(identityPath),
-                    signature.Kind,
-                    signature.ScalarType,
-                    IsNullable: false,
-                    identityPath,
-                    signature.TargetResource
+            var identityColumn = new DbColumnModel(
+                BuildColumnName(identityPath),
+                signature.Kind,
+                signature.ScalarType,
+                IsNullable: false,
+                identityPath,
+                signature.TargetResource
+            );
+
+            derivations.Add(new IdentityColumnDerivation(identityColumn, memberSourceColumns.ToArray()));
+        }
+
+        return derivations;
+    }
+
+    /// <summary>
+    /// Builds union-view output columns in the deterministic select-list order:
+    /// <c>DocumentId</c>, abstract identity columns, then <c>Discriminator</c>.
+    /// </summary>
+    private static IReadOnlyList<AbstractUnionViewOutputColumn> BuildViewOutputColumns(
+        IReadOnlyList<IdentityColumnDerivation> identityDerivations
+    )
+    {
+        List<AbstractUnionViewOutputColumn> outputColumns = new(1 + identityDerivations.Count + 1)
+        {
+            new AbstractUnionViewOutputColumn(
+                RelationalNameConventions.DocumentIdColumnName,
+                new RelationalScalarType(ScalarKind.Int64),
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        };
+
+        foreach (var derivation in identityDerivations)
+        {
+            if (derivation.IdentityColumn.ScalarType is not { } scalarType)
+            {
+                throw new InvalidOperationException(
+                    $"Identity column '{derivation.IdentityColumn.ColumnName.Value}' is missing a scalar type."
+                );
+            }
+
+            outputColumns.Add(
+                new AbstractUnionViewOutputColumn(
+                    derivation.IdentityColumn.ColumnName,
+                    scalarType,
+                    derivation.IdentityColumn.SourceJsonPath,
+                    derivation.IdentityColumn.TargetResource
                 )
             );
         }
 
-        return columns;
+        outputColumns.Add(
+            new AbstractUnionViewOutputColumn(
+                new DbColumnName(DiscriminatorColumnLabel),
+                new RelationalScalarType(ScalarKind.String, DiscriminatorMaxLength),
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+        );
+
+        return outputColumns;
+    }
+
+    /// <summary>
+    /// Builds deterministic union-view arms ordered by member <c>ResourceName</c> using ordinal comparison.
+    /// </summary>
+    private static IReadOnlyList<AbstractUnionViewArm> BuildUnionArms(
+        IReadOnlyList<IdentityColumnDerivation> identityDerivations,
+        IReadOnlyList<ConcreteResourceMetadata> members,
+        RelationalModelSetBuilderContext context
+    )
+    {
+        var projectionCapacity = 1 + identityDerivations.Count + 1;
+        List<AbstractUnionViewArm> arms = new(members.Count);
+
+        for (var memberIndex = 0; memberIndex < members.Count; memberIndex++)
+        {
+            var member = members[memberIndex];
+            var discriminatorValue = $"{member.Resource.ProjectName}:{member.Resource.ResourceName}";
+
+            if (discriminatorValue.Length > DiscriminatorMaxLength)
+            {
+                throw new InvalidOperationException(
+                    $"Discriminator value '{discriminatorValue}' exceeds max length "
+                        + $"{DiscriminatorMaxLength} for resource '{FormatResource(member.Resource)}'."
+                );
+            }
+
+            List<AbstractUnionViewProjectionExpression> projections = new(projectionCapacity)
+            {
+                new AbstractUnionViewProjectionExpression.SourceColumn(
+                    RelationalNameConventions.DocumentIdColumnName
+                ),
+            };
+
+            foreach (var derivation in identityDerivations)
+            {
+                projections.Add(
+                    new AbstractUnionViewProjectionExpression.SourceColumn(
+                        derivation.MemberSourceColumnsInMemberOrder[memberIndex]
+                    )
+                );
+            }
+
+            projections.Add(new AbstractUnionViewProjectionExpression.StringLiteral(discriminatorValue));
+
+            arms.Add(
+                new AbstractUnionViewArm(
+                    context.GetResourceKeyEntry(member.Resource),
+                    member.Model.Root.Table,
+                    projections.ToArray()
+                )
+            );
+        }
+
+        return arms;
+    }
+
+    /// <summary>
+    /// Fails fast when multiple concrete members of the same abstract resource share a <c>ResourceName</c>
+    /// across different projects.
+    /// </summary>
+    private static void ThrowIfDuplicateMemberResourceNames(
+        IReadOnlyList<ConcreteResourceMetadata> members,
+        QualifiedResourceName abstractResource
+    )
+    {
+        var duplicates = members
+            .GroupBy(member => member.Resource.ResourceName, StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .OrderBy(group => group.Key, StringComparer.Ordinal)
+            .ToArray();
+
+        if (duplicates.Length == 0)
+        {
+            return;
+        }
+
+        var details = string.Join(
+            "; ",
+            duplicates.Select(group =>
+            {
+                var membersWithName = string.Join(
+                    ", ",
+                    group
+                        .Select(member => FormatResource(member.Resource))
+                        .OrderBy(label => label, StringComparer.Ordinal)
+                );
+                return $"'{group.Key}' ({membersWithName})";
+            })
+        );
+
+        throw new InvalidOperationException(
+            $"Abstract resource '{FormatResource(abstractResource)}' has duplicate member "
+                + $"ResourceName values across projects: {details}."
+        );
     }
 
     /// <summary>
@@ -282,9 +454,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             );
         }
 
-        var isAssociation = string.Equals(member.SubclassType, "association", StringComparison.Ordinal);
-
-        if (!isAssociation && member.SuperclassIdentityJsonPath is not null)
+        if (member.SuperclassIdentityJsonPath is not null)
         {
             if (member.IdentityJsonPaths.Count != 1)
             {
@@ -337,10 +507,10 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     }
 
     /// <summary>
-    /// Resolves the column signature for a member resource at the given identity path, consulting both the
-    /// derived table model and descriptor path maps.
+    /// Resolves the column signature and source column for a member resource at the given identity path,
+    /// consulting both the derived table model and descriptor path maps.
     /// </summary>
-    private static ColumnSignature ResolveColumnSignature(
+    private static ColumnResolution ResolveColumnResolution(
         ConcreteResourceMetadata member,
         JsonPathExpression mappedIdentityPath,
         RelationalModelSetBuilderContext context
@@ -353,6 +523,14 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
 
         if (column is not null)
         {
+            if (column.IsNullable)
+            {
+                throw new InvalidOperationException(
+                    $"Identity path '{mappedIdentityPath.Canonical}' resolved to nullable source column "
+                        + $"'{column.ColumnName.Value}' on resource '{FormatResource(member.Resource)}'."
+                );
+            }
+
             if (column.ScalarType is null)
             {
                 throw new InvalidOperationException(
@@ -361,17 +539,23 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
             }
 
-            return new ColumnSignature(column.Kind, column.ScalarType, column.TargetResource);
+            return new ColumnResolution(
+                new ColumnSignature(column.Kind, column.ScalarType, column.TargetResource),
+                column.ColumnName
+            );
         }
 
         var descriptorPaths = context.GetAllDescriptorPathsForResource(member.Resource);
 
         if (descriptorPaths.TryGetValue(mappedIdentityPath.Canonical, out var descriptorPath))
         {
-            return new ColumnSignature(
-                ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
-                descriptorPath.DescriptorResource
+            return new ColumnResolution(
+                new ColumnSignature(
+                    ColumnKind.DescriptorFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    descriptorPath.DescriptorResource
+                ),
+                BuildColumnName(mappedIdentityPath)
             );
         }
 
@@ -401,7 +585,10 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             member.DecimalPropertyValidationInfos
         );
 
-        return new ColumnSignature(ColumnKind.Scalar, scalarType, null);
+        return new ColumnResolution(
+            new ColumnSignature(ColumnKind.Scalar, scalarType, null),
+            BuildColumnName(mappedIdentityPath)
+        );
     }
 
     /// <summary>
@@ -412,7 +599,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         return new DbColumnModel(
             new DbColumnName(DiscriminatorColumnLabel),
             ColumnKind.Scalar,
-            new RelationalScalarType(ScalarKind.String, 256),
+            new RelationalScalarType(ScalarKind.String, DiscriminatorMaxLength),
             IsNullable: false,
             SourceJsonPath: null,
             TargetResource: null
@@ -724,6 +911,19 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         ColumnKind Kind,
         RelationalScalarType ScalarType,
         QualifiedResourceName? TargetResource
+    );
+
+    /// <summary>
+    /// Captures the resolved signature plus the concrete source column name used by a member projection.
+    /// </summary>
+    private sealed record ColumnResolution(ColumnSignature Signature, DbColumnName SourceColumnName);
+
+    /// <summary>
+    /// Captures an abstract identity output column and the aligned source-column projections for each member.
+    /// </summary>
+    private sealed record IdentityColumnDerivation(
+        DbColumnModel IdentityColumn,
+        IReadOnlyList<DbColumnName> MemberSourceColumnsInMemberOrder
     );
 
     /// <summary>
