@@ -58,8 +58,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
                 var members = concreteMetadataByResource
                     .Values.Where(metadata =>
-                        metadata.IsSubclass
-                        && string.Equals(
+                        string.Equals(
                             metadata.SuperclassProjectName,
                             abstractResource.ProjectName,
                             StringComparison.Ordinal
@@ -133,8 +132,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     }
 
     /// <summary>
-    /// Builds metadata for all concrete resources required to derive abstract identity tables, including
-    /// subclass/superclass linkage and scalar validation inputs.
+    /// Builds metadata for all concrete subclass resources required to derive abstract identity tables.
     /// </summary>
     private static Dictionary<QualifiedResourceName, ConcreteResourceMetadata> BuildConcreteMetadata(
         RelationalModelSetBuilderContext context,
@@ -168,16 +166,12 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 continue;
             }
 
-            var jsonSchemaForInsert = RequireObject(
-                resourceSchema["jsonSchemaForInsert"],
-                "jsonSchemaForInsert"
-            );
+            _ = RequireObject(resourceSchema["jsonSchemaForInsert"], "jsonSchemaForInsert");
             var identityJsonPaths = IdentityJsonPathsExtractor.ExtractIdentityJsonPaths(
                 resourceSchema,
                 resource.ProjectName,
                 resource.ResourceName
             );
-            var subclassType = TryGetOptionalString(resourceSchema, "subclassType");
             var superclassProjectName = TryGetOptionalString(resourceSchema, "superclassProjectName");
             var superclassResourceName = TryGetOptionalString(resourceSchema, "superclassResourceName");
             var superclassIdentityJsonPath = TryGetOptionalString(
@@ -187,9 +181,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             JsonPathExpression? superclassIdentityPath = superclassIdentityJsonPath is null
                 ? null
                 : JsonPathExpressionCompiler.Compile(superclassIdentityJsonPath);
-            var decimalInfos = DecimalPropertyValidationInfosExtractor.ExtractDecimalPropertyValidationInfos(
-                resourceSchema
-            );
             var rootColumnsBySourcePath = BuildRootColumnsBySourcePath(model.RelationalModel.Root, resource);
 
             if (string.IsNullOrWhiteSpace(superclassProjectName))
@@ -223,14 +214,10 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             metadataByResource[resource] = new ConcreteResourceMetadata(
                 resource,
                 model.RelationalModel,
-                jsonSchemaForInsert,
                 identityJsonPaths,
-                isSubclass,
-                subclassType,
                 superclassProjectName,
                 superclassResourceName,
                 superclassIdentityPath,
-                decimalInfos,
                 rootColumnsBySourcePath
             );
         }
@@ -660,13 +647,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         QualifiedResourceName abstractResource
     )
     {
-        if (!member.IsSubclass)
-        {
-            throw new InvalidOperationException(
-                $"Concrete member '{FormatResource(member.Resource)}' is not marked as a subclass."
-            );
-        }
-
         if (member.SuperclassIdentityJsonPath is not null)
         {
             if (member.IdentityJsonPaths.Count != 1)
@@ -966,14 +946,10 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     private sealed record ConcreteResourceMetadata(
         QualifiedResourceName Resource,
         RelationalResourceModel Model,
-        JsonObject JsonSchemaForInsert,
         IReadOnlyList<JsonPathExpression> IdentityJsonPaths,
-        bool IsSubclass,
-        string? SubclassType,
         string? SuperclassProjectName,
         string? SuperclassResourceName,
         JsonPathExpression? SuperclassIdentityJsonPath,
-        IReadOnlyDictionary<string, DecimalPropertyValidationInfo> DecimalPropertyValidationInfos,
         IReadOnlyDictionary<string, DbColumnModel> RootColumnsBySourcePath
     );
 }
