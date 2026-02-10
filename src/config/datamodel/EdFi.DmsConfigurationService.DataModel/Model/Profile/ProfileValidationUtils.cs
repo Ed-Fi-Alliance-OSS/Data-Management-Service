@@ -9,8 +9,14 @@ using System.IO;
 using System.Reflection;
 using System.Xml;
 using System.Xml.Schema;
+using EdFi.DmsConfigurationService.DataModel;
 
 namespace EdFi.DmsConfigurationService.DataModel.Model.Profile;
+
+/// <summary>
+/// Represents the result of XML validation.
+/// </summary>
+public record ProfileXmlValidationResult(bool IsValid, IReadOnlyList<string> Errors);
 
 /// <summary>
 /// Provides validation utilities for Ed-Fi API Profile XML documents.
@@ -42,29 +48,43 @@ public static class ProfileValidationUtils
     /// Validates that the XML conforms to the Ed-Fi ODS API Profile XSD schema.
     /// </summary>
     /// <param name="xml">The XML string to validate.</param>
-    /// <returns>True if the XML is valid according to the Ed-Fi-ODS-API-Profile.xsd schema; otherwise, false.</returns>
-    public static bool IsValidProfileXml(string xml)
+    /// <returns>A <see cref="ProfileXmlValidationResult"/> containing validation status and any errors.</returns>
+    public static ProfileXmlValidationResult ValidateProfileXml(string xml)
     {
         try
         {
-            var doc = new XmlDocument();
-            doc.LoadXml(xml);
-            var path = new Uri(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!).LocalPath;
+            var assemblyDirectory = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!;
             var schemas = new XmlSchemaSet();
-            schemas.Add("", Path.Combine(path, "Schema", "Ed-Fi-ODS-API-Profile.xsd"));
-            bool valid = true;
-            doc.Schemas.Add(schemas);
-            doc.Validate(
-                (o, e) =>
-                {
-                    valid = false;
-                }
-            );
-            return valid;
+            schemas.Add("", Path.Combine(assemblyDirectory, "Schema", "Ed-Fi-ODS-API-Profile.xsd"));
+
+            var errors = new List<string>();
+            bool isValid = true;
+
+            var settings = new XmlReaderSettings
+            {
+                Schemas = schemas,
+                ValidationType = ValidationType.Schema,
+                ValidationFlags = XmlSchemaValidationFlags.ReportValidationWarnings,
+            };
+
+            settings.ValidationEventHandler += (o, e) =>
+            {
+                isValid = false;
+                var lineNumber = e.Exception?.LineNumber ?? 0;
+                var linePosition = e.Exception?.LinePosition ?? 0;
+                errors.Add($"Line {lineNumber}, Column {linePosition}: {e.Message}");
+            };
+
+            using var stringReader = new StringReader(xml);
+            using var xmlReader = XmlReader.Create(stringReader, settings);
+            while (xmlReader.Read()) { } // Read through the entire document to trigger validation
+
+            return new ProfileXmlValidationResult(isValid, errors);
         }
-        catch
+        catch (Exception ex)
         {
-            return false;
+            string sanitizedMessage = LoggingUtility.SanitizeForLog(ex.Message);
+            return new ProfileXmlValidationResult(false, [$"XML parsing error: {sanitizedMessage}"]);
         }
     }
 

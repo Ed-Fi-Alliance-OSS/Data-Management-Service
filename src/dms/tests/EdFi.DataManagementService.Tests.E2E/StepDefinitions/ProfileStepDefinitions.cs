@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
+using EdFi.DataManagementService.Tests.E2E.Profiles;
 using FluentAssertions;
 using Microsoft.Playwright;
 using Reqnroll;
@@ -33,6 +34,42 @@ public class ProfileStepDefinitions(
     private string _location = string.Empty;
     private string _dmsToken = string.Empty;
     private readonly ScenarioVariables _scenarioVariables = new();
+
+    #region Given - Profile Creation and Setup
+
+    /// <summary>
+    /// Creates a profile dynamically during the test scenario.
+    /// This allows testing of profiles with validation errors that would not be loaded at startup.
+    /// </summary>
+    [Given(@"a profile ""([^""]*)"" is created with XML")]
+    public async Task GivenAProfileIsCreatedWithXml(string profileName, string profileXml)
+    {
+        try
+        {
+            _logger.log.Information("Creating test profile: {ProfileName}", profileName);
+
+            int profileId = await ProfileAwareAuthorizationProvider.CreateProfile(
+                profileName,
+                profileXml,
+                SystemAdministrator.Token
+            );
+
+            ProfileTestData.RegisterProfile(profileName, profileId);
+
+            _logger.log.Information(
+                "Profile '{ProfileName}' created with ID: {ProfileId}",
+                profileName,
+                profileId
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.log.Error(ex, "Failed to create profile '{ProfileName}'", profileName);
+            throw;
+        }
+    }
+
+    #endregion
 
     #region Given - Authorization with Profiles
 

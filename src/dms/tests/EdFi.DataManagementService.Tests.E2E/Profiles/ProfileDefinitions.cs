@@ -448,6 +448,133 @@ public static class ProfileDefinitions
         </Profile>
         """;
 
+    // ===== Profile Definition Validation Test Profiles =====
+    // These profiles are intentionally invalid or produce warnings to test validation behavior
+
+    /// <summary>
+    /// Invalid profile: references a non-existent resource name.
+    /// Expected behavior: Profile loading fails with error, returns 406 when used.
+    /// </summary>
+    public const string InvalidNonExistentResourceName = "E2E-Invalid-NonExistentResource";
+
+    public const string InvalidNonExistentResourceXml = """
+        <Profile name="E2E-Invalid-NonExistentResource">
+            <Resource name="NonExistentResource">
+                <ReadContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Invalid profile: IncludeOnly contains a property that doesn't exist in the resource schema.
+    /// Expected behavior: Profile loading fails with error, returns 406 when used.
+    /// </summary>
+    public const string InvalidIncludeOnlyPropertyName = "E2E-Invalid-IncludeOnlyProperty";
+
+    public const string InvalidIncludeOnlyPropertyXml = """
+        <Profile name="E2E-Invalid-IncludeOnlyProperty">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Property name="nameOfInstitution"/>
+                    <Property name="nonExistentProperty"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Invalid profile: IncludeOnly contains an object that doesn't exist in the resource schema.
+    /// Expected behavior: Profile loading fails with error, returns 406 when used.
+    /// </summary>
+    public const string InvalidIncludeOnlyObjectName = "E2E-Invalid-IncludeOnlyObject";
+
+    public const string InvalidIncludeOnlyObjectXml = """
+        <Profile name="E2E-Invalid-IncludeOnlyObject">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Property name="nameOfInstitution"/>
+                    <Object name="nonExistentObject" memberSelection="IncludeAll"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Invalid profile: IncludeOnly contains a collection that doesn't exist in the resource schema.
+    /// Expected behavior: Profile loading fails with error, returns 406 when used.
+    /// </summary>
+    public const string InvalidIncludeOnlyCollectionName = "E2E-Invalid-IncludeOnlyCollection";
+
+    public const string InvalidIncludeOnlyCollectionXml = """
+        <Profile name="E2E-Invalid-IncludeOnlyCollection">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeOnly">
+                    <Property name="nameOfInstitution"/>
+                    <Collection name="nonExistentCollection" memberSelection="IncludeAll"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Invalid profile: IncludeOnly contains a property that doesn't exist in an extension.
+    /// Expected behavior: Profile loading fails with error, returns 406 when used.
+    /// </summary>
+    public const string InvalidExtensionPropertyName = "E2E-Invalid-ExtensionProperty";
+
+    public const string InvalidExtensionPropertyXml = """
+        <Profile name="E2E-Invalid-ExtensionProperty">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll">
+                    <Extension name="Sample" memberSelection="IncludeOnly">
+                        <Property name="nonExistentExtensionField"/>
+                    </Extension>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Warning profile: ExcludeOnly excludes an identity member (schoolId).
+    /// Expected behavior: Profile loads with warning, returns 200, keeps schoolId in response (identity cannot be excluded).
+    /// </summary>
+    public const string WarningExcludeIdentityName = "E2E-Warning-ExcludeIdentity";
+
+    public const string WarningExcludeIdentityXml = """
+        <Profile name="E2E-Warning-ExcludeIdentity">
+            <Resource name="School">
+                <ReadContentType memberSelection="ExcludeOnly">
+                    <Property name="schoolId"/>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Invalid profile: IncludeOnly contains a property in a nested collection that doesn't exist.
+    /// Expected behavior: Profile loading fails with error, returns 406 when used.
+    /// </summary>
+    public const string InvalidNestedCollectionPropertyName = "E2E-Invalid-NestedCollectionProperty";
+
+    public const string InvalidNestedCollectionPropertyXml = """
+        <Profile name="E2E-Invalid-NestedCollectionProperty">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll">
+                    <Collection name="gradeLevels" memberSelection="IncludeOnly">
+                        <Property name="gradeLevelDescriptor"/>
+                        <Property name="invalidNestedProperty"/>
+                    </Collection>
+                </ReadContentType>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
     /// <summary>
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
@@ -478,5 +605,13 @@ public static class ProfileDefinitions
             (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
             // Nested identity preservation profiles
             (CalendarWriteIncludeOnlyName, CalendarWriteIncludeOnlyXml),
+            // Profile definition validation test profiles
+            (InvalidNonExistentResourceName, InvalidNonExistentResourceXml),
+            (InvalidIncludeOnlyPropertyName, InvalidIncludeOnlyPropertyXml),
+            (InvalidIncludeOnlyObjectName, InvalidIncludeOnlyObjectXml),
+            (InvalidIncludeOnlyCollectionName, InvalidIncludeOnlyCollectionXml),
+            (InvalidExtensionPropertyName, InvalidExtensionPropertyXml),
+            (WarningExcludeIdentityName, WarningExcludeIdentityXml),
+            (InvalidNestedCollectionPropertyName, InvalidNestedCollectionPropertyXml),
         ];
 }

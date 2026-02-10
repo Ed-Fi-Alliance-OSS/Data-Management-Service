@@ -102,6 +102,7 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IProfileService, CachedProfileService>()
             .AddSingleton<IProfileResponseFilter, ProfileResponseFilter>()
             .AddSingleton<IProfileCreatabilityValidator, ProfileCreatabilityValidator>()
+            .AddSingleton<IProfileDataValidator, ProfileDataValidator>()
             .AddTransient<ProfileResolutionMiddleware>()
             .AddTransient<ProfileFilteringMiddleware>()
             .AddTransient<ProfileWriteValidationMiddleware>()
