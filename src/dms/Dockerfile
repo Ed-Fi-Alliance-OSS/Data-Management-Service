@@ -43,7 +43,7 @@ RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.1-alpine3.23@sha256:2273b24ea865e253d5e3b66d0eae23ce53529946089819489410849ba62db12c AS runtimebase
 
 # Upgrade OpenSSL to fix CVE-2025-15467 and install runtime helpers
-RUN apk --no-cache upgrade openssl=3.5.5-r0 && \
+RUN apk --no-cache add openssl=3.5.5-r0 && \
     apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.8
 
 FROM runtimebase AS setup
