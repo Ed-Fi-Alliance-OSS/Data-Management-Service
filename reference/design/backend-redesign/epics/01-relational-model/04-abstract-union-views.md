@@ -12,7 +12,7 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
 - Required: abstract identity tables (`{schema}.{AbstractResource}Identity`)
 - Optional: abstract union views (`{schema}.{AbstractResource}_View`)
 
-- Use `projectSchema.abstractResources[*].identityPathOrder` as the select-list contract.
+- Use `projectSchema.abstractResources[*].identityJsonPaths` order as the select-list contract.
 - Determine participating concrete resources using `isSubclass`/superclass metadata.
 - Handle identity rename cases for subclasses.
 - Choose canonical SQL types for union columns and apply explicit casts per dialect.
@@ -27,12 +27,12 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
 - For each abstract resource, the derived model includes a deterministic identity-table model:
   - table name `{schema}.{AbstractResource}Identity`,
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE),
-  - identity columns in `identityPathOrder` order,
-  - optional `Discriminator` column (as specified in the design).
+  - identity columns in `identityJsonPaths` order,
+  - `Discriminator` column (NOT NULL; last).
 - When union views are enabled, the view model includes the same select-list contract:
   - `DocumentId`,
-  - identity columns in `identityPathOrder` order,
-  - optional `Discriminator` column.
+  - identity columns in `identityJsonPaths` order,
+  - `Discriminator` column (NOT NULL; last).
 - `UNION ALL` arms are ordered by concrete `ResourceName` ordinal.
 - Each arm projects the correct concrete identity columns (including subclass rename rules).
 - Model compilation fails fast if any participating concrete resource cannot supply all abstract identity fields.

@@ -348,7 +348,7 @@ Within each phase:
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).
-  - If abstract union views (`{schema}.{AbstractResource}_View`) are emitted, order `UNION ALL` arms by concrete `ResourceName` (ordinal), and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityPathOrder`, then optional `Discriminator`.
+  - If abstract union views (`{schema}.{AbstractResource}_View`) are emitted, order `UNION ALL` arms by concrete `ResourceName` (ordinal), and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, then `Discriminator`.
 - **Triggers**: order by table name, then trigger name (ordinal).
 - **Seed data**:
   - `dms.ResourceKey` inserts ordered by `ResourceKeyId` ascending (where ids are assigned from the seed list sorted by `(ProjectName, ResourceName)` ordinal).

@@ -580,8 +580,8 @@ This redesign provisions an **identity table per abstract resource**:
 - Table name: `{schema}.{AbstractResource}Identity` (deterministic; provisioned with the rest of the schema).
 - Columns:
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
-  - abstract identity fields in `abstractResources[A].identityPathOrder`
-  - optional `Discriminator` (concrete resource name; recommended for diagnostics)
+  - abstract identity fields in `abstractResources[A].identityJsonPaths` order
+  - `Discriminator` (NOT NULL; last; concrete resource name; useful for diagnostics)
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
@@ -592,7 +592,7 @@ Optional: `{schema}.{AbstractResource}_View` union view
 If desired, also provision a union view per abstract resource for diagnostics/ad-hoc querying:
 
 - View name: `{schema}.{AbstractResource}_View`
-- Columns: `DocumentId`, optional `Discriminator`, abstract identity fields in `identityPathOrder` order
+- Columns: `DocumentId`, abstract identity fields in `identityJsonPaths` order, `Discriminator` (NOT NULL; last)
 - Rows: `UNION ALL` over concrete member root tables, projecting `DocumentId` and the abstract identity fields (including identity renames)
 
 Usage:
@@ -601,7 +601,7 @@ Usage:
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement (if enabled):
-- View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityPathOrder`, and explicit casts where needed for cross-engine union compatibility.
+- View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityJsonPaths` order, and explicit casts where needed for cross-engine union compatibility.
 
 **Optional PostgreSQL example: `EducationOrganization_View`**
 
