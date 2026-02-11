@@ -286,4 +286,44 @@ public interface ISqlDialect
     /// <param name="sequenceName">The sequence name.</param>
     /// <returns>The sequence default expression.</returns>
     string RenderSequenceDefaultExpression(DbSchemaName schema, string sequenceName);
+
+    // ── Literal rendering (for seed DML) ──────────────────────────────────
+
+    /// <summary>
+    /// Renders a binary byte[] as a SQL literal.
+    /// PostgreSQL: <c>'\xHEX...'::bytea</c>. SQL Server: <c>0xHEX...</c>.
+    /// </summary>
+    /// <param name="value">The byte array to render.</param>
+    /// <returns>The dialect-specific binary literal.</returns>
+    string RenderBinaryLiteral(byte[] value);
+
+    /// <summary>
+    /// Renders a boolean value as a SQL literal.
+    /// PostgreSQL: <c>true</c> / <c>false</c>. SQL Server: <c>1</c> / <c>0</c>.
+    /// </summary>
+    /// <param name="value">The boolean value.</param>
+    /// <returns>The dialect-specific boolean literal.</returns>
+    string RenderBooleanLiteral(bool value);
+
+    /// <summary>
+    /// Renders a string as a safely-escaped SQL literal.
+    /// PostgreSQL: <c>'text'</c>. SQL Server: <c>N'text'</c>.
+    /// </summary>
+    /// <param name="value">The string value.</param>
+    /// <returns>The dialect-specific string literal.</returns>
+    string RenderStringLiteral(string value);
+
+    /// <summary>
+    /// Renders a smallint as a SQL literal.
+    /// </summary>
+    /// <param name="value">The smallint value.</param>
+    /// <returns>The literal string representation.</returns>
+    string RenderSmallintLiteral(short value);
+
+    /// <summary>
+    /// Renders an integer as a SQL literal.
+    /// </summary>
+    /// <param name="value">The integer value.</param>
+    /// <returns>The literal string representation.</returns>
+    string RenderIntegerLiteral(int value);
 }

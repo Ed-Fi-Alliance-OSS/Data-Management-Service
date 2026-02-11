@@ -36,10 +36,10 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _documentTable = new(_dmsSchema, "Document");
     private static readonly DbTableName _documentCacheTable = new(_dmsSchema, "DocumentCache");
     private static readonly DbTableName _documentChangeEventTable = new(_dmsSchema, "DocumentChangeEvent");
-    private static readonly DbTableName _effectiveSchemaTable = new(_dmsSchema, "EffectiveSchema");
+    private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
     private static readonly DbTableName _referentialIdentityTable = new(_dmsSchema, "ReferentialIdentity");
-    private static readonly DbTableName _resourceKeyTable = new(_dmsSchema, "ResourceKey");
-    private static readonly DbTableName _schemaComponentTable = new(_dmsSchema, "SchemaComponent");
+    private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
+    private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     private static DbColumnName Col(string name) => new(name);
 
