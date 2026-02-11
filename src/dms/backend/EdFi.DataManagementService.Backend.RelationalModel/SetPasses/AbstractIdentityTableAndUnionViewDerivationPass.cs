@@ -10,9 +10,9 @@ using static EdFi.DataManagementService.Backend.RelationalModel.Schema.Relationa
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 
 /// <summary>
-/// Derives abstract identity table models for abstract resources in the effective schema set.
+/// Derives abstract identity table and union view models for abstract resources in the effective schema set.
 /// </summary>
-public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPass
+public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationalModelSetPass
 {
     private const string DiscriminatorColumnLabel = "Discriminator";
     private const int DiscriminatorMaxLength = 256;
@@ -20,7 +20,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
 
     /// <summary>
-    /// Executes abstract identity table derivation across all abstract resources.
+    /// Executes abstract identity table and union view derivation across all abstract resources.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {

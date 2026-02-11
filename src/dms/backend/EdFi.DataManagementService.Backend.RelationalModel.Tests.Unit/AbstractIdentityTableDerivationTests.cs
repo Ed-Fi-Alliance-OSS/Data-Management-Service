@@ -35,7 +35,7 @@ public class Given_Abstract_Identity_Table_Derivation
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -224,7 +224,7 @@ public class Given_Abstract_Identity_Table_With_Widenable_String_Length_Mismatch
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -281,7 +281,7 @@ public class Given_Abstract_Identity_Table_With_Widenable_Integer_Widths
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -335,7 +335,7 @@ public class Given_Abstract_Identity_Table_With_Mismatched_Types
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -392,7 +392,7 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -446,7 +446,7 @@ public class Given_Abstract_Identity_Table_With_Missing_Member_Identity_Field
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -511,7 +511,7 @@ public class Given_Abstract_Identity_Table_With_No_Concrete_Members
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -561,7 +561,7 @@ public class Given_Association_Subclass_With_Superclass_Identity_Rename_Mapping
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -680,7 +680,7 @@ public class Given_Abstract_Identity_Table_With_Extension_Project_Member
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -842,7 +842,7 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Member_Resource_Names_
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -974,7 +974,7 @@ public class Given_Abstract_Identity_Table_With_Overlength_Discriminator
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -1080,7 +1080,7 @@ public class Given_Subclass_With_Non_Abstract_Superclass
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -1207,7 +1207,7 @@ public class Given_Subclass_With_Missing_Superclass_Project_Name
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -1319,7 +1319,7 @@ public class Given_Abstract_Identity_Table_With_Nullable_Member_Identity_Source_
                     new QualifiedResourceName("Ed-Fi", "School"),
                     "$.organizationName"
                 ),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -1376,7 +1376,7 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Root_Source_JsonPath_M
                     columnName: "OrganizationName",
                     sourceJsonPath: "$.educationOrganizationId"
                 ),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -1434,7 +1434,7 @@ public class Given_Abstract_Identity_Table_With_Missing_Root_Source_JsonPath_Map
                     new QualifiedResourceName("Ed-Fi", "School"),
                     "$.organizationName"
                 ),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -1491,7 +1491,7 @@ public class Given_Concrete_Resource_Without_IsSubclass_Property
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 

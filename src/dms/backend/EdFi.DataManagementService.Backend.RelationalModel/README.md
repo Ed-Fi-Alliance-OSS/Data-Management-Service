@@ -100,7 +100,7 @@ DerivedRelationalModelSet set = builder.Build(
 2. `DescriptorResourceMappingPass`
 3. `ExtensionTableDerivationPass`
 4. `ReferenceBindingPass`
-5. `AbstractIdentityTableDerivationPass`
+5. `AbstractIdentityTableAndUnionViewDerivationPass`
 6. `RootIdentityConstraintPass`
 7. `ReferenceConstraintPass`
 8. `ArrayUniquenessConstraintPass`
