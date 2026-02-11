@@ -18,10 +18,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
-    // Table names are owned by CoreDdlEmitter (which creates them); we reference them here.
-    private static readonly DbTableName _resourceKeyTable = CoreDdlEmitter._resourceKeyTable;
-    private static readonly DbTableName _effectiveSchemaTable = CoreDdlEmitter._effectiveSchemaTable;
-    private static readonly DbTableName _schemaComponentTable = CoreDdlEmitter._schemaComponentTable;
+    private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
+    private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
+    private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
     /// <summary>
     /// Generates the seed DML script (Phase 7) for the configured dialect.
@@ -315,7 +314,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             _dialect.RenderSmallintLiteral(1),
             _dialect.RenderStringLiteral(effectiveSchema.ApiSchemaFormatVersion),
             _dialect.RenderStringLiteral(effectiveSchema.EffectiveSchemaHash),
-            _dialect.RenderIntegerLiteral(effectiveSchema.ResourceKeyCount),
+            _dialect.RenderSmallintLiteral(checked((short)effectiveSchema.ResourceKeyCount)),
             _dialect.RenderBinaryLiteral(effectiveSchema.ResourceKeySeedHash)
         );
 
