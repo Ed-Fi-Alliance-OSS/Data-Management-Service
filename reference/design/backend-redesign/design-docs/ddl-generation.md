@@ -44,7 +44,7 @@ The DDL generation utility is responsible for database objects derived from the 
   - `dms.DocumentCache` (materialized JSON projection; see [data-model.md](data-model.md))
 - Per-project schemas (derived from `ProjectEndpointName`) and per-resource tables (root + child tables).
 - Extension project schemas and extension tables derived from `_ext` (see [extensions.md](extensions.md)).
-- Abstract identity tables (e.g., `{schema}.{AbstractResource}Identity`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)), plus optional union views for diagnostics/integrations.
+- Abstract identity tables (e.g., `{schema}.{AbstractResource}Identity`) derived from `projectSchema.abstractResources` (see [data-model.md](data-model.md)), plus union views for diagnostics/integrations.
 
 Explicitly out of scope for this redesign phase:
 - any authorization objects (`auth.*`, `dms.DocumentSubject`, etc.)
@@ -107,7 +107,7 @@ SQL snippets in design documents are explanatory and may omit dialect details (e
 
 The DDL generator is the authoritative source of dialect-specific SQL text for provisioning, including:
 - schemas/tables/sequences/constraints/indexes,
-- abstract identity tables (and optional union views),
+- abstract identity tables and union views,
 - trigger/function definitions (update tracking stamping, journaling, and identity maintenance),
 - deterministic seeding and schema-fingerprint recording.
 
@@ -161,7 +161,7 @@ For each concrete resource in the effective schema (core + extensions):
 
 For each abstract resource in `projectSchema.abstractResources`:
 - Identity table `{schema}.{AbstractResource}Identity` maintained from participating concrete root tables (see [data-model.md](data-model.md))
-- Optional union view `{schema}.{AbstractResource}_View` for diagnostics/integrations (not required for API correctness)
+- Union view `{schema}.{AbstractResource}_View` for diagnostics/integrations (emitted for every abstract resource; not required for API correctness)
 
 **Reference constraints (required)**
 
@@ -354,7 +354,7 @@ Within each phase:
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).
-  - If abstract union views (`{schema}.{AbstractResource}_View`) are emitted, order `UNION ALL` arms by concrete `ResourceName` (ordinal), and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, then `Discriminator`.
+  - For abstract union views (`{schema}.{AbstractResource}_View`), order `UNION ALL` arms by concrete `ResourceName` (ordinal), and use a fixed select-list order: `DocumentId`, abstract identity fields in `identityJsonPaths` order, then `Discriminator`.
 - **Triggers**: order by table name, then trigger name (ordinal).
 - **Seed data**:
   - `dms.ResourceKey` inserts ordered by `ResourceKeyId` ascending (where ids are assigned from the seed list sorted by `(ProjectName, ResourceName)` ordinal).
@@ -367,7 +367,7 @@ The DDL generation utility should reuse the same compilation pipeline as runtime
 - Effective schema loading/merging (core + extensions) and `EffectiveSchemaHash` calculation (including canonicalization rules) as defined in `data-model.md`.
 - Relational model derivation (resource → tables/columns/constraints).
 - Dialect-specific DDL generation (`ISqlDialect`-style boundary).
-- Abstract identity table generation (and optional union-view generation).
+- Abstract identity table generation and union-view generation.
 - Identifier rules (schema/table/column naming, quoting, truncation, and constraint/index naming): see `data-model.md` (“Naming Rules (Deterministic, Cross-DB Safe)”).
 - Scalar type mapping rules (ApiSchema → SQL): see `data-model.md` (“Type Mapping Defaults (Deterministic, Cross-DB Safe)”) and `flattening-reconstitution.md` (“Scalar type mapping (dialect defaults)”).
 - SQL text canonicalization shared with the compiled-plan layer (`flattening-reconstitution.md`), ideally via a single dialect-specific SQL writer/formatter.

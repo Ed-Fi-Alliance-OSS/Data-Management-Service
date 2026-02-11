@@ -587,9 +587,9 @@ This redesign provisions an **identity table per abstract resource**:
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)` with `ON UPDATE CASCADE` (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
 
-Optional: `{schema}.{AbstractResource}_View` union view
+Required: `{schema}.{AbstractResource}_View` union view
 
-If desired, also provision a union view per abstract resource for diagnostics/ad-hoc querying:
+Also provision a union view per abstract resource for diagnostics/ad-hoc querying:
 
 - View name: `{schema}.{AbstractResource}_View`
 - Columns: `DocumentId`, abstract identity fields in `identityJsonPaths` order, `Discriminator` (NOT NULL; last; literal format `ProjectName:ResourceName`)
@@ -600,11 +600,11 @@ Usage:
 - Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via cascades).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
-DDL generation requirement (if enabled):
+DDL generation requirement:
 - View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityJsonPaths` order, and explicit casts where needed for cross-engine union compatibility.
 - `Discriminator` literals are emitted as `ProjectName:ResourceName`; derivation fails fast when any value exceeds 256 characters.
 
-**Optional PostgreSQL example: `EducationOrganization_View`**
+**PostgreSQL example: `EducationOrganization_View`**
 
 ```sql
 CREATE OR REPLACE VIEW edfi.EducationOrganization_View AS
@@ -627,7 +627,7 @@ SELECT
 FROM edfi.StateEducationAgency sea;
 ```
 
-**Optional SQL Server example: `EducationOrganization_View`**
+**SQL Server example: `EducationOrganization_View`**
 
 ```sql
 CREATE OR ALTER VIEW edfi.EducationOrganization_View AS
@@ -825,7 +825,7 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
     - extension collection tables: `{ResourceBaseName}Extension{CollectionSuffix}`
 - Abstract identity artifacts:
   - `{ProjectSchema}.{AbstractResource}Identity` (tables; FK targets for polymorphic references)
-  - `{ProjectSchema}.{AbstractResource}_View` (optional union views for diagnostics/ad-hoc querying)
+  - `{ProjectSchema}.{AbstractResource}_View` (union views for diagnostics/ad-hoc querying)
 
 ### 4) Column names (PascalCase + stable suffixes)
 

@@ -10,7 +10,7 @@ jira_url: https://edfi.atlassian.net/browse/DMS-933
 Model abstract-resource artifacts per `reference/design/backend-redesign/design-docs/data-model.md` and `reference/design/backend-redesign/design-docs/compiled-mapping-set.md`:
 
 - Required: abstract identity tables (`{schema}.{AbstractResource}Identity`)
-- Optional: abstract union views (`{schema}.{AbstractResource}_View`)
+- Required: abstract union views (`{schema}.{AbstractResource}_View`)
 
 - Use `projectSchema.abstractResources[*].identityJsonPaths` order as the select-list contract.
 - Determine participating concrete resources using `isSubclass`/superclass metadata.
@@ -20,7 +20,7 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
 
 ## Integration (ordered passes)
 
-- Set-level (`DMS-1033`): implemented as a whole-schema pass that scans the effective schema set to discover abstract resources, their participating concrete members, and the required identity field contracts. The pass produces abstract identity-table (and optional union-view) models that other passes can reference when binding polymorphic document references.
+- Set-level (`DMS-1033`): implemented as a whole-schema pass that scans the effective schema set to discover abstract resources, their participating concrete members, and the required identity field contracts. The pass produces abstract identity-table and union-view models that other passes can reference when binding polymorphic document references.
 
 ## Acceptance Criteria
 
@@ -29,7 +29,7 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE),
   - identity columns in `identityJsonPaths` order,
   - `Discriminator` column (NOT NULL; last) with value format `ProjectName:ResourceName` (fail fast if value length exceeds 256).
-- When union views are enabled, the view model includes the same select-list contract:
+- The view model includes the same select-list contract:
   - `DocumentId`,
   - identity columns in `identityJsonPaths` order,
   - `Discriminator` column (NOT NULL; last) with value format `ProjectName:ResourceName`.
@@ -37,7 +37,7 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
 - Each arm projects the correct concrete identity columns (including subclass rename rules).
 - When a subclass declares `superclassIdentityJsonPath`, it must declare exactly one `identityJsonPaths` entry, and `superclassIdentityJsonPath` must match the referenced abstract resource's required identity path.
 - Model compilation fails fast if any participating concrete resource cannot supply all abstract identity fields.
-- A small “polymorphic” fixture produces the expected identity-table and (when enabled) view inventory and select-list shape.
+- A small “polymorphic” fixture produces the expected identity-table and view inventory and select-list shape.
 
 ## Tasks
 
