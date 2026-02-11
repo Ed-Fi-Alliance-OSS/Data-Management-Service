@@ -29,7 +29,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         var concreteModelsByResource = context.ConcreteResourcesInNameOrder.ToDictionary(model =>
             model.ResourceKey.Resource
         );
-        var concreteMetadataByResource = BuildConcreteMetadata(context, concreteModelsByResource);
+        var membersByAbstractResource = BuildMembersByAbstractResource(context, concreteModelsByResource);
 
         foreach (var project in context.EnumerateProjectsInEndpointOrder())
         {
@@ -55,23 +55,13 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                     abstractResource.ProjectName,
                     abstractResource.ResourceName
                 );
-                var members = concreteMetadataByResource
-                    .Values.Where(metadata =>
-                        string.Equals(
-                            metadata.SuperclassProjectName,
-                            abstractResource.ProjectName,
-                            StringComparison.Ordinal
-                        )
-                        && string.Equals(
-                            metadata.SuperclassResourceName,
-                            abstractResource.ResourceName,
-                            StringComparison.Ordinal
-                        )
-                    )
-                    .OrderBy(metadata => metadata.Resource.ResourceName, StringComparer.Ordinal)
-                    .ToArray();
 
-                if (members.Length == 0)
+                if (!membersByAbstractResource.TryGetValue(abstractResource, out var members))
+                {
+                    members = [];
+                }
+
+                if (members.Count == 0)
                 {
                     throw new InvalidOperationException(
                         $"Abstract resource '{FormatResource(abstractResource)}' has no concrete members."
@@ -131,14 +121,17 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     }
 
     /// <summary>
-    /// Builds metadata for all concrete subclass resources required to derive abstract identity tables.
+    /// Builds deterministic concrete-member lookup keyed by abstract superclass resource.
     /// </summary>
-    private static Dictionary<QualifiedResourceName, ConcreteResourceMetadata> BuildConcreteMetadata(
+    private static IReadOnlyDictionary<
+        QualifiedResourceName,
+        IReadOnlyList<ConcreteResourceMetadata>
+    > BuildMembersByAbstractResource(
         RelationalModelSetBuilderContext context,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteModelsByResource
     )
     {
-        Dictionary<QualifiedResourceName, ConcreteResourceMetadata> metadataByResource = new();
+        Dictionary<QualifiedResourceName, List<ConcreteResourceMetadata>> membersByAbstractResource = [];
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
@@ -213,18 +206,31 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
             }
 
-            metadataByResource[resource] = new ConcreteResourceMetadata(
-                resource,
-                model.RelationalModel,
-                identityJsonPaths,
-                superclassProjectName,
-                superclassResourceName,
-                superclassIdentityPath,
-                rootColumnsBySourcePath
+            if (!membersByAbstractResource.TryGetValue(superclassResource, out var members))
+            {
+                members = [];
+                membersByAbstractResource.Add(superclassResource, members);
+            }
+
+            members.Add(
+                new ConcreteResourceMetadata(
+                    resource,
+                    model.RelationalModel,
+                    identityJsonPaths,
+                    superclassIdentityPath,
+                    rootColumnsBySourcePath
+                )
             );
         }
 
-        return metadataByResource;
+        return membersByAbstractResource.ToDictionary(
+            pair => pair.Key,
+            static pair =>
+                (IReadOnlyList<ConcreteResourceMetadata>)
+                    pair
+                        .Value.OrderBy(metadata => metadata.Resource.ResourceName, StringComparer.Ordinal)
+                        .ToArray()
+        );
     }
 
     /// <summary>
@@ -867,8 +873,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         QualifiedResourceName Resource,
         RelationalResourceModel Model,
         IReadOnlyList<JsonPathExpression> IdentityJsonPaths,
-        string? SuperclassProjectName,
-        string? SuperclassResourceName,
         JsonPathExpression? SuperclassIdentityJsonPath,
         IReadOnlyDictionary<string, DbColumnModel> RootColumnsBySourcePath
     );
