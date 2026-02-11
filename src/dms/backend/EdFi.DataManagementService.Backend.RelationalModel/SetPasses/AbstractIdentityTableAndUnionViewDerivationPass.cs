@@ -434,7 +434,8 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     }
 
     /// <summary>
-    /// Resolves the canonical decimal type by selecting maximum precision and scale across members.
+    /// Resolves the canonical decimal type by preserving the largest integer digits and fractional scale
+    /// across members.
     /// </summary>
     private static RelationalScalarType ResolveCanonicalDecimalType(
         RelationalScalarType currentScalarType,
@@ -459,8 +460,30 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             );
         }
 
-        var canonicalPrecision = Math.Max(currentDecimal.Precision, memberDecimal.Precision);
+        if (currentDecimal.Scale > currentDecimal.Precision)
+        {
+            throw new InvalidOperationException(
+                $"Decimal type metadata is invalid for abstract identity path '{identityPath.Canonical}' on "
+                    + $"resource '{FormatResource(abstractResource)}'. Precision {currentDecimal.Precision} must "
+                    + $"be greater than or equal to scale {currentDecimal.Scale}."
+            );
+        }
+
+        if (memberDecimal.Scale > memberDecimal.Precision)
+        {
+            throw new InvalidOperationException(
+                $"Decimal type metadata is invalid for abstract identity path '{identityPath.Canonical}' on "
+                    + $"resource '{FormatResource(abstractResource)}'. Precision {memberDecimal.Precision} must "
+                    + $"be greater than or equal to scale {memberDecimal.Scale}."
+            );
+        }
+
+        var canonicalIntegerDigits = Math.Max(
+            currentDecimal.Precision - currentDecimal.Scale,
+            memberDecimal.Precision - memberDecimal.Scale
+        );
         var canonicalScale = Math.Max(currentDecimal.Scale, memberDecimal.Scale);
+        var canonicalPrecision = canonicalIntegerDigits + canonicalScale;
 
         if (canonicalScale > canonicalPrecision)
         {
