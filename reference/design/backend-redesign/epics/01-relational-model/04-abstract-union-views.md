@@ -35,6 +35,7 @@ Model abstract-resource artifacts per `reference/design/backend-redesign/design-
   - `Discriminator` column (NOT NULL; last) with value format `ProjectName:ResourceName`.
 - `UNION ALL` arms are ordered by concrete `ResourceName` ordinal; fail fast if two participating members share the same `ResourceName` across projects.
 - Each arm projects the correct concrete identity columns (including subclass rename rules).
+- When a subclass declares `superclassIdentityJsonPath`, it must declare exactly one `identityJsonPaths` entry, and `superclassIdentityJsonPath` must match the referenced abstract resource's required identity path.
 - Model compilation fails fast if any participating concrete resource cannot supply all abstract identity fields.
 - A small “polymorphic” fixture produces the expected identity-table and (when enabled) view inventory and select-list shape.
 

@@ -526,6 +526,195 @@ internal static class RelationalModelSetValidation
     }
 
     /// <summary>
+    /// Validates the <c>superclassIdentityJsonPath</c> contract for subclass resources.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The normalized effective schema set.</param>
+    /// <param name="isAbstractByResource">Map of resource abstractness keyed by qualified resource.</param>
+    internal static void ValidateSubclassSuperclassIdentityJsonPathMappings(
+        EffectiveSchemaSet effectiveSchemaSet,
+        IReadOnlyDictionary<QualifiedResourceName, bool> isAbstractByResource
+    )
+    {
+        if (effectiveSchemaSet.ProjectsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaSet.ProjectsInEndpointOrder must be provided."
+            );
+        }
+
+        var resourceSchemaIndex = BuildResourceSchemaIndex(effectiveSchemaSet);
+
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    "EffectiveSchemaSet.ProjectsInEndpointOrder must not contain null entries."
+                );
+            }
+
+            if (project.ProjectSchema is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema to be present in EffectiveProjectSchema."
+                );
+            }
+
+            var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
+            var resourceSchemas = RequireObject(
+                project.ProjectSchema["resourceSchemas"],
+                "projectSchema.resourceSchemas"
+            );
+
+            foreach (
+                var resourceSchemaEntry in OrderResourceSchemas(
+                    resourceSchemas,
+                    "projectSchema.resourceSchemas",
+                    requireNonEmptyKey: true
+                )
+            )
+            {
+                var resourceSchema = resourceSchemaEntry.ResourceSchema;
+
+                var isSubclass = resourceSchema["isSubclass"] switch
+                {
+                    JsonValue jsonValue => jsonValue.GetValue<bool>(),
+                    null => false,
+                    _ => throw new InvalidOperationException(
+                        "Expected isSubclass to be a boolean, invalid ApiSchema."
+                    ),
+                };
+
+                if (!isSubclass)
+                {
+                    continue;
+                }
+
+                var superclassIdentityJsonPath = TryGetOptionalString(
+                    resourceSchema,
+                    "superclassIdentityJsonPath"
+                );
+
+                if (superclassIdentityJsonPath is null)
+                {
+                    continue;
+                }
+
+                var subclassResource = new QualifiedResourceName(
+                    projectName,
+                    resourceSchemaEntry.ResourceName
+                );
+
+                if (resourceSchema["identityJsonPaths"] is not JsonArray identityJsonPaths)
+                {
+                    throw new InvalidOperationException(
+                        $"Subclass resource '{FormatResource(subclassResource)}' uses "
+                            + "superclassIdentityJsonPath but must declare exactly one "
+                            + "identityJsonPaths entry."
+                    );
+                }
+
+                if (identityJsonPaths.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Subclass resource '{FormatResource(subclassResource)}' uses "
+                            + "superclassIdentityJsonPath but must declare exactly one "
+                            + "identityJsonPaths entry."
+                    );
+                }
+
+                if (identityJsonPaths[0] is null)
+                {
+                    throw new InvalidOperationException(
+                        "Expected identityJsonPaths to not contain null entries, invalid ApiSchema."
+                    );
+                }
+
+                _ = JsonPathExpressionCompiler.Compile(identityJsonPaths[0]!.GetValue<string>());
+
+                var superclassIdentityPath = JsonPathExpressionCompiler.Compile(superclassIdentityJsonPath);
+                var superclassProjectName = RequireString(resourceSchema, "superclassProjectName");
+                var superclassResourceName = RequireString(resourceSchema, "superclassResourceName");
+                var superclassResource = new QualifiedResourceName(
+                    superclassProjectName,
+                    superclassResourceName
+                );
+
+                if (!isAbstractByResource.TryGetValue(superclassResource, out var isAbstract))
+                {
+                    throw new InvalidOperationException(
+                        $"Subclass resource '{FormatResource(subclassResource)}' declares superclass "
+                            + $"resource '{FormatResource(superclassResource)}' which does not exist in "
+                            + "the effective schema set."
+                    );
+                }
+
+                if (!isAbstract)
+                {
+                    throw new InvalidOperationException(
+                        $"Subclass resource '{FormatResource(subclassResource)}' declares superclass "
+                            + $"resource '{FormatResource(superclassResource)}' which is not abstract."
+                    );
+                }
+
+                if (!resourceSchemaIndex.TryGetValue(superclassResource, out var superclassSchema))
+                {
+                    throw new InvalidOperationException(
+                        $"Resource schema not found for resource '{FormatResource(superclassResource)}'."
+                    );
+                }
+
+                if (superclassSchema["identityJsonPaths"] is not JsonArray superclassIdentityJsonPaths)
+                {
+                    throw new InvalidOperationException(
+                        $"Expected identityJsonPaths to be present on resource "
+                            + $"'{FormatResource(superclassResource)}'."
+                    );
+                }
+
+                if (superclassIdentityJsonPaths.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Subclass resource '{FormatResource(subclassResource)}' uses "
+                            + "superclassIdentityJsonPath but abstract resource "
+                            + $"'{FormatResource(superclassResource)}' must declare exactly one "
+                            + "identityJsonPaths entry."
+                    );
+                }
+
+                if (superclassIdentityJsonPaths[0] is null)
+                {
+                    throw new InvalidOperationException(
+                        "Expected identityJsonPaths to not contain null entries, invalid ApiSchema."
+                    );
+                }
+
+                var requiredAbstractIdentityPath = JsonPathExpressionCompiler.Compile(
+                    superclassIdentityJsonPaths[0]!.GetValue<string>()
+                );
+
+                if (
+                    string.Equals(
+                        superclassIdentityPath.Canonical,
+                        requiredAbstractIdentityPath.Canonical,
+                        StringComparison.Ordinal
+                    )
+                )
+                {
+                    continue;
+                }
+
+                throw new InvalidOperationException(
+                    $"Subclass resource '{FormatResource(subclassResource)}' declares "
+                        + $"superclassIdentityJsonPath '{superclassIdentityPath.Canonical}', but "
+                        + $"abstract resource '{FormatResource(superclassResource)}' requires identity "
+                        + $"path '{requiredAbstractIdentityPath.Canonical}'."
+                );
+            }
+        }
+    }
+
+    /// <summary>
     /// Validates that each <c>documentPathsMapping.referenceJsonPaths[*].identityJsonPath</c> entry references an
     /// identity path that exists on the effective target resource schemas for all resource schema entries in the
     /// supplied object.

@@ -600,6 +600,149 @@ public class Given_An_EffectiveSchemaSet_With_A_Subclass_Resource_Missing_JsonSc
 }
 
 /// <summary>
+/// Test fixture for an effective schema set with a subclass mapping that declares multiple identity paths.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaSet_With_A_Subclass_SuperclassIdentityJsonPath_And_Multiple_IdentityJsonPaths
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        EffectiveSchemaFixture.AddAbstractResources(
+            projectSchema,
+            ("educationOrganizations", "EducationOrganization")
+        );
+
+        var resourceSchemas = (JsonObject)projectSchema["resourceSchemas"]!;
+        var schoolSchema = (JsonObject)resourceSchemas["schools"]!;
+
+        schoolSchema["isSubclass"] = true;
+        schoolSchema["superclassProjectName"] = "Ed-Fi";
+        schoolSchema["superclassResourceName"] = "EducationOrganization";
+        schoolSchema["superclassIdentityJsonPath"] = "$.educationOrganizationId";
+        schoolSchema["identityJsonPaths"] = new JsonArray { "$.schoolId", "$.educationOrganizationId" };
+        schoolSchema["jsonSchemaForInsert"] = new JsonObject();
+
+        var abstractResources = (JsonObject)projectSchema["abstractResources"]!;
+        var educationOrganizationSchema = (JsonObject)abstractResources["educationOrganizations"]!;
+        educationOrganizationSchema["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" };
+
+        var resourceKeys = new[]
+        {
+            EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School"),
+            EffectiveSchemaFixture.CreateResourceKey(
+                2,
+                "Ed-Fi",
+                "EducationOrganization",
+                isAbstractResource: true
+            ),
+        };
+
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when subclass mapping does not declare exactly one identity path.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_subclass_mapping_does_not_declare_exactly_one_identity_path()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("superclassIdentityJsonPath");
+        _exception.Message.Should().Contain("exactly one identityJsonPaths entry");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+    }
+}
+
+/// <summary>
+/// Test fixture for an effective schema set with a mismatched superclass identity path mapping.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaSet_With_A_Subclass_SuperclassIdentityJsonPath_That_Does_Not_Match_Abstract_Identity
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        EffectiveSchemaFixture.AddAbstractResources(
+            projectSchema,
+            ("educationOrganizations", "EducationOrganization")
+        );
+
+        var resourceSchemas = (JsonObject)projectSchema["resourceSchemas"]!;
+        var schoolSchema = (JsonObject)resourceSchemas["schools"]!;
+
+        schoolSchema["isSubclass"] = true;
+        schoolSchema["superclassProjectName"] = "Ed-Fi";
+        schoolSchema["superclassResourceName"] = "EducationOrganization";
+        schoolSchema["superclassIdentityJsonPath"] = "$.districtId";
+        schoolSchema["identityJsonPaths"] = new JsonArray { "$.schoolId" };
+        schoolSchema["jsonSchemaForInsert"] = new JsonObject();
+
+        var abstractResources = (JsonObject)projectSchema["abstractResources"]!;
+        var educationOrganizationSchema = (JsonObject)abstractResources["educationOrganizations"]!;
+        educationOrganizationSchema["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" };
+
+        var resourceKeys = new[]
+        {
+            EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School"),
+            EffectiveSchemaFixture.CreateResourceKey(
+                2,
+                "Ed-Fi",
+                "EducationOrganization",
+                isAbstractResource: true
+            ),
+        };
+
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when superclassIdentityJsonPath differs from abstract identity contract.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_superclass_identity_json_path_differs_from_abstract_identity_contract()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("superclassIdentityJsonPath");
+        _exception.Message.Should().Contain("$.districtId");
+        _exception.Message.Should().Contain("$.educationOrganizationId");
+        _exception.Message.Should().Contain("Ed-Fi:EducationOrganization");
+    }
+}
+
+/// <summary>
 /// Test type effective schema fixture.
 /// </summary>
 internal static class EffectiveSchemaFixture

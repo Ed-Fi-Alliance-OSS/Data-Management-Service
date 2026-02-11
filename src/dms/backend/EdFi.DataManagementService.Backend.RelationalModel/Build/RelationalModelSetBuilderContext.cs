@@ -84,6 +84,10 @@ public sealed class RelationalModelSetBuilderContext
             effectiveResources.Resources
         );
         RelationalModelSetValidation.ValidateSubclassJsonSchemaForInsertPresence(effectiveSchemaSet);
+        RelationalModelSetValidation.ValidateSubclassSuperclassIdentityJsonPathMappings(
+            effectiveSchemaSet,
+            effectiveResources.IsAbstractByResource
+        );
         _resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
             entry => entry.Resource
         );
