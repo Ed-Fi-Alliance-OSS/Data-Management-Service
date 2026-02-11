@@ -474,6 +474,70 @@ public class Given_Abstract_Identity_Table_With_Missing_Member_Identity_Field
 }
 
 /// <summary>
+/// Test fixture for abstract resources with zero concrete members.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_No_Concrete_Members
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var resourceSchemas = (JsonObject)projectSchema["resourceSchemas"]!;
+
+        foreach (var entry in resourceSchemas)
+        {
+            if (entry.Value is not JsonObject resourceSchema)
+            {
+                continue;
+            }
+
+            resourceSchema["isSubclass"] = false;
+        }
+
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when an abstract resource has no concrete members.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_abstract_resource_has_zero_concrete_members()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("has no concrete members");
+        _exception.Message.Should().Contain("Ed-Fi:EducationOrganization");
+    }
+}
+
+/// <summary>
 /// Test fixture for superclass identity rename mapping on association subclasses.
 /// </summary>
 [TestFixture]
