@@ -167,8 +167,16 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 resource.ProjectName,
                 resource.ResourceName
             );
-            var superclassProjectName = TryGetOptionalString(resourceSchema, "superclassProjectName");
-            var superclassResourceName = TryGetOptionalString(resourceSchema, "superclassResourceName");
+            var superclassProjectName = RequireSubclassString(
+                resourceSchema,
+                "superclassProjectName",
+                resource
+            );
+            var superclassResourceName = RequireSubclassString(
+                resourceSchema,
+                "superclassResourceName",
+                resource
+            );
             var superclassIdentityJsonPath = TryGetOptionalString(
                 resourceSchema,
                 "superclassIdentityJsonPath"
@@ -177,22 +185,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 ? null
                 : JsonPathExpressionCompiler.Compile(superclassIdentityJsonPath);
             var rootColumnsBySourcePath = BuildRootColumnsBySourcePath(model.RelationalModel.Root, resource);
-
-            if (string.IsNullOrWhiteSpace(superclassProjectName))
-            {
-                throw new InvalidOperationException(
-                    $"Expected superclassProjectName to be present for subclass resource "
-                        + $"'{FormatResource(resource)}'."
-                );
-            }
-
-            if (string.IsNullOrWhiteSpace(superclassResourceName))
-            {
-                throw new InvalidOperationException(
-                    $"Expected superclassResourceName to be present for subclass resource "
-                        + $"'{FormatResource(resource)}'."
-                );
-            }
 
             var superclassResource = new QualifiedResourceName(superclassProjectName, superclassResourceName);
             var superclassResourceKey = context.GetResourceKeyEntry(superclassResource);
@@ -809,6 +801,28 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         );
 
         return rootTableNameOverride ?? RelationalNameConventions.ToPascalCase(resource.ResourceName);
+    }
+
+    /// <summary>
+    /// Reads a required subclass string property while preserving resource-qualified diagnostics.
+    /// </summary>
+    private static string RequireSubclassString(
+        JsonObject resourceSchema,
+        string propertyName,
+        QualifiedResourceName resource
+    )
+    {
+        try
+        {
+            return RequireString(resourceSchema, propertyName);
+        }
+        catch (InvalidOperationException exception)
+        {
+            throw new InvalidOperationException(
+                $"Subclass resource '{FormatResource(resource)}' has invalid {propertyName}: {exception.Message}",
+                exception
+            );
+        }
     }
 
     /// <summary>

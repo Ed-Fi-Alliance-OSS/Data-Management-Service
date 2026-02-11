@@ -1120,6 +1120,112 @@ public class Given_Subclass_With_Non_Abstract_Superclass
 }
 
 /// <summary>
+/// Test fixture for subclass resources missing required superclass metadata.
+/// </summary>
+[TestFixture]
+public class Given_Subclass_With_Missing_Superclass_Project_Name
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should include subclass resource identity in the error for missing superclass metadata.
+    /// </summary>
+    [Test]
+    public void It_should_include_subclass_resource_identity_when_superclass_project_name_is_missing()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("superclassProjectName");
+        _exception.Message.Should().Contain("Ed-Fi:Campus");
+    }
+
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["resourceName"] = "EducationOrganization",
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["campuses"] = new JsonObject
+                {
+                    ["resourceName"] = "Campus",
+                    ["isDescriptor"] = false,
+                    ["isResourceExtension"] = false,
+                    ["isSubclass"] = true,
+                    ["subclassType"] = "association",
+                    ["superclassResourceName"] = "EducationOrganization",
+                    ["superclassIdentityJsonPath"] = null,
+                    ["allowIdentityUpdates"] = false,
+                    ["documentPathsMapping"] = new JsonObject
+                    {
+                        ["SchoolId"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["path"] = "$.schoolId",
+                        },
+                    },
+                    ["arrayUniquenessConstraints"] = new JsonArray(),
+                    ["decimalPropertyValidationInfos"] = new JsonArray(),
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                        },
+                        ["required"] = new JsonArray { "schoolId" },
+                    },
+                },
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test fixture for nullable member source columns used for abstract identity paths.
 /// </summary>
 [TestFixture]
