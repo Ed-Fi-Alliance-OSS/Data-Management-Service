@@ -117,5 +117,50 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Documentation",
+    "description": "Update backend-redesign docs to reflect that abstract union views are always derived and emitted (not optional). Acceptance: remove/replace “Optional” / “when enabled” language for `{schema}.{AbstractResource}_View` in `reference/design/backend-redesign/epics/01-relational-model/04-abstract-union-views.md`, `reference/design/backend-redesign/design-docs/data-model.md`, `reference/design/backend-redesign/design-docs/ddl-generation.md`, and `reference/design/backend-redesign/design-docs/overview.md` so there is no contradiction with the current implementation that always derives union views and `RelationalModelDdlEmitter` always emits them.",
+    "steps-to-verify": [
+      "Review: `reference/design/backend-redesign/epics/01-relational-model/04-abstract-union-views.md`",
+      "Review: `reference/design/backend-redesign/design-docs/data-model.md`",
+      "Review: `reference/design/backend-redesign/design-docs/ddl-generation.md`",
+      "Review: `reference/design/backend-redesign/design-docs/overview.md`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Update the pass-ordering guidance doc to match the implemented default ordering. Acceptance: `reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md` “Proposed pass ordering” list matches `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs` (notably: `ReferenceBindingPass` runs before `AbstractIdentityTableDerivationPass`) and includes a short rationale explaining that abstract identity/view derivation may depend on reference-bound identity columns.",
+    "steps-to-verify": [
+      "Review: `reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md`",
+      "Review: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Remove duplicated identity-path-to-column-name logic in `AbstractIdentityTableDerivationPass`. Acceptance: replace the local `BuildColumnName(JsonPathExpression)` in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` with the shared helper `RelationalModelSetSchemaHelpers.BuildIdentityPartBaseName(JsonPathExpression)` (keeping the same behavior for invalid paths), and all existing unit tests continue to pass.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Validation",
+    "description": "Relocate the `jsonSchemaForInsert` presence validation for subclass resources out of `AbstractIdentityTableDerivationPass`. Acceptance: (1) the schema invariant “subclass resources must include `jsonSchemaForInsert`” is enforced centrally (e.g., in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Validation/RelationalModelSetValidation.cs` or a per-resource validation step), (2) `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` no longer reads `jsonSchemaForInsert` purely to validate it, (3) the derived-model build still fails fast with an actionable error when `jsonSchemaForInsert` is missing, (4) tests still cover this scenario.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Documentation",
+    "description": "Document (and/or centrally validate) the `superclassIdentityJsonPath` invariant enforced by abstract identity/view derivation. Acceptance: update the relevant backend-redesign doc(s) to explicitly state that when a subclass uses `superclassIdentityJsonPath`, it must declare exactly one `identityJsonPaths` entry and that the `superclassIdentityJsonPath` must match the required abstract identity path; optionally add an explicit validation in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Validation/RelationalModelSetValidation.cs` so this contract is enforced consistently outside of the derivation pass.",
+    "steps-to-verify": [
+      "Review: `reference/design/backend-redesign/epics/01-relational-model/04-abstract-union-views.md`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
