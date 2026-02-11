@@ -454,6 +454,78 @@ internal static class RelationalModelSetValidation
     }
 
     /// <summary>
+    /// Validates that concrete subclass resources include a <c>jsonSchemaForInsert</c> object.
+    /// </summary>
+    /// <param name="effectiveSchemaSet">The normalized effective schema set.</param>
+    internal static void ValidateSubclassJsonSchemaForInsertPresence(EffectiveSchemaSet effectiveSchemaSet)
+    {
+        if (effectiveSchemaSet.ProjectsInEndpointOrder is null)
+        {
+            throw new InvalidOperationException(
+                "EffectiveSchemaSet.ProjectsInEndpointOrder must be provided."
+            );
+        }
+
+        foreach (var project in effectiveSchemaSet.ProjectsInEndpointOrder)
+        {
+            if (project is null)
+            {
+                throw new InvalidOperationException(
+                    "EffectiveSchemaSet.ProjectsInEndpointOrder must not contain null entries."
+                );
+            }
+
+            if (project.ProjectSchema is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema to be present in EffectiveProjectSchema."
+                );
+            }
+
+            var projectName = RequireNonEmpty(project.ProjectName, "ProjectName");
+            var resourceSchemas = RequireObject(
+                project.ProjectSchema["resourceSchemas"],
+                "projectSchema.resourceSchemas"
+            );
+
+            foreach (
+                var resourceSchemaEntry in OrderResourceSchemas(
+                    resourceSchemas,
+                    "projectSchema.resourceSchemas",
+                    requireNonEmptyKey: true
+                )
+            )
+            {
+                var isSubclass = resourceSchemaEntry.ResourceSchema["isSubclass"] switch
+                {
+                    JsonValue jsonValue => jsonValue.GetValue<bool>(),
+                    null => false,
+                    _ => throw new InvalidOperationException(
+                        "Expected isSubclass to be a boolean, invalid ApiSchema."
+                    ),
+                };
+
+                if (!isSubclass)
+                {
+                    continue;
+                }
+
+                if (resourceSchemaEntry.ResourceSchema["jsonSchemaForInsert"] is JsonObject)
+                {
+                    continue;
+                }
+
+                var resource = new QualifiedResourceName(projectName, resourceSchemaEntry.ResourceName);
+
+                throw new InvalidOperationException(
+                    $"Subclass resource '{FormatResource(resource)}' must include jsonSchemaForInsert "
+                        + "as an object."
+                );
+            }
+        }
+    }
+
+    /// <summary>
     /// Validates that each <c>documentPathsMapping.referenceJsonPaths[*].identityJsonPath</c> entry references an
     /// identity path that exists on the effective target resource schemas for all resource schema entries in the
     /// supplied object.

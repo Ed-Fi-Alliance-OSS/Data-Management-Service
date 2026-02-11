@@ -554,6 +554,52 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
 }
 
 /// <summary>
+/// Test fixture for an effective schema set with a subclass resource missing jsonSchemaForInsert.
+/// </summary>
+[TestFixture]
+public class Given_An_EffectiveSchemaSet_With_A_Subclass_Resource_Missing_JsonSchemaForInsert
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = EffectiveSchemaFixture.CreateProjectSchema(("schools", "School", false));
+        var resourceSchemas = (JsonObject)projectSchema["resourceSchemas"]!;
+        var schoolSchema = (JsonObject)resourceSchemas["schools"]!;
+        schoolSchema["isSubclass"] = true;
+
+        var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
+        var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(projectSchema, resourceKeys);
+        var builder = new DerivedRelationalModelSetBuilder(Array.Empty<IRelationalModelSetPass>());
+
+        try
+        {
+            builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when subclass json schema is missing.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_subclass_json_schema_for_insert_is_missing()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Subclass resource");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+        _exception.Message.Should().Contain("jsonSchemaForInsert");
+    }
+}
+
+/// <summary>
 /// Test type effective schema fixture.
 /// </summary>
 internal static class EffectiveSchemaFixture

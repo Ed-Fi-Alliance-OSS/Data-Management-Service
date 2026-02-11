@@ -83,6 +83,7 @@ public sealed class RelationalModelSetBuilderContext
             effectiveSchemaSet,
             effectiveResources.Resources
         );
+        RelationalModelSetValidation.ValidateSubclassJsonSchemaForInsertPresence(effectiveSchemaSet);
         _resourceKeysByResource = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.ToDictionary(
             entry => entry.Resource
         );

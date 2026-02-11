@@ -166,7 +166,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 continue;
             }
 
-            _ = RequireObject(resourceSchema["jsonSchemaForInsert"], "jsonSchemaForInsert");
             var identityJsonPaths = IdentityJsonPathsExtractor.ExtractIdentityJsonPaths(
                 resourceSchema,
                 resource.ProjectName,
