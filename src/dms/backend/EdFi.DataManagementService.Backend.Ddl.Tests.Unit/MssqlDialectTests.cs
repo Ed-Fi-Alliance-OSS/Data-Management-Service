@@ -1000,3 +1000,117 @@ public class Given_MssqlDialect_Create_Uuidv5_Function
             );
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Literal rendering tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_MssqlDialect_Rendering_Binary_Literal
+{
+    private MssqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new MssqlDialect(new MssqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_hex_literal()
+    {
+        var result = _dialect.RenderBinaryLiteral([0xAB, 0xCD, 0xEF]);
+        result.Should().Be("0xABCDEF");
+    }
+
+    [Test]
+    public void It_should_render_empty_byte_array()
+    {
+        var result = _dialect.RenderBinaryLiteral([]);
+        result.Should().Be("0x");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Rendering_Boolean_Literal
+{
+    private MssqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new MssqlDialect(new MssqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_true_as_1()
+    {
+        _dialect.RenderBooleanLiteral(true).Should().Be("1");
+    }
+
+    [Test]
+    public void It_should_render_false_as_0()
+    {
+        _dialect.RenderBooleanLiteral(false).Should().Be("0");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Rendering_String_Literal
+{
+    private MssqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new MssqlDialect(new MssqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_nvarchar_string()
+    {
+        _dialect.RenderStringLiteral("hello").Should().Be("N'hello'");
+    }
+
+    [Test]
+    public void It_should_escape_single_quotes()
+    {
+        _dialect.RenderStringLiteral("it's").Should().Be("N'it''s'");
+    }
+
+    [Test]
+    public void It_should_use_nvarchar_prefix()
+    {
+        _dialect.RenderStringLiteral("test").Should().StartWith("N'");
+    }
+}
+
+[TestFixture]
+public class Given_MssqlDialect_Rendering_Numeric_Literals
+{
+    private MssqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new MssqlDialect(new MssqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_smallint()
+    {
+        _dialect.RenderSmallintLiteral(42).Should().Be("42");
+    }
+
+    [Test]
+    public void It_should_render_integer()
+    {
+        _dialect.RenderIntegerLiteral(12345).Should().Be("12345");
+    }
+
+    [Test]
+    public void It_should_render_zero()
+    {
+        _dialect.RenderIntegerLiteral(0).Should().Be("0");
+    }
+}

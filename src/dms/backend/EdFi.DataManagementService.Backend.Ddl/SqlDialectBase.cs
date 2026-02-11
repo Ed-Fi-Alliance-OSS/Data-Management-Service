@@ -212,4 +212,21 @@ public abstract class SqlDialectBase : ISqlDialect
 
     /// <inheritdoc />
     public abstract string RenderSequenceDefaultExpression(DbSchemaName schema, string sequenceName);
+
+    // ── Literal rendering (for seed DML) ──────────────────────────────────
+
+    /// <inheritdoc />
+    public abstract string RenderBinaryLiteral(byte[] value);
+
+    /// <inheritdoc />
+    public abstract string RenderBooleanLiteral(bool value);
+
+    /// <inheritdoc />
+    public abstract string RenderStringLiteral(string value);
+
+    /// <inheritdoc />
+    public virtual string RenderSmallintLiteral(short value) => value.ToString();
+
+    /// <inheritdoc />
+    public virtual string RenderIntegerLiteral(int value) => value.ToString();
 }

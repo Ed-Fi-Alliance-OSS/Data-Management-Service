@@ -330,6 +330,27 @@ public sealed class PgsqlDialect : SqlDialectBase
         return $"nextval('{escapedForLiteral}')";
     }
 
+    // ── Literal rendering (for seed DML) ──────────────────────────────────
+
+    /// <inheritdoc />
+    public override string RenderBinaryLiteral(byte[] value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return $"'\\x{Convert.ToHexString(value)}'::bytea";
+    }
+
+    /// <inheritdoc />
+    public override string RenderBooleanLiteral(bool value) => value ? "true" : "false";
+
+    /// <inheritdoc />
+    public override string RenderStringLiteral(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return $"'{value.Replace("'", "''")}'";
+    }
+
     /// <inheritdoc />
     public override string RenderColumnDefinitionWithNamedDefault(
         DbColumnName columnName,

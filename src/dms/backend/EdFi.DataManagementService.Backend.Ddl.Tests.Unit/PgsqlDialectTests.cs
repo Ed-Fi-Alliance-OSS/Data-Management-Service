@@ -954,3 +954,117 @@ public class Given_PgsqlDialect_Create_Uuidv5_Function
         _ddl.Should().Contain("substring(hash from 1 for 16)");
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Literal rendering tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_PgsqlDialect_Rendering_Binary_Literal
+{
+    private PgsqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new PgsqlDialect(new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_bytea_hex_literal()
+    {
+        var result = _dialect.RenderBinaryLiteral([0xAB, 0xCD, 0xEF]);
+        result.Should().Be("'\\xABCDEF'::bytea");
+    }
+
+    [Test]
+    public void It_should_render_empty_byte_array()
+    {
+        var result = _dialect.RenderBinaryLiteral([]);
+        result.Should().Be("'\\x'::bytea");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Rendering_Boolean_Literal
+{
+    private PgsqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new PgsqlDialect(new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_true()
+    {
+        _dialect.RenderBooleanLiteral(true).Should().Be("true");
+    }
+
+    [Test]
+    public void It_should_render_false()
+    {
+        _dialect.RenderBooleanLiteral(false).Should().Be("false");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Rendering_String_Literal
+{
+    private PgsqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new PgsqlDialect(new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_simple_string()
+    {
+        _dialect.RenderStringLiteral("hello").Should().Be("'hello'");
+    }
+
+    [Test]
+    public void It_should_escape_single_quotes()
+    {
+        _dialect.RenderStringLiteral("it's").Should().Be("'it''s'");
+    }
+
+    [Test]
+    public void It_should_not_use_nvarchar_prefix()
+    {
+        _dialect.RenderStringLiteral("test").Should().NotStartWith("N");
+    }
+}
+
+[TestFixture]
+public class Given_PgsqlDialect_Rendering_Numeric_Literals
+{
+    private PgsqlDialect _dialect = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialect = new PgsqlDialect(new PgsqlDialectRules());
+    }
+
+    [Test]
+    public void It_should_render_smallint()
+    {
+        _dialect.RenderSmallintLiteral(42).Should().Be("42");
+    }
+
+    [Test]
+    public void It_should_render_integer()
+    {
+        _dialect.RenderIntegerLiteral(12345).Should().Be("12345");
+    }
+
+    [Test]
+    public void It_should_render_zero()
+    {
+        _dialect.RenderIntegerLiteral(0).Should().Be("0");
+    }
+}

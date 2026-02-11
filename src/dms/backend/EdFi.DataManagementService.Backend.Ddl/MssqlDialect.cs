@@ -367,6 +367,27 @@ public sealed class MssqlDialect : SqlDialectBase
         return $"(NEXT VALUE FOR {qualifiedName})";
     }
 
+    // ── Literal rendering (for seed DML) ──────────────────────────────────
+
+    /// <inheritdoc />
+    public override string RenderBinaryLiteral(byte[] value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return $"0x{Convert.ToHexString(value)}";
+    }
+
+    /// <inheritdoc />
+    public override string RenderBooleanLiteral(bool value) => value ? "1" : "0";
+
+    /// <inheritdoc />
+    public override string RenderStringLiteral(string value)
+    {
+        ArgumentNullException.ThrowIfNull(value);
+
+        return $"N'{value.Replace("'", "''")}'";
+    }
+
     /// <inheritdoc />
     public override string RenderColumnDefinitionWithNamedDefault(
         DbColumnName columnName,

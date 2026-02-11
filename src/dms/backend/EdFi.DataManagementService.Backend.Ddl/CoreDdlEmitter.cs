@@ -31,15 +31,15 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
-    private static readonly DbSchemaName _dmsSchema = new("dms");
+    internal static readonly DbSchemaName _dmsSchema = new("dms");
     private static readonly DbTableName _descriptorTable = new(_dmsSchema, "Descriptor");
     private static readonly DbTableName _documentTable = new(_dmsSchema, "Document");
     private static readonly DbTableName _documentCacheTable = new(_dmsSchema, "DocumentCache");
     private static readonly DbTableName _documentChangeEventTable = new(_dmsSchema, "DocumentChangeEvent");
-    private static readonly DbTableName _effectiveSchemaTable = new(_dmsSchema, "EffectiveSchema");
+    internal static readonly DbTableName _effectiveSchemaTable = new(_dmsSchema, "EffectiveSchema");
     private static readonly DbTableName _referentialIdentityTable = new(_dmsSchema, "ReferentialIdentity");
-    private static readonly DbTableName _resourceKeyTable = new(_dmsSchema, "ResourceKey");
-    private static readonly DbTableName _schemaComponentTable = new(_dmsSchema, "SchemaComponent");
+    internal static readonly DbTableName _resourceKeyTable = new(_dmsSchema, "ResourceKey");
+    internal static readonly DbTableName _schemaComponentTable = new(_dmsSchema, "SchemaComponent");
 
     private static DbColumnName Col(string name) => new(name);
 
