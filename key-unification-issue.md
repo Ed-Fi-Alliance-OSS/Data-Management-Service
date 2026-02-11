@@ -102,6 +102,14 @@ Store one canonical, writable column for each equality-class identity part, and 
   - PostgreSQL: generated, stored
     - `StudentSchoolAssociation_StudentUniqueId GENERATED ALWAYS AS (CASE WHEN StudentSchoolAssociation_DocumentId IS NULL THEN NULL ELSE StudentUniqueId END) STORED`
 
+**Presence-gating (to handle optional reference semantics)**
+
+With per-site propagation, a NULL propagated identity part means “this reference site is absent”, and query compilation can safely treat a predicate like `StudentSchoolAssociation_StudentUniqueId = 123` as implying the reference is present.
+
+If overlapping identity parts are collapsed into a single physical column, that invariant breaks: the canonical `StudentUniqueId` can be non-NULL *because another reference site is present*, even when `StudentSchoolAssociation_DocumentId` is NULL. Without “masking”, an absent reference site would appear to have identity values, and predicates on the per-site identity part could produce false matches unless every query is also gated by `StudentSchoolAssociation_DocumentId IS NOT NULL`.
+
+The computed/generated per-site alias columns above are therefore intentionally **presence-gated**: they evaluate to NULL when the reference site’s `..._DocumentId` is NULL, preserving the original “absent ⇒ NULL identity parts” semantics while still storing only one canonical value.
+
 **Keys and cascades**
 
 - Composite FKs must be defined over the canonical physical columns (not the computed/generated aliases), plus the per-site `..._DocumentId`.
