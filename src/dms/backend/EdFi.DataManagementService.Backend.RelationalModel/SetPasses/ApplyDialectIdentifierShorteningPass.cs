@@ -523,13 +523,22 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             changed = true;
         }
 
-        var updatedColumns = new DbColumnModel[view.ColumnsInIdentityOrder.Count];
+        var updatedColumns = new AbstractUnionViewOutputColumn[view.OutputColumnsInSelectOrder.Count];
 
-        for (var index = 0; index < view.ColumnsInIdentityOrder.Count; index++)
+        for (var index = 0; index < view.OutputColumnsInSelectOrder.Count; index++)
         {
-            var column = view.ColumnsInIdentityOrder[index];
-            updatedColumns[index] = ApplyToColumn(column, dialectRules, out var columnChanged);
+            var column = view.OutputColumnsInSelectOrder[index];
+            updatedColumns[index] = ApplyToUnionViewOutputColumn(column, dialectRules, out var columnChanged);
             changed |= columnChanged;
+        }
+
+        var updatedArms = new AbstractUnionViewArm[view.UnionArmsInOrder.Count];
+
+        for (var index = 0; index < view.UnionArmsInOrder.Count; index++)
+        {
+            var arm = view.UnionArmsInOrder[index];
+            updatedArms[index] = ApplyToUnionViewArm(arm, dialectRules, out var armChanged);
+            changed |= armChanged;
         }
 
         if (!changed)
@@ -540,8 +549,112 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return view with
         {
             ViewName = updatedViewName,
-            ColumnsInIdentityOrder = updatedColumns,
+            OutputColumnsInSelectOrder = updatedColumns,
+            UnionArmsInOrder = updatedArms,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to an abstract union-view output column and reports whether it changed.
+    /// </summary>
+    private static AbstractUnionViewOutputColumn ApplyToUnionViewOutputColumn(
+        AbstractUnionViewOutputColumn column,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        var updatedColumnName = ShortenColumn(column.ColumnName, dialectRules);
+        changed = !updatedColumnName.Equals(column.ColumnName);
+
+        if (!changed)
+        {
+            return column;
+        }
+
+        return column with
+        {
+            ColumnName = updatedColumnName,
+        };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to an abstract union-view arm and reports whether it changed.
+    /// </summary>
+    private static AbstractUnionViewArm ApplyToUnionViewArm(
+        AbstractUnionViewArm arm,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updatedFromTable = ShortenTable(arm.FromTable, dialectRules);
+
+        if (!updatedFromTable.Equals(arm.FromTable))
+        {
+            changed = true;
+        }
+
+        var updatedProjections = new AbstractUnionViewProjectionExpression[
+            arm.ProjectionExpressionsInSelectOrder.Count
+        ];
+
+        for (var index = 0; index < arm.ProjectionExpressionsInSelectOrder.Count; index++)
+        {
+            var expression = arm.ProjectionExpressionsInSelectOrder[index];
+            updatedProjections[index] = ApplyToUnionViewProjection(
+                expression,
+                dialectRules,
+                out var expressionChanged
+            );
+            changed |= expressionChanged;
+        }
+
+        if (!changed)
+        {
+            return arm;
+        }
+
+        return arm with
+        {
+            FromTable = updatedFromTable,
+            ProjectionExpressionsInSelectOrder = updatedProjections,
+        };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to an abstract union-view projection expression and reports whether it changed.
+    /// </summary>
+    private static AbstractUnionViewProjectionExpression ApplyToUnionViewProjection(
+        AbstractUnionViewProjectionExpression expression,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        switch (expression)
+        {
+            case AbstractUnionViewProjectionExpression.SourceColumn sourceColumn:
+            {
+                var updatedColumn = ShortenColumn(sourceColumn.ColumnName, dialectRules);
+                changed = !updatedColumn.Equals(sourceColumn.ColumnName);
+
+                if (!changed)
+                {
+                    return sourceColumn;
+                }
+
+                return sourceColumn with
+                {
+                    ColumnName = updatedColumn,
+                };
+            }
+            case AbstractUnionViewProjectionExpression.StringLiteral:
+                changed = false;
+                return expression;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported abstract union-view projection expression '{expression.GetType().Name}'."
+                );
+        }
     }
 
     /// <summary>
@@ -688,6 +801,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
+        var registeredTables = new HashSet<DbTableName>();
+        var registeredColumns = new HashSet<(DbTableName Table, DbColumnName Column)>();
 
         foreach (var resource in orderedConcreteResources)
         {
@@ -699,6 +814,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     table.Table,
                     BuildOrigin($"table {FormatTable(table.Table)}", resourceLabel, table.JsonScope)
                 );
+                registeredTables.Add(table.Table);
 
                 foreach (var column in table.Columns)
                 {
@@ -712,6 +828,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                             table.JsonScope
                         )
                     );
+                    registeredColumns.Add((table.Table, column.ColumnName));
                 }
 
                 var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(table.Table, table.Key);
@@ -757,6 +874,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     tableModel.JsonScope
                 )
             );
+            registeredTables.Add(tableModel.Table);
 
             foreach (var column in tableModel.Columns)
             {
@@ -770,6 +888,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                         tableModel.JsonScope
                     )
                 );
+                registeredColumns.Add((tableModel.Table, column.ColumnName));
             }
 
             var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(tableModel.Table, tableModel.Key);
@@ -809,8 +928,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 view.ViewName,
                 BuildOrigin($"view {FormatTable(view.ViewName)} (abstract union)", resourceLabel, null)
             );
+            registeredTables.Add(view.ViewName);
 
-            foreach (var column in view.ColumnsInIdentityOrder)
+            foreach (var column in view.OutputColumnsInSelectOrder)
             {
                 detector.RegisterColumn(
                     view.ViewName,
@@ -820,6 +940,17 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                         resourceLabel,
                         column.SourceJsonPath
                     )
+                );
+                registeredColumns.Add((view.ViewName, column.ColumnName));
+            }
+
+            foreach (var arm in view.UnionArmsInOrder)
+            {
+                RegisterUnionArmSourceIdentifierCollisions(
+                    detector,
+                    arm,
+                    registeredTables,
+                    registeredColumns
                 );
             }
         }
@@ -843,6 +974,57 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
 
         detector.ThrowIfCollisions();
+    }
+
+    /// <summary>
+    /// Registers source identifiers referenced by abstract union-view arms when not already covered by
+    /// concrete/abstract table registrations.
+    /// </summary>
+    private static void RegisterUnionArmSourceIdentifierCollisions(
+        IdentifierCollisionDetector detector,
+        AbstractUnionViewArm arm,
+        HashSet<DbTableName> registeredTables,
+        HashSet<(DbTableName Table, DbColumnName Column)> registeredColumns
+    )
+    {
+        var resourceLabel = FormatResource(arm.ConcreteMemberResourceKey.Resource);
+
+        if (registeredTables.Add(arm.FromTable))
+        {
+            detector.RegisterTable(
+                arm.FromTable,
+                BuildOrigin(
+                    $"table {FormatTable(arm.FromTable)} (abstract union arm source)",
+                    resourceLabel,
+                    null
+                )
+            );
+        }
+
+        foreach (var projection in arm.ProjectionExpressionsInSelectOrder)
+        {
+            if (projection is not AbstractUnionViewProjectionExpression.SourceColumn sourceColumn)
+            {
+                continue;
+            }
+
+            var columnKey = (arm.FromTable, sourceColumn.ColumnName);
+
+            if (!registeredColumns.Add(columnKey))
+            {
+                continue;
+            }
+
+            detector.RegisterColumn(
+                arm.FromTable,
+                sourceColumn.ColumnName,
+                BuildOrigin(
+                    $"column {FormatColumn(arm.FromTable, sourceColumn.ColumnName)} (abstract union arm source)",
+                    resourceLabel,
+                    null
+                )
+            );
+        }
     }
 
     /// <summary>

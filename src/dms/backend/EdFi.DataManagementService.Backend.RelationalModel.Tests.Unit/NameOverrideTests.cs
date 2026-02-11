@@ -362,6 +362,9 @@ public class Given_A_Root_Table_NameOverride_Collision_With_Reversed_Resource_Or
         _reverseOrderException!.Message.Should().Be(_exception!.Message);
     }
 
+    /// <summary>
+    /// Builds and returns the exception thrown when deriving a model set for the root-override collision fixture.
+    /// </summary>
     private static Exception? BuildCollisionException(bool reverseResourceOrder)
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixture(

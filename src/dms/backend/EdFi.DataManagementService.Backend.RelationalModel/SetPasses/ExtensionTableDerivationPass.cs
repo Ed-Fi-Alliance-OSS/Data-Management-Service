@@ -1043,6 +1043,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         return (effective.ToArray(), defaults.ToArray());
     }
 
+    /// <summary>
+    /// Builds collision-origin metadata for a derived extension table name.
+    /// </summary>
     private static IdentifierCollisionOrigin BuildTableOrigin(
         DbTableName tableName,
         string resourceLabel,
@@ -1054,6 +1057,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         return new IdentifierCollisionOrigin(description, resourceLabel, jsonScope.Canonical);
     }
 
+    /// <summary>
+    /// Builds collision-origin metadata for a derived extension column name.
+    /// </summary>
     private static IdentifierCollisionOrigin BuildColumnOrigin(
         DbTableName tableName,
         DbColumnName columnName,
@@ -1362,6 +1368,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         );
     }
 
+    /// <summary>
+    /// Resolves the base column name for an extension scalar property, applying a configured name override when present.
+    /// </summary>
     private static string ResolveColumnBaseName(
         INameOverrideProvider overrideProvider,
         JsonPathExpression sourcePath,
@@ -1376,6 +1385,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             : originalBaseName;
     }
 
+    /// <summary>
+    /// Builds a collision-origin entry for a derived column used when reporting override collisions.
+    /// </summary>
     private static IdentifierCollisionOrigin BuildCollisionOrigin(
         DbTableName tableName,
         DbColumnName columnName,

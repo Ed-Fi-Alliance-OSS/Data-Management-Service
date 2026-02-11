@@ -278,11 +278,17 @@ internal static class RelationalOverridesExtractor
         return overrides;
     }
 
+    /// <summary>
+    /// Determines whether the supplied JSONPath targets the root of an extension payload (<c>$_ext</c>).
+    /// </summary>
     private static bool IsExtensionRootPath(JsonPathExpression path)
     {
         return path.Segments.Count > 0 && path.Segments[0] is JsonPathSegment.Property { Name: "_ext" };
     }
 
+    /// <summary>
+    /// Prefixes a JSONPath with the canonical <c>_ext.{projectKey}</c> root segments.
+    /// </summary>
     private static JsonPathExpression PrefixExtensionRoot(JsonPathExpression path, string projectKey)
     {
         List<JsonPathSegment> segments =
@@ -296,6 +302,10 @@ internal static class RelationalOverridesExtractor
         return JsonPathExpressionCompiler.FromSegments(segments);
     }
 
+    /// <summary>
+    /// Resolves the extension project key declared under <c>jsonSchemaForInsert.properties._ext</c> by matching
+    /// either the project endpoint name or the project name (case-insensitive).
+    /// </summary>
     private static string ResolveExtensionProjectKey(
         JsonNode jsonSchemaForInsert,
         string projectEndpointName,
@@ -376,6 +386,9 @@ internal static class RelationalOverridesExtractor
         );
     }
 
+    /// <summary>
+    /// Finds an extension project key that matches the supplied identifier using the canonical key comparer.
+    /// </summary>
     private static string? FindMatchingProjectKey(JsonObject projectKeysObject, string match)
     {
         foreach (var entry in projectKeysObject)
@@ -389,6 +402,9 @@ internal static class RelationalOverridesExtractor
         return null;
     }
 
+    /// <summary>
+    /// Determines whether a JSONPath is nested within a document reference object path.
+    /// </summary>
     private static bool IsInsideReferenceObjectPath(
         JsonPathExpression path,
         IReadOnlyList<DocumentReferenceMapping> referenceMappings,

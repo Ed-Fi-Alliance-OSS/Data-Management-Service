@@ -252,6 +252,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
             .Be("ProgramProgram_EducationOrganizationId");
     }
 
+    /// <summary>
+    /// Builds a project schema containing resources used to validate reference binding against nested target identity paths.
+    /// </summary>
     private static JsonObject BuildProjectSchema()
     {
         return new JsonObject
@@ -269,6 +272,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
         };
     }
 
+    /// <summary>
+    /// Builds a resource schema that includes multiple reference sites whose target identity paths are nested under reference objects.
+    /// </summary>
     private static JsonObject BuildStudentHomelessProgramAssociationSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -366,6 +372,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
         };
     }
 
+    /// <summary>
+    /// Builds a ClassPeriod schema with an identity path nested under a reference object.
+    /// </summary>
     private static JsonObject BuildClassPeriodSchema()
     {
         return new JsonObject
@@ -406,6 +415,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
         };
     }
 
+    /// <summary>
+    /// Builds a Calendar schema with an identity path nested under a reference object.
+    /// </summary>
     private static JsonObject BuildCalendarSchema()
     {
         return new JsonObject
@@ -446,6 +458,9 @@ public class Given_Reference_Binding_With_Nested_Target_Identity_Paths
         };
     }
 
+    /// <summary>
+    /// Builds a ProgramProgram schema whose identity path targets an abstract reference identity field.
+    /// </summary>
     private static JsonObject BuildProgramProgramSchema()
     {
         return new JsonObject
@@ -544,6 +559,9 @@ public class Given_Reference_Binding_With_Identity_NameOverride
         _model.Root.Columns.Should().Contain(column => column.ColumnName.Value == "School_CampusId");
     }
 
+    /// <summary>
+    /// Builds a project schema with a reference identity name override used to validate override application during binding.
+    /// </summary>
     private static JsonObject BuildProjectSchema()
     {
         return new JsonObject
@@ -559,6 +577,9 @@ public class Given_Reference_Binding_With_Identity_NameOverride
         };
     }
 
+    /// <summary>
+    /// Builds a Student schema that references School and declares a name override for the reference identity path.
+    /// </summary>
     private static JsonObject BuildStudentSchema()
     {
         var jsonSchemaForInsert = new JsonObject
@@ -612,6 +633,9 @@ public class Given_Reference_Binding_With_Identity_NameOverride
         };
     }
 
+    /// <summary>
+    /// Builds a minimal School schema that supplies an identity column used by reference binding.
+    /// </summary>
     private static JsonObject BuildSchoolSchema()
     {
         return new JsonObject

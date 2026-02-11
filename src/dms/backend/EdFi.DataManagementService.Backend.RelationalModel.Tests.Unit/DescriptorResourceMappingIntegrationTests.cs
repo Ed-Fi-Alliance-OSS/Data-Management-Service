@@ -9,12 +9,19 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
+/// <summary>
+/// Integration-style tests that validate descriptor resources map to shared <c>dms.Descriptor</c> storage and
+/// include descriptor-specific metadata in the derived model set.
+/// </summary>
 [TestFixture]
 public class Given_A_Complete_Model_Set_With_Descriptors
 {
     private DerivedRelationalModelSet? _modelSet;
     private EffectiveSchemaSet? _effectiveSchemaSet;
 
+    /// <summary>
+    /// Builds a derived relational model set from the hand-authored effective schema fixture.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -26,6 +33,9 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         _modelSet = builder.Build(_effectiveSchemaSet, SqlDialect.Pgsql, dialectRules);
     }
 
+    /// <summary>
+    /// It should mark descriptor resources as using the shared descriptor table storage strategy.
+    /// </summary>
     [Test]
     public void It_Should_Include_Descriptor_Resources_With_SharedDescriptorTable_Storage()
     {
@@ -43,6 +53,9 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         }
     }
 
+    /// <summary>
+    /// It should not derive per-descriptor project-schema tables for descriptor resources.
+    /// </summary>
     [Test]
     public void It_Should_Not_Create_Per_Descriptor_Tables()
     {
@@ -64,6 +77,9 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         }
     }
 
+    /// <summary>
+    /// It should populate descriptor metadata required to interpret shared-table descriptor rows.
+    /// </summary>
     [Test]
     public void It_Should_Include_Descriptor_Metadata()
     {
@@ -87,6 +103,9 @@ public class Given_A_Complete_Model_Set_With_Descriptors
         }
     }
 
+    /// <summary>
+    /// It should keep non-descriptor resources mapped to relational tables with no descriptor metadata.
+    /// </summary>
     [Test]
     public void It_Should_Preserve_Non_Descriptor_Resources()
     {

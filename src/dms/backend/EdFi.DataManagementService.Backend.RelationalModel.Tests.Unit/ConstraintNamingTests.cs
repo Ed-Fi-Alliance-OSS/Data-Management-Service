@@ -184,6 +184,9 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
         _uniqueName.Length.Should().BeLessOrEqualTo(_dialectRules.MaxIdentifierLength);
     }
 
+    /// <summary>
+    /// Builds the deterministic signature used to compute expected foreign key name hashes in tests.
+    /// </summary>
     private static string BuildForeignKeySignature(
         DbTableName table,
         IReadOnlyList<DbColumnName> columns,
@@ -194,16 +197,25 @@ public class Given_Constraint_Names_Exceeding_Dialect_Limits
         return $"ForeignKey|{table}|{string.Join(",", columns.Select(column => column.Value))}|{targetTable}|{string.Join(",", targetColumns.Select(column => column.Value))}|{ReferentialAction.NoAction}|{ReferentialAction.NoAction}";
     }
 
+    /// <summary>
+    /// Builds the deterministic signature used to compute expected unique constraint name hashes in tests.
+    /// </summary>
     private static string BuildUniqueSignature(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
         return $"Unique|{table}|{string.Join(",", columns.Select(column => column.Value))}";
     }
 
+    /// <summary>
+    /// Builds the deterministic signature used to compute expected primary key name hashes in tests.
+    /// </summary>
     private static string BuildPrimaryKeySignature(DbTableName table, IReadOnlyList<DbColumnName> columns)
     {
         return $"PrimaryKey|{table}|{string.Join(",", columns.Select(column => column.Value))}";
     }
 
+    /// <summary>
+    /// Computes a stable lowercase hash prefix for a signature, mirroring the production hashing approach.
+    /// </summary>
     private static string ComputeHash(string signature)
     {
         using var sha256 = SHA256.Create();

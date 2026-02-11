@@ -35,7 +35,7 @@ Generate deterministic DDL for per-project schemas and schema-derived objects fr
   - stable `UNION ALL` arm ordering,
   - stable select-list ordering/casting.
 - Abstract identity tables are emitted deterministically:
-  - stable column ordering from `identityPathOrder`,
+  - stable column ordering from `identityJsonPaths` order,
   - stable constraint/index naming.
 - `_ext` tables are created in the correct extension schemas with aligned keys.
 - DDL output is deterministic and snapshot-testable for small fixtures that include nested collections, polymorphism, and `_ext`.
@@ -53,3 +53,11 @@ Generate deterministic DDL for per-project schemas and schema-derived objects fr
    1. nested collections,
    2. polymorphic abstract views,
    3. `_ext` mapping.
+9. Emit abstract identity tables from `DerivedRelationalModelSet.AbstractIdentityTablesInNameOrder`:
+   - Ensure one `CREATE TABLE` per abstract identity table (including PK/UK/CHECK constraints) is emitted deterministically.
+   - Ensure abstract identity tables are emitted before abstract union views (views may depend on the tables for diagnostics and DDL ordering).
+   - Add focused unit tests that assert the emitted SQL contains the expected abstract identity-table `CREATE TABLE` statements.
+10. Fix SQL Server DDL emission for unbounded string scalar types:
+    - When `RelationalScalarType.Kind=String` and `MaxLength` is omitted, emit `nvarchar(max)` (not bare `nvarchar`) for SQL Server.
+    - Apply the same rule consistently for both table column definitions and abstract union view `CAST(... AS ...)` expressions.
+    - Add focused unit tests covering at least one unbounded string column in a table and in a union view output column under the SQL Server dialect.

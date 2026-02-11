@@ -19,6 +19,10 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Builds an effective schema set with an invalid descriptor resource missing the required <c>namespace</c>
+    /// property, then captures the thrown exception.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -103,12 +107,18 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
         }
     }
 
+    /// <summary>
+    /// It should throw an invalid operation exception when descriptor validation fails.
+    /// </summary>
     [Test]
     public void It_Should_Throw_InvalidOperationException()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
     }
 
+    /// <summary>
+    /// It should mention descriptor contract incompatibility in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Descriptor_Incompatibility()
     {
@@ -116,6 +126,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
         _exception!.Message.Should().Contain("incompatible with dms.Descriptor contract");
     }
 
+    /// <summary>
+    /// It should mention the missing <c>namespace</c> field in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Missing_Namespace_Field()
     {
@@ -123,6 +136,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
         _exception!.Message.Should().Contain("namespace");
     }
 
+    /// <summary>
+    /// It should identify the invalid descriptor resource in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Identify_The_Invalid_Resource()
     {
@@ -131,11 +147,19 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
     }
 }
 
+/// <summary>
+/// Integration tests verifying model set derivation fails fast when a descriptor resource is missing the required
+/// <c>codeValue</c> property.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeValue
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Builds an effective schema set with an invalid descriptor resource missing the required <c>codeValue</c>
+    /// property, then captures the thrown exception.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -220,12 +244,18 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeVal
         }
     }
 
+    /// <summary>
+    /// It should throw an invalid operation exception when descriptor validation fails.
+    /// </summary>
     [Test]
     public void It_Should_Throw_InvalidOperationException()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
     }
 
+    /// <summary>
+    /// It should mention descriptor contract incompatibility in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Descriptor_Incompatibility()
     {
@@ -233,6 +263,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeVal
         _exception!.Message.Should().Contain("incompatible with dms.Descriptor contract");
     }
 
+    /// <summary>
+    /// It should mention the missing <c>codeValue</c> field in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Missing_CodeValue_Field()
     {
@@ -240,6 +273,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeVal
         _exception!.Message.Should().Contain("codeValue");
     }
 
+    /// <summary>
+    /// It should identify the invalid descriptor resource in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Identify_The_Invalid_Resource()
     {
@@ -248,11 +284,19 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeVal
     }
 }
 
+/// <summary>
+/// Integration tests verifying model set derivation fails fast when a descriptor resource declares unexpected
+/// required fields.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_Fields
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Builds an effective schema set with an invalid descriptor resource that declares extra required fields,
+    /// then captures the thrown exception.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -345,12 +389,18 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
         }
     }
 
+    /// <summary>
+    /// It should throw an invalid operation exception when descriptor validation fails.
+    /// </summary>
     [Test]
     public void It_Should_Throw_InvalidOperationException()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
     }
 
+    /// <summary>
+    /// It should mention descriptor contract incompatibility in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Descriptor_Incompatibility()
     {
@@ -358,6 +408,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
         _exception!.Message.Should().Contain("incompatible with dms.Descriptor contract");
     }
 
+    /// <summary>
+    /// It should mention that unexpected required fields were declared.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Unexpected_Required_Fields()
     {
@@ -365,6 +418,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
         _exception!.Message.Should().Contain("unexpected required fields");
     }
 
+    /// <summary>
+    /// It should identify the extra required field name in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Identify_The_Extra_Field()
     {
@@ -372,6 +428,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
         _exception!.Message.Should().Contain("customRequiredField");
     }
 
+    /// <summary>
+    /// It should identify the invalid descriptor resource in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Identify_The_Invalid_Resource()
     {
@@ -380,11 +439,19 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
     }
 }
 
+/// <summary>
+/// Integration tests verifying model set derivation fails fast when a descriptor resource declares incompatible
+/// JSON Schema types for required descriptor fields.
+/// </summary>
 [TestFixture]
 public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
 {
     private Exception? _exception;
 
+    /// <summary>
+    /// Builds an effective schema set with an invalid descriptor resource whose <c>codeValue</c> field has the
+    /// wrong JSON Schema type, then captures the thrown exception.
+    /// </summary>
     [SetUp]
     public void Setup()
     {
@@ -471,12 +538,18 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
         }
     }
 
+    /// <summary>
+    /// It should throw an invalid operation exception when descriptor validation fails.
+    /// </summary>
     [Test]
     public void It_Should_Throw_InvalidOperationException()
     {
         _exception.Should().BeOfType<InvalidOperationException>();
     }
 
+    /// <summary>
+    /// It should mention descriptor contract incompatibility in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Descriptor_Incompatibility()
     {
@@ -484,6 +557,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
         _exception!.Message.Should().Contain("incompatible with dms.Descriptor contract");
     }
 
+    /// <summary>
+    /// It should mention a schema type mismatch in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_Type_Mismatch()
     {
@@ -491,6 +567,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
         _exception!.Message.Should().Contain("must be of type");
     }
 
+    /// <summary>
+    /// It should mention the incompatible field name in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Mention_CodeValue_Field()
     {
@@ -498,6 +577,9 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
         _exception!.Message.Should().Contain("codeValue");
     }
 
+    /// <summary>
+    /// It should identify the invalid descriptor resource in diagnostics.
+    /// </summary>
     [Test]
     public void It_Should_Identify_The_Invalid_Resource()
     {

@@ -241,7 +241,7 @@ public class Given_Incomplete_Abstract_Reference_Identity_Mapping
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
                 new ReferenceBindingPass(),
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),
@@ -839,7 +839,7 @@ public class Given_Abstract_Reference_Constraint_Derivation
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
                 new ReferenceBindingPass(),
                 new RootIdentityConstraintPass(),
                 new ReferenceConstraintPass(),

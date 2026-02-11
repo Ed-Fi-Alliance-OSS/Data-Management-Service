@@ -580,19 +580,19 @@ This redesign provisions an **identity table per abstract resource**:
 - Table name: `{schema}.{AbstractResource}Identity` (deterministic; provisioned with the rest of the schema).
 - Columns:
   - `DocumentId` (PK; FK to `dms.Document(DocumentId)` ON DELETE CASCADE)
-  - abstract identity fields in `abstractResources[A].identityPathOrder`
-  - optional `Discriminator` (concrete resource name; recommended for diagnostics)
+  - abstract identity fields in `abstractResources[A].identityJsonPaths` order
+  - `Discriminator` (NOT NULL; last; concrete member discriminator literal in `ProjectName:ResourceName` format; useful for diagnostics)
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
   - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)` with `ON UPDATE CASCADE` (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
 
-Optional: `{schema}.{AbstractResource}_View` union view
+Required: `{schema}.{AbstractResource}_View` union view
 
-If desired, also provision a union view per abstract resource for diagnostics/ad-hoc querying:
+Also provision a union view per abstract resource for diagnostics/ad-hoc querying:
 
 - View name: `{schema}.{AbstractResource}_View`
-- Columns: `DocumentId`, optional `Discriminator`, abstract identity fields in `identityPathOrder` order
+- Columns: `DocumentId`, abstract identity fields in `identityJsonPaths` order, `Discriminator` (NOT NULL; last; literal format `ProjectName:ResourceName`)
 - Rows: `UNION ALL` over concrete member root tables, projecting `DocumentId` and the abstract identity fields (including identity renames)
 
 Usage:
@@ -600,52 +600,53 @@ Usage:
 - Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via cascades).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
-DDL generation requirement (if enabled):
-- View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityPathOrder`, and explicit casts where needed for cross-engine union compatibility.
+DDL generation requirement:
+- View SQL must be deterministic and canonicalized: stable `UNION ALL` arm ordering, stable select-list ordering from `identityJsonPaths` order, and explicit casts where needed for cross-engine union compatibility.
+- `Discriminator` literals are emitted as `ProjectName:ResourceName`; derivation fails fast when any value exceeds 256 characters.
 
-**Optional PostgreSQL example: `EducationOrganization_View`**
+**PostgreSQL example: `EducationOrganization_View`**
 
 ```sql
 CREATE OR REPLACE VIEW edfi.EducationOrganization_View AS
 SELECT
     s.DocumentId,
     s.SchoolId AS EducationOrganizationId,
-    'School'::varchar(256) AS Discriminator
+    'Ed-Fi:School'::varchar(256) AS Discriminator
 FROM edfi.School s
 UNION ALL
 SELECT
     lea.DocumentId,
     lea.LocalEducationAgencyId AS EducationOrganizationId,
-    'LocalEducationAgency'::varchar(256) AS Discriminator
+    'Ed-Fi:LocalEducationAgency'::varchar(256) AS Discriminator
 FROM edfi.LocalEducationAgency lea
 UNION ALL
 SELECT
     sea.DocumentId,
     sea.StateEducationAgencyId AS EducationOrganizationId,
-    'StateEducationAgency'::varchar(256) AS Discriminator
+    'Ed-Fi:StateEducationAgency'::varchar(256) AS Discriminator
 FROM edfi.StateEducationAgency sea;
 ```
 
-**Optional SQL Server example: `EducationOrganization_View`**
+**SQL Server example: `EducationOrganization_View`**
 
 ```sql
 CREATE OR ALTER VIEW edfi.EducationOrganization_View AS
 SELECT
     s.DocumentId,
     s.SchoolId AS EducationOrganizationId,
-    CAST('School' AS nvarchar(256)) AS Discriminator
+    CAST('Ed-Fi:School' AS nvarchar(256)) AS Discriminator
 FROM edfi.School s
 UNION ALL
 SELECT
     lea.DocumentId,
     lea.LocalEducationAgencyId AS EducationOrganizationId,
-    CAST('LocalEducationAgency' AS nvarchar(256)) AS Discriminator
+    CAST('Ed-Fi:LocalEducationAgency' AS nvarchar(256)) AS Discriminator
 FROM edfi.LocalEducationAgency lea
 UNION ALL
 SELECT
     sea.DocumentId,
     sea.StateEducationAgencyId AS EducationOrganizationId,
-    CAST('StateEducationAgency' AS nvarchar(256)) AS Discriminator
+    CAST('Ed-Fi:StateEducationAgency' AS nvarchar(256)) AS Discriminator
 FROM edfi.StateEducationAgency sea;
 ```
 
@@ -824,7 +825,7 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
     - extension collection tables: `{ResourceBaseName}Extension{CollectionSuffix}`
 - Abstract identity artifacts:
   - `{ProjectSchema}.{AbstractResource}Identity` (tables; FK targets for polymorphic references)
-  - `{ProjectSchema}.{AbstractResource}_View` (optional union views for diagnostics/ad-hoc querying)
+  - `{ProjectSchema}.{AbstractResource}_View` (union views for diagnostics/ad-hoc querying)
 
 ### 4) Column names (PascalCase + stable suffixes)
 

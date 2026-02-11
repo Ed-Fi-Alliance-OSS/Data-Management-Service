@@ -315,6 +315,9 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         _exception.Message.Should().Contain("Ed-Fi:SchoolTypeDescriptor");
     }
 
+    /// <summary>
+    /// Builds a School resource schema that declares a descriptor reference used by descriptor path inference.
+    /// </summary>
     private static JsonObject CreateSchoolSchema()
     {
         return new JsonObject
@@ -334,6 +337,9 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         };
     }
 
+    /// <summary>
+    /// Builds a GradingPeriod resource schema that declares a descriptor reference used by descriptor path inference.
+    /// </summary>
     private static JsonObject CreateGradingPeriodSchema()
     {
         return new JsonObject
@@ -353,6 +359,10 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         };
     }
 
+    /// <summary>
+    /// Builds a Section resource schema with references whose identity paths propagate descriptor paths to a shared
+    /// reference site, producing a conflict for test coverage.
+    /// </summary>
     private static JsonObject CreateSectionSchema()
     {
         return new JsonObject
@@ -394,6 +404,9 @@ public class Given_DescriptorPathInference_With_Conflicting_Reference_Descriptor
         };
     }
 
+    /// <summary>
+    /// Builds a minimal descriptor resource schema with an empty document paths mapping.
+    /// </summary>
     private static JsonObject CreateDescriptorSchema(string resourceName)
     {
         return new JsonObject

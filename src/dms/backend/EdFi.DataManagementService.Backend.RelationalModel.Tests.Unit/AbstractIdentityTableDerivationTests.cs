@@ -34,7 +34,7 @@ public class Given_Abstract_Identity_Table_Derivation
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -95,18 +95,26 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     /// <summary>
-    /// It should include composite unique constraint.
+    /// It should include natural and reference-key unique constraints.
     /// </summary>
     [Test]
-    public void It_should_include_composite_unique_constraint()
+    public void It_should_include_natural_and_reference_key_unique_constraints()
     {
-        var unique = _abstractIdentityTable.TableModel.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueByName = _abstractIdentityTable
+            .TableModel.Constraints.OfType<TableConstraint.Unique>()
+            .ToDictionary(constraint => constraint.Name, StringComparer.Ordinal);
 
-        unique
+        uniqueByName
+            .Keys.Should()
+            .Equal("UX_EducationOrganizationIdentity_NK", "UX_EducationOrganizationIdentity_RefKey");
+        uniqueByName["UX_EducationOrganizationIdentity_NK"]
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("EducationOrganizationId", "OrganizationName");
+        uniqueByName["UX_EducationOrganizationIdentity_RefKey"]
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("DocumentId", "EducationOrganizationId", "OrganizationName");
-        unique.Name.Should().Be("UX_EducationOrganizationIdentity_NK");
     }
 
     /// <summary>
@@ -131,6 +139,233 @@ public class Given_Abstract_Identity_Table_Derivation
     private static JsonObject BuildProjectSchema(bool mismatchMemberType)
     {
         return AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(mismatchMemberType);
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract identity table derivation with widenable string max-length mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Widenable_String_Length_Mismatch
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false,
+            localEducationAgencyOrganizationNameMaxLength: 255
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should choose the widest string max length for the canonical abstract identity column type.
+    /// </summary>
+    [Test]
+    public void It_should_choose_widest_string_max_length_for_canonical_identity_column_type()
+    {
+        var identityColumn = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "OrganizationName"
+        );
+
+        identityColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String, 255));
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract identity table derivation with widenable integer-width mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Widenable_Integer_Widths
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false,
+            schoolEducationOrganizationIdIsInt64: false,
+            localEducationAgencyEducationOrganizationIdIsInt64: true
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should widen mixed int32/int64 identities to int64 for canonical abstract identity columns.
+    /// </summary>
+    [Test]
+    public void It_should_widen_mixed_int32_and_int64_identities_to_int64()
+    {
+        var identityColumn = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "EducationOrganizationId"
+        );
+
+        identityColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract identity table derivation with widenable decimal precision/scale mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Widenable_Decimal_Precision
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should widen decimal precision from both integer digits and scale.
+    /// </summary>
+    [Test]
+    public void It_should_widen_decimal_precision_from_integer_digits_and_scale()
+    {
+        var identityColumn = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "Amount"
+        );
+
+        identityColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal, Decimal: (12, 4)));
+    }
+
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["resourceName"] = "EducationOrganization",
+                    ["identityJsonPaths"] = new JsonArray { "$.amount" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = BuildConcreteResourceSchema("School", totalDigits: 10, decimalPlaces: 2),
+                ["localEducationAgencies"] = BuildConcreteResourceSchema(
+                    "LocalEducationAgency",
+                    totalDigits: 5,
+                    decimalPlaces: 4
+                ),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build concrete resource schema.
+    /// </summary>
+    private static JsonObject BuildConcreteResourceSchema(
+        string resourceName,
+        short totalDigits,
+        short decimalPlaces
+    )
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "EducationOrganization",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["Amount"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.amount",
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["path"] = "$.amount",
+                    ["totalDigits"] = totalDigits,
+                    ["decimalPlaces"] = decimalPlaces,
+                },
+            },
+            ["identityJsonPaths"] = new JsonArray { "$.amount" },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["amount"] = new JsonObject { ["type"] = "number" } },
+                ["required"] = new JsonArray { "amount" },
+            },
+        };
     }
 }
 
@@ -160,7 +395,7 @@ public class Given_Abstract_Identity_Table_With_Mismatched_Types
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -217,7 +452,7 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
             new IRelationalModelSetPass[]
             {
                 new BaseTraversalAndDescriptorBindingPass(),
-                new AbstractIdentityTableDerivationPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
             }
         );
 
@@ -245,6 +480,722 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Identity_Paths
 }
 
 /// <summary>
+/// Test fixture for abstract identity table with a missing member identity field.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Missing_Member_Identity_Field
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false,
+            localEducationAgencyIdentityJsonPaths: new JsonArray { "$.educationOrganizationId" }
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a member cannot supply all abstract identity fields.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_member_cannot_supply_all_identity_fields()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("was not found in identityJsonPaths");
+        _exception.Message.Should().Contain("$.organizationName");
+        _exception.Message.Should().Contain("Ed-Fi:EducationOrganization");
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract resources with zero concrete members.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_No_Concrete_Members
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var resourceSchemas = (JsonObject)projectSchema["resourceSchemas"]!;
+
+        foreach (var entry in resourceSchemas)
+        {
+            if (entry.Value is not JsonObject resourceSchema)
+            {
+                continue;
+            }
+
+            resourceSchema["isSubclass"] = false;
+        }
+
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when an abstract resource has no concrete members.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_abstract_resource_has_zero_concrete_members()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("has no concrete members");
+        _exception.Message.Should().Contain("Ed-Fi:EducationOrganization");
+    }
+}
+
+/// <summary>
+/// Test fixture for subclass resources that reference a non-abstract superclass.
+/// </summary>
+[TestFixture]
+public class Given_Subclass_With_Non_Abstract_Superclass
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a subclass declares a non-abstract superclass.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_subclass_superclass_is_not_abstract()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("Subclass-of-subclass is not permitted");
+    }
+
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = new JsonObject
+                {
+                    ["resourceName"] = "School",
+                    ["isDescriptor"] = false,
+                    ["isResourceExtension"] = false,
+                    ["isSubclass"] = false,
+                    ["allowIdentityUpdates"] = false,
+                    ["documentPathsMapping"] = new JsonObject
+                    {
+                        ["SchoolId"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["path"] = "$.schoolId",
+                        },
+                    },
+                    ["arrayUniquenessConstraints"] = new JsonArray(),
+                    ["decimalPropertyValidationInfos"] = new JsonArray(),
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                        },
+                        ["required"] = new JsonArray { "schoolId" },
+                    },
+                },
+                ["campuses"] = new JsonObject
+                {
+                    ["resourceName"] = "Campus",
+                    ["isDescriptor"] = false,
+                    ["isResourceExtension"] = false,
+                    ["isSubclass"] = true,
+                    ["subclassType"] = "association",
+                    ["superclassProjectName"] = "Ed-Fi",
+                    ["superclassResourceName"] = "School",
+                    ["superclassIdentityJsonPath"] = null,
+                    ["allowIdentityUpdates"] = false,
+                    ["documentPathsMapping"] = new JsonObject
+                    {
+                        ["SchoolId"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["path"] = "$.schoolId",
+                        },
+                    },
+                    ["arrayUniquenessConstraints"] = new JsonArray(),
+                    ["decimalPropertyValidationInfos"] = new JsonArray(),
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                        },
+                        ["required"] = new JsonArray { "schoolId" },
+                    },
+                },
+            },
+        };
+    }
+}
+
+/// <summary>
+/// Test fixture for subclass resources missing required superclass metadata.
+/// </summary>
+[TestFixture]
+public class Given_Subclass_With_Missing_Superclass_Project_Name
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should include subclass resource identity in the error for missing superclass metadata.
+    /// </summary>
+    [Test]
+    public void It_should_include_subclass_resource_identity_when_superclass_project_name_is_missing()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("superclassProjectName");
+        _exception.Message.Should().Contain("Ed-Fi:Campus");
+    }
+
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["resourceName"] = "EducationOrganization",
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["campuses"] = new JsonObject
+                {
+                    ["resourceName"] = "Campus",
+                    ["isDescriptor"] = false,
+                    ["isResourceExtension"] = false,
+                    ["isSubclass"] = true,
+                    ["subclassType"] = "association",
+                    ["superclassResourceName"] = "EducationOrganization",
+                    ["superclassIdentityJsonPath"] = null,
+                    ["allowIdentityUpdates"] = false,
+                    ["documentPathsMapping"] = new JsonObject
+                    {
+                        ["SchoolId"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["path"] = "$.schoolId",
+                        },
+                    },
+                    ["arrayUniquenessConstraints"] = new JsonArray(),
+                    ["decimalPropertyValidationInfos"] = new JsonArray(),
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                        },
+                        ["required"] = new JsonArray { "schoolId" },
+                    },
+                },
+            },
+        };
+    }
+}
+
+/// <summary>
+/// Test fixture for nullable member source columns used for abstract identity paths.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Nullable_Member_Identity_Source_Column
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ForceRootColumnNullablePass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    "$.organizationName"
+                ),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a mapped member source column is nullable.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_mapped_member_source_column_is_nullable()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("resolved to nullable source column");
+        _exception.Message.Should().Contain("$.organizationName");
+    }
+}
+
+/// <summary>
+/// Test fixture for duplicate root-column SourceJsonPath mappings on a concrete member.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Duplicate_Root_Source_JsonPath_Mappings
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ForceRootColumnSourcePathPass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    columnName: "OrganizationName",
+                    sourceJsonPath: "$.educationOrganizationId"
+                ),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when two root columns map to the same SourceJsonPath.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_root_columns_share_source_json_path_mapping()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("duplicate root-column SourceJsonPath mapping");
+        _exception.Message.Should().Contain("$.educationOrganizationId");
+        _exception.Message.Should().Contain("EducationOrganizationId");
+        _exception.Message.Should().Contain("OrganizationName");
+    }
+}
+
+/// <summary>
+/// Test fixture for missing root-column SourceJsonPath mappings on a concrete member.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Missing_Root_Source_JsonPath_Mapping
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new ForceRootColumnSourcePathNullPass(
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    "$.organizationName"
+                ),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when identity paths do not resolve to root-column SourceJsonPath mappings.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_identity_path_mapping_is_missing_from_root_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("did not resolve to a root-column SourceJsonPath mapping");
+        _exception.Message.Should().Contain("$.organizationName");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+    }
+}
+
+/// <summary>
+/// Mutates a single root column to nullable for targeted fail-fast validation tests.
+/// </summary>
+internal sealed class ForceRootColumnNullablePass(QualifiedResourceName resource, string sourceJsonPath)
+    : IRelationalModelSetPass
+{
+    /// <inheritdoc />
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+            model.ResourceKey.Resource == resource
+        );
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+            );
+        }
+
+        var concrete = context.ConcreteResourcesInNameOrder[index];
+        var root = concrete.RelationalModel.Root;
+        var updatedColumns = root
+            .Columns.Select(column =>
+                column.SourceJsonPath is { } path
+                && string.Equals(path.Canonical, sourceJsonPath, StringComparison.Ordinal)
+                    ? column with
+                    {
+                        IsNullable = true,
+                    }
+                    : column
+            )
+            .ToArray();
+
+        var updatedRoot = root with { Columns = updatedColumns };
+        var updatedTables = concrete
+            .RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            )
+            .ToArray();
+        var updatedModel = concrete.RelationalModel with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = updatedTables,
+        };
+
+        context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updatedModel };
+    }
+}
+
+/// <summary>
+/// Rewrites a root column SourceJsonPath for targeted duplicate-mapping fail-fast tests.
+/// </summary>
+internal sealed class ForceRootColumnSourcePathPass(
+    QualifiedResourceName resource,
+    string columnName,
+    string sourceJsonPath
+) : IRelationalModelSetPass
+{
+    /// <inheritdoc />
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+            model.ResourceKey.Resource == resource
+        );
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+            );
+        }
+
+        var canonicalPath = JsonPathExpressionCompiler.Compile(sourceJsonPath);
+        var concrete = context.ConcreteResourcesInNameOrder[index];
+        var root = concrete.RelationalModel.Root;
+        var found = false;
+        DbColumnModel[] updatedColumns = new DbColumnModel[root.Columns.Count];
+
+        for (var i = 0; i < root.Columns.Count; i++)
+        {
+            var column = root.Columns[i];
+
+            if (!string.Equals(column.ColumnName.Value, columnName, StringComparison.Ordinal))
+            {
+                updatedColumns[i] = column;
+                continue;
+            }
+
+            found = true;
+            updatedColumns[i] = column with { SourceJsonPath = canonicalPath };
+        }
+
+        if (!found)
+        {
+            throw new InvalidOperationException(
+                $"Root column '{columnName}' was not found on resource "
+                    + $"'{resource.ProjectName}:{resource.ResourceName}'."
+            );
+        }
+
+        var updatedRoot = root with { Columns = updatedColumns };
+        var updatedTables = concrete
+            .RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            )
+            .ToArray();
+        var updatedModel = concrete.RelationalModel with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = updatedTables,
+        };
+
+        context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updatedModel };
+    }
+}
+
+/// <summary>
+/// Removes SourceJsonPath from a root column for targeted missing-resolution fail-fast tests.
+/// </summary>
+internal sealed class ForceRootColumnSourcePathNullPass(QualifiedResourceName resource, string sourceJsonPath)
+    : IRelationalModelSetPass
+{
+    /// <inheritdoc />
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+            model.ResourceKey.Resource == resource
+        );
+
+        if (index < 0)
+        {
+            throw new InvalidOperationException(
+                $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+            );
+        }
+
+        var concrete = context.ConcreteResourcesInNameOrder[index];
+        var root = concrete.RelationalModel.Root;
+        var matched = false;
+        DbColumnModel[] updatedColumns = new DbColumnModel[root.Columns.Count];
+
+        for (var i = 0; i < root.Columns.Count; i++)
+        {
+            var column = root.Columns[i];
+
+            if (
+                column.SourceJsonPath is null
+                || !string.Equals(
+                    column.SourceJsonPath.Value.Canonical,
+                    sourceJsonPath,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                updatedColumns[i] = column;
+                continue;
+            }
+
+            matched = true;
+            updatedColumns[i] = column with { SourceJsonPath = null };
+        }
+
+        if (!matched)
+        {
+            throw new InvalidOperationException(
+                $"Root SourceJsonPath '{sourceJsonPath}' was not found on resource "
+                    + $"'{resource.ProjectName}:{resource.ResourceName}'."
+            );
+        }
+
+        var updatedRoot = root with { Columns = updatedColumns };
+        var updatedTables = concrete
+            .RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            )
+            .ToArray();
+        var updatedModel = concrete.RelationalModel with
+        {
+            Root = updatedRoot,
+            TablesInDependencyOrder = updatedTables,
+        };
+
+        context.ConcreteResourcesInNameOrder[index] = concrete with { RelationalModel = updatedModel };
+    }
+}
+
+/// <summary>
 /// Test type abstract identity table test schema builder.
 /// </summary>
 internal static class AbstractIdentityTableTestSchemaBuilder
@@ -254,7 +1205,12 @@ internal static class AbstractIdentityTableTestSchemaBuilder
     /// </summary>
     internal static JsonObject BuildProjectSchema(
         bool mismatchMemberType,
-        JsonArray? abstractIdentityJsonPaths = null
+        JsonArray? abstractIdentityJsonPaths = null,
+        JsonArray? localEducationAgencyIdentityJsonPaths = null,
+        int schoolOrganizationNameMaxLength = 60,
+        int localEducationAgencyOrganizationNameMaxLength = 60,
+        bool schoolEducationOrganizationIdIsInt64 = true,
+        bool localEducationAgencyEducationOrganizationIdIsInt64 = true
     )
     {
         var identityJsonPaths =
@@ -273,12 +1229,17 @@ internal static class AbstractIdentityTableTestSchemaBuilder
             ["schools"] = BuildConcreteResourceSchema(
                 "School",
                 organizationNameIsString: true,
-                organizationNameMaxLength: 60
+                organizationNameMaxLength: schoolOrganizationNameMaxLength,
+                educationOrganizationIdIsInt64: schoolEducationOrganizationIdIsInt64
             ),
             ["localEducationAgencies"] = BuildConcreteResourceSchema(
                 "LocalEducationAgency",
                 organizationNameIsString: !mismatchMemberType,
-                organizationNameMaxLength: mismatchMemberType ? 40 : 60
+                organizationNameMaxLength: mismatchMemberType
+                    ? 40
+                    : localEducationAgencyOrganizationNameMaxLength,
+                identityJsonPathsOverride: localEducationAgencyIdentityJsonPaths,
+                educationOrganizationIdIsInt64: localEducationAgencyEducationOrganizationIdIsInt64
             ),
         };
 
@@ -298,12 +1259,20 @@ internal static class AbstractIdentityTableTestSchemaBuilder
     private static JsonObject BuildConcreteResourceSchema(
         string resourceName,
         bool organizationNameIsString,
-        int organizationNameMaxLength
+        int organizationNameMaxLength,
+        JsonArray? identityJsonPathsOverride = null,
+        bool educationOrganizationIdIsInt64 = true
     )
     {
+        var concreteIdentityJsonPaths = identityJsonPathsOverride is null
+            ? new JsonArray { "$.educationOrganizationId", "$.organizationName" }
+            : (JsonArray)identityJsonPathsOverride.DeepClone();
+
         var properties = new JsonObject
         {
-            ["educationOrganizationId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+            ["educationOrganizationId"] = educationOrganizationIdIsInt64
+                ? new JsonObject { ["type"] = "integer", ["format"] = "int64" }
+                : new JsonObject { ["type"] = "integer" },
             ["organizationName"] = organizationNameIsString
                 ? new JsonObject { ["type"] = "string", ["maxLength"] = organizationNameMaxLength }
                 : new JsonObject { ["type"] = "integer", ["format"] = "int64" },
@@ -344,7 +1313,7 @@ internal static class AbstractIdentityTableTestSchemaBuilder
             },
             ["arrayUniquenessConstraints"] = new JsonArray(),
             ["decimalPropertyValidationInfos"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId", "$.organizationName" },
+            ["identityJsonPaths"] = concreteIdentityJsonPaths,
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }

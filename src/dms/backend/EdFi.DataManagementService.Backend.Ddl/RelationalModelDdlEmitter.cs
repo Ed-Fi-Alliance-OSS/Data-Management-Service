@@ -206,6 +206,14 @@ public sealed class RelationalModelDdlEmitter
             };
         }
 
+        return ResolveColumnType(scalarType);
+    }
+
+    /// <summary>
+    /// Resolves the SQL type for a required scalar type.
+    /// </summary>
+    private string ResolveColumnType(RelationalScalarType scalarType)
+    {
         return scalarType.Kind switch
         {
             ScalarKind.String => FormatStringType(scalarType),

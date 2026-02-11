@@ -42,7 +42,7 @@ public class Given_A_Relational_Model_Build_With_Shared_Input_Extraction
         [
             new BaseTraversalAndDescriptorBindingPass(pipeline),
             new ExtensionTableDerivationPass(),
-            new AbstractIdentityTableDerivationPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
             new ReferenceBindingPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),

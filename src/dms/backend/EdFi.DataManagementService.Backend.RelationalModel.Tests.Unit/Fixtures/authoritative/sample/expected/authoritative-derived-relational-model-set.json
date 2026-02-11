@@ -2205,6 +2205,13 @@
             "kind": "Unique",
             "name": "UX_EducationOrganizationIdentity_NK",
             "columns": [
+              "EducationOrganizationId"
+            ]
+          },
+          {
+            "kind": "Unique",
+            "name": "UX_EducationOrganizationIdentity_RefKey",
+            "columns": [
               "DocumentId",
               "EducationOrganizationId"
             ]
@@ -2324,6 +2331,18 @@
           {
             "kind": "Unique",
             "name": "UX_GeneralStudentProgramAssociationIdentity_NK",
+            "columns": [
+              "BeginDate",
+              "EducationOrganizationReferenceEducationOrganizationId",
+              "ProgramReferenceEducationOrganizationId",
+              "ProgramReferenceProgramName",
+              "ProgramReferenceProgramTypeDescriptor",
+              "StudentReferenceStudentUniqueId"
+            ]
+          },
+          {
+            "kind": "Unique",
+            "name": "UX_GeneralStudentProgramAssociationIdentity_RefKey",
             "columns": [
               "DocumentId",
               "BeginDate",

@@ -136,9 +136,28 @@ public sealed record AbstractIdentityTableInfo(
 public sealed record AbstractUnionViewInfo(
     ResourceKeyEntry AbstractResourceKey,
     DbTableName ViewName,
-    IReadOnlyList<DbColumnModel> ColumnsInIdentityOrder
-    // Union-arm model omitted here; see `epics/01-relational-model/04-abstract-union-views.md`.
+    IReadOnlyList<AbstractUnionViewOutputColumn> OutputColumnsInSelectOrder,
+    IReadOnlyList<AbstractUnionViewArm> UnionArmsInOrder
 );
+
+public sealed record AbstractUnionViewOutputColumn(
+    DbColumnName ColumnName,
+    RelationalScalarType ScalarType,
+    JsonPathExpression? SourceJsonPath,
+    QualifiedResourceName? TargetResource
+);
+
+public sealed record AbstractUnionViewArm(
+    ResourceKeyEntry ConcreteMemberResourceKey,
+    DbTableName FromTable,
+    IReadOnlyList<AbstractUnionViewProjectionExpression> ProjectionExpressionsInSelectOrder
+);
+
+public abstract record AbstractUnionViewProjectionExpression
+{
+    public sealed record SourceColumn(DbColumnName ColumnName) : AbstractUnionViewProjectionExpression;
+    public sealed record StringLiteral(string Value) : AbstractUnionViewProjectionExpression;
+}
 
 public enum DbIndexKind
 {

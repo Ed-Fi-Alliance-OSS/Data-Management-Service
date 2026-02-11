@@ -431,6 +431,10 @@ internal static class RelationalModelSetSchemaHelpers
         return overrideName;
     }
 
+    /// <summary>
+    /// Enumerates suffixes of a PascalCase identifier starting at word boundaries, used for override prefix
+    /// validation.
+    /// </summary>
     private static IEnumerable<string> BuildPascalCaseSuffixes(string value)
     {
         if (string.IsNullOrWhiteSpace(value))

@@ -97,15 +97,16 @@ DerivedRelationalModelSet set = builder.Build(
 
 `RelationalModelSetPasses.CreateDefault()` currently runs these pass types, in order:
 1. `BaseTraversalAndDescriptorBindingPass`
-2. `ExtensionTableDerivationPass`
-3. `AbstractIdentityTableDerivationPass`
+2. `DescriptorResourceMappingPass`
+3. `ExtensionTableDerivationPass`
 4. `ReferenceBindingPass`
-5. `RootIdentityConstraintPass`
-6. `ReferenceConstraintPass`
-7. `ArrayUniquenessConstraintPass`
-8. `ApplyConstraintDialectHashingPass`
-9. `ApplyDialectIdentifierShorteningPass`
-10. `CanonicalizeOrderingPass`
+5. `AbstractIdentityTableAndUnionViewDerivationPass`
+6. `RootIdentityConstraintPass`
+7. `ReferenceConstraintPass`
+8. `ArrayUniquenessConstraintPass`
+9. `ApplyConstraintDialectHashingPass`
+10. `ApplyDialectIdentifierShorteningPass`
+11. `CanonicalizeOrderingPass`
 
 ## Debugging and snapshot output
 

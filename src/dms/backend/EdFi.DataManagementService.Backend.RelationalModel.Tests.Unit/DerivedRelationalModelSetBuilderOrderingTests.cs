@@ -153,17 +153,19 @@ public class Given_Unordered_Derived_Collections
             );
 
             context.AbstractUnionViewsInNameOrder.Add(
-                new AbstractUnionViewInfo(_section, new DbTableName(sampleSchema, "Section_View"), [])
+                BuildAbstractUnionView(_section, _section, sampleSchema, "Section_View", "Section")
             );
             context.AbstractUnionViewsInNameOrder.Add(
-                new AbstractUnionViewInfo(
+                BuildAbstractUnionView(
                     _schoolTypeDescriptor,
-                    new DbTableName(edfiSchema, "SchoolTypeDescriptor_View"),
-                    []
+                    _schoolTypeDescriptor,
+                    edfiSchema,
+                    "SchoolTypeDescriptor_View",
+                    "SchoolTypeDescriptor"
                 )
             );
             context.AbstractUnionViewsInNameOrder.Add(
-                new AbstractUnionViewInfo(_school, new DbTableName(edfiSchema, "School_View"), [])
+                BuildAbstractUnionView(_school, _school, edfiSchema, "School_View", "School")
             );
 
             context.IndexInventory.Add(
@@ -275,6 +277,45 @@ public class Given_Unordered_Derived_Collections
             );
 
             return new AbstractIdentityTableInfo(resourceKey, table);
+        }
+
+        /// <summary>
+        /// Build abstract union view.
+        /// </summary>
+        private static AbstractUnionViewInfo BuildAbstractUnionView(
+            ResourceKeyEntry abstractResourceKey,
+            ResourceKeyEntry concreteMemberResourceKey,
+            DbSchemaName schema,
+            string viewName,
+            string tableName
+        )
+        {
+            return new AbstractUnionViewInfo(
+                abstractResourceKey,
+                new DbTableName(schema, viewName),
+                new[]
+                {
+                    new AbstractUnionViewOutputColumn(
+                        RelationalNameConventions.DocumentIdColumnName,
+                        new RelationalScalarType(ScalarKind.Int64),
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    ),
+                },
+                new[]
+                {
+                    new AbstractUnionViewArm(
+                        concreteMemberResourceKey,
+                        new DbTableName(schema, tableName),
+                        new AbstractUnionViewProjectionExpression[]
+                        {
+                            new AbstractUnionViewProjectionExpression.SourceColumn(
+                                RelationalNameConventions.DocumentIdColumnName
+                            ),
+                        }
+                    ),
+                }
+            );
         }
 
         /// <summary>

@@ -645,6 +645,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Builds collision-origin metadata for a derived table name.
+    /// </summary>
     private static IdentifierCollisionOrigin BuildTableOrigin(
         DbTableName tableName,
         string resourceLabel,
@@ -656,6 +659,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return new IdentifierCollisionOrigin(description, resourceLabel, jsonScope.Canonical);
     }
 
+    /// <summary>
+    /// Builds collision-origin metadata for a derived column name.
+    /// </summary>
     private static IdentifierCollisionOrigin BuildColumnOrigin(
         DbTableName tableName,
         DbColumnName columnName,

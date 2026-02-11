@@ -241,8 +241,8 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
 7. Apply `abstractResources` (polymorphic identity tables; optional views):
    - For each abstract resource `A`, create a physical identity table `{schema}.{A}Identity` with:
      - `DocumentId` (PK; FK → `dms.Document(DocumentId)` ON DELETE CASCADE),
-     - abstract identity fields (from `abstractResources[A].identityPathOrder`),
-     - optional `Discriminator`.
+     - abstract identity fields (from `abstractResources[A].identityJsonPaths` order),
+     - `Discriminator` (NOT NULL; last).
    - Maintain `{schema}.{A}Identity` via triggers on each participating concrete root table (upsert on insert/update of identity columns).
    - Use `{schema}.{A}Identity` as the composite-FK target for abstract reference sites; FKs use `ON UPDATE CASCADE` (identity tables are trigger-maintained) to propagate identity changes and enforce membership/type at the DB level.
    - (Optional) also emit `{schema}.{A}_View` as a narrow `UNION ALL` projection for diagnostics/ad-hoc querying.
