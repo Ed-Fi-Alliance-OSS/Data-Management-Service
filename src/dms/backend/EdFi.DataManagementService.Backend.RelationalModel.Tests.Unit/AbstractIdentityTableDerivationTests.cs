@@ -1292,6 +1292,67 @@ public class Given_Abstract_Identity_Table_With_Missing_Root_Source_JsonPath_Map
 }
 
 /// <summary>
+/// Test fixture for concrete resources that omit the optional isSubclass property.
+/// </summary>
+[TestFixture]
+public class Given_Concrete_Resource_Without_IsSubclass_Property
+{
+    private Exception? _exception;
+    private string[] _memberResourceNames = [];
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = AbstractIdentityTableTestSchemaBuilder.BuildProjectSchema(
+            mismatchMemberType: false
+        );
+        var resourceSchemas = (JsonObject)projectSchema["resourceSchemas"]!;
+        var schoolSchema = (JsonObject)resourceSchemas["schools"]!;
+        schoolSchema.Remove("isSubclass");
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableDerivationPass(),
+            }
+        );
+
+        try
+        {
+            var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+            _memberResourceNames = result
+                .AbstractUnionViewsInNameOrder.Single(view =>
+                    view.AbstractResourceKey.Resource.ResourceName == "EducationOrganization"
+                )
+                .UnionArmsInOrder.Select(arm => arm.ConcreteMemberResourceKey.Resource.ResourceName)
+                .ToArray();
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should default missing isSubclass to false and not include the resource as an abstract member.
+    /// </summary>
+    [Test]
+    public void It_should_not_treat_resource_without_is_subclass_property_as_subclass_member()
+    {
+        _exception.Should().BeNull();
+        _memberResourceNames.Should().Equal("LocalEducationAgency");
+    }
+}
+
+/// <summary>
 /// Mutates a single root column to nullable for targeted fail-fast validation tests.
 /// </summary>
 internal sealed class ForceRootColumnNullablePass(QualifiedResourceName resource, string sourceJsonPath)

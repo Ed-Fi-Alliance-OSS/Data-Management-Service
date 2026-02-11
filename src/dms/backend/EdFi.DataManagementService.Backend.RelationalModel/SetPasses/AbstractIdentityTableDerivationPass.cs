@@ -159,7 +159,11 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
                 );
             }
 
-            var isSubclass = RequireBoolean(resourceSchema, "isSubclass");
+            var isSubclass = ApiSchemaNodeRequirements.TryGetOptionalBoolean(
+                resourceSchema,
+                "isSubclass",
+                defaultValue: false
+            );
             if (!isSubclass)
             {
                 continue;
@@ -825,23 +829,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
         );
 
         return rootTableNameOverride ?? RelationalNameConventions.ToPascalCase(resource.ResourceName);
-    }
-
-    /// <summary>
-    /// Reads a required boolean property from a schema node.
-    /// </summary>
-    private static bool RequireBoolean(JsonObject node, string propertyName)
-    {
-        return node[propertyName] switch
-        {
-            JsonValue jsonValue => jsonValue.GetValue<bool>(),
-            null => throw new InvalidOperationException(
-                $"Expected {propertyName} to be present, invalid ApiSchema."
-            ),
-            _ => throw new InvalidOperationException(
-                $"Expected {propertyName} to be a boolean, invalid ApiSchema."
-            ),
-        };
     }
 
     /// <summary>
