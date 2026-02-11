@@ -158,6 +158,185 @@ public class Given_Extension_Table_Derivation
 }
 
 /// <summary>
+/// Test fixture for multiple extension projects extending the same core resource.
+/// Verifies that two extension projects (Sample and TPDM) can simultaneously
+/// extend School, each producing tables in their own schema namespace.
+/// </summary>
+[TestFixture]
+public class Given_Multiple_Extension_Projects_Extending_Same_Resource
+{
+    private RelationalResourceModel _schoolModel = default!;
+    private DbTableModel _schoolBaseRoot = default!;
+    private DbTableModel _sampleExtensionRoot = default!;
+    private DbTableModel _sampleExtensionAddress = default!;
+    private DbTableModel _tpdmExtensionRoot = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema();
+        var sampleExtensionSchema = ExtensionTableTestSchemaBuilder.BuildSimpleSampleExtensionProjectSchema();
+        var tpdmExtensionSchema = ExtensionTableTestSchemaBuilder.BuildTpdmExtensionProjectSchema();
+
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var sampleProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            sampleExtensionSchema,
+            isExtensionProject: true
+        );
+        var tpdmProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            tpdmExtensionSchema,
+            isExtensionProject: true
+        );
+
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            sampleProject,
+            tpdmProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ExtensionTableDerivationPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ProjectName == "Ed-Fi"
+                && model.ResourceKey.Resource.ResourceName == "School"
+            )
+            .RelationalModel;
+
+        _schoolBaseRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "edfi" && table.Table.Name == "School"
+        );
+        _sampleExtensionRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension"
+        );
+        _sampleExtensionAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtensionAddress"
+        );
+        _tpdmExtensionRoot = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "tpdm" && table.Table.Name == "SchoolExtension"
+        );
+    }
+
+    [Test]
+    public void It_should_create_extension_tables_for_both_projects()
+    {
+        var extensionTables = _schoolModel
+            .TablesInDependencyOrder.Where(table =>
+                table.Table.Schema.Value == "sample" || table.Table.Schema.Value == "tpdm"
+            )
+            .ToList();
+
+        extensionTables.Should().HaveCount(3);
+        extensionTables
+            .Should()
+            .Contain(t => t.Table.Schema.Value == "sample" && t.Table.Name == "SchoolExtension");
+        extensionTables
+            .Should()
+            .Contain(t => t.Table.Schema.Value == "sample" && t.Table.Name == "SchoolExtensionAddress");
+        extensionTables
+            .Should()
+            .Contain(t => t.Table.Schema.Value == "tpdm" && t.Table.Name == "SchoolExtension");
+    }
+
+    [Test]
+    public void It_should_align_sample_extension_root_key_to_base()
+    {
+        _sampleExtensionRoot
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal(_schoolBaseRoot.Key.Columns.Select(column => column.ColumnName.Value));
+    }
+
+    [Test]
+    public void It_should_align_tpdm_extension_root_key_to_base()
+    {
+        _tpdmExtensionRoot
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal(_schoolBaseRoot.Key.Columns.Select(column => column.ColumnName.Value));
+    }
+
+    [Test]
+    public void It_should_key_sample_extension_address_by_base_address_keys()
+    {
+        var baseAddress = _schoolModel.TablesInDependencyOrder.Single(table =>
+            table.Table.Schema.Value == "edfi" && table.Table.Name == "SchoolAddress"
+        );
+
+        _sampleExtensionAddress
+            .Key.Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .Equal(baseAddress.Key.Columns.Select(column => column.ColumnName.Value));
+    }
+
+    [Test]
+    public void It_should_create_cascade_fk_from_sample_extension_root_to_base()
+    {
+        var fk = _sampleExtensionRoot
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.TargetTable.Name == "School");
+
+        fk.TargetTable.Schema.Value.Should().Be("edfi");
+        fk.OnDelete.Should().Be(ReferentialAction.Cascade);
+    }
+
+    [Test]
+    public void It_should_create_cascade_fk_from_tpdm_extension_root_to_base()
+    {
+        var fk = _tpdmExtensionRoot
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.TargetTable.Name == "School");
+
+        fk.TargetTable.Schema.Value.Should().Be("edfi");
+        fk.OnDelete.Should().Be(ReferentialAction.Cascade);
+    }
+
+    [Test]
+    public void It_should_include_sample_scalar_column_in_sample_extension_root()
+    {
+        _sampleExtensionRoot.Columns.Should().Contain(column => column.ColumnName.Value == "FavoriteColor");
+    }
+
+    [Test]
+    public void It_should_include_tpdm_scalar_column_in_tpdm_extension_root()
+    {
+        _tpdmExtensionRoot
+            .Columns.Should()
+            .Contain(column => column.ColumnName.Value == "CertificationTitle");
+    }
+
+    [Test]
+    public void It_should_include_sample_scalar_column_in_sample_extension_address()
+    {
+        _sampleExtensionAddress.Columns.Should().Contain(column => column.ColumnName.Value == "Complex");
+    }
+
+    [Test]
+    public void It_should_use_project_specific_schemas_not_base_schema()
+    {
+        _sampleExtensionRoot.Table.Schema.Value.Should().Be("sample");
+        _sampleExtensionAddress.Table.Schema.Value.Should().Be("sample");
+        _tpdmExtensionRoot.Table.Schema.Value.Should().Be("tpdm");
+    }
+
+    [Test]
+    public void It_should_not_leak_columns_across_extension_projects()
+    {
+        _tpdmExtensionRoot.Columns.Should().NotContain(column => column.ColumnName.Value == "FavoriteColor");
+        _sampleExtensionRoot
+            .Columns.Should()
+            .NotContain(column => column.ColumnName.Value == "CertificationTitle");
+    }
+}
+
+/// <summary>
 /// Test type extension table test schema builder.
 /// </summary>
 internal static class ExtensionTableTestSchemaBuilder
@@ -192,6 +371,35 @@ internal static class ExtensionTableTestSchemaBuilder
             ["projectEndpointName"] = "sample",
             ["projectVersion"] = "1.0.0",
             ["resourceSchemas"] = new JsonObject { ["schools"] = BuildSchoolExtensionSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build a simplified Sample extension project schema with scalar-only extensions.
+    /// Used by the multi-project test to avoid descriptor/reference complexity.
+    /// </summary>
+    internal static JsonObject BuildSimpleSampleExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["schools"] = BuildSimpleSampleSchoolExtensionSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build a TPDM extension project schema extending School with a root-level scalar.
+    /// </summary>
+    internal static JsonObject BuildTpdmExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "TPDM",
+            ["projectEndpointName"] = "tpdm",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["schools"] = BuildTpdmSchoolExtensionSchema() },
         };
     }
 
@@ -438,6 +646,129 @@ internal static class ExtensionTableTestSchemaBuilder
                     },
                 },
             },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build a simplified Sample school extension schema with scalar-only fields.
+    /// Root-level favoriteColor and collection-level complex on addresses.
+    /// </summary>
+    private static JsonObject BuildSimpleSampleSchoolExtensionSchema()
+    {
+        var extensionAddressItems = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["complex"] = new JsonObject { ["type"] = "string", ["maxLength"] = 20 },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["favoriteColor"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                    ["maxLength"] = 30,
+                                },
+                                ["addresses"] = new JsonObject
+                                {
+                                    ["type"] = "array",
+                                    ["items"] = extensionAddressItems,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject(),
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    /// <summary>
+    /// Build a TPDM school extension schema with a root-level scalar (certificationTitle).
+    /// </summary>
+    private static JsonObject BuildTpdmSchoolExtensionSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["tpdm"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["certificationTitle"] = new JsonObject
+                                {
+                                    ["type"] = "string",
+                                    ["maxLength"] = 60,
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject(),
             ["arrayUniquenessConstraints"] = new JsonArray(),
             ["decimalPropertyValidationInfos"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
