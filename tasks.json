@@ -136,7 +136,7 @@
       "Review: `reference/design/backend-redesign/epics/01-relational-model/08-derived-relational-model-set-builder.md`",
       "Review: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactoring",

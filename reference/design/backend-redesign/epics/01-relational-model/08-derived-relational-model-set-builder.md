@@ -42,15 +42,16 @@ Implementation note (ordered passes): implement this story as an ordered set-lev
 This list is intentionally “high level”; exact pass boundaries can be adjusted as the implementations land:
 
 1. **Base traversal + descriptor binding pass** (DMS-929): derive root/collection tables + scalar columns and bind descriptor edges while discovering `_ext` sites.
-2. **Extension pass** (DMS-932): derive extension tables for discovered `_ext` sites (including project-key resolution).
-3. **Abstract artifact pass** (DMS-933): derive abstract identity tables (and optional union views) by scanning all resources in the hierarchy. This must run before reference constraint derivation so FK targets for abstract references can resolve to identity tables.
+2. **Descriptor resource mapping pass** (DMS-942): detect/validate descriptor resources and bind descriptor storage/resource mapping metadata.
+3. **Extension pass** (DMS-932): derive extension tables for discovered `_ext` sites (including project-key resolution).
 4. **Reference binding pass** (DMS-930): bind document references into tables by adding FK/identity columns and emitting `DocumentReferenceBinding` metadata.
-5. **Root identity constraint pass** (DMS-930): derive unique constraints for root identity columns.
-6. **Reference constraint pass** (DMS-930): derive FK and all-or-none constraints using the bound reference metadata and abstract identity tables.
-7. **Array uniqueness constraint pass** (DMS-930): derive array uniqueness constraints after all table/constraint prerequisites exist.
-8. **Descriptor storage-kind pass** (DMS-942): detect/validate descriptor resources and apply the `SharedDescriptorTable` storage kind rules.
-9. **Naming/override pass** (DMS-931): apply naming rules, overrides, dialect shortening, and whole-set collision detection.
-10. **Index/trigger inventory pass** (DMS-945): derive index/trigger intent inventories and any dialect-conditional cascade-fallback requirements.
+5. **Abstract artifact pass** (DMS-933): derive abstract identity tables and abstract union views by scanning hierarchy members. This runs after reference binding because abstract identity/view derivation may depend on reference-bound identity columns on concrete roots, and before reference constraint derivation so FK targets for abstract references can resolve to identity tables.
+6. **Root identity constraint pass** (DMS-930): derive unique constraints for root identity columns.
+7. **Reference constraint pass** (DMS-930): derive FK and all-or-none constraints using the bound reference metadata and abstract identity tables.
+8. **Array uniqueness constraint pass** (DMS-930): derive array uniqueness constraints after all table/constraint prerequisites exist.
+9. **Constraint dialect hashing pass**: apply dialect-specific deterministic constraint hashing before identifier shortening.
+10. **Dialect identifier shortening pass** (DMS-931): apply identifier shortening and whole-set collision validation.
+11. **Canonical ordering pass**: normalize final model inventories into deterministic output ordering.
 
 `DMS-934` (manifest emission) should serialize the final `DerivedRelationalModelSet` inventories and should not re-derive anything independently.
 
