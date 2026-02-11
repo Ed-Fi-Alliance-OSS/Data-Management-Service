@@ -651,32 +651,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
     {
         if (member.SuperclassIdentityJsonPath is not null)
         {
-            if (member.IdentityJsonPaths.Count != 1)
-            {
-                throw new InvalidOperationException(
-                    $"Subclass resource '{FormatResource(member.Resource)}' must declare exactly one "
-                        + "identityJsonPath when using superclassIdentityJsonPath."
-                );
-            }
-
-            var superclassIdentityPath = member.SuperclassIdentityJsonPath.Value;
-
-            if (
-                !string.Equals(
-                    superclassIdentityPath.Canonical,
-                    abstractIdentityPath.Canonical,
-                    StringComparison.Ordinal
-                )
-            )
-            {
-                throw new InvalidOperationException(
-                    $"Subclass resource '{FormatResource(member.Resource)}' declares "
-                        + $"superclassIdentityJsonPath '{superclassIdentityPath.Canonical}', "
-                        + $"but abstract resource '{FormatResource(abstractResource)}' requires identity "
-                        + $"path '{abstractIdentityPath.Canonical}'."
-                );
-            }
-
             return member.IdentityJsonPaths[0];
         }
 
