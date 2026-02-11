@@ -378,7 +378,7 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     {
         _ddl.Should().Contain("EffectiveSchemaHash mismatch");
         _ddl.Should().Contain("THROW 50000");
-        _ddl.Should().Contain("N'abc123def456'");
+        _ddl.Should().Contain("(expected: ', N'abc123def456'");
     }
 
     [Test]

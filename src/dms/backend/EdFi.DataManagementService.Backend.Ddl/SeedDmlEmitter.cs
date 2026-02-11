@@ -105,12 +105,15 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 writer.AppendLine($"AND {Q("EffectiveSchemaHash")} <> {hashLiteral}");
             }
             writer.AppendLine(")");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"THROW 50000, N'EffectiveSchemaHash mismatch: database is provisioned for a different schema hash', 1;"
+                    $"DECLARE @preflight_msg nvarchar(500) = CONCAT(N'EffectiveSchemaHash mismatch: database is provisioned for a different schema hash (expected: ', {hashLiteral}, N')');"
                 );
+                writer.AppendLine("THROW 50000, @preflight_msg, 1;");
             }
+            writer.AppendLine("END");
         }
         writer.AppendLine();
     }
