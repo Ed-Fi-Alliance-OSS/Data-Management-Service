@@ -93,13 +93,12 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
                 var key = new TableKey(
                     ConstraintNaming.BuildPrimaryKeyName(tableName),
-                    new[]
-                    {
+                    [
                         new DbKeyColumn(
                             RelationalNameConventions.DocumentIdColumnName,
                             ColumnKind.ParentKeyPart
                         ),
-                    }
+                    ]
                 );
                 var constraints = BuildIdentityTableConstraints(tableName, identityColumns);
                 var resourceKeyEntry = context.GetResourceKeyEntry(abstractResource);
@@ -794,9 +793,9 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         constraints.Add(
             new TableConstraint.ForeignKey(
                 fkName,
-                new[] { RelationalNameConventions.DocumentIdColumnName },
+                [RelationalNameConventions.DocumentIdColumnName],
                 _documentTableName,
-                new[] { RelationalNameConventions.DocumentIdColumnName },
+                [RelationalNameConventions.DocumentIdColumnName],
                 OnDelete: ReferentialAction.Cascade
             )
         );

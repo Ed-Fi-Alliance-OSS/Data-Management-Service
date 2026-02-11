@@ -133,3 +133,8 @@ Decisions: Added focused fixture Given_Abstract_Identity_Table_With_Widenable_De
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/AbstractIdentityTableDerivationTests.cs; tasks.json; progress.txt.
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj PASS (344/344); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln PASS (0 warnings, 0 errors).
 Blockers/notes: No blockers. Remaining open task in tasks.json is Refactoring collection expression consistency.
+2026-02-11 - Completed task: Refactoring collection expression consistency (DMS-933, story reference/design/backend-redesign/epics/01-relational-model/04-abstract-union-views.md).
+Decisions: Replaced remaining `new[]` literals in AbstractIdentityTableAndUnionViewDerivationPass with C# collection expressions (`[ ... ]`) for key/fk single-column lists; no behavior change, style consistency only.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableAndUnionViewDerivationPass.cs; tasks.json; progress.txt.
+Feedback loops: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln PASS (0 warnings, 0 errors); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj PASS (344/344).
+Blockers/notes: No blockers. All tasks in tasks.json are complete.
