@@ -48,7 +48,6 @@ public sealed class RelationalModelDdlEmitter
 
         AppendSchemas(builder, modelSet.ProjectSchemasInEndpointOrder);
         AppendTables(builder, modelSet.ConcreteResourcesInNameOrder);
-        AppendUnionViews(builder, modelSet.AbstractUnionViewsInNameOrder);
         AppendIndexes(builder, modelSet.IndexesInCreateOrder);
         AppendTriggers(builder, modelSet.TriggersInCreateOrder);
 
@@ -85,103 +84,6 @@ public sealed class RelationalModelDdlEmitter
                 AppendCreateTable(builder, table);
             }
         }
-    }
-
-    /// <summary>
-    /// Appends <c>CREATE VIEW</c> statements for abstract union views in deterministic order.
-    /// </summary>
-    private void AppendUnionViews(StringBuilder builder, IReadOnlyList<AbstractUnionViewInfo> views)
-    {
-        foreach (var view in views)
-        {
-            AppendCreateView(builder, view);
-        }
-    }
-
-    /// <summary>
-    /// Appends a <c>CREATE VIEW</c> statement for an abstract union view.
-    /// </summary>
-    private void AppendCreateView(StringBuilder builder, AbstractUnionViewInfo view)
-    {
-        if (view.OutputColumnsInSelectOrder.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Abstract union view '{view.ViewName.Name}' has no output columns."
-            );
-        }
-
-        if (view.UnionArmsInOrder.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Abstract union view '{view.ViewName.Name}' has no union arms."
-            );
-        }
-
-        builder.Append("CREATE VIEW ");
-        builder.Append(Quote(view.ViewName));
-        builder.AppendLine(" AS");
-
-        for (var armIndex = 0; armIndex < view.UnionArmsInOrder.Count; armIndex++)
-        {
-            var arm = view.UnionArmsInOrder[armIndex];
-            AppendUnionArmSelect(builder, view, arm);
-
-            if (armIndex < view.UnionArmsInOrder.Count - 1)
-            {
-                builder.AppendLine("UNION ALL");
-            }
-        }
-
-        builder.AppendLine(";");
-        builder.AppendLine();
-    }
-
-    /// <summary>
-    /// Appends a single <c>SELECT</c> arm for an abstract union view.
-    /// </summary>
-    private void AppendUnionArmSelect(
-        StringBuilder builder,
-        AbstractUnionViewInfo view,
-        AbstractUnionViewArm arm
-    )
-    {
-        var outputColumns = view.OutputColumnsInSelectOrder;
-        var projections = arm.ProjectionExpressionsInSelectOrder;
-
-        if (projections.Count != outputColumns.Count)
-        {
-            throw new InvalidOperationException(
-                $"Projection count mismatch for union view '{view.ViewName.Name}' arm "
-                    + $"'{arm.ConcreteMemberResourceKey.Resource.ProjectName}:{arm.ConcreteMemberResourceKey.Resource.ResourceName}'. "
-                    + $"Expected {outputColumns.Count}, found {projections.Count}."
-            );
-        }
-
-        builder.AppendLine("SELECT");
-
-        for (var index = 0; index < outputColumns.Count; index++)
-        {
-            var outputColumn = outputColumns[index];
-            var projection = projections[index];
-            var sqlType = ResolveColumnType(outputColumn.ScalarType);
-            var expression = FormatUnionProjectionExpression(projection);
-
-            builder.Append("    ");
-            builder.Append($"CAST({expression} AS {sqlType})");
-            builder.Append(" AS ");
-            builder.Append(Quote(outputColumn.ColumnName));
-
-            if (index < outputColumns.Count - 1)
-            {
-                builder.Append(',');
-            }
-
-            builder.AppendLine();
-        }
-
-        builder.Append("FROM ");
-        builder.Append(Quote(arm.FromTable));
-        builder.AppendLine();
     }
 
     /// <summary>
@@ -326,24 +228,6 @@ public sealed class RelationalModelDdlEmitter
                 nameof(scalarType.Kind),
                 scalarType.Kind,
                 "Unsupported scalar kind."
-            ),
-        };
-    }
-
-    /// <summary>
-    /// Formats an abstract union-view projection expression without an alias.
-    /// </summary>
-    private string FormatUnionProjectionExpression(AbstractUnionViewProjectionExpression expression)
-    {
-        return expression switch
-        {
-            AbstractUnionViewProjectionExpression.SourceColumn sourceColumn => Quote(sourceColumn.ColumnName),
-            AbstractUnionViewProjectionExpression.StringLiteral literal =>
-                $"'{literal.Value.Replace("'", "''")}'",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(expression),
-                expression,
-                "Unsupported union projection expression."
             ),
         };
     }
