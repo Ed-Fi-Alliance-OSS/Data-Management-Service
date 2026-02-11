@@ -1,0 +1,2227 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "1.0.0",
+  "effective_schema_hash": "edf1edf1",
+  "resource_key_count": 367,
+  "resource_key_seed_hash": "01",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.2.0",
+      "is_extension_project": false,
+      "project_hash": "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+    },
+    {
+      "project_endpoint_name": "sample",
+      "project_name": "Sample",
+      "project_version": "1.1.0",
+      "is_extension_project": true,
+      "project_hash": "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+    }
+  ],
+  "resource_keys": [
+    {
+      "resource_key_id": 1,
+      "project_name": "Ed-Fi",
+      "resource_name": "AbsenceEventCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 2,
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicHonorCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 3,
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicSubjectDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 4,
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicWeek",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 5,
+      "project_name": "Ed-Fi",
+      "resource_name": "AccommodationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 6,
+      "project_name": "Ed-Fi",
+      "resource_name": "AccountTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 7,
+      "project_name": "Ed-Fi",
+      "resource_name": "AccountabilityRating",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 8,
+      "project_name": "Ed-Fi",
+      "resource_name": "AchievementCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 9,
+      "project_name": "Ed-Fi",
+      "resource_name": "AdditionalCreditTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 10,
+      "project_name": "Ed-Fi",
+      "resource_name": "AddressTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 11,
+      "project_name": "Ed-Fi",
+      "resource_name": "AdministrationEnvironmentDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 12,
+      "project_name": "Ed-Fi",
+      "resource_name": "AdministrativeFundingControlDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 13,
+      "project_name": "Ed-Fi",
+      "resource_name": "AncestryEthnicOriginDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 14,
+      "project_name": "Ed-Fi",
+      "resource_name": "Assessment",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 15,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentAdministration",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 16,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentAdministrationParticipation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 17,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentBatteryPart",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 18,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 19,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentIdentificationSystemDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 20,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItem",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 21,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItemCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 22,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItemResultDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 23,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentPeriodDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 24,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentReportingMethodDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 25,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentScoreRangeLearningStandard",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 26,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssignmentLateStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 27,
+      "project_name": "Ed-Fi",
+      "resource_name": "AttemptStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 28,
+      "project_name": "Ed-Fi",
+      "resource_name": "AttendanceEventCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 29,
+      "project_name": "Ed-Fi",
+      "resource_name": "BalanceSheetDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 30,
+      "project_name": "Ed-Fi",
+      "resource_name": "BarrierToInternetAccessInResidenceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 31,
+      "project_name": "Ed-Fi",
+      "resource_name": "BehaviorDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 32,
+      "project_name": "Ed-Fi",
+      "resource_name": "BellSchedule",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 33,
+      "project_name": "Ed-Fi",
+      "resource_name": "BusRouteDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 34,
+      "project_name": "Ed-Fi",
+      "resource_name": "CTEProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 35,
+      "project_name": "Ed-Fi",
+      "resource_name": "Calendar",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 36,
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarDate",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 37,
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarEventDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 38,
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 39,
+      "project_name": "Ed-Fi",
+      "resource_name": "CareerPathwayDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 40,
+      "project_name": "Ed-Fi",
+      "resource_name": "ChartOfAccount",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 41,
+      "project_name": "Ed-Fi",
+      "resource_name": "CharterApprovalAgencyTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 42,
+      "project_name": "Ed-Fi",
+      "resource_name": "CharterStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 43,
+      "project_name": "Ed-Fi",
+      "resource_name": "CitizenshipStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 44,
+      "project_name": "Ed-Fi",
+      "resource_name": "ClassPeriod",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 45,
+      "project_name": "Ed-Fi",
+      "resource_name": "ClassroomPositionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 46,
+      "project_name": "Ed-Fi",
+      "resource_name": "Cohort",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 47,
+      "project_name": "Ed-Fi",
+      "resource_name": "CohortScopeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 48,
+      "project_name": "Ed-Fi",
+      "resource_name": "CohortTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 49,
+      "project_name": "Ed-Fi",
+      "resource_name": "CohortYearTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 50,
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityOrganization",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 51,
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityProvider",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 52,
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityProviderLicense",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 53,
+      "project_name": "Ed-Fi",
+      "resource_name": "CompetencyLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 54,
+      "project_name": "Ed-Fi",
+      "resource_name": "CompetencyObjective",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 55,
+      "project_name": "Ed-Fi",
+      "resource_name": "Contact",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 56,
+      "project_name": "Ed-Fi",
+      "resource_name": "ContactTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 57,
+      "project_name": "Ed-Fi",
+      "resource_name": "ContentClassDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 58,
+      "project_name": "Ed-Fi",
+      "resource_name": "ContinuationOfServicesReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 59,
+      "project_name": "Ed-Fi",
+      "resource_name": "CostRateDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 60,
+      "project_name": "Ed-Fi",
+      "resource_name": "CountryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 61,
+      "project_name": "Ed-Fi",
+      "resource_name": "Course",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 62,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseAttemptResultDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 63,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseDefinedByDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 64,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseGPAApplicabilityDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 65,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseIdentificationSystemDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 66,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseLevelCharacteristicDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 67,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseOffering",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 68,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseRepeatCodeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 69,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseTranscript",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 70,
+      "project_name": "Ed-Fi",
+      "resource_name": "Credential",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 71,
+      "project_name": "Ed-Fi",
+      "resource_name": "CredentialFieldDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 72,
+      "project_name": "Ed-Fi",
+      "resource_name": "CredentialTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 73,
+      "project_name": "Ed-Fi",
+      "resource_name": "CreditCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 74,
+      "project_name": "Ed-Fi",
+      "resource_name": "CreditTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 75,
+      "project_name": "Ed-Fi",
+      "resource_name": "CrisisEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 76,
+      "project_name": "Ed-Fi",
+      "resource_name": "CrisisTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 77,
+      "project_name": "Ed-Fi",
+      "resource_name": "CurriculumUsedDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 78,
+      "project_name": "Ed-Fi",
+      "resource_name": "DeliveryMethodDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 79,
+      "project_name": "Ed-Fi",
+      "resource_name": "DescriptorMapping",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 80,
+      "project_name": "Ed-Fi",
+      "resource_name": "DiagnosisDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 81,
+      "project_name": "Ed-Fi",
+      "resource_name": "DiplomaLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 82,
+      "project_name": "Ed-Fi",
+      "resource_name": "DiplomaTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 83,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisabilityDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 84,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisabilityDesignationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 85,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisabilityDeterminationSourceTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 86,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineAction",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 87,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineActionLengthDifferenceReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 88,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 89,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineIncident",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 90,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineIncidentParticipationCodeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 91,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisplacedStudentStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 92,
+      "project_name": "Ed-Fi",
+      "resource_name": "DualCreditInstitutionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 93,
+      "project_name": "Ed-Fi",
+      "resource_name": "DualCreditTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 94,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationContent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 95,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganization",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 96,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationAssociationTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 97,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 98,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationIdentificationSystemDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 99,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationInterventionPrescriptionAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 100,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationNetwork",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 101,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationNetworkAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 102,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationPeerAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 103,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationPlanDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 104,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationServiceCenter",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 105,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationalEnvironmentDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 106,
+      "project_name": "Ed-Fi",
+      "resource_name": "ElectronicMailTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 107,
+      "project_name": "Ed-Fi",
+      "resource_name": "EligibilityDelayReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 108,
+      "project_name": "Ed-Fi",
+      "resource_name": "EligibilityEvaluationTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 109,
+      "project_name": "Ed-Fi",
+      "resource_name": "EmploymentStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 110,
+      "project_name": "Ed-Fi",
+      "resource_name": "EnrollmentTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 111,
+      "project_name": "Ed-Fi",
+      "resource_name": "EntryGradeLevelReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 112,
+      "project_name": "Ed-Fi",
+      "resource_name": "EntryTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 113,
+      "project_name": "Ed-Fi",
+      "resource_name": "EvaluationDelayReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 114,
+      "project_name": "Ed-Fi",
+      "resource_name": "EvaluationRubricDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 115,
+      "project_name": "Ed-Fi",
+      "resource_name": "EventCircumstanceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 116,
+      "project_name": "Ed-Fi",
+      "resource_name": "ExitWithdrawTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 117,
+      "project_name": "Ed-Fi",
+      "resource_name": "FeederSchoolAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 118,
+      "project_name": "Ed-Fi",
+      "resource_name": "FinancialCollectionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 119,
+      "project_name": "Ed-Fi",
+      "resource_name": "FunctionDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 120,
+      "project_name": "Ed-Fi",
+      "resource_name": "FundDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 121,
+      "project_name": "Ed-Fi",
+      "resource_name": "GeneralStudentProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 122,
+      "project_name": "Ed-Fi",
+      "resource_name": "Grade",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 123,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradeLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 124,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradePointAverageTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 125,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradeTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 126,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradebookEntry",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 127,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradebookEntryTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 128,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradingPeriod",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 129,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradingPeriodDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 130,
+      "project_name": "Ed-Fi",
+      "resource_name": "GraduationPlan",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 131,
+      "project_name": "Ed-Fi",
+      "resource_name": "GraduationPlanTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 132,
+      "project_name": "Ed-Fi",
+      "resource_name": "GunFreeSchoolsActReportingStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 133,
+      "project_name": "Ed-Fi",
+      "resource_name": "HomelessPrimaryNighttimeResidenceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 134,
+      "project_name": "Ed-Fi",
+      "resource_name": "HomelessProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 135,
+      "project_name": "Ed-Fi",
+      "resource_name": "IDEAPartDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 136,
+      "project_name": "Ed-Fi",
+      "resource_name": "IdentificationDocumentUseDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 137,
+      "project_name": "Ed-Fi",
+      "resource_name": "ImmunizationTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 138,
+      "project_name": "Ed-Fi",
+      "resource_name": "IncidentLocationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 139,
+      "project_name": "Ed-Fi",
+      "resource_name": "IndicatorDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 140,
+      "project_name": "Ed-Fi",
+      "resource_name": "IndicatorGroupDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 141,
+      "project_name": "Ed-Fi",
+      "resource_name": "IndicatorLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 142,
+      "project_name": "Ed-Fi",
+      "resource_name": "InstitutionTelephoneNumberTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 143,
+      "project_name": "Ed-Fi",
+      "resource_name": "InteractivityStyleDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 144,
+      "project_name": "Ed-Fi",
+      "resource_name": "InternetAccessDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 145,
+      "project_name": "Ed-Fi",
+      "resource_name": "InternetAccessTypeInResidenceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 146,
+      "project_name": "Ed-Fi",
+      "resource_name": "InternetPerformanceInResidenceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 147,
+      "project_name": "Ed-Fi",
+      "resource_name": "Intervention",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 148,
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionClassDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 149,
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionEffectivenessRatingDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 150,
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionPrescription",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 151,
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionStudy",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 152,
+      "project_name": "Ed-Fi",
+      "resource_name": "LanguageDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 153,
+      "project_name": "Ed-Fi",
+      "resource_name": "LanguageInstructionProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 154,
+      "project_name": "Ed-Fi",
+      "resource_name": "LanguageUseDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 155,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandard",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 156,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 157,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardEquivalenceAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 158,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardEquivalenceStrengthDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 159,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardScopeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 160,
+      "project_name": "Ed-Fi",
+      "resource_name": "LevelOfEducationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 161,
+      "project_name": "Ed-Fi",
+      "resource_name": "LicenseStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 162,
+      "project_name": "Ed-Fi",
+      "resource_name": "LicenseTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 163,
+      "project_name": "Ed-Fi",
+      "resource_name": "LimitedEnglishProficiencyDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 164,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalAccount",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 165,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalActual",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 166,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalBudget",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 167,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalContractedStaff",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 168,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgency",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 169,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgencyCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 170,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEncumbrance",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 171,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalPayroll",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 172,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocaleDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 173,
+      "project_name": "Ed-Fi",
+      "resource_name": "Location",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 174,
+      "project_name": "Ed-Fi",
+      "resource_name": "MagnetSpecialProgramEmphasisSchoolDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 175,
+      "project_name": "Ed-Fi",
+      "resource_name": "MediumOfInstructionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 176,
+      "project_name": "Ed-Fi",
+      "resource_name": "MethodCreditEarnedDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 177,
+      "project_name": "Ed-Fi",
+      "resource_name": "MigrantEducationProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 178,
+      "project_name": "Ed-Fi",
+      "resource_name": "ModelEntityDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 179,
+      "project_name": "Ed-Fi",
+      "resource_name": "MonitoredDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 180,
+      "project_name": "Ed-Fi",
+      "resource_name": "NeglectedOrDelinquentProgramDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 181,
+      "project_name": "Ed-Fi",
+      "resource_name": "NeglectedOrDelinquentProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 182,
+      "project_name": "Ed-Fi",
+      "resource_name": "NetworkPurposeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 183,
+      "project_name": "Ed-Fi",
+      "resource_name": "NonMedicalImmunizationExemptionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 184,
+      "project_name": "Ed-Fi",
+      "resource_name": "ObjectDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 185,
+      "project_name": "Ed-Fi",
+      "resource_name": "ObjectiveAssessment",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 186,
+      "project_name": "Ed-Fi",
+      "resource_name": "OpenStaffPosition",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 187,
+      "project_name": "Ed-Fi",
+      "resource_name": "OperationalStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 188,
+      "project_name": "Ed-Fi",
+      "resource_name": "OperationalUnitDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 189,
+      "project_name": "Ed-Fi",
+      "resource_name": "OrganizationDepartment",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 190,
+      "project_name": "Ed-Fi",
+      "resource_name": "OtherNameTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 191,
+      "project_name": "Ed-Fi",
+      "resource_name": "ParticipationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 192,
+      "project_name": "Ed-Fi",
+      "resource_name": "ParticipationStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 193,
+      "project_name": "Ed-Fi",
+      "resource_name": "PerformanceBaseConversionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 194,
+      "project_name": "Ed-Fi",
+      "resource_name": "PerformanceLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 195,
+      "project_name": "Ed-Fi",
+      "resource_name": "Person",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 196,
+      "project_name": "Ed-Fi",
+      "resource_name": "PersonalInformationVerificationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 197,
+      "project_name": "Ed-Fi",
+      "resource_name": "PlatformTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 198,
+      "project_name": "Ed-Fi",
+      "resource_name": "PopulationServedDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 199,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 200,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryEventCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 201,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryInstitution",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 202,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryInstitutionLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 203,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostingResultDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 204,
+      "project_name": "Ed-Fi",
+      "resource_name": "PrimaryLearningDeviceAccessDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 205,
+      "project_name": "Ed-Fi",
+      "resource_name": "PrimaryLearningDeviceAwayFromSchoolDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 206,
+      "project_name": "Ed-Fi",
+      "resource_name": "PrimaryLearningDeviceProviderDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 207,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProficiencyDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 208,
+      "project_name": "Ed-Fi",
+      "resource_name": "Program",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 209,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramAssignmentDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 210,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramCharacteristicDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 211,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 212,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 213,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationElement",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 214,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationObjective",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 215,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationPeriodDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 216,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 217,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramSponsorDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 218,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 219,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgressDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 220,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgressLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 221,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProjectDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 222,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProviderCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 223,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProviderProfitabilityDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 224,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProviderStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 225,
+      "project_name": "Ed-Fi",
+      "resource_name": "PublicationStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 226,
+      "project_name": "Ed-Fi",
+      "resource_name": "QuestionFormDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 227,
+      "project_name": "Ed-Fi",
+      "resource_name": "RaceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 228,
+      "project_name": "Ed-Fi",
+      "resource_name": "RatingLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 229,
+      "project_name": "Ed-Fi",
+      "resource_name": "ReasonExitedDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 230,
+      "project_name": "Ed-Fi",
+      "resource_name": "ReasonNotTestedDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 231,
+      "project_name": "Ed-Fi",
+      "resource_name": "RecognitionTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 232,
+      "project_name": "Ed-Fi",
+      "resource_name": "RelationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 233,
+      "project_name": "Ed-Fi",
+      "resource_name": "RepeatIdentifierDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 234,
+      "project_name": "Ed-Fi",
+      "resource_name": "ReportCard",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 235,
+      "project_name": "Ed-Fi",
+      "resource_name": "ReporterDescriptionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 236,
+      "project_name": "Ed-Fi",
+      "resource_name": "ReportingTagDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 237,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResidencyStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 238,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResponseIndicatorDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 239,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResponsibilityDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 240,
+      "project_name": "Ed-Fi",
+      "resource_name": "RestraintEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 241,
+      "project_name": "Ed-Fi",
+      "resource_name": "RestraintEventReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 242,
+      "project_name": "Ed-Fi",
+      "resource_name": "ResultDatatypeTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 243,
+      "project_name": "Ed-Fi",
+      "resource_name": "RetestIndicatorDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 244,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 245,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 246,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolChoiceBasisDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 247,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolChoiceImplementStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 248,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolFoodServiceProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 249,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 250,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolYearType",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 251,
+      "project_name": "Ed-Fi",
+      "resource_name": "Section",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 252,
+      "project_name": "Ed-Fi",
+      "resource_name": "Section504DisabilityDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 253,
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionAttendanceTakenEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 254,
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionCharacteristicDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 255,
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 256,
+      "project_name": "Ed-Fi",
+      "resource_name": "SeparationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 257,
+      "project_name": "Ed-Fi",
+      "resource_name": "SeparationReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 258,
+      "project_name": "Ed-Fi",
+      "resource_name": "ServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 259,
+      "project_name": "Ed-Fi",
+      "resource_name": "Session",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 260,
+      "project_name": "Ed-Fi",
+      "resource_name": "SexDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 261,
+      "project_name": "Ed-Fi",
+      "resource_name": "SourceDimension",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 262,
+      "project_name": "Ed-Fi",
+      "resource_name": "SourceSystemDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 263,
+      "project_name": "Ed-Fi",
+      "resource_name": "SpecialEducationExitReasonDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 264,
+      "project_name": "Ed-Fi",
+      "resource_name": "SpecialEducationProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 265,
+      "project_name": "Ed-Fi",
+      "resource_name": "SpecialEducationSettingDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 266,
+      "project_name": "Ed-Fi",
+      "resource_name": "Staff",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 267,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffAbsenceEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 268,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffClassificationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 269,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffCohortAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 270,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffDisciplineIncidentAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 271,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationAssignmentAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 272,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationContactAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 273,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationEmploymentAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 274,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffIdentificationSystemDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 275,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffLeave",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 276,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffLeaveEventCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 277,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 278,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffSchoolAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 279,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffSectionAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 280,
+      "project_name": "Ed-Fi",
+      "resource_name": "StateAbbreviationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 281,
+      "project_name": "Ed-Fi",
+      "resource_name": "StateEducationAgency",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 282,
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 283,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAcademicRecord",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 284,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessment",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 285,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentEducationOrganizationAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 286,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentRegistration",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 287,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentRegistrationBatteryPartAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 288,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCTEProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 289,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCharacteristicDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 290,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCohortAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 291,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCompetencyObjective",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 292,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentContactAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 293,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentDisciplineIncidentBehaviorAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 294,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentDisciplineIncidentNonOffenderAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 295,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationAssessmentAccommodation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 296,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 297,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationResponsibilityAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 298,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentGradebookEntry",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 299,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentHealth",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 300,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentHomelessProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 301,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentIdentificationSystemDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 302,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentInterventionAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 303,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentInterventionAttendanceEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 304,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentLanguageInstructionProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 305,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentMigrantEducationProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 306,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentNeglectedOrDelinquentProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 307,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 308,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramAttendanceEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 309,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramEvaluation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 310,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 311,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAttendanceEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 312,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolFoodServiceProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 313,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSection504ProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 314,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSectionAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 315,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSectionAttendanceEvent",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 316,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSpecialEducationProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 317,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSpecialEducationProgramEligibilityAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 318,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentTitleIPartAProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 319,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentTransportation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 320,
+      "project_name": "Ed-Fi",
+      "resource_name": "SubmissionStatusDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 321,
+      "project_name": "Ed-Fi",
+      "resource_name": "SupporterMilitaryConnectionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 322,
+      "project_name": "Ed-Fi",
+      "resource_name": "Survey",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 323,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyCategoryDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 324,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyCourseAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 325,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyLevelDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 326,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyProgramAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 327,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyQuestion",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 328,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyQuestionResponse",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 329,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponse",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 330,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponseEducationOrganizationTargetAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 331,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponseStaffTargetAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 332,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySection",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 333,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 334,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponse",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 335,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponseEducationOrganizationTargetAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 336,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponseStaffTargetAssociation",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 337,
+      "project_name": "Ed-Fi",
+      "resource_name": "TeachingCredentialBasisDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 338,
+      "project_name": "Ed-Fi",
+      "resource_name": "TeachingCredentialDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 339,
+      "project_name": "Ed-Fi",
+      "resource_name": "TechnicalSkillsAssessmentDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 340,
+      "project_name": "Ed-Fi",
+      "resource_name": "TelephoneNumberTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 341,
+      "project_name": "Ed-Fi",
+      "resource_name": "TermDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 342,
+      "project_name": "Ed-Fi",
+      "resource_name": "TitleIPartAParticipantDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 343,
+      "project_name": "Ed-Fi",
+      "resource_name": "TitleIPartAProgramServiceDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 344,
+      "project_name": "Ed-Fi",
+      "resource_name": "TitleIPartASchoolDesignationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 345,
+      "project_name": "Ed-Fi",
+      "resource_name": "TransportationPublicExpenseEligibilityTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 346,
+      "project_name": "Ed-Fi",
+      "resource_name": "TransportationTypeDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 347,
+      "project_name": "Ed-Fi",
+      "resource_name": "TravelDayofWeekDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 348,
+      "project_name": "Ed-Fi",
+      "resource_name": "TravelDirectionDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 349,
+      "project_name": "Ed-Fi",
+      "resource_name": "TribalAffiliationDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 350,
+      "project_name": "Ed-Fi",
+      "resource_name": "VisaDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 351,
+      "project_name": "Ed-Fi",
+      "resource_name": "WeaponDescriptor",
+      "resource_version": "5.2.0"
+    },
+    {
+      "resource_key_id": 352,
+      "project_name": "Sample",
+      "resource_name": "ArtMediumDescriptor",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 353,
+      "project_name": "Sample",
+      "resource_name": "Bus",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 354,
+      "project_name": "Sample",
+      "resource_name": "BusRoute",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 355,
+      "project_name": "Sample",
+      "resource_name": "Contact",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 356,
+      "project_name": "Sample",
+      "resource_name": "FavoriteBookCategoryDescriptor",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 357,
+      "project_name": "Sample",
+      "resource_name": "MembershipTypeDescriptor",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 358,
+      "project_name": "Sample",
+      "resource_name": "School",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 359,
+      "project_name": "Sample",
+      "resource_name": "Staff",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 360,
+      "project_name": "Sample",
+      "resource_name": "Student",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 361,
+      "project_name": "Sample",
+      "resource_name": "StudentArtProgramAssociation",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 362,
+      "project_name": "Sample",
+      "resource_name": "StudentCTEProgramAssociation",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 363,
+      "project_name": "Sample",
+      "resource_name": "StudentContactAssociation",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 364,
+      "project_name": "Sample",
+      "resource_name": "StudentEducationOrganizationAssociation",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 365,
+      "project_name": "Sample",
+      "resource_name": "StudentGraduationPlanAssociation",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 366,
+      "project_name": "Sample",
+      "resource_name": "StudentSchoolAssociation",
+      "resource_version": "1.1.0"
+    },
+    {
+      "resource_key_id": 367,
+      "project_name": "Sample",
+      "resource_name": "StudentSectionAssociation",
+      "resource_version": "1.1.0"
+    }
+  ]
+}

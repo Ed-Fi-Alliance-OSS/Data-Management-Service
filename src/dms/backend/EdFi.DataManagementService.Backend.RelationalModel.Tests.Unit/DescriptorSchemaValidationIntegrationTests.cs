@@ -75,14 +75,14 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,
@@ -192,14 +192,14 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeVal
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,
@@ -317,14 +317,14 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,
@@ -443,14 +443,14 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,

@@ -158,7 +158,7 @@ internal static class ReservedIdentifierFixture
                         "TestProject",
                         "1.0.0",
                         false,
-                        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                     ),
                 },
                 new[] { resourceKey }

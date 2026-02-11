@@ -59,7 +59,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_ApiSchemaFormatVersion
         var info = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: 0,
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder:
@@ -69,7 +69,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_ApiSchemaFormatVersion
                     "Ed-Fi",
                     "5.0.0",
                     false,
-                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                 ),
             ],
             ResourceKeysInIdOrder: []
@@ -113,7 +113,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_RelationalMappingVersion
         var info = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: 0,
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder:
@@ -123,7 +123,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_RelationalMappingVersion
                     "Ed-Fi",
                     "5.0.0",
                     false,
-                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                 ),
             ],
             ResourceKeysInIdOrder: []
@@ -167,7 +167,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_ResourceKeySeedHash
         var info = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: 0,
             ResourceKeySeedHash: [],
             SchemaComponentsInEndpointOrder:
@@ -177,7 +177,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_ResourceKeySeedHash
                     "Ed-Fi",
                     "5.0.0",
                     false,
-                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                 ),
             ],
             ResourceKeysInIdOrder: []
@@ -231,7 +231,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_EffectiveSchemaHash
                     "Ed-Fi",
                     "5.0.0",
                     false,
-                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                 ),
             ],
             ResourceKeysInIdOrder: []
@@ -275,7 +275,7 @@ public class Given_An_EffectiveSchemaInfo_With_Mismatched_ResourceKeyCount
         var info = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: 5,
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder:
@@ -285,7 +285,7 @@ public class Given_An_EffectiveSchemaInfo_With_Mismatched_ResourceKeyCount
                     "Ed-Fi",
                     "5.0.0",
                     false,
-                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                 ),
             ],
             ResourceKeysInIdOrder:
@@ -332,7 +332,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_ProjectHash
         var info = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: 0,
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder: [new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false, "")],
@@ -377,7 +377,7 @@ public class Given_An_EffectiveSchemaInfo_With_Empty_SchemaComponents
         var info = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: 0,
             ResourceKeySeedHash: [0x01],
             SchemaComponentsInEndpointOrder: [],

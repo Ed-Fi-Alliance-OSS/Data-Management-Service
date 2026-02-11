@@ -368,14 +368,14 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
             new SchemaComponentInfo(
                 "tpdm",
                 "TPDM",
                 "1.0.0",
                 true,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
@@ -431,14 +431,14 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
             new SchemaComponentInfo(
                 "ed-fi",
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
@@ -506,21 +506,21 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
                 "TPDM",
                 "1.0.0",
                 true,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
             new SchemaComponentInfo(
                 "ed-fi",
                 "Ed-Fi",
                 "5.0.0",
                 false,
-                "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             resourceKeys.Length,
             new byte[] { 0x01 },
             schemaComponents,
@@ -577,14 +577,14 @@ internal static class EffectiveSchemaFixture
                     "Ed-Fi",
                     "5.0.0",
                     false,
-                    "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                 ),
             };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: resourceKeyCountOverride ?? resourceKeys.Count,
             ResourceKeySeedHash: new byte[] { 0x01 },
             SchemaComponentsInEndpointOrder: schemaComponents,

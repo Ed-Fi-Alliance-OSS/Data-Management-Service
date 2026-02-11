@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text.Json.Nodes;
 using FluentAssertions;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit;
 
@@ -181,6 +183,183 @@ public class Given_A_Small_EffectiveSchemaInfo_With_Default_Parameters
 }
 
 /// <summary>
+/// Authoritative golden test: loads ds-5.2 core schema, builds EffectiveSchemaSet,
+/// emits manifest, and compares against golden file.
+/// </summary>
+[TestFixture]
+public class Given_An_Authoritative_Core_EffectiveSchemaManifest
+{
+    private string _diffOutput = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
+        var coreInputPath = Path.Combine(
+            fixtureRoot,
+            "ds-5.2",
+            "inputs",
+            "ds-5.2-api-schema-authoritative.json"
+        );
+        var expectedPath = Path.Combine(
+            fixtureRoot,
+            "ds-5.2",
+            "expected",
+            "authoritative-effective-schema.manifest.json"
+        );
+        var actualPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "authoritative",
+            "ds-5.2",
+            "authoritative-effective-schema.manifest.json"
+        );
+
+        File.Exists(coreInputPath).Should().BeTrue($"fixture missing at {coreInputPath}");
+
+        var coreSchema = EffectiveSchemaManifestGoldenHelpers.LoadProjectSchema(coreInputPath);
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(coreSchema, false);
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+
+        var manifest = EffectiveSchemaManifestEmitter.Emit(
+            effectiveSchemaSet.EffectiveSchema,
+            includeResourceKeys: true
+        );
+
+        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+        File.WriteAllText(actualPath, manifest);
+
+        if (EffectiveSchemaManifestGoldenHelpers.ShouldUpdateGoldens())
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
+            File.WriteAllText(expectedPath, manifest);
+        }
+
+        File.Exists(expectedPath)
+            .Should()
+            .BeTrue(
+                $"authoritative effective-schema manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
+            );
+
+        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+    }
+
+    /// <summary>
+    /// It should match the authoritative manifest.
+    /// </summary>
+    [Test]
+    public void It_should_match_the_authoritative_manifest()
+    {
+        if (!string.IsNullOrWhiteSpace(_diffOutput))
+        {
+            Assert.Fail(_diffOutput);
+        }
+    }
+}
+
+/// <summary>
+/// Authoritative golden test: loads ds-5.2 core + sample extension schemas,
+/// builds EffectiveSchemaSet, emits manifest, and compares against golden file.
+/// </summary>
+[TestFixture]
+public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
+{
+    private string _diffOutput = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
+        var coreInputPath = Path.Combine(
+            fixtureRoot,
+            "ds-5.2",
+            "inputs",
+            "ds-5.2-api-schema-authoritative.json"
+        );
+        var extensionInputPath = Path.Combine(
+            fixtureRoot,
+            "sample",
+            "inputs",
+            "sample-api-schema-authoritative.json"
+        );
+        var expectedPath = Path.Combine(
+            fixtureRoot,
+            "sample",
+            "expected",
+            "authoritative-effective-schema.manifest.json"
+        );
+        var actualPath = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            "authoritative",
+            "sample",
+            "authoritative-effective-schema.manifest.json"
+        );
+
+        File.Exists(coreInputPath).Should().BeTrue($"fixture missing at {coreInputPath}");
+        File.Exists(extensionInputPath).Should().BeTrue($"fixture missing at {extensionInputPath}");
+
+        var coreSchema = EffectiveSchemaManifestGoldenHelpers.LoadProjectSchema(coreInputPath);
+        var extensionSchema = EffectiveSchemaManifestGoldenHelpers.LoadProjectSchema(extensionInputPath);
+
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(coreSchema, false);
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionSchema,
+            true
+        );
+
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+
+        var manifest = EffectiveSchemaManifestEmitter.Emit(
+            effectiveSchemaSet.EffectiveSchema,
+            includeResourceKeys: true
+        );
+
+        Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
+        File.WriteAllText(actualPath, manifest);
+
+        if (EffectiveSchemaManifestGoldenHelpers.ShouldUpdateGoldens())
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
+            File.WriteAllText(expectedPath, manifest);
+        }
+
+        File.Exists(expectedPath)
+            .Should()
+            .BeTrue(
+                $"authoritative effective-schema manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
+            );
+
+        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+    }
+
+    /// <summary>
+    /// It should match the authoritative manifest.
+    /// </summary>
+    [Test]
+    public void It_should_match_the_authoritative_manifest()
+    {
+        if (!string.IsNullOrWhiteSpace(_diffOutput))
+        {
+            Assert.Fail(_diffOutput);
+        }
+    }
+}
+
+/// <summary>
 /// Shared helpers for effective schema manifest golden tests.
 /// </summary>
 file static class EffectiveSchemaManifestGoldenHelpers
@@ -328,5 +507,17 @@ file static class EffectiveSchemaManifestGoldenHelpers
 
         return string.Equals(update, "1", StringComparison.OrdinalIgnoreCase)
             || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static JsonObject LoadProjectSchema(string path)
+    {
+        var root = JsonNode.Parse(File.ReadAllText(path));
+
+        if (root is not JsonObject rootObject)
+        {
+            throw new InvalidOperationException($"ApiSchema parsed null or non-object: {path}");
+        }
+
+        return RequireObject(rootObject["projectSchema"], "projectSchema");
     }
 }

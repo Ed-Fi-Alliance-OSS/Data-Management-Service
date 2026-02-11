@@ -103,7 +103,7 @@ internal static class PrimaryKeyFixture
                         "Ed-Fi",
                         "1.0.0",
                         false,
-                        "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                     ),
                 ],
                 [resourceKey]
