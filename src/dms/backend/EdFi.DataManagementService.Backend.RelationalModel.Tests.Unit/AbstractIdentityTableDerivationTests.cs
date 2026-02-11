@@ -244,6 +244,132 @@ public class Given_Abstract_Identity_Table_With_Widenable_Integer_Widths
 }
 
 /// <summary>
+/// Test fixture for abstract identity table derivation with widenable decimal precision/scale mismatches.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Widenable_Decimal_Precision
+{
+    private AbstractIdentityTableInfo _abstractIdentityTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = BuildProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        _abstractIdentityTable = result.AbstractIdentityTablesInNameOrder.Single();
+    }
+
+    /// <summary>
+    /// It should widen decimal precision from both integer digits and scale.
+    /// </summary>
+    [Test]
+    public void It_should_widen_decimal_precision_from_integer_digits_and_scale()
+    {
+        var identityColumn = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "Amount"
+        );
+
+        identityColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Decimal, Decimal: (12, 4)));
+    }
+
+    /// <summary>
+    /// Build project schema.
+    /// </summary>
+    private static JsonObject BuildProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["resourceName"] = "EducationOrganization",
+                    ["identityJsonPaths"] = new JsonArray { "$.amount" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = BuildConcreteResourceSchema("School", totalDigits: 10, decimalPlaces: 2),
+                ["localEducationAgencies"] = BuildConcreteResourceSchema(
+                    "LocalEducationAgency",
+                    totalDigits: 5,
+                    decimalPlaces: 4
+                ),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build concrete resource schema.
+    /// </summary>
+    private static JsonObject BuildConcreteResourceSchema(
+        string resourceName,
+        short totalDigits,
+        short decimalPlaces
+    )
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = resourceName,
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = true,
+            ["subclassType"] = "association",
+            ["superclassProjectName"] = "Ed-Fi",
+            ["superclassResourceName"] = "EducationOrganization",
+            ["superclassIdentityJsonPath"] = null,
+            ["allowIdentityUpdates"] = false,
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["Amount"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["isDescriptor"] = false,
+                    ["path"] = "$.amount",
+                },
+            },
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["decimalPropertyValidationInfos"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["path"] = "$.amount",
+                    ["totalDigits"] = totalDigits,
+                    ["decimalPlaces"] = decimalPlaces,
+                },
+            },
+            ["identityJsonPaths"] = new JsonArray { "$.amount" },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject { ["amount"] = new JsonObject { ["type"] = "number" } },
+                ["required"] = new JsonArray { "amount" },
+            },
+        };
+    }
+}
+
+/// <summary>
 /// Test fixture for abstract identity table with mismatched types.
 /// </summary>
 [TestFixture]
