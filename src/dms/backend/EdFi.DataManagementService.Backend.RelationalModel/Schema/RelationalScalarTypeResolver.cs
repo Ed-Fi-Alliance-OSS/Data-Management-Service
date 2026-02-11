@@ -17,6 +17,9 @@ internal static class RelationalScalarTypeResolver
         StringComparer.Ordinal
     );
 
+    /// <summary>
+    /// Delegate for looking up decimal property validation metadata keyed by canonical JSONPath.
+    /// </summary>
     private delegate bool TryGetDecimalPropertyValidationInfo(
         JsonPathExpression path,
         out DecimalPropertyValidationInfo validationInfo

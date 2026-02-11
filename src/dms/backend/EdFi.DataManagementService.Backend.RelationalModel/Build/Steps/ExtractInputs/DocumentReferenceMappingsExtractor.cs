@@ -48,8 +48,14 @@ internal static class DocumentReferenceMappingsExtractor
     /// </summary>
     private sealed class DocumentReferenceMappingExtractionState
     {
+        /// <summary>
+        /// Gets the extracted document reference mappings in deterministic order.
+        /// </summary>
         public List<DocumentReferenceMapping> ReferenceMappings { get; } = [];
 
+        /// <summary>
+        /// Gets the set of identity JSONPaths mapped by document reference entries.
+        /// </summary>
         public HashSet<string> MappedIdentityPaths { get; } = new(StringComparer.Ordinal);
     }
 

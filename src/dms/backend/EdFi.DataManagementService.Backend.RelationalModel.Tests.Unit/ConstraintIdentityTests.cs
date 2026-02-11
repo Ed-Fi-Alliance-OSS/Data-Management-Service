@@ -176,6 +176,10 @@ public class Given_Foreign_Key_Constraint_Identity
         act.Should().Throw<InvalidOperationException>().WithMessage("*ForeignKey*TargetTable*");
     }
 
+    /// <summary>
+    /// Builds a foreign key identity with a null target table by invoking the non-public constructor, used to
+    /// validate fail-fast behavior.
+    /// </summary>
     private static ConstraintIdentity BuildForeignKeyIdentityWithNullTargetTable()
     {
         var constructor = typeof(ConstraintIdentity).GetConstructor(

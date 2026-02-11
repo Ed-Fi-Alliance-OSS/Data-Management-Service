@@ -508,6 +508,9 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
         tableBuilder.AddColumn(scalarColumn, originalScalarBaseName);
     }
 
+    /// <summary>
+    /// Resolves the base column name for a scalar property, applying a configured name override when present.
+    /// </summary>
     private static string ResolveColumnBaseName(
         RelationalModelBuilderContext context,
         JsonPathExpression sourcePath,
@@ -868,6 +871,9 @@ public sealed class DeriveColumnsAndBindDescriptorEdgesStep : IRelationalModelBu
             return new IdentifierCollisionOrigin(description, _resourceLabel, resolvedPath.Canonical);
         }
 
+        /// <summary>
+        /// Captures the original derived column name and its collision origin for diagnostics.
+        /// </summary>
         private sealed record ColumnCollisionInfo(string OriginalName, IdentifierCollisionOrigin Origin);
     }
 }

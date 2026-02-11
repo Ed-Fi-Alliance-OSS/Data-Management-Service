@@ -127,10 +127,17 @@ public class Given_Short_Identifier_Limit
         projectSchema.PhysicalSchema.Value.Should().Be(expectedSchema);
     }
 
+    /// <summary>
+    /// Test dialect rules that enforce a small identifier length limit by truncation, used to drive shortening
+    /// behavior in fixtures.
+    /// </summary>
     private sealed class TinyDialectRules : ISqlDialectRules
     {
         private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
 
+        /// <summary>
+        /// Initializes a new instance with the specified maximum identifier length.
+        /// </summary>
         public TinyDialectRules(int maxIdentifierLength)
         {
             if (maxIdentifierLength <= 0)
@@ -145,12 +152,24 @@ public class Given_Short_Identifier_Limit
             MaxIdentifierLength = maxIdentifierLength;
         }
 
+        /// <summary>
+        /// Gets the dialect identifier reported by this fixture rules implementation.
+        /// </summary>
         public SqlDialect Dialect => SqlDialect.Pgsql;
 
+        /// <summary>
+        /// Gets the configured maximum identifier length used for truncation.
+        /// </summary>
         public int MaxIdentifierLength { get; }
 
+        /// <summary>
+        /// Gets the scalar type defaults reused by this fixture rules implementation.
+        /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
+        /// <summary>
+        /// Shortens an identifier by truncating it to <see cref="MaxIdentifierLength"/>.
+        /// </summary>
         public string ShortenIdentifier(string identifier)
         {
             if (identifier is null)
@@ -163,6 +182,10 @@ public class Given_Short_Identifier_Limit
     }
 }
 
+/// <summary>
+/// Captures a single identifier-shortening test run, including the derived model and the long identifiers
+/// used as inputs.
+/// </summary>
 internal sealed record ShorteningScenario(
     DerivedRelationalModelSet Result,
     ShorteningIdentifiers Identifiers,
@@ -173,6 +196,10 @@ internal sealed record ShorteningScenario(
     internal static readonly QualifiedResourceName Resource = new("Ed-Fi", "School");
     internal static readonly QualifiedResourceName AbstractResource = new("Ed-Fi", "SchoolTypeDescriptor");
 
+    /// <summary>
+    /// Builds a test scenario by injecting long identifiers into a derived model set, then running the dialect
+    /// shortening pass.
+    /// </summary>
     public static ShorteningScenario Build(ISqlDialectRules dialectRules, string prefix)
     {
         ArgumentNullException.ThrowIfNull(dialectRules);
@@ -193,6 +220,10 @@ internal sealed record ShorteningScenario(
     }
 }
 
+/// <summary>
+/// Holds long identifier values used to verify dialect shortening across schemas, tables, columns, constraints,
+/// indexes, triggers, and abstract resource artifacts.
+/// </summary>
 internal sealed record ShorteningIdentifiers(
     string SchemaName,
     string TableName,
@@ -211,6 +242,9 @@ internal sealed record ShorteningIdentifiers(
     string ViewColumnName
 )
 {
+    /// <summary>
+    /// Creates long identifier values using the supplied prefix and target length.
+    /// </summary>
     public static ShorteningIdentifiers Create(string prefix, int length)
     {
         if (string.IsNullOrWhiteSpace(prefix))
@@ -237,6 +271,9 @@ internal sealed record ShorteningIdentifiers(
         );
     }
 
+    /// <summary>
+    /// Builds an identifier string by padding a prefix/label base with <c>A</c> characters to reach the target length.
+    /// </summary>
     private static string BuildLongIdentifier(string prefix, string label, int length)
     {
         var baseValue = $"{prefix}{label}";
@@ -250,8 +287,14 @@ internal sealed record ShorteningIdentifiers(
     }
 }
 
+/// <summary>
+/// Assertion helpers that validate expected identifier shortening across the derived relational model set.
+/// </summary>
 internal static class IdentifierShorteningAssertions
 {
+    /// <summary>
+    /// Asserts that all relevant identifiers in the derived model set are shortened as expected for the dialect.
+    /// </summary>
     public static void AssertShortened(ShorteningScenario scenario)
     {
         ArgumentNullException.ThrowIfNull(scenario);
@@ -362,12 +405,19 @@ internal static class IdentifierShorteningAssertions
     }
 }
 
+/// <summary>
+/// Fixture pass that injects long identifiers directly into the builder context so shortening behavior can be
+/// tested without depending on schema derivation specifics.
+/// </summary>
 internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
 {
     private readonly ResourceKeyEntry _resourceKey;
     private readonly ResourceKeyEntry _abstractKey;
     private readonly ShorteningIdentifiers _identifiers;
 
+    /// <summary>
+    /// Initializes a new fixture pass, resolving resource keys required for seeded model inventory.
+    /// </summary>
     public IdentifierShorteningFixturePass(
         EffectiveSchemaSet effectiveSchemaSet,
         ShorteningIdentifiers identifiers
@@ -389,6 +439,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
         _identifiers = identifiers;
     }
 
+    /// <summary>
+    /// Seeds the builder context with models and inventories that contain long identifiers.
+    /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -585,6 +638,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
         );
     }
 
+    /// <summary>
+    /// Updates the core project schema to use the seeded long schema identifier.
+    /// </summary>
     private void UpdateProjectSchema(RelationalModelSetBuilderContext context)
     {
         context.UpdateProjectSchema(

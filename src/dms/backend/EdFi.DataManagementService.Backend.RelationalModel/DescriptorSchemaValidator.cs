@@ -102,6 +102,9 @@ internal static class DescriptorSchemaValidator
         return new DescriptorValidationResult(errors.Count == 0, errors);
     }
 
+    /// <summary>
+    /// Validates that a required descriptor field exists and is declared as a JSON Schema string property.
+    /// </summary>
     private static void ValidateRequiredStringField(
         JsonObject properties,
         string fieldName,
@@ -122,6 +125,9 @@ internal static class DescriptorSchemaValidator
         }
     }
 
+    /// <summary>
+    /// Validates that an optional descriptor field, when present, is declared as a JSON Schema string property.
+    /// </summary>
     private static void ValidateOptionalStringField(
         JsonObject properties,
         string fieldName,
@@ -141,6 +147,9 @@ internal static class DescriptorSchemaValidator
         }
     }
 
+    /// <summary>
+    /// Validates that an optional descriptor field, when present, is declared as a JSON Schema date-formatted string.
+    /// </summary>
     private static void ValidateOptionalDateField(
         JsonObject properties,
         string fieldName,
@@ -169,6 +178,9 @@ internal static class DescriptorSchemaValidator
         }
     }
 
+    /// <summary>
+    /// Determines whether a property name is allowed in the descriptor schema's required field list.
+    /// </summary>
     private static bool IsAllowedRequiredField(string fieldName)
     {
         return fieldName switch

@@ -226,11 +226,17 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
         _exception!.Message.Should().Contain("PK_Collision");
     }
 
+    /// <summary>
+    /// Fixture pass that seeds two resources with primary key constraint names that shorten to the same value.
+    /// </summary>
     private sealed class PrimaryKeyIdentifierShorteningCollisionPass : IRelationalModelSetPass
     {
         private readonly ResourceKeyEntry _resourceOne;
         private readonly ResourceKeyEntry _resourceTwo;
 
+        /// <summary>
+        /// Initializes a new instance, resolving the resource keys required for seeding fixture models.
+        /// </summary>
         public PrimaryKeyIdentifierShorteningCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
         {
             _resourceOne = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
@@ -245,6 +251,9 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
             );
         }
 
+        /// <summary>
+        /// Adds two concrete resource models whose primary key names are designed to collide after shortening.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -265,6 +274,9 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
             );
         }
 
+        /// <summary>
+        /// Builds a minimal relational resource model with a table/key name designed for shortening collision.
+        /// </summary>
         private static RelationalResourceModel CreateModel(QualifiedResourceName resource, string tableName)
         {
             var schema = new DbSchemaName("edfi");
@@ -303,16 +315,31 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
         }
     }
 
+    /// <summary>
+    /// Dialect rules that force specific primary key names to shorten to a shared collision value.
+    /// </summary>
     private sealed class PrimaryKeyCollisionDialectRules : ISqlDialectRules
     {
         private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
 
+        /// <summary>
+        /// Gets the dialect for this fixture rules implementation.
+        /// </summary>
         public SqlDialect Dialect => SqlDialect.Pgsql;
 
+        /// <summary>
+        /// Gets the maximum identifier length for this fixture rules implementation.
+        /// </summary>
         public int MaxIdentifierLength => 63;
 
+        /// <summary>
+        /// Gets the scalar type defaults reused by this fixture rules implementation.
+        /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
+        /// <summary>
+        /// Shortens primary key identifiers to a fixed collision string to trigger a collision error.
+        /// </summary>
         public string ShortenIdentifier(string identifier)
         {
             return identifier.StartsWith("PK_LongSchool", StringComparison.Ordinal)
@@ -376,12 +403,18 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
         _exception!.Message.Should().Contain("UnionArmTableCollision");
     }
 
+    /// <summary>
+    /// Fixture pass that seeds an abstract union view with arms whose source tables collide after shortening.
+    /// </summary>
     private sealed class UnionArmSourceTableCollisionPass : IRelationalModelSetPass
     {
         private readonly ResourceKeyEntry _abstractResource;
         private readonly ResourceKeyEntry _memberAlpha;
         private readonly ResourceKeyEntry _memberBeta;
 
+        /// <summary>
+        /// Initializes a new instance, resolving resource keys for abstract and member resources.
+        /// </summary>
         public UnionArmSourceTableCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
         {
             ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
@@ -403,6 +436,9 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
             );
         }
 
+        /// <summary>
+        /// Adds an abstract union view whose arm source tables are designed to collide after shortening.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -446,22 +482,40 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
         }
     }
 
+    /// <summary>
+    /// Dialect rules that map specific union arm source table identifiers to a shared collision value.
+    /// </summary>
     private sealed class UnionArmCollisionDialectRules : ISqlDialectRules
     {
         private readonly IReadOnlyDictionary<string, string> _mapping;
         private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
 
+        /// <summary>
+        /// Initializes a new instance with a deterministic identifier mapping.
+        /// </summary>
         public UnionArmCollisionDialectRules(IReadOnlyDictionary<string, string> mapping)
         {
             _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         }
 
+        /// <summary>
+        /// Gets the dialect for this fixture rules implementation.
+        /// </summary>
         public SqlDialect Dialect => SqlDialect.Pgsql;
 
+        /// <summary>
+        /// Gets the maximum identifier length for this fixture rules implementation.
+        /// </summary>
         public int MaxIdentifierLength => 63;
 
+        /// <summary>
+        /// Gets the scalar type defaults reused by this fixture rules implementation.
+        /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
+        /// <summary>
+        /// Shortens identifiers by applying the configured mapping.
+        /// </summary>
         public string ShortenIdentifier(string identifier)
         {
             return _mapping.TryGetValue(identifier, out var updated) ? updated : identifier;
@@ -523,12 +577,18 @@ public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
         _exception!.Message.Should().Contain("UnionArmSourceColumnCollision");
     }
 
+    /// <summary>
+    /// Fixture pass that seeds an abstract union view with arms whose source columns collide after shortening.
+    /// </summary>
     private sealed class UnionArmSourceColumnCollisionPass : IRelationalModelSetPass
     {
         private readonly ResourceKeyEntry _abstractResource;
         private readonly ResourceKeyEntry _memberAlpha;
         private readonly ResourceKeyEntry _memberBeta;
 
+        /// <summary>
+        /// Initializes a new instance, resolving resource keys for abstract and member resources.
+        /// </summary>
         public UnionArmSourceColumnCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
         {
             ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
@@ -550,6 +610,9 @@ public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
             );
         }
 
+        /// <summary>
+        /// Adds an abstract union view whose arm source columns are designed to collide after shortening.
+        /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
             ArgumentNullException.ThrowIfNull(context);
@@ -598,22 +661,40 @@ public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
         }
     }
 
+    /// <summary>
+    /// Dialect rules that map specific union arm source column identifiers to a shared collision value.
+    /// </summary>
     private sealed class UnionArmColumnCollisionDialectRules : ISqlDialectRules
     {
         private readonly IReadOnlyDictionary<string, string> _mapping;
         private static readonly SqlScalarTypeDefaults Defaults = new PgsqlDialectRules().ScalarTypeDefaults;
 
+        /// <summary>
+        /// Initializes a new instance with a deterministic identifier mapping.
+        /// </summary>
         public UnionArmColumnCollisionDialectRules(IReadOnlyDictionary<string, string> mapping)
         {
             _mapping = mapping ?? throw new ArgumentNullException(nameof(mapping));
         }
 
+        /// <summary>
+        /// Gets the dialect for this fixture rules implementation.
+        /// </summary>
         public SqlDialect Dialect => SqlDialect.Pgsql;
 
+        /// <summary>
+        /// Gets the maximum identifier length for this fixture rules implementation.
+        /// </summary>
         public int MaxIdentifierLength => 63;
 
+        /// <summary>
+        /// Gets the scalar type defaults reused by this fixture rules implementation.
+        /// </summary>
         public SqlScalarTypeDefaults ScalarTypeDefaults => Defaults;
 
+        /// <summary>
+        /// Shortens identifiers by applying the configured mapping.
+        /// </summary>
         public string ShortenIdentifier(string identifier)
         {
             return _mapping.TryGetValue(identifier, out var updated) ? updated : identifier;

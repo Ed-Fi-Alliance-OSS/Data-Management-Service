@@ -73,10 +73,17 @@ public class Given_Mssql_Ddl_Emission_With_Reserved_Identifiers
     }
 }
 
+/// <summary>
+/// Assertion helpers for validating that dialect-specific DDL output quotes reserved identifiers.
+/// </summary>
 internal static class ReservedIdentifierAssertions
 {
     private const string Identifier = ReservedIdentifierFixture.Identifier;
 
+    /// <summary>
+    /// Asserts that the emitted DDL contains quoted occurrences of the reserved identifier for the given dialect
+    /// and that no unquoted occurrences remain.
+    /// </summary>
     public static void AssertQuotedIdentifiers(string sql, SqlDialect dialect)
     {
         var quoted = dialect == SqlDialect.Pgsql ? $"\"{Identifier}\"" : $"[{Identifier}]";
@@ -90,6 +97,9 @@ internal static class ReservedIdentifierAssertions
         AssertNoUnquotedIdentifier(sql, dialect);
     }
 
+    /// <summary>
+    /// Asserts that the emitted DDL contains no unquoted occurrences of the reserved identifier for the given dialect.
+    /// </summary>
     private static void AssertNoUnquotedIdentifier(string sql, SqlDialect dialect)
     {
         var pattern = dialect switch
@@ -103,10 +113,17 @@ internal static class ReservedIdentifierAssertions
     }
 }
 
+/// <summary>
+/// Builds a minimal derived model set containing reserved identifiers to validate quoting behavior.
+/// </summary>
 internal static class ReservedIdentifierFixture
 {
     public const string Identifier = "Select";
 
+    /// <summary>
+    /// Builds a minimal <see cref="DerivedRelationalModelSet"/> with schema, table, column, constraint, index,
+    /// and trigger names that use a reserved identifier.
+    /// </summary>
     public static DerivedRelationalModelSet Build(SqlDialect dialect)
     {
         var schema = new DbSchemaName(Identifier);

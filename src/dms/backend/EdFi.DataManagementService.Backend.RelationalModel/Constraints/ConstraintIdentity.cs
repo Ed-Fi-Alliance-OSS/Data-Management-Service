@@ -292,6 +292,9 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
         return columns.Count == 0 ? Array.Empty<DbColumnName>() : columns.ToArray();
     }
 
+    /// <summary>
+    /// Returns the required foreign key target table, throwing when the identity is missing target metadata.
+    /// </summary>
     private DbTableName GetRequiredForeignKeyTargetTable()
     {
         if (TargetTable is not null)

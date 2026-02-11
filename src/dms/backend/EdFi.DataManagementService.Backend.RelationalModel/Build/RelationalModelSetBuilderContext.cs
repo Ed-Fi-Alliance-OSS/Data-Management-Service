@@ -671,6 +671,9 @@ public sealed class RelationalModelSetBuilderContext
         }
     }
 
+    /// <summary>
+    /// Builds the uniqueness key used to detect index-name collisions based on dialect scoping rules.
+    /// </summary>
     private NamedObjectKey BuildIndexUniquenessKey(DbIndexInfo index)
     {
         var schema = index.Table.Schema.Value;
@@ -684,6 +687,9 @@ public sealed class RelationalModelSetBuilderContext
         };
     }
 
+    /// <summary>
+    /// Builds the uniqueness key used to detect trigger-name collisions based on dialect scoping rules.
+    /// </summary>
     private NamedObjectKey BuildTriggerUniquenessKey(DbTriggerInfo trigger)
     {
         var schema = trigger.Table.Schema.Value;
@@ -944,6 +950,9 @@ public sealed class RelationalModelSetBuilderContext
         );
     }
 
+    /// <summary>
+    /// Updates cached extension-project key lookups when a project schema entry is replaced in the builder context.
+    /// </summary>
     private void UpdateExtensionProjectCache(ProjectSchemaInfo current, ProjectSchemaInfo updated)
     {
         if (ReferenceEquals(current, updated) || _extensionProjectsByKey.Count == 0)

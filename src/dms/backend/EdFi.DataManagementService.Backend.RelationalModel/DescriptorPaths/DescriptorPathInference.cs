@@ -390,6 +390,10 @@ internal static class DescriptorPathInference
         return true;
     }
 
+    /// <summary>
+    /// Creates a standardized exception when the same descriptor path is inferred to map to different descriptor
+    /// resources.
+    /// </summary>
     private static InvalidOperationException CreateDescriptorPathConflictException(
         JsonPathExpression path,
         QualifiedResourceName existingDescriptorResource,

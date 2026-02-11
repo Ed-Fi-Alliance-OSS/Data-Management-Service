@@ -65,6 +65,9 @@ public class Given_A_RootTableNameOverride_Collision_Between_Root_Tables
         _reverseOrderException!.Message.Should().Be(_exception!.Message);
     }
 
+    /// <summary>
+    /// Builds and returns the exception thrown when deriving a model set for the specified collision fixture.
+    /// </summary>
     private static Exception? BuildCollisionException(string fixtureName, bool reverseResourceOrder)
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixture(
@@ -142,6 +145,9 @@ public class Given_A_RootTableNameOverride_Collision_With_A_Child_Table
         _reverseOrderException!.Message.Should().Be(_exception!.Message);
     }
 
+    /// <summary>
+    /// Builds and returns the exception thrown when deriving a model set for the specified collision fixture.
+    /// </summary>
     private static Exception? BuildCollisionException(string fixtureName, bool reverseResourceOrder)
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSetFromFixture(
