@@ -162,5 +162,55 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Correctness",
+    "description": "Make `isSubclass` handling consistent across validation and abstract-identity/union-view derivation. Acceptance: (1) `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` treats a missing `isSubclass` property as `false` (skip), matching `RelationalModelSetValidation` behavior; (2) when present, `isSubclass` must be a boolean and non-boolean values still fail fast with an actionable error; (3) add a focused unit test that builds an effective schema set where a resource schema omits `isSubclass` and asserts derivation does not throw and does not treat the resource as a subclass member.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Remove duplicated `superclassIdentityJsonPath` invariant enforcement in abstract identity/view derivation and rely on centralized validation. Acceptance: (1) invariant checks live in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Validation/RelationalModelSetValidation.cs` only (e.g., `ValidateSubclassSuperclassIdentityJsonPathMappings`), (2) `MapIdentityPathForMember` in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/AbstractIdentityTableDerivationPass.cs` performs mapping only and does not duplicate invariant checks that are already centrally validated, (3) existing failing scenarios (e.g., mismatched `superclassIdentityJsonPath`, wrong `identityJsonPaths` count) still fail fast with resource-qualified error messages, with unit tests updated as needed to assert the new failure location/message.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Pre-index concrete subclass metadata by abstract superclass to avoid repeated full scans during abstract identity/view derivation. Acceptance: (1) `AbstractIdentityTableDerivationPass` no longer filters `concreteMetadataByResource.Values` for each abstract resource; instead it builds a lookup keyed by abstract `QualifiedResourceName` (superclass) and reads members in O(1), (2) `ConcreteResourceMetadata` only retains fields that are actually required for derivation (remove dead fields introduced solely for filtering), (3) behavior remains identical: deterministic arm ordering, duplicate member `ResourceName` fail-fast, and correct `superclassIdentityJsonPath` mapping.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Simplify required superclass metadata reads in `AbstractIdentityTableDerivationPass`. Acceptance: (1) for subclass resources, required properties like `superclassProjectName` and `superclassResourceName` are read using shared required-node helpers (e.g., `RequireString`) rather than optional reads followed by redundant whitespace checks, (2) any failure still includes the offending resource identity in the error message to remain actionable, and (3) no behavior regressions in existing unit tests.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Tests",
+    "description": "Add explicit unit coverage for the fail-fast case where an abstract resource has zero concrete members. Acceptance: add a focused test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/AbstractIdentityTableDerivationTests.cs` that defines `projectSchema.abstractResources` but no `isSubclass=true` concrete resource schemas referencing that abstract resource, and assert derivation throws `InvalidOperationException` containing `has no concrete members` and the qualified abstract resource label.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Scope",
+    "description": "Remove SQL emission (DDL) changes for abstract union views from the DMS-933 change set; DDL emission belongs to `reference/design/backend-redesign/epics/02-ddl-emission/02-project-and-resource-ddl.md` (DMS-938). Acceptance: (1) `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs` no longer emits abstract union views, (2) `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/RelationalModelDdlEmitterAbstractUnionViewTests.cs` is removed or moved to the DMS-938 workstream, (3) the relational model contract still contains all data needed for later deterministic view emission without consulting ApiSchema: `AbstractUnionViewInfo.ViewName`, ordered output columns with canonical `RelationalScalarType`, and ordered arms with `FromTable` plus projection AST (`SourceColumn`/`StringLiteral`), and (4) all remaining builds/tests pass.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
