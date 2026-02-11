@@ -24,7 +24,7 @@ The legacy Ed-Fi ODS solves this by physically unifying the overlapping key-part
 
 The ODS also demonstrates an important edge case: optional references that share a unified key-part (e.g., a single `SchoolYear` column participating in multiple reference groups). This is exactly where “all-or-none” nullability becomes tricky if key-parts are physically shared.
 
-### 2) Naive DB enforcement can break (PostgreSQL + cascades)
+### 2) Naive DB enforcement will break (PostgreSQL + cascades)
 
 A tempting “DB guardrail” is a row-local equality CHECK (e.g., `CHECK (colA = colB)`). In PostgreSQL, that pattern is incompatible with `ON UPDATE CASCADE` when the two columns can be updated by different FK cascades:
 
@@ -45,11 +45,11 @@ PostgreSQL executes cascades as separate UPDATE statements (one per FK). CHECK c
 
 ### 3) SQL Server has different constraints (no deferral + cascade-path limits)
 
-SQL Server does not offer a PostgreSQL-style “defer validation to end-of-transaction” mechanism for constraints/triggers. It also rejects schemas with “multiple cascade paths” (error 1785), which means some cascade graphs we would need cannot be expressed declaratively and require trigger/procedural fallback. Any key-unification enforcement must keep the table consistent after each statement.
+SQL Server does not offer a PostgreSQL-style “defer validation to end-of-transaction” mechanism for constraints/triggers. It also rejects schemas with “multiple cascade paths”. If we don't unify columns, some cascade graphs will fail on FK create, requiring a trigger/procedural fallback to provide key-unification enforcement.
 
 ## Three solution options
 
-### Option 1: Trigger-based enforcement (dialect-specific)
+### Option 1: Trigger-based enforcement (different per dialect)
 
 **PostgreSQL approach: deferred, final-state validation triggers**
 
@@ -72,7 +72,6 @@ SQL Server does not offer a PostgreSQL-style “defer validation to end-of-trans
 **Cons**
 - Trigger overhead on write paths (especially in PostgreSQL if implemented row-by-row with extra lookups).
 - Two implementations to maintain (PostgreSQL vs SQL Server).
-- Only covers equalityConstraints that bind to columns on the same table; cross-table equality still needs application enforcement or heavier DB logic.
 
 ### Option 2: ODS-style physical key-part unification
 
@@ -118,7 +117,7 @@ The computed/generated per-site alias columns above are therefore intentionally 
 **Pros**
 - Single source of truth: DB-level drift between duplicated identity parts becomes impossible.
 - Compatible with PostgreSQL cascade semantics (no equality CHECK needed across two writable columns).
-- Preserves per-reference column names for mapping/diagnostics while keeping storage canonical.
+- Preserves per-reference column names for queries and reconstitution while keeping storage canonical.
 - Can preserve optional-reference presence semantics by gating aliases with `..._DocumentId` as shown.
 
 **Cons**
@@ -129,5 +128,3 @@ The computed/generated per-site alias columns above are therefore intentionally 
 ## Recommendation
 
 Adopt **Option 3 (canonical physical columns + computed/persisted aliases)** as the default DB-level strategy for key unification **when both equality paths bind to the same table**. It provides a DB-enforced single source of truth while preserving the redesign’s per-reference-site “shape” for mapping and diagnostics, and it avoids PostgreSQL’s cascade-vs-CHECK incompatibility.
-
-Use **Option 1 (triggers)** as a targeted fallback where canonicalization cannot preserve optional-reference semantics cleanly, and retain request-level validation for better error messages and for equalityConstraints that span multiple tables.
