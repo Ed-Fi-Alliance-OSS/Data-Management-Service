@@ -31,7 +31,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
-    internal static readonly DbSchemaName _dmsSchema = new("dms");
+    private static readonly DbSchemaName _dmsSchema = new("dms");
     private static readonly DbTableName _descriptorTable = new(_dmsSchema, "Descriptor");
     private static readonly DbTableName _documentTable = new(_dmsSchema, "Document");
     private static readonly DbTableName _documentCacheTable = new(_dmsSchema, "DocumentCache");

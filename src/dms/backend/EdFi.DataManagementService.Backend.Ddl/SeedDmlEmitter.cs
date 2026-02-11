@@ -214,7 +214,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                             var rk = resourceKeys[i];
                             var comma = i < resourceKeys.Count - 1 ? "," : "";
                             writer.AppendLine(
-                                $"({rk.ResourceKeyId}::smallint, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
+                                $"({_dialect.RenderSmallintLiteral(rk.ResourceKeyId)}::smallint, {_dialect.RenderStringLiteral(rk.Resource.ProjectName)}, {_dialect.RenderStringLiteral(rk.Resource.ResourceName)}, {_dialect.RenderStringLiteral(rk.ResourceVersion)}){comma}"
                             );
                         }
                     }
@@ -247,10 +247,15 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             // Count check
             writer.AppendLine($"SELECT @actual_count = COUNT(*) FROM {table};");
             writer.AppendLine($"IF @actual_count <> {expectedCount}");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"THROW 50000, N'dms.ResourceKey count mismatch', 1;");
+                writer.AppendLine(
+                    $"DECLARE @rk_count_msg nvarchar(200) = CONCAT(N'dms.ResourceKey count mismatch: expected {expectedCount}, found ', CAST(@actual_count AS nvarchar(10)));"
+                );
+                writer.AppendLine("THROW 50000, @rk_count_msg, 1;");
             }
+            writer.AppendLine("END");
             writer.AppendLine();
 
             // Content check
@@ -281,10 +286,15 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             }
             writer.AppendLine(");");
             writer.AppendLine("IF @mismatched_count > 0");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"THROW 50000, N'dms.ResourceKey contents mismatch', 1;");
+                writer.AppendLine(
+                    "DECLARE @rk_content_msg nvarchar(200) = CONCAT(N'dms.ResourceKey contents mismatch: ', CAST(@mismatched_count AS nvarchar(10)), N' unexpected or modified rows');"
+                );
+                writer.AppendLine("THROW 50000, @rk_content_msg, 1;");
             }
+            writer.AppendLine("END");
         }
         writer.AppendLine();
     }
@@ -341,12 +351,12 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
         string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_schemaComponentTable);
+        var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
 
         writer.AppendLine("-- SchemaComponent seed inserts (insert-if-missing)");
 
         foreach (var sc in schemaComponents)
         {
-            var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
             var endpointLiteral = _dialect.RenderStringLiteral(sc.ProjectEndpointName);
             var projectLiteral = _dialect.RenderStringLiteral(sc.ProjectName);
             var versionLiteral = _dialect.RenderStringLiteral(sc.ProjectVersion);
@@ -481,10 +491,15 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 $"SELECT @sc_actual_count = COUNT(*) FROM {table} WHERE {Q("EffectiveSchemaHash")} = {hashLiteral};"
             );
             writer.AppendLine($"IF @sc_actual_count <> {expectedCount}");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"THROW 50000, N'dms.SchemaComponent count mismatch', 1;");
+                writer.AppendLine(
+                    $"DECLARE @sc_count_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent count mismatch: expected {expectedCount}, found ', CAST(@sc_actual_count AS nvarchar(10)));"
+                );
+                writer.AppendLine("THROW 50000, @sc_count_msg, 1;");
             }
+            writer.AppendLine("END");
             writer.AppendLine();
 
             // Content check
@@ -518,10 +533,15 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             }
             writer.AppendLine(");");
             writer.AppendLine("IF @sc_mismatched_count > 0");
+            writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
-                writer.AppendLine($"THROW 50000, N'dms.SchemaComponent contents mismatch', 1;");
+                writer.AppendLine(
+                    "DECLARE @sc_content_msg nvarchar(200) = CONCAT(N'dms.SchemaComponent contents mismatch: ', CAST(@sc_mismatched_count AS nvarchar(10)), N' unexpected or modified rows');"
+                );
+                writer.AppendLine("THROW 50000, @sc_content_msg, 1;");
             }
+            writer.AppendLine("END");
         }
         writer.AppendLine();
     }

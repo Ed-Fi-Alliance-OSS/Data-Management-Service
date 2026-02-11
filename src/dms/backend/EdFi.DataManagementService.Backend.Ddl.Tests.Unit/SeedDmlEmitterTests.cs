@@ -402,8 +402,15 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     [Test]
     public void It_should_emit_resource_key_validation_block()
     {
-        _ddl.Should().Contain("dms.ResourceKey count mismatch");
-        _ddl.Should().Contain("dms.ResourceKey contents mismatch");
+        _ddl.Should().Contain("dms.ResourceKey count mismatch: expected 3, found");
+        _ddl.Should().Contain("dms.ResourceKey contents mismatch:");
+    }
+
+    [Test]
+    public void It_should_wrap_mssql_validation_throws_in_begin_end()
+    {
+        _ddl.Should().Contain("BEGIN");
+        _ddl.Should().Contain("END");
     }
 
     [Test]
@@ -428,8 +435,8 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     [Test]
     public void It_should_emit_schema_component_validation_block()
     {
-        _ddl.Should().Contain("dms.SchemaComponent count mismatch");
-        _ddl.Should().Contain("dms.SchemaComponent contents mismatch");
+        _ddl.Should().Contain("dms.SchemaComponent count mismatch: expected 2, found");
+        _ddl.Should().Contain("dms.SchemaComponent contents mismatch:");
     }
 
     [Test]
