@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
@@ -308,7 +307,7 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             }
 
             var identityColumn = new DbColumnModel(
-                BuildColumnName(identityPath),
+                new DbColumnName(BuildIdentityPartBaseName(identityPath)),
                 signature.Kind,
                 signature.ScalarType,
                 IsNullable: false,
@@ -766,45 +765,6 @@ public sealed class AbstractIdentityTableDerivationPass : IRelationalModelSetPas
             SourceJsonPath: null,
             TargetResource: null
         );
-    }
-
-    /// <summary>
-    /// Builds a deterministic physical column name from an identity JSONPath by PascalCasing its property
-    /// segments.
-    /// </summary>
-    private static DbColumnName BuildColumnName(JsonPathExpression identityPath)
-    {
-        List<string> segments = [];
-
-        foreach (var segment in identityPath.Segments)
-        {
-            switch (segment)
-            {
-                case JsonPathSegment.Property property:
-                    segments.Add(property.Name);
-                    break;
-                case JsonPathSegment.AnyArrayElement:
-                    throw new InvalidOperationException(
-                        $"Identity path '{identityPath.Canonical}' must not include array segments."
-                    );
-            }
-        }
-
-        if (segments.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Identity path '{identityPath.Canonical}' must include at least one property segment."
-            );
-        }
-
-        StringBuilder builder = new();
-
-        foreach (var segment in segments)
-        {
-            builder.Append(RelationalNameConventions.ToPascalCase(segment));
-        }
-
-        return new DbColumnName(builder.ToString());
     }
 
     /// <summary>
