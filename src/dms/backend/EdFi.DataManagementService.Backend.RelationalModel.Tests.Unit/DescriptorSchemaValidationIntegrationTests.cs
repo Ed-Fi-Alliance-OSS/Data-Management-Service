@@ -68,12 +68,21 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_Namespa
 
         var project = new EffectiveProjectSchema("ed-fi", "Ed-Fi", "5.0.0", false, projectSchema);
 
-        var schemaComponents = new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+        var schemaComponents = new[]
+        {
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+        };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,
@@ -176,12 +185,21 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Missing_CodeVal
 
         var project = new EffectiveProjectSchema("ed-fi", "Ed-Fi", "5.0.0", false, projectSchema);
 
-        var schemaComponents = new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+        var schemaComponents = new[]
+        {
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+        };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,
@@ -292,12 +310,21 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Extra_Required_
 
         var project = new EffectiveProjectSchema("ed-fi", "Ed-Fi", "5.0.0", false, projectSchema);
 
-        var schemaComponents = new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+        var schemaComponents = new[]
+        {
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+        };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,
@@ -409,12 +436,21 @@ public class Given_An_EffectiveSchemaSet_With_Invalid_Descriptor_Wrong_Type
 
         var project = new EffectiveProjectSchema("ed-fi", "Ed-Fi", "5.0.0", false, projectSchema);
 
-        var schemaComponents = new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+        var schemaComponents = new[]
+        {
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+        };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             1,
             new byte[] { 0x01 },
             schemaComponents,

@@ -363,8 +363,20 @@ public class Given_An_EffectiveSchemaInfo_With_Extra_SchemaComponents
         var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
         var extraComponents = new[]
         {
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
-            new SchemaComponentInfo("tpdm", "TPDM", "1.0.0", true),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+            new SchemaComponentInfo(
+                "tpdm",
+                "TPDM",
+                "1.0.0",
+                true,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
         };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
             projectSchema,
@@ -414,8 +426,20 @@ public class Given_An_EffectiveSchemaInfo_With_Duplicate_SchemaComponents
         var resourceKeys = new[] { EffectiveSchemaFixture.CreateResourceKey(1, "Ed-Fi", "School") };
         var duplicateComponents = new[]
         {
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
         };
         var effectiveSchemaSet = EffectiveSchemaFixture.CreateEffectiveSchemaSet(
             projectSchema,
@@ -477,14 +501,26 @@ public class Given_An_EffectiveSchemaInfo_With_Out_Of_Order_SchemaComponents
 
         var schemaComponents = new[]
         {
-            new SchemaComponentInfo("tpdm", "TPDM", "1.0.0", true),
-            new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false),
+            new SchemaComponentInfo(
+                "tpdm",
+                "TPDM",
+                "1.0.0",
+                true,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
+            new SchemaComponentInfo(
+                "ed-fi",
+                "Ed-Fi",
+                "5.0.0",
+                false,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+            ),
         };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             resourceKeys.Length,
             new byte[] { 0x01 },
             schemaComponents,
@@ -533,12 +569,22 @@ internal static class EffectiveSchemaFixture
     )
     {
         var schemaComponents =
-            schemaComponentsOverride ?? new[] { new SchemaComponentInfo("ed-fi", "Ed-Fi", "5.0.0", false) };
+            schemaComponentsOverride
+            ?? new[]
+            {
+                new SchemaComponentInfo(
+                    "ed-fi",
+                    "Ed-Fi",
+                    "5.0.0",
+                    false,
+                    "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                ),
+            };
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             ApiSchemaFormatVersion: "1.0.0",
             RelationalMappingVersion: "1.0.0",
-            EffectiveSchemaHash: "deadbeef",
+            EffectiveSchemaHash: "edf1edf1",
             ResourceKeyCount: resourceKeyCountOverride ?? resourceKeys.Count,
             ResourceKeySeedHash: new byte[] { 0x01 },
             SchemaComponentsInEndpointOrder: schemaComponents,

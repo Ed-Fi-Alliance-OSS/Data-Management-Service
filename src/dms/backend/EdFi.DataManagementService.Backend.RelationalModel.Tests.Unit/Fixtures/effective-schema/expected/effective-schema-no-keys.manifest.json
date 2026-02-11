@@ -1,0 +1,23 @@
+{
+  "api_schema_format_version": "1.0.0",
+  "relational_mapping_version": "1.0.0",
+  "effective_schema_hash": "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789",
+  "resource_key_count": 3,
+  "resource_key_seed_hash": "0123456789abcdeffedcba98765432100123456789abcdeffedcba9876543210",
+  "schema_components": [
+    {
+      "project_endpoint_name": "ed-fi",
+      "project_name": "Ed-Fi",
+      "project_version": "5.2.0",
+      "is_extension_project": false,
+      "project_hash": "aa11bb22cc33dd44ee55ff6677889900aa11bb22cc33dd44ee55ff6677889900"
+    },
+    {
+      "project_endpoint_name": "tpdm",
+      "project_name": "TPDM",
+      "project_version": "1.0.0",
+      "is_extension_project": true,
+      "project_hash": "1122334455667788990011223344556677889900aabbccddeeff0011aabbccdd"
+    }
+  ]
+}

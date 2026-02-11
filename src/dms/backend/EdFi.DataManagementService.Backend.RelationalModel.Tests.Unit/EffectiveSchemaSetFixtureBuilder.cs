@@ -17,7 +17,7 @@ internal static class EffectiveSchemaSetFixtureBuilder
 {
     private const string DefaultApiSchemaFormatVersion = "1.0.0";
     private const string DefaultRelationalMappingVersion = "1.0.0";
-    private const string DefaultEffectiveSchemaHash = "deadbeef";
+    private const string DefaultEffectiveSchemaHash = "edf1edf1";
     private static readonly byte[] DefaultResourceKeySeedHash = { 0x01 };
 
     /// <summary>
@@ -103,7 +103,8 @@ internal static class EffectiveSchemaSetFixtureBuilder
                 project.ProjectEndpointName,
                 project.ProjectName,
                 project.ProjectVersion,
-                project.IsExtensionProject
+                project.IsExtensionProject,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ))
             .ToArray();
 

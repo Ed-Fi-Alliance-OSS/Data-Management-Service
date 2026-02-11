@@ -740,14 +740,15 @@ internal static class ExtensionProjectKeyFixture
                 project.ProjectEndpointName,
                 project.ProjectName,
                 project.ProjectVersion,
-                project.IsExtensionProject
+                project.IsExtensionProject,
+                "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
             ))
             .ToArray();
 
         var effectiveSchemaInfo = new EffectiveSchemaInfo(
             "1.0.0",
             "1.0.0",
-            "deadbeef",
+            "edf1edf1",
             resourceKeys.Count,
             new byte[] { 0x01 },
             schemaComponents,
