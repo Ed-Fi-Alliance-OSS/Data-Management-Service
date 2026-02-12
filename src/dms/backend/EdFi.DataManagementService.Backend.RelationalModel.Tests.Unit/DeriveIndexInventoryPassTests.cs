@@ -263,6 +263,144 @@ public class Given_Descriptor_Resources_For_Index_Derivation
 }
 
 /// <summary>
+/// Test fixture for extension table index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Extension_Table_Indexes
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = IndexInventoryTestSchemaBuilder.BuildExtensionCoreProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var extensionProjectSchema = IndexInventoryTestSchemaBuilder.BuildExtensionProjectSchema();
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionProjectSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            new[] { coreProject, extensionProject }
+        );
+        var builder = new DerivedRelationalModelSetBuilder(
+            IndexInventoryTestSchemaBuilder.BuildPassesThroughIndexDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _indexes = result.IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive PK index for extension table.
+    /// </summary>
+    [Test]
+    public void It_should_derive_PK_index_for_extension_table()
+    {
+        var extensionPkIndexes = _indexes.Where(index =>
+            index.Table.Name == "ContactExtension" && index.Kind == DbIndexKind.PrimaryKey
+        );
+
+        extensionPkIndexes.Should().ContainSingle();
+        var pk = extensionPkIndexes.Single();
+        pk.IsUnique.Should().BeTrue();
+        pk.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
+    }
+
+    /// <summary>
+    /// It should suppress FK support index when extension FK covered by PK.
+    /// </summary>
+    [Test]
+    public void It_should_suppress_FK_support_index_when_extension_FK_covered_by_PK()
+    {
+        var extensionFkIndexes = _indexes.Where(index =>
+            index.Table.Name == "ContactExtension"
+            && index.Kind == DbIndexKind.ForeignKeySupport
+            && index.KeyColumns.Count == 1
+            && index.KeyColumns[0].Value == "DocumentId"
+        );
+
+        extensionFkIndexes.Should().BeEmpty("FK on DocumentId is covered by PK on DocumentId");
+    }
+
+    /// <summary>
+    /// It should name extension PK index correctly.
+    /// </summary>
+    [Test]
+    public void It_should_name_extension_PK_index_correctly()
+    {
+        var extensionPk = _indexes.Single(index =>
+            index.Table.Name == "ContactExtension" && index.Kind == DbIndexKind.PrimaryKey
+        );
+
+        extensionPk.Name.Value.Should().StartWith("PK_ContactExtension");
+    }
+}
+
+/// <summary>
+/// Test fixture for long index name validation.
+/// </summary>
+[TestFixture]
+public class Given_Long_Index_Names_After_Derivation
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = IndexInventoryTestSchemaBuilder.BuildLongNameResourceProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            IndexInventoryTestSchemaBuilder.BuildPassesThroughIndexDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _indexes = result.IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should complete derivation without name collision.
+    /// </summary>
+    [Test]
+    public void It_should_complete_derivation_without_name_collision()
+    {
+        _indexes.Should().NotBeEmpty();
+    }
+
+    /// <summary>
+    /// It should produce FK support index with long name.
+    /// </summary>
+    [Test]
+    public void It_should_produce_FK_support_index_with_long_name()
+    {
+        var fkIndexes = _indexes.Where(index =>
+            index.Table.Name == "StudentEducationOrganizationAssociation"
+            && index.Kind == DbIndexKind.ForeignKeySupport
+        );
+
+        fkIndexes.Should().NotBeEmpty();
+        fkIndexes
+            .Should()
+            .AllSatisfy(index =>
+                index.Name.Value.Should().StartWith("IX_StudentEducationOrganizationAssociation_")
+            );
+    }
+}
+
+/// <summary>
 /// Test schema builder for index inventory pass tests.
 /// </summary>
 internal static class IndexInventoryTestSchemaBuilder
@@ -338,6 +476,54 @@ internal static class IndexInventoryTestSchemaBuilder
             ["projectEndpointName"] = "ed-fi",
             ["projectVersion"] = "1.0.0",
             ["resourceSchemas"] = new JsonObject { ["gradeLevelDescriptors"] = BuildDescriptorSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build core project schema for extension index testing.
+    /// </summary>
+    internal static JsonObject BuildExtensionCoreProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["contacts"] = BuildContactSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build extension project schema for extension index testing.
+    /// </summary>
+    internal static JsonObject BuildExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["contacts"] = BuildContactExtensionSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build project schema with long resource name and references.
+    /// </summary>
+    internal static JsonObject BuildLongNameResourceProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["studentEducationOrganizationAssociations"] =
+                    BuildStudentEducationOrganizationAssociationSchema(),
+                ["schools"] = BuildSchoolSchema(),
+                ["students"] = BuildStudentSchema(),
+            },
         };
     }
 
@@ -536,6 +722,157 @@ internal static class IndexInventoryTestSchemaBuilder
             ["arrayUniquenessConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildContactSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["contactUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+            },
+            ["required"] = new JsonArray("contactUniqueId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Contact",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.contactUniqueId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["ContactUniqueId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.contactUniqueId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildContactExtensionSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["_ext"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["sample"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["nickname"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Contact",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildStudentEducationOrganizationAssociationSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["educationOrganizationReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                    },
+                },
+                ["studentReference"] = new JsonObject
+                {
+                    ["type"] = "object",
+                    ["properties"] = new JsonObject
+                    {
+                        ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                    },
+                },
+            },
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "StudentEducationOrganizationAssociation",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.educationOrganizationReference.educationOrganizationId",
+                "$.studentReference.studentUniqueId",
+            },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "School",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.schoolId",
+                            ["referenceJsonPath"] =
+                                "$.educationOrganizationReference.educationOrganizationId",
+                        },
+                    },
+                },
+                ["Student"] = new JsonObject
+                {
+                    ["isReference"] = true,
+                    ["isDescriptor"] = false,
+                    ["isRequired"] = true,
+                    ["projectName"] = "Ed-Fi",
+                    ["resourceName"] = "Student",
+                    ["referenceJsonPaths"] = new JsonArray
+                    {
+                        new JsonObject
+                        {
+                            ["identityJsonPath"] = "$.studentUniqueId",
+                            ["referenceJsonPath"] = "$.studentReference.studentUniqueId",
+                        },
+                    },
+                },
+            },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }

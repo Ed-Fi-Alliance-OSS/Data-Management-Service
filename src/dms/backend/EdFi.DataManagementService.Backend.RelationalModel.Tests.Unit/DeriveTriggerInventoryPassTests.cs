@@ -287,6 +287,226 @@ public class Given_IdentityPropagationFallback_Stub
 }
 
 /// <summary>
+/// Test fixture for three-level nested collection trigger derivation.
+/// </summary>
+[TestFixture]
+public class Given_Three_Level_Nested_Collections
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = TriggerInventoryTestSchemaBuilder.BuildThreeLevelNestedProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should create DocumentStamping trigger for grandchild table.
+    /// </summary>
+    [Test]
+    public void It_should_create_DocumentStamping_trigger_for_grandchild_table()
+    {
+        var grandchildStamp = _triggers.SingleOrDefault(t =>
+            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        grandchildStamp.Should().NotBeNull();
+        grandchildStamp!.Name.Value.Should().Be("TR_SchoolAddressPeriod_Stamp");
+    }
+
+    /// <summary>
+    /// It should use root document ID as KeyColumns on grandchild table.
+    /// </summary>
+    [Test]
+    public void It_should_use_root_document_ID_as_KeyColumns_on_grandchild_table()
+    {
+        var grandchildStamp = _triggers.Single(t =>
+            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        grandchildStamp.KeyColumns.Should().ContainSingle();
+        grandchildStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
+    }
+
+    /// <summary>
+    /// It should have empty identity projection columns on grandchild table.
+    /// </summary>
+    [Test]
+    public void It_should_have_empty_identity_projection_columns_on_grandchild_table()
+    {
+        var grandchildStamp = _triggers.Single(t =>
+            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        grandchildStamp.IdentityProjectionColumns.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// It should create DocumentStamping triggers for all three levels.
+    /// </summary>
+    [Test]
+    public void It_should_create_DocumentStamping_triggers_for_all_three_levels()
+    {
+        var stampTriggers = _triggers.Where(t => t.Kind == DbTriggerKind.DocumentStamping);
+
+        stampTriggers.Should().HaveCount(3);
+    }
+
+    /// <summary>
+    /// It should use same root document ID column across all child levels.
+    /// </summary>
+    [Test]
+    public void It_should_use_same_root_document_ID_column_across_all_child_levels()
+    {
+        var childStamp = _triggers.Single(t =>
+            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+        var grandchildStamp = _triggers.Single(t =>
+            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        childStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
+        grandchildStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture for multiple sibling collection trigger derivation.
+/// </summary>
+[TestFixture]
+public class Given_Multiple_Sibling_Collections
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = TriggerInventoryTestSchemaBuilder.BuildSiblingCollectionsProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should create DocumentStamping trigger for each sibling collection.
+    /// </summary>
+    [Test]
+    public void It_should_create_DocumentStamping_trigger_for_each_sibling_collection()
+    {
+        var addressStamp = _triggers.SingleOrDefault(t =>
+            t.Table.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+        var telephoneStamp = _triggers.SingleOrDefault(t =>
+            t.Table.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        addressStamp.Should().NotBeNull();
+        telephoneStamp.Should().NotBeNull();
+    }
+
+    /// <summary>
+    /// It should produce distinct trigger names for sibling tables.
+    /// </summary>
+    [Test]
+    public void It_should_produce_distinct_trigger_names_for_sibling_tables()
+    {
+        var addressStamp = _triggers.Single(t =>
+            t.Table.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+        var telephoneStamp = _triggers.Single(t =>
+            t.Table.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        addressStamp.Name.Value.Should().Be("TR_StudentAddress_Stamp");
+        telephoneStamp.Name.Value.Should().Be("TR_StudentTelephone_Stamp");
+    }
+
+    /// <summary>
+    /// It should create three DocumentStamping triggers total.
+    /// </summary>
+    [Test]
+    public void It_should_create_three_DocumentStamping_triggers_total()
+    {
+        var stampTriggers = _triggers.Where(t => t.Kind == DbTriggerKind.DocumentStamping);
+
+        stampTriggers.Should().HaveCount(3);
+    }
+}
+
+/// <summary>
+/// Test fixture for deterministic trigger ordering.
+/// </summary>
+[TestFixture]
+public class Given_Deterministic_Trigger_Ordering
+{
+    private IReadOnlyList<DbTriggerInfo> _triggersFirst = default!;
+    private IReadOnlyList<DbTriggerInfo> _triggersSecond = default!;
+
+    /// <summary>
+    /// Sets up the test fixture by running the pipeline twice.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        _triggersFirst = BuildTriggers();
+        _triggersSecond = BuildTriggers();
+    }
+
+    private static IReadOnlyList<DbTriggerInfo> BuildTriggers()
+    {
+        var coreProjectSchema = TriggerInventoryTestSchemaBuilder.BuildCompositeProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        return result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should produce identical trigger sequence on repeated builds.
+    /// </summary>
+    [Test]
+    public void It_should_produce_identical_trigger_sequence_on_repeated_builds()
+    {
+        var firstSequence = _triggersFirst.Select(t => (t.Table.Name, t.Name.Value, t.Kind)).ToList();
+        var secondSequence = _triggersSecond.Select(t => (t.Table.Name, t.Name.Value, t.Kind)).ToList();
+
+        firstSequence.Should().Equal(secondSequence);
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
@@ -372,6 +592,37 @@ internal static class TriggerInventoryTestSchemaBuilder
             ["projectEndpointName"] = "ed-fi",
             ["projectVersion"] = "1.0.0",
             ["resourceSchemas"] = new JsonObject { ["gradeLevelDescriptors"] = BuildDescriptorSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build project schema with three-level nested collections (School not a subclass).
+    /// </summary>
+    internal static JsonObject BuildThreeLevelNestedProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject { ["schools"] = BuildSchoolWithAddressPeriodsSchema() },
+        };
+    }
+
+    /// <summary>
+    /// Build project schema with sibling collections.
+    /// </summary>
+    internal static JsonObject BuildSiblingCollectionsProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["students"] = BuildStudentWithSiblingCollectionsSchema(),
+            },
         };
     }
 
@@ -522,6 +773,132 @@ internal static class TriggerInventoryTestSchemaBuilder
             ["arrayUniquenessConstraints"] = new JsonArray(),
             ["identityJsonPaths"] = new JsonArray(),
             ["documentPathsMapping"] = new JsonObject(),
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildSchoolWithAddressPeriodsSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["educationOrganizationId"] = new JsonObject { ["type"] = "integer" },
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["streetNumberName"] = new JsonObject
+                            {
+                                ["type"] = "string",
+                                ["maxLength"] = 150,
+                            },
+                            ["periods"] = new JsonObject
+                            {
+                                ["type"] = "array",
+                                ["items"] = new JsonObject
+                                {
+                                    ["type"] = "object",
+                                    ["properties"] = new JsonObject
+                                    {
+                                        ["beginDate"] = new JsonObject
+                                        {
+                                            ["type"] = "string",
+                                            ["format"] = "date",
+                                        },
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+            ["required"] = new JsonArray("educationOrganizationId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "School",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["EducationOrganizationId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.educationOrganizationId",
+                },
+            },
+            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
+        };
+    }
+
+    private static JsonObject BuildStudentWithSiblingCollectionsSchema()
+    {
+        var jsonSchemaForInsert = new JsonObject
+        {
+            ["type"] = "object",
+            ["properties"] = new JsonObject
+            {
+                ["studentUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
+                ["addresses"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["streetNumberName"] = new JsonObject
+                            {
+                                ["type"] = "string",
+                                ["maxLength"] = 150,
+                            },
+                        },
+                    },
+                },
+                ["telephones"] = new JsonObject
+                {
+                    ["type"] = "array",
+                    ["items"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["telephoneNumber"] = new JsonObject { ["type"] = "string", ["maxLength"] = 24 },
+                        },
+                    },
+                },
+            },
+            ["required"] = new JsonArray("studentUniqueId"),
+        };
+
+        return new JsonObject
+        {
+            ["resourceName"] = "Student",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = true,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray { "$.studentUniqueId" },
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["StudentUniqueId"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.studentUniqueId",
+                },
+            },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }
