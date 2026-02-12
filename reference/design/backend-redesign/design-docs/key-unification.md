@@ -944,12 +944,91 @@ The canonical column’s physical kind/type/nullability are derived per:
 ### Naming rules (deterministic)
 
 The canonical column name must be deterministic for a fixed effective schema and must remain stable under identifier
-shortening. The baseline rule for first cut:
+shortening.
 
-- Use the identity-part base name suffix that already appears in `{RefBaseName}_{IdentityPart}` (or the scalar leaf
-  name when unifying scalar paths).
-- If that name collides with an existing column (including any member path column that must be preserved), apply a
-  deterministic collision suffix.
+Canonical naming MUST NOT consult any `relational.nameOverrides`-modified physical column names.
+
+- Rationale: key unification specifically addresses the case where per-site identity-part suffixes may differ due to
+  overrides, while still representing a single logical value. Canonical naming must therefore be derived from
+  **API JsonPath semantics**, not from potentially divergent overridden per-site column names.
+
+#### Canonical base-name derivation from member `SourceJsonPath` (normative)
+
+For each member path column in a `KeyUnificationClass`, derive a logical base-name token from the member’s
+`DbColumnModel.SourceJsonPath` by:
+
+1. Determining the member’s **binding-site prefix path**:
+   - If the member `SourceJsonPath` is bound as a reference-identity value under a
+     `DocumentReferenceBinding.ReferenceObjectPath`, then:
+     - the binding-site prefix MUST be that `ReferenceObjectPath`, and
+     - the member’s relative path is the reference-relative field path under the reference object.
+     - Detection rule (required): locate the unique `DocumentReferenceBinding` whose `IdentityBindings[*].ReferenceJsonPath`
+       equals the member’s `SourceJsonPath`. If none exists, the member is not a reference-identity binding.
+   - Otherwise, the binding-site prefix MUST be the owning table’s `DbTableModel.JsonScope`.
+
+2. Stripping the prefix segments from the member `SourceJsonPath` segments to produce a **relative segment list**.
+   - The prefix MUST be a true prefix; otherwise fail fast (derived model bug).
+
+3. Converting the relative segment list to a logical base-name token:
+   - When the relative segment list contains one or more `Property` segments:
+     - the base-name token is the concatenation of `ToPascalCase(property.Name)` for each `Property` segment, in order.
+     - The relative segment list MUST NOT contain `AnyArrayElement` segments; if it does, fail fast:
+       - row-local key unification cannot safely name or enforce “multi-value” endpoints that still contain wildcards
+         after binding-site stripping.
+   - When the relative segment list is empty (the `SourceJsonPath` equals the binding-site prefix):
+     - This can occur for arrays-of-descriptor-strings where the value path is the array element itself (e.g.,
+       `$.programDescriptors[*]`) and the table scope is that same wildcard path.
+     - In this case, the base-name token MUST be derived from the last property segment in the prefix path:
+       - take the final `Property` segment name before any trailing `AnyArrayElement`, and
+       - apply `ToPascalCase` (and, when applicable, the same singularization rule used for descriptor-array column
+         naming elsewhere in the redesign).
+     - If there is no such property segment, fail fast.
+
+Notes:
+- This base-name derivation intentionally ignores any name overrides. It is derived solely from canonical JSONPath
+  segments and therefore remains stable even when overrides make per-site suffixes differ.
+- This derivation uses the full reference-relative or scope-relative property path (not only the leaf property name),
+  which avoids ambiguity when leaf names are repeated under different inlined objects.
+
+#### Canonical base-name selection across members (normative)
+
+For a unification class, compute each member’s logical base-name token per the rules above.
+
+- If all members have the **same** logical base-name token (ordinal comparison), use that token as the class base-name.
+- Otherwise:
+  - Choose the class base-name as the logical base-name token of the **first** member in `MemberPathColumns` order.
+  - Mark the class as requiring a name disambiguator (see below).
+
+Rationale:
+- A disagreement is rare and indicates that the equality constraint relates two different-looking paths that are still
+  logically unified (or that the effective schema is inconsistent). In either case, we must pick a deterministic name
+  without silently “choosing” a semantic interpretation.
+
+#### Canonical column naming template (normative)
+
+Given:
+- `Base` = class base-name token from the selection rule above, and
+- `Hash8` = the first 8 hex characters of `sha256hex(utf8("key-unification-canonical-name:v1\n" + join(sorted(member SourceJsonPath.Canonical), "\n")))`
+  (members sorted ordinal by `SourceJsonPath.Canonical`),
+
+The canonical column name MUST be:
+
+- For `Scalar` classes: `{Base}{Disambiguator}_Unified`
+- For `DescriptorFk` classes: `{Base}{Disambiguator}_Unified_DescriptorId`
+
+Where:
+- `Disambiguator` is empty by default.
+- `Disambiguator` MUST be `_U{Hash8}` when:
+  - member base-name tokens disagree (per the selection rule above), or
+  - the initial computed canonical column name collides with an existing column name on the table.
+
+Collision handling (required):
+- If `{Base}_Unified` (or `{Base}_Unified_DescriptorId`) collides and applying the `_U{Hash8}` disambiguator still
+  collides (extremely unlikely but possible via overrides), append a deterministic numeric suffix before the unified
+  suffix:
+  - scalar: `{Base}_U{Hash8}_{n}_Unified`
+  - descriptor: `{Base}_U{Hash8}_{n}_Unified_DescriptorId`
+  - starting with `n = 2` and incrementing until a unique name is found.
 
 The alias columns keep the existing per-site names (e.g., `StudentSchoolAssociation_StudentUniqueId`) so query
 compilation and reconstitution can continue to bind by those names.
@@ -1083,6 +1162,81 @@ For a reference site, the composite FK uses canonical columns for unified identi
 - Target columns:
   - `DocumentId`
   - `<TargetIdentityColumns...>`
+
+### Multi-edge cascades (canonical columns shared across composite FKs) (normative)
+
+Key unification can cause a single canonical identity-part column to participate in **multiple composite reference FKs**
+on the same referencing table.
+
+Example (illustrative only):
+
+- Table `A` has two independent reference sites to different targets `B` and `C`.
+- `B` and `C` each carry the same logical identity part `StudentUniqueId`.
+- ApiSchema emits `equalityConstraints` that relate the two identity JsonPaths in `A`, so key unification creates a
+  single canonical column `StudentUniqueId_Unified` and converts the per-site columns into aliases.
+
+Under this shape, `A` can end up with multiple composite FKs that share the same canonical identity-part column:
+
+- `FK_A_B`: `(B_DocumentId, StudentUniqueId_Unified) → B(DocumentId, StudentUniqueId_Unified)`
+- `FK_A_C`: `(C_DocumentId, StudentUniqueId_Unified) → C(DocumentId, StudentUniqueId_Unified)`
+
+If `B` and `C` themselves depend on the same upstream identity and that upstream identity is updated with
+`allowIdentityUpdates=true`, the cascade graph may contain **multiple update paths** that reach `A`.
+
+This section defines the required cross-engine behavior and mitigation strategy.
+
+#### PostgreSQL (supported; no special mitigation required)
+
+PostgreSQL supports “cycles or multiple cascade paths” for FK cascades. Therefore, it is valid for DDL emission to use
+declarative `ON UPDATE CASCADE` on all eligible edges (per the baseline design’s `allowIdentityUpdates` rule).
+
+Key properties under unification:
+
+- The historical PostgreSQL hazard was a `CHECK (colA = colB)` constraint across two **independently-cascaded writable**
+  columns (a “mid-cascade” failure). Key unification removes that pattern by ensuring there is only one writable
+  physical column for the unified value.
+- When multiple composite FKs on a referencing row share the same canonical identity-part columns, cascaded updates are
+  safe because the stored canonical key is updated atomically as a single value for that row (there is no second
+  writable copy to drift).
+
+Normative guidance:
+
+- Do **not** introduce DB-level equality checks across two independently-cascaded stored columns as an alternative to
+  unification. This design exists specifically to avoid that failure mode.
+- Prefer the default FK behavior (`NOT DEFERRABLE`) and rely on normal FK cascade semantics; unification is intended to
+  make the cascade behavior safe without requiring deferred constraints.
+- DDL verification MUST include a fixture scenario where a single identity update fans out across multiple cascade
+  paths that reach the same referrer table whose composite FKs share unified canonical columns, and MUST validate the
+  identity update succeeds (no transient FK violations and no mid-cascade check failures).
+
+#### SQL Server (DDL may be rejected; mitigation is trigger-based propagation fallback)
+
+SQL Server may reject FK graphs that contain “cycles or multiple cascade paths”. This is a **DDL feasibility**
+constraint, not an application policy decision. Under key unification, this can occur in the same places as in the
+baseline design, and may become more common as unified canonical identity columns are shared across composite FKs.
+
+Normative rules:
+
+1. The DDL generator MUST attempt to use declarative `ON UPDATE CASCADE` for reference composite FKs only when:
+   - the referenced target allows identity updates (`allowIdentityUpdates=true`), and
+   - SQL Server accepts the resulting FK graph (no multiple-cascade-path/cycle rejection).
+2. When SQL Server rejects `ON UPDATE CASCADE` for an otherwise-eligible edge due to cascade-path restrictions, the DDL
+   generator MUST:
+   - emit that FK with `ON UPDATE NO ACTION`, and
+   - emit a deterministic, set-based trigger-based propagation fallback for that edge as
+     `DbTriggerKind.IdentityPropagationFallback` (see `transactions-and-concurrency.md` and `07-index-and-trigger-inventory.md`).
+3. Trigger-based propagation fallback MUST update the referencing table’s **canonical storage columns** for unified
+   identity parts (never alias columns), because aliases are computed/read-only.
+
+Required correctness properties for trigger-based propagation fallback:
+
+- Set-based: handle multi-row updates of the referenced table and update all impacted referrers in one trigger
+  execution.
+- Old→new mapping: join `inserted`/`deleted` to map the referenced old composite key to the referenced new composite
+  key, and update referrers that still match the old key.
+- Idempotent under convergence: when multiple paths could update the same canonical value on a referrer, the trigger
+  predicate SHOULD match on the old key values so rows already updated to the new canonical values are not updated
+  redundantly.
 
 ### All-or-none nullability constraints
 
@@ -1318,12 +1472,6 @@ unification, some of those columns become generated/computed aliases.
 
 ## Pending Questions
 
-- The canonical-column naming rule when multiple per-site identity-part suffixes differ due to name overrides or when
-  the leaf property name is ambiguous.
-- Whether a canonical column shared across multiple composite FKs with `ON UPDATE CASCADE` can introduce transient FK
-  violations during multi-edge cascades, and what the mitigation strategy is for PostgreSQL and SQL Server.
 - Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
   `equalityConstraints` (e.g., DS 5.2 `Grade` uses both `SchoolYear` and `GradingPeriodSchoolYear` - is this a bug in
   ApiSchema generation?), and whether DMS should unify those cases anyway (and if so, how to select canonical vs alias columns).
-- Whether the identifier-shortening pass can change canonical/alias naming decisions and how to keep the result stable
-  across dialects.
