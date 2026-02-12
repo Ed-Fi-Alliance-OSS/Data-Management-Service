@@ -77,8 +77,20 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             // DocumentStamping trigger for each table (root, child, extension).
             foreach (var table in resourceModel.TablesInDependencyOrder)
             {
-                // The first PK column is always the root document ID for every table type.
-                var keyColumns = new[] { table.Key.Columns[0].ColumnName };
+                var documentIdKeyColumn = table.Key.Columns.FirstOrDefault(c =>
+                    c.Kind == ColumnKind.ParentKeyPart
+                    && RelationalNameConventions.IsDocumentIdColumn(c.ColumnName)
+                );
+
+                if (documentIdKeyColumn is null)
+                {
+                    throw new InvalidOperationException(
+                        $"DocumentStamping trigger derivation requires a DocumentId key column, "
+                            + $"but none was found on table '{table.Table.Name}'."
+                    );
+                }
+
+                var keyColumns = new[] { documentIdKeyColumn.ColumnName };
                 var isRootTable = table.Table.Equals(rootTable.Table);
 
                 context.TriggerInventory.Add(

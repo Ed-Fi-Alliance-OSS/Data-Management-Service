@@ -1883,7 +1883,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         return keyColumn.Kind switch
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
-            ColumnKind.ParentKeyPart => IsDocumentIdColumn(keyColumn.ColumnName)
+            ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
                 ? new RelationalScalarType(ScalarKind.Int64)
                 : new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
@@ -1891,25 +1891,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 $"Unsupported key column kind '{keyColumn.Kind}' for {keyColumn.ColumnName.Value}."
             ),
         };
-    }
-
-    /// <summary>
-    /// Returns true when the column name represents a document id key part.
-    /// </summary>
-    private static bool IsDocumentIdColumn(DbColumnName columnName)
-    {
-        if (
-            string.Equals(
-                columnName.Value,
-                RelationalNameConventions.DocumentIdColumnName.Value,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return true;
-        }
-
-        return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
     /// <summary>

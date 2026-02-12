@@ -615,7 +615,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         return keyColumn.Kind switch
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
-            ColumnKind.ParentKeyPart => IsDocumentIdColumn(keyColumn.ColumnName)
+            ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
                 ? new RelationalScalarType(ScalarKind.Int64)
                 : new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
@@ -623,26 +623,6 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 $"Unsupported key column kind '{keyColumn.Kind}' for {keyColumn.ColumnName.Value}."
             ),
         };
-    }
-
-    /// <summary>
-    /// Identifies columns that represent a <c>DocumentId</c> (root <c>DocumentId</c> or <c>*_DocumentId</c>
-    /// key parts).
-    /// </summary>
-    private static bool IsDocumentIdColumn(DbColumnName columnName)
-    {
-        if (
-            string.Equals(
-                columnName.Value,
-                RelationalNameConventions.DocumentIdColumnName.Value,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return true;
-        }
-
-        return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
     /// <summary>

@@ -26,6 +26,16 @@ public static class RelationalNameConventions
     public static DbColumnName DocumentIdColumnName { get; } = new("DocumentId");
 
     /// <summary>
+    /// Returns <c>true</c> when the column name represents a document ID — either the root
+    /// <c>DocumentId</c> or a prefixed variant such as <c>School_DocumentId</c>.
+    /// </summary>
+    public static bool IsDocumentIdColumn(DbColumnName columnName)
+    {
+        return string.Equals(columnName.Value, DocumentIdColumnName.Value, StringComparison.Ordinal)
+            || columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// The standard <c>Ordinal</c> column name used by collection tables to preserve array ordering.
     /// </summary>
     public static DbColumnName OrdinalColumnName { get; } = new("Ordinal");
