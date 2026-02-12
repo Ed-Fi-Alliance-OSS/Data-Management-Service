@@ -16,6 +16,9 @@ This design changes the relational model so equality-constrained identity parts 
 - A **canonical physical column** stores the unified value (writable, participates in composite FKs).
 - The existing **per-site identity columns** remain in the table shape, but become **generated/computed, persisted**
   **presence-gated aliases** of the canonical column (read-only; `NULL` when the reference site is absent).
+- The derived relational model includes **explicit metadata** that links alias columns ↔ canonical storage columns and
+  inventories per-table unification classes. This allows DDL generation, constraint derivation, and runtime planning to
+  answer both “bind to API JsonPath” and “store/FK/cascade” questions deterministically.
 
 This prevents DB-level drift, preserves existing column naming for query compilation and reconstitution, and avoids
 PostgreSQL “mid-cascade” issues that occur when enforcing equality across two independently cascaded writable columns.
@@ -51,6 +54,9 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
 - **Canonical column**: the single stored/writable physical column for a unification class.
 - **Alias column**: a generated/computed, persisted column that projects the canonical value under an existing column
   name, optionally gated by reference-site presence.
+- **Path column**: the column that binds to an API JsonPath (`DbColumnModel.SourceJsonPath != null`), used by endpoint
+  resolution, query compilation, and reconstitution. Under key unification, a path column may be a stored column or a
+  generated alias.
 - **Presence gating**: making a per-site alias evaluate to `NULL` when `{RefBaseName}_DocumentId` is `NULL`.
 
 ## Background (current redesign behavior)
@@ -110,6 +116,170 @@ This preserves the invariant used throughout the redesign:
 
 This preserves optional-reference semantics while keeping FK propagation on writable columns.
 
+## Derived Relational Model Metadata (Explicit Canonical/Alias + Unification Classes)
+
+The derived relational model must answer two different questions for the same “logical field”:
+
+1. **Binding question (queries + reconstitution)**: “What column name do I bind to for this API JsonPath?”
+   - Answer: the **path column** (the column that retains `DbColumnModel.SourceJsonPath` and the existing per-site
+     column naming).
+2. **Storage question (writes + FKs + propagation)**: “What column is physically stored/writable and used in composite
+   FKs and cascades?”
+   - Answer: the **canonical storage column** (single source of truth for the unification class).
+
+Endpoint resolution for equality constraints is path-based (it uses `SourceJsonPath`), but FK derivation and writes must
+use canonical storage columns. Inferring canonical-vs-alias behavior implicitly (by naming conventions or ad-hoc rules)
+is brittle: both the DDL generator and the runtime plan compiler need to answer the storage question deterministically
+for columns that remain present in the table shape specifically to preserve query and reconstitution behavior.
+
+This design therefore introduces explicit model metadata that represents canonical/alias relationships structurally and
+without SQL text.
+
+### 1) Column-level storage metadata (alias ↔ canonical)
+
+Extend `DbColumnModel` to distinguish stored vs generated alias columns, and for aliases, record the canonical storage
+column and optional presence gate.
+
+Conceptually:
+
+```csharp
+public abstract record ColumnStorage
+{
+    /// <summary>
+    /// A normal writable stored column.
+    /// </summary>
+    public sealed record Stored : ColumnStorage;
+
+    /// <summary>
+    /// A read-only generated alias of a canonical stored column.
+    /// </summary>
+    /// <param name="CanonicalColumn">The stored/writable canonical column name.</param>
+    /// <param name="PresenceFkColumn">
+    /// Optional presence gate. When set, the alias evaluates to NULL when the presence FK is NULL.
+    /// </param>
+    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName? PresenceFkColumn) : ColumnStorage;
+}
+
+public sealed record DbColumnModel(
+    DbColumnName ColumnName,
+    ColumnKind Kind,
+    RelationalScalarType? ScalarType,
+    bool IsNullable,
+    JsonPathExpression? SourceJsonPath,
+    QualifiedResourceName? TargetResource,
+    ColumnStorage Storage
+);
+```
+
+Rules:
+
+- **Stored column**:
+  - normal writable column
+  - used for composite FKs and propagation cascades
+  - may be an “API-bound” column (has `SourceJsonPath`) or storage-only (no `SourceJsonPath`) depending on how the
+    canonical was selected (see “SourceJsonPath rules” below)
+- **UnifiedAlias column**:
+  - read-only generated/computed alias of `CanonicalColumn`
+  - retains `SourceJsonPath` so endpoint resolution, query compilation, and reconstitution bind by API-path semantics
+  - when `PresenceFkColumn` is set, the alias is presence-gated:
+    - `NULL` when `PresenceFkColumn IS NULL`
+    - else `CanonicalColumn`
+  - must have a type compatible with `CanonicalColumn` (fail fast otherwise)
+
+This metadata provides a single dialect-neutral “walk” from an API-bound path column to its physical storage column:
+
+- `Stored` → the column itself
+- `UnifiedAlias` → `CanonicalColumn`
+
+No string parsing is required (e.g., no need to infer reference groups by trimming `_DocumentId`).
+
+Defaults:
+
+- When no key unification applies to a table, all columns are `Stored` and `KeyUnificationClasses` is empty.
+- When key unification applies, only the columns that are members of a unification class become `UnifiedAlias`; all
+  other columns remain `Stored`.
+
+### SourceJsonPath rules under unification
+
+`DbColumnModel.SourceJsonPath` remains the authoritative “API JsonPath → binding column” mapping:
+
+- Every API JsonPath must map to **exactly one** column in the derived model.
+- A canonical stored column may retain a non-null `SourceJsonPath` only when it is itself the binding column for that
+  JsonPath (i.e., no competing alias column with the same `SourceJsonPath` may exist).
+- Canonical stored columns introduced solely for storage (common when unifying across multiple reference paths) must
+  have `SourceJsonPath = null` and be reachable only through alias metadata.
+
+### 2) Table-level “unification class” metadata (write coalescing inventory)
+
+Column-level alias metadata answers “what do I FK against / what do I write”, but writes also need to answer “how do I
+populate the canonical column from an API document” when the canonical has no `SourceJsonPath`.
+
+Add a per-table inventory of unification classes:
+
+```csharp
+public sealed record KeyUnificationClass(
+    DbColumnName CanonicalColumn,
+    IReadOnlyList<DbColumnName> MemberPathColumns
+    // Optional: deterministic preferred-source policy hook
+);
+
+public sealed record DbTableModel(
+    DbTableName Table,
+    JsonPathExpression JsonScope,
+    TableKey Key,
+    IReadOnlyList<DbColumnModel> Columns,
+    IReadOnlyList<TableConstraint> Constraints,
+    IReadOnlyList<KeyUnificationClass> KeyUnificationClasses
+);
+```
+
+Semantics:
+
+- `CanonicalColumn` is the stored/writable canonical column for the class.
+- `MemberPathColumns` is an **ordered** list of the columns that:
+  - participate in the unification class as equality-constrained endpoints, and
+  - have `SourceJsonPath` (i.e., they represent API-visible “binding sites” in the document).
+- Members will usually be `UnifiedAlias` columns, but can include a stored scalar (e.g., `FiscalYear`) when an existing
+  base scalar column is selected as canonical and remains the binding column for its JsonPath.
+- Ordering must be deterministic for a fixed effective schema (baseline rule: ordinal sort by
+  `Member.SourceJsonPath.Canonical`; a future extension can add an explicit preferred-source override).
+
+### Consumer behavior (how metadata is used)
+
+**Queries + reconstitution**
+
+- Bind by `SourceJsonPath → ColumnName` as today.
+- Read/select the existing per-site identity part column names (aliases) to preserve query compilation and
+  reconstitution behavior.
+
+**Constraint derivation (composite reference FKs)**
+
+- Derive the composite FK shape using the API identity-path ordering as today.
+- For each identity-part column in the composite FK, use `DbColumnModel.Storage` to map:
+  - local FK columns → canonical storage columns
+  - referenced target columns → canonical storage columns
+- Keep all-or-none constraints over the per-site alias columns (presence-gated), preserving the original meaning.
+
+**Writes (flattening / write-plan compilation)**
+
+- Never write `UnifiedAlias` columns (they are read-only).
+- For each `KeyUnificationClass`:
+  - extract candidate values from the JSON document at each member’s `SourceJsonPath`
+  - apply deterministic coalescing:
+    - if multiple members are present with non-null values, they must be equal (fail closed on conflict)
+    - choose a canonical value deterministically (first present in member order)
+  - write the resulting value to `CanonicalColumn`
+
+This makes write behavior explicit even when `CanonicalColumn.SourceJsonPath` is null (the canonical column exists only
+to unify multiple paths).
+
+**DDL generation**
+
+- Emit `Stored` columns as normal columns.
+- Emit `UnifiedAlias` columns as generated/computed, persisted/stored columns using the recorded canonical/presence-gate
+  metadata and dialect-specific syntax.
+- Ensure the canonical stored column appears before aliases in the physical column order (dependency).
+
 ## Deriving Unification Classes from ApiSchema
 
 ### Scope of DB-Level Unification
@@ -147,8 +317,10 @@ Key rules:
 - Under key unification:
   - per-path/per-site alias columns retain the original `SourceJsonPath` so queries and reconstitution continue to bind
     by API-path semantics, and
-  - canonical storage columns must have `SourceJsonPath = null` so a single API JsonPath never resolves to both an alias
-    and a canonical column.
+  - canonical storage columns must not introduce ambiguity in JsonPath endpoint resolution:
+    - canonical columns introduced solely for storage have `SourceJsonPath = null`, and
+    - when an existing base scalar column is selected as canonical, it may retain `SourceJsonPath` as the binding
+      column for that path (no competing alias for the same `SourceJsonPath` may exist).
 
 Resolution algorithm (per endpoint path):
 
@@ -279,8 +451,8 @@ All-or-none constraints use the per-site alias columns, preserving the original 
 ### Writes (flattening)
 
 - Only canonical columns are writable for unified identity parts.
-- Flattening must populate canonical columns from the JSON payload, using a deterministic coalescing strategy across all
-  equality-constrained JSON paths in the unification class.
+- Flattening must populate canonical columns from the JSON payload using the table’s `KeyUnificationClass` inventory:
+  deterministic coalescing across member-path JsonPaths and fail-closed conflict detection.
 - Per-site alias columns are not written.
 
 ### Reads (reconstitution)
@@ -322,10 +494,5 @@ unification, some of those columns become generated/computed aliases.
 - Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
   `equalityConstraints` (e.g., DS 5.2 `Grade` uses both `SchoolYear` and `GradingPeriodSchoolYear`), and whether DMS
   should unify those cases anyway (and if so, how to select canonical vs alias columns).
-- Whether the derived relational model needs explicit metadata to distinguish canonical vs alias columns for:
-  - write plan compilation
-  - read plan compilation
-  - constraint derivation
-  - DDL generation
 - Whether the identifier-shortening pass can change canonical/alias naming decisions and how to keep the result stable
   across dialects.
