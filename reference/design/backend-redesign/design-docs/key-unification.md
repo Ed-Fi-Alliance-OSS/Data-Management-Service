@@ -2,7 +2,7 @@
 
 ## Status
 
-Draft. First cut of the Option 3 design described in `key-unification-issue.md`.
+Draft.
 
 ## Summary
 
