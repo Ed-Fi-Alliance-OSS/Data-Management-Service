@@ -492,7 +492,7 @@ unification, some of those columns become generated/computed aliases.
 - Whether a canonical column shared across multiple composite FKs with `ON UPDATE CASCADE` can introduce transient FK
   violations during multi-edge cascades, and what the mitigation strategy is for PostgreSQL and SQL Server.
 - Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
-  `equalityConstraints` (e.g., DS 5.2 `Grade` uses both `SchoolYear` and `GradingPeriodSchoolYear`), and whether DMS
-  should unify those cases anyway (and if so, how to select canonical vs alias columns).
+  `equalityConstraints` (e.g., DS 5.2 `Grade` uses both `SchoolYear` and `GradingPeriodSchoolYear` - is this a bug in
+  ApiSchema generation?), and whether DMS should unify those cases anyway (and if so, how to select canonical vs alias columns).
 - Whether the identifier-shortening pass can change canonical/alias naming decisions and how to keep the result stable
   across dialects.
