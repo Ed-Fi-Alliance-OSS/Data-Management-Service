@@ -346,11 +346,14 @@ Within each phase:
   - then by physical table name as a final tie-breaker.
 - **Columns within a table**:
   1. key columns in key order (`DocumentId` / parent key parts in order, then `Ordinal`)
-  2. document reference groups (by reference base name):
+  2. key-unification support columns (when present), ordered by column name:
+     - canonical storage columns for unification classes, and
+     - synthetic `..._Present` presence-flag columns used for presence-gated unified aliases
+  3. document reference groups (by reference base name):
      - `..._DocumentId`
      - `{RefBaseName}_{IdentityPart}` propagated identity columns in the referenced identity path order
-  3. descriptor FKs (`..._DescriptorId`) by column name
-  4. scalar columns by column name
+  4. descriptor FKs (`..._DescriptorId`) by column name
+  5. scalar columns by column name
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).

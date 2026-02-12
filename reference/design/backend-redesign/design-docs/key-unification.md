@@ -309,6 +309,101 @@ Semantics:
 - Writes MUST be deterministic and MUST NOT consult existing row values (“keep the previous value”) to fill missing
   unified values.
 
+#### Binding vs storage semantics for existing derived metadata (normative)
+
+Key unification introduces a structural split between:
+
+- **Binding/path semantics** (queries + reconstitution + API-visible uniqueness/presence), and
+- **Storage/writable semantics** (writes + FKs + cascades + triggers + maintenance).
+
+This split MUST be applied consistently across all existing derived metadata that refers to columns by name.
+
+##### Definitions (dialect-neutral)
+
+For any `DbTableModel`:
+
+- A **binding column** (or “path column”) is a column with a non-null `DbColumnModel.SourceJsonPath`.
+  - Under key unification, a binding column MAY be stored (`ColumnStorage.Stored`) or an alias
+    (`ColumnStorage.UnifiedAlias`).
+- A **storage column** is a physical stored/writable column.
+  - For any binding column, its storage column is:
+    - `Stored` → the column itself
+    - `UnifiedAlias(CanonicalColumn, ...)` → `CanonicalColumn`
+- A **presence column** is the column named by `UnifiedAlias.PresenceColumn` (when non-null).
+  - Presence columns are always stored (`Stored`) and storage-only (`SourceJsonPath = null`).
+  - Presence columns are either:
+    - reference-site presence: `{RefBaseName}_DocumentId`, or
+    - scalar/path presence: synthetic `{PathColumnName}_Present` (nullable `bool`/`bit`).
+
+Derived models MUST preserve the global “endpoint binding” invariant:
+
+- Every API JsonPath endpoint MUST resolve to exactly one binding column via `SourceJsonPath`.
+- Canonical columns MUST be storage-only (`SourceJsonPath = null`) and MUST NOT participate in endpoint resolution.
+
+##### Required consumer mapping rules
+
+Any consumer that needs a column for **DML/DDL that targets writable storage** MUST resolve the storage column using
+`DbColumnModel.Storage`:
+
+- Writes (flattening / parameter binding): write only storage columns.
+- Foreign key derivation + emission: define FKs only over storage columns.
+- Identity propagation (cascades and fallbacks): update storage columns only.
+- FK-supporting index derivation: index the final FK column list after storage mapping and de-duplication.
+
+Any consumer that needs a column for **API-path semantics** MUST continue to use binding columns:
+
+- Query compilation binds predicates to binding columns to preserve “presence implies predicate participation”.
+- Reconstitution reads from binding columns so optional sites/paths remain absent when absent.
+- API-semantic UNIQUE constraints are derived from JsonPaths and use binding columns (including aliases).
+
+Consumers MUST NOT attempt to infer binding vs storage behavior by column naming conventions.
+
+##### `DocumentReferenceBinding` and `ReferenceIdentityBinding` (normative)
+
+`DocumentReferenceBinding` binds a reference object path to:
+
+- `FkColumn`: the reference-site `..._DocumentId` column.
+  - `FkColumn` is always stored/writable.
+  - `FkColumn` is the **presence column** for any unified per-site identity-part alias columns in that reference
+    group.
+- `IdentityBindings[*].Column`: the binding column for a specific `IdentityBindings[*].ReferenceJsonPath`.
+  - Under key unification, this binding column MAY be a `UnifiedAlias` and therefore read-only.
+
+Required interpretation rules:
+
+1. **Endpoint binding / reconstitution**:
+   - `IdentityBindings[*].Column` is the authoritative binding column for that identity endpoint’s `SourceJsonPath`.
+2. **Composite reference FK derivation**:
+   - When deriving the local/target identity-part column list for a composite reference FK, each identity-part column
+     MUST be mapped to its storage column via `DbColumnModel.Storage` before emitting the FK.
+3. **All-or-none constraints**:
+   - All-or-none constraints MUST remain defined over:
+     - `FkColumn`, and
+     - the per-site binding columns (identity-part aliases),
+     preserving the “reference site absent implies identity parts are null” meaning.
+   - All-or-none constraints MUST NOT be rewritten to use canonical columns, because canonical columns may remain
+     non-null due to another reference site and would change the constraint’s semantics.
+
+##### `DescriptorEdgeSource` (normative)
+
+`DescriptorEdgeSource` binds a descriptor value path to `FkColumn`:
+
+- `DescriptorValuePath` remains the authoritative endpoint path for descriptor resolution.
+- `FkColumn` is the binding column for that endpoint and MAY be `UnifiedAlias`.
+
+Required interpretation rules:
+
+1. **Descriptor resolution**:
+   - Resolution remains path-driven (`DescriptorValuePath`) and resource-type safe (`DescriptorResource`).
+2. **Writes**:
+   - Write layers MUST NOT assume `DescriptorEdgeSource.FkColumn` is writable.
+   - When populating a descriptor FK value, the write layer MUST map the binding column to its storage column via
+     `DbColumnModel.Storage`. When the binding column is unified, the value is written to the class’s canonical column
+     via the key-unification precompute step.
+3. **Descriptor FK constraints**:
+   - Descriptor FK constraints to `dms.Descriptor(DocumentId)` MUST be anchored on the storage column (see
+     “Descriptor foreign keys (`dms.Descriptor`) (normative)” below).
+
 #### Plan compiler and flattener contract (normative)
 
 Key unification changes the write-time relationship between API-bound “binding columns” and physical writable
@@ -501,8 +596,15 @@ In addition to conflict detection, flattening MUST apply the following required 
 - Emit `Stored` columns as normal columns.
 - Emit `UnifiedAlias` columns as generated/computed, persisted/stored columns using the recorded canonical/presence-gate
   metadata and dialect-specific syntax.
-- Ensure canonical storage columns and any synthetic presence flag columns appear before aliases in the physical column
-  order (dependency).
+- Column ordering MUST be deterministic and MUST respect alias dependencies:
+  - For every `UnifiedAlias` column, its `CanonicalColumn` and optional `PresenceColumn` MUST appear earlier in
+    `DbTableModel.Columns`.
+  - Recommended ordering per table:
+    1. key columns in `TableKey` order
+    2. key-unification support columns (canonical storage columns + synthetic presence flags), ordered by
+       `ColumnName.Value` (ordinal)
+    3. all remaining columns ordered per the baseline canonical rules, provided the dependency invariant above holds
+       (this preserves existing column-grouping conventions outside the unification support set)
 
 ### 3) Model / manifest / mapping-pack surface (normative)
 
@@ -1062,22 +1164,48 @@ To preserve query and reconstitution semantics under unification:
 
 For a member path column `{PathColumnName}` and canonical column `{Canonical}`:
 
+#### Presence-flag column naming (normative)
+
+When a member path column is optional (`IsNullable=true`), key unification introduces a synthetic presence flag column
+used only for presence gating. Its name MUST be derived deterministically from the member path column name, with
+deterministic collision handling.
+
+Definitions:
+
+- `MemberSourceJsonPath` = the member path column’s `DbColumnModel.SourceJsonPath`.
+- The presence flag column name MUST NOT consult `relational.nameOverrides` directly (it is synthetic), but it is
+  derived from the already-resolved member path column name (which may itself have applied overrides).
+
+Rules:
+
+1. Base name: `{PathColumnName}_Present`.
+2. If the base name collides with any existing column name on the same table, apply a disambiguator:
+   - `Hash8` = the first 8 hex characters of `sha256hex(utf8("key-unification-presence-name:v1\n" + MemberSourceJsonPath.Canonical))`.
+   - Candidate name: `{PathColumnName}_U{Hash8}_Present`.
+3. If the candidate name still collides (extremely unlikely but possible via overrides/shortening interactions),
+   append a deterministic numeric suffix before `_Present`:
+   - `{PathColumnName}_U{Hash8}_{n}_Present`, starting with `n = 2` and incrementing until a unique name is found.
+4. Dialect identifier shortening may apply later; any renaming/shortening pass MUST update all
+   `ColumnStorage.UnifiedAlias.PresenceColumn` references accordingly.
+
+Let `{PresenceColumnName}` be the final selected name produced by the rules above.
+
 1. If `{PathColumnName}` is required (`IsNullable=false`):
    - Do not create a `{PathColumnName}_Present` column.
    - Define alias column `{PathColumnName}` as an ungated alias of `{Canonical}`.
 2. If `{PathColumnName}` is optional (`IsNullable=true`):
-   1. Create a stored presence flag column `{PathColumnName}_Present` with:
+   1. Create a stored presence flag column `{PresenceColumnName}` with:
       - type: `bit` (SQL Server) / `boolean` (PostgreSQL)
       - nullability: nullable (`NULL` means absent; `1`/`TRUE` means present)
       - `SourceJsonPath = null` (storage-only; not an API binding column)
       - semantics:
         - `NULL` → `{PathColumnName}` was absent for this row
         - non-null (`1`/`TRUE`) → `{PathColumnName}` was present for this row
-      - record `{PathColumnName}_Present` as `ColumnStorage.UnifiedAlias.PresenceColumn` for `{PathColumnName}`
+      - record `{PresenceColumnName}` as `ColumnStorage.UnifiedAlias.PresenceColumn` for `{PathColumnName}`
    2. Define alias column `{PathColumnName}` as:
-      - `NULL` when `{PathColumnName}_Present` is `NULL`
+      - `NULL` when `{PresenceColumnName}` is `NULL`
       - `{Canonical}` otherwise
-   3. Flattening MUST write `{PathColumnName}_Present` for each row:
+   3. Flattening MUST write `{PresenceColumnName}` for each row:
       - present → `TRUE`/`1`
       - absent → `NULL`
       - flattening MUST NOT write `0`/`FALSE` (presence uses `NULL` vs `TRUE`)
@@ -1162,6 +1290,34 @@ For a reference site, the composite FK uses canonical columns for unified identi
 - Target columns:
   - `DocumentId`
   - `<TargetIdentityColumns...>`
+
+### Descriptor foreign keys (`dms.Descriptor`) (normative)
+
+Descriptor endpoints are stored as `DescriptorFk` columns (`..._DescriptorId`) referencing
+`dms.Descriptor(DocumentId)`.
+
+Under key unification, descriptor binding columns may become `UnifiedAlias` columns and therefore be read-only. The
+descriptor FK constraint MUST be anchored on the canonical stored column, not the binding alias.
+
+Normative rules:
+
+1. **Storage targeting**:
+   - For each `DbColumnModel` where `Kind = DescriptorFk`, determine the storage FK column:
+     - `Storage = Stored` → `StorageColumn = ColumnName`
+     - `Storage = UnifiedAlias(CanonicalColumn, ...)` → `StorageColumn = CanonicalColumn`
+2. **FK emission**:
+   - Emit a FK constraint from `(StorageColumn)` to `dms.Descriptor(DocumentId)` with:
+     - `ON DELETE NO ACTION`, and
+     - `ON UPDATE NO ACTION`.
+   - The DDL generator MUST NOT attempt to define FKs over `UnifiedAlias` columns.
+3. **De-duplication**:
+   - If multiple descriptor binding columns map to the same `StorageColumn` on the same table (e.g., because they are
+     unified), emit exactly one descriptor FK constraint for that `(table, StorageColumn)` pair.
+4. **Naming + supporting indexes**:
+   - Descriptor FK constraint names MUST be derived from `(Table, StorageColumn)` (e.g.,
+     `BuildDescriptorForeignKeyName(table, StorageColumn)`).
+   - FK-supporting index derivation MUST use the final storage column list after canonical mapping and
+     de-duplication (per the FK index policy in `ddl-generation.md`).
 
 ### Multi-edge cascades (canonical columns shared across composite FKs) (normative)
 
@@ -1469,6 +1625,140 @@ This design refines the baseline language in:
 
 Those documents currently describe per-site identity part columns as independent physical columns. Under key
 unification, some of those columns become generated/computed aliases.
+
+## Verification Checklist (required minimum coverage)
+
+This checklist is a minimum required verification set for implementing Option 3 key unification safely across:
+
+- derived-model compilation (E01),
+- DDL generation and provisioning,
+- write planning and flattening,
+- read/reconstitution and query binding, and
+- triggers / identity maintenance.
+
+The intent is to prevent “it works for the happy path” implementations that silently regress determinism, presence
+semantics, or cascade correctness.
+
+### Derived-model build (E01)
+
+- `SourceJsonPath` endpoint resolution remains unambiguous:
+  - each API JsonPath binds to exactly one `DbColumnModel` (binding column), and
+  - canonical columns (`SourceJsonPath = null`) never introduce endpoint ambiguity.
+- Unification class construction is correct and deterministic:
+  - edges are built only for endpoints that resolve to the same physical table, and
+  - connected components produce stable classes with deterministic member ordering.
+- Equality-constraint diagnostics surface is emitted and deterministic:
+  - every `equalityConstraint` is classified as `applied` or `skipped`,
+  - `skipped` includes a machine-readable reason (`unresolved_endpoint`, `unsupported_endpoint_kind`,
+    `cross_table`), and
+  - output ordering and undirected endpoint normalization are stable.
+- Derived-model validation fails fast on:
+  - incompatible member types (scalar kind/type metadata mismatch, descriptor target resource mismatch),
+  - scalar-vs-descriptor mixing in one class, and
+  - “multi-value” endpoints that still contain `[*]` after binding-site stripping (where prohibited by naming and
+    row-local assumptions).
+- Canonical column derivation is correct:
+  - `Kind`, `ScalarType`, and `TargetResource` match the class signature exactly,
+  - `SourceJsonPath = null`,
+  - `Storage = Stored`.
+- Canonical nullability derivation is correct:
+  - canonical is `NOT NULL` when any member is required.
+- Canonical naming and collision handling are deterministic and stable under overrides:
+  - base-name derived from JsonPath semantics (not overrides),
+  - `_U{Hash8}` disambiguator when required,
+  - deterministic numeric fallback when collisions persist.
+- Presence-gated alias behavior is correct:
+  - reference-site aliases gated by `{RefBaseName}_DocumentId`,
+  - optional non-reference aliases gated by synthetic `..._Present`,
+  - required non-reference aliases are ungated.
+- Synthetic `..._Present` columns:
+  - deterministic naming, including collision handling and dialect shortening compatibility,
+  - correct physical type and nullability (`NULL` vs `TRUE`/`1` only),
+  - storage-only (`SourceJsonPath = null`, `Storage = Stored`).
+
+### DDL emission (PostgreSQL + SQL Server)
+
+- Physical column order respects dependencies:
+  - canonical storage columns and any synthetic presence flag columns are emitted before dependent aliases.
+- Generated/computed alias column syntax is correct per dialect and matches `UnifiedAlias(Canonical, Presence)` rules.
+- No FK attempts to reference `UnifiedAlias` columns:
+  - composite reference FKs use canonical storage columns for unified identity parts,
+  - descriptor FKs use canonical storage columns for unified descriptor parts.
+- Descriptor FK constraints:
+  - if descriptor endpoints unify, the table emits exactly one FK anchored on the canonical storage column
+    (de-duplicated by `(table, StorageColumn)`).
+- All-or-none constraints remain on reference-group binding columns (aliases) plus `..._DocumentId`.
+- API-semantic UNIQUE constraints are defined over binding/path columns (aliases allowed) and do not collapse to
+  canonicals.
+- FK-supporting referenced-key UNIQUE constraints are defined over canonical storage columns (after mapping + de-dup).
+- FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
+- SQL Server cascade feasibility:
+  - `ON UPDATE CASCADE` is used only when accepted by SQL Server’s cascade-path rules,
+  - rejected edges use `ON UPDATE NO ACTION` plus trigger-based propagation fallback that updates canonical storage
+    columns (never aliases).
+
+### Write planning + flattening
+
+- Plan compiler excludes `UnifiedAlias` columns from:
+  - `INSERT`/`UPDATE` column lists, and
+  - parameter bindings.
+- Canonical columns and synthetic `..._Present` columns are represented as precomputed bindings and are always
+  populated deterministically for every materialized row.
+- Coalescing behavior matches the normative rules:
+  - JSON `null` treated as absent,
+  - first-present member wins (deterministic ordering),
+  - absent everywhere → canonical `NULL`.
+- Conflict detection is enforced:
+  - two or more present, non-null members disagree after conversion → fail closed,
+  - descriptor members compare on resolved `DocumentId`, not raw URI string.
+- Guardrails are enforced before issuing SQL:
+  - when any gated member site/path is present, canonical must be non-null,
+  - when canonical is `NOT NULL`, canonical must be non-null.
+- Descriptor resolution failures fail closed:
+  - descriptor URI present but unresolved → write fails.
+- PUT/replace semantics remain deterministic:
+  - missing unified values do not consult existing row values to “retain” canonical values.
+
+### Read / reconstitution / query semantics
+
+- Optional reference-site absence remains correct:
+  - per-site alias columns read as `NULL` when `..._DocumentId` is `NULL`, even if canonical is non-null due to another
+    site.
+- Optional non-reference path absence remains correct:
+  - per-path alias reads as `NULL` when `..._Present` is `NULL` (no cross-path leakage).
+- Query binding preserves presence semantics:
+  - predicates on binding columns continue to imply the path/site was present.
+
+### Triggers (stamping + identity maintenance)
+
+- Triggers do not rely on “updated column” checks for alias columns (aliases are read-only).
+- Identity-change detection uses value diffs between old/new row images:
+  - unified members use the presence-gated canonical expression, not the alias column name.
+- Cascades and SQL Server trigger-based propagation fallbacks that update canonicals still trigger correct stamping and
+  maintenance behavior (no missed recomputes).
+- SQL Server trigger implementations are set-based and correct under multi-row statements.
+
+### AOT mapping pack + manifests
+
+- Relational-model manifests include:
+  - per-column storage metadata (`Stored` vs `UnifiedAlias` with canonical + optional presence), and
+  - per-table `KeyUnificationClass` inventory (canonical + ordered members),
+  - per-resource applied/skipped equality-constraint diagnostics.
+- Mapping-pack payload carries the same unification metadata and validates invariants at build/load time:
+  - alias canonical/presence references exist and are stored,
+  - canonical columns are storage-only,
+  - member-path columns are distinct, resolvable, and reference the correct canonical.
+- Plan payload carries precomputed bindings and key-unification write plans with consistent binding indices.
+- `RelationalMappingVersion` gating is enforced (packs with mismatched version are rejected).
+
+### Determinism / ordering / shortening
+
+- Output ordering is stable for a fixed effective schema:
+  - unification classes, member ordering, manifests, and DDL object emission are deterministic.
+- Dialect identifier hashing/shortening updates all unification references:
+  - `UnifiedAlias(CanonicalColumn, PresenceColumn)` pointers, and
+  - `KeyUnificationClass` member lists.
+- No dangling pre-shortening/pre-hashing column names remain in manifests, plans, constraints, indexes, or triggers.
 
 ## Pending Questions
 
