@@ -816,6 +816,86 @@ All-or-none constraints use the per-site alias columns, preserving the original 
 - If `{RefBaseName}_DocumentId` is `NULL` then all per-site identity aliases are `NULL`
 - If `{RefBaseName}_DocumentId` is not `NULL` then all per-site identity aliases are not `NULL`
 
+### UNIQUE constraints and indexes (binding vs storage)
+
+Key unification introduces two different “column identities” for the same logical value:
+
+- **Path/binding columns** (API semantics): the columns that retain `SourceJsonPath` and preserve the existing
+  per-site/per-path names (often `ColumnStorage.UnifiedAlias`).
+- **Canonical/storage columns** (DB semantics): the single stored/writable source-of-truth columns
+  (`SourceJsonPath = null`).
+
+As a result, UNIQUE constraints fall into two distinct categories with different correctness requirements.
+
+#### 1) API-semantic UNIQUE constraints MUST use path/binding columns (aliases)
+
+These are constraints whose purpose is to enforce API-visible uniqueness rules derived from ApiSchema:
+
+- root natural-key UNIQUE (derived from `identityJsonPaths`), and
+- collection element uniqueness UNIQUEs (derived from `arrayUniquenessConstraints`).
+
+Normative rules:
+
+1. API-semantic UNIQUE constraints MUST be derived from JsonPath endpoint bindings (`DbColumnModel.SourceJsonPath`) and
+   MUST use the **path/binding column names** (even when those columns are unified aliases).
+2. API-semantic UNIQUE constraints MUST NOT “collapse” or substitute member path columns with their canonical storage
+   columns.
+
+Rationale:
+
+- Path/binding columns preserve the “presence semantics” used by the redesign:
+  - optional paths remain `NULL` at the binding column when absent (via presence gating), and
+  - predicates/constraints on a per-path column continue to imply that the path was present.
+- If an API-semantic UNIQUE were defined over canonical columns, a value supplied at one binding site could
+  inadvertently participate in uniqueness enforcement at a different *absent* binding site (because the canonical is
+  shared), changing API semantics.
+
+Notes:
+
+- Existing rules about identity paths sourced from references remain unchanged:
+  - when an identity/uniqueness path resolves to a reference identity value, the constraint binds to the reference
+    `..._DocumentId` column (stable key) rather than propagated identity part columns.
+
+#### 2) FK-supporting “referenced-key” UNIQUE constraints MUST use canonical/storage columns
+
+Composite foreign keys require the referenced column set to be UNIQUE. In this redesign, many composite FKs target:
+
+- `(DocumentId, <IdentityParts...>)` on a concrete root table, or
+- `(DocumentId, <AbstractIdentityParts...>)` on an abstract identity table.
+
+Under key unification, composite reference FKs are defined over **canonical storage columns** for unified identity
+parts (see “Composite reference foreign keys” above). Therefore, any UNIQUE constraints whose sole purpose is “make
+the composite FK legal” MUST be defined over the same canonical storage columns.
+
+Normative rules:
+
+1. When deriving a referenced-key UNIQUE for a composite FK target, the target column list MUST be:
+   - `DocumentId`, plus
+   - the target identity-part columns mapped to their **canonical storage columns**:
+     - `Stored` → itself
+     - `UnifiedAlias` → `UnifiedAlias.CanonicalColumn`
+2. If two or more identity parts map to the same canonical column (because the identity schema contains duplicated
+   endpoints that are equality-constrained), the derivation MUST de-duplicate the repeated canonical column name
+   deterministically:
+   - keep the **first** occurrence in identity-path order, and
+   - drop subsequent duplicates.
+
+Rationale:
+
+- The composite FK must not reference read-only alias columns.
+- The composite FK and its required referenced-key UNIQUE must agree on the same physical key shape to avoid
+  mismatches and to keep identity propagation (`ON UPDATE CASCADE`) anchored on the canonical writable columns.
+
+#### Index inventory (constraints imply indexes)
+
+- UNIQUE constraints imply UNIQUE indexes:
+  - API-semantic UNIQUEs are typically on binding columns (including persisted/stored aliases).
+  - Referenced-key UNIQUEs are on canonical storage columns.
+- FK-supporting indexes (per `ddl-generation.md` FK index policy) MUST be derived from the final FK column list after
+  canonical mapping and de-duplication (if applicable).
+- This redesign does not introduce any additional “query” indexes for unified aliases beyond those implied by
+  constraints; query-index derivation remains out of scope.
+
 ## Runtime Implications
 
 ### Writes (flattening)
