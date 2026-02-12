@@ -134,14 +134,36 @@ Out of scope for Option 3 (Core-only unless a trigger-based design is added):
 
 This pass applies when both sides of an equality constraint resolve to value bindings on the **same physical table**.
 
-Each equality-constraint endpoint is resolved to a `(table, binding)` by consulting the derived relational model:
+### Endpoint resolution (authoritative mapping)
 
-- Scalar bindings (`DbColumnModel.Kind == Scalar`)
-- Descriptor FK bindings (`DbColumnModel.Kind == DescriptorFk`)
-- Document reference identity bindings (`DocumentReferenceBinding.IdentityBindings`)
+Equality constraint endpoints are resolved to a physical column using `DbColumnModel.SourceJsonPath` as the single
+authoritative “API JsonPath → stored column” mapping.
 
-If an endpoint cannot be resolved to a single binding, or the two endpoints resolve to different tables, the constraint
-is not enforced by this design (it remains Core-only).
+Key rules:
+
+- Only `DbColumnModel` entries with a non-null `SourceJsonPath` participate in endpoint resolution.
+- `DocumentReferenceBinding.IdentityBindings` and `DescriptorEdgeSource` are **not** used as additional endpoint binding
+  sources; they are derived metadata over the same `DbColumnModel` set.
+- Under key unification:
+  - per-path/per-site alias columns retain the original `SourceJsonPath` so queries and reconstitution continue to bind
+    by API-path semantics, and
+  - canonical storage columns must have `SourceJsonPath = null` so a single API JsonPath never resolves to both an alias
+    and a canonical column.
+
+Resolution algorithm (per endpoint path):
+
+1. Find all `DbColumnModel` columns across the derived resource model whose `SourceJsonPath.Canonical` matches the
+   endpoint JsonPath string exactly.
+2. If there are **zero** matches, the endpoint is not enforceable via Option 3 and remains Core-only.
+3. If there is **exactly one** match, that `(table, column)` is the resolved binding for this endpoint.
+4. If there is **more than one** match:
+   - If all matches refer to the same physical column name on the same table, treat as a duplicate inventory and
+     de-duplicate.
+   - Otherwise, fail fast: the derived model has become ambiguous for a single API JsonPath endpoint, and any automatic
+     “pick one” behavior risks unifying the wrong columns silently.
+
+If either endpoint fails to resolve to exactly one binding, or the two endpoints resolve to different tables, the
+constraint is not enforced by this design (it remains Core-only).
 
 ### Class construction
 
@@ -285,8 +307,6 @@ unification, some of those columns become generated/computed aliases.
 
 ## Pending Questions
 
-- What the exact endpoint-resolution rules are for `equalityConstraints` paths that match multiple bindings on the same
-  table (for example, repeated paths in nested collections).
 - Whether descriptor identity parts stored as `..._DescriptorId` participate in key unification.
 - Whether scalar (non-reference) columns that are equality-constrained should always keep per-path alias columns, or
   whether some duplicates can be dropped without affecting query/reconstitution behavior.
