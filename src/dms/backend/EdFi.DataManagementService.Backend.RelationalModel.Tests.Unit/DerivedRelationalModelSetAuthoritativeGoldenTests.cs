@@ -149,6 +149,8 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             WriteProjects(writer, modelSet.ProjectSchemasInEndpointOrder);
             WriteResourcesSummary(writer, modelSet.ConcreteResourcesInNameOrder);
             WriteAbstractIdentityTables(writer, modelSet.AbstractIdentityTablesInNameOrder);
+            WriteIndexes(writer, modelSet.IndexesInCreateOrder);
+            WriteTriggers(writer, modelSet.TriggersInCreateOrder);
 
             writer.WritePropertyName("resource_details");
             writer.WriteStartArray();
@@ -236,6 +238,62 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             WriteResource(writer, tableInfo.AbstractResourceKey.Resource);
             writer.WritePropertyName("table");
             WriteTable(writer, tableInfo.TableModel);
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Write indexes.
+    /// </summary>
+    private static void WriteIndexes(Utf8JsonWriter writer, IReadOnlyList<DbIndexInfo> indexes)
+    {
+        writer.WritePropertyName("indexes");
+        writer.WriteStartArray();
+
+        foreach (var index in indexes)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", index.Name.Value);
+            writer.WritePropertyName("table");
+            WriteTableReference(writer, index.Table);
+            writer.WriteString("kind", index.Kind.ToString());
+            writer.WriteBoolean("is_unique", index.IsUnique);
+            writer.WritePropertyName("key_columns");
+            WriteColumnNameList(writer, index.KeyColumns);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Write triggers.
+    /// </summary>
+    private static void WriteTriggers(Utf8JsonWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
+    {
+        writer.WritePropertyName("triggers");
+        writer.WriteStartArray();
+
+        foreach (var trigger in triggers)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", trigger.Name.Value);
+            writer.WritePropertyName("table");
+            WriteTableReference(writer, trigger.Table);
+            writer.WriteString("kind", trigger.Kind.ToString());
+            writer.WritePropertyName("key_columns");
+            WriteColumnNameList(writer, trigger.KeyColumns);
+            writer.WritePropertyName("identity_projection_columns");
+            WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
+
+            if (trigger.TargetTable is { } targetTable)
+            {
+                writer.WritePropertyName("target_table");
+                WriteTableReference(writer, targetTable);
+            }
 
             writer.WriteEndObject();
         }
