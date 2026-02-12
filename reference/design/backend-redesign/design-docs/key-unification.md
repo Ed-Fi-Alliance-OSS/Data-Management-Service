@@ -14,8 +14,8 @@ redesign currently stores reference identity parts per reference site as indepen
 This design changes the relational model so equality-constrained identity parts have a single physical source of truth:
 
 - A **canonical physical column** stores the unified value (writable, participates in composite FKs).
-- The existing **per-site identity columns** remain in the table shape, but become **generated/computed, persisted**
-  **presence-gated aliases** of the canonical column (read-only; `NULL` when the reference site is absent).
+- The existing **per-site / per-path columns** remain in the table shape, but become **generated/computed, persisted**
+  **presence-gated aliases** of the canonical column (read-only; `NULL` when the site/path is absent).
 - The derived relational model includes **explicit metadata** that links alias columns ↔ canonical storage columns and
   inventories per-table unification classes. This allows DDL generation, constraint derivation, and runtime planning to
   answer both “bind to API JsonPath” and “store/FK/cascade” questions deterministically.
@@ -29,6 +29,9 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
 - **Preserve the current “per-reference-site” column shape** to avoid widespread query/reconstitution changes.
 - **Preserve optional-reference presence semantics**:
   - per-site identity part column is `NULL` when that reference site is absent.
+- **Preserve per-path presence semantics** for equality-constrained non-reference fields:
+  - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
+  - predicates against a per-path column MUST continue to imply that the path was present.
 - **Remain compatible with identity propagation** via composite FKs and `ON UPDATE CASCADE` where enabled.
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
@@ -53,11 +56,17 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   same table row scope.
 - **Canonical column**: the single stored/writable physical column for a unification class.
 - **Alias column**: a generated/computed, persisted column that projects the canonical value under an existing column
-  name, optionally gated by reference-site presence.
+  name, optionally gated by per-path presence.
 - **Path column**: the column that binds to an API JsonPath (`DbColumnModel.SourceJsonPath != null`), used by endpoint
   resolution, query compilation, and reconstitution. Under key unification, a path column may be a stored column or a
   generated alias.
-- **Presence gating**: making a per-site alias evaluate to `NULL` when `{RefBaseName}_DocumentId` is `NULL`.
+- **Presence column**: a physical column whose nullability indicates whether a binding site is present for this row.
+  - For reference-site identity aliases: `{RefBaseName}_DocumentId`
+  - For non-reference per-path aliases: a synthetic presence flag column (see below)
+- **Presence flag column**: a stored nullable boolean/bit column used as a presence column for non-reference paths:
+  - `NULL` → the path is absent for this row
+  - `TRUE`/`1` → the path is present for this row
+- **Presence gating**: making an alias evaluate to `NULL` when its `PresenceColumn` is `NULL`.
 
 ## Background (current redesign behavior)
 
@@ -105,6 +114,16 @@ This preserves the invariant used throughout the redesign:
 
 > An absent optional reference site implies `NULL` for that site’s identity part columns.
 
+For equality-constrained non-reference path columns (scalar values and descriptor FK values), aliases are also
+presence-gated using a synthetic per-path presence flag column (stored, nullable `bool`/`bit`):
+
+- When `{PathColumnName}_Present IS NULL` → alias evaluates to `NULL`
+- Else → alias evaluates to the canonical value
+
+This preserves the invariant used by query compilation and reconstitution:
+
+> An absent optional JSON path implies `NULL` for that path’s binding column.
+
 ### 3) Constraints (FKs + all-or-none)
 
 - Composite reference FKs are defined over:
@@ -138,7 +157,7 @@ without SQL text.
 ### 1) Column-level storage metadata (alias ↔ canonical)
 
 Extend `DbColumnModel` to distinguish stored vs generated alias columns, and for aliases, record the canonical storage
-column and optional presence gate.
+column and presence gate.
 
 Conceptually:
 
@@ -154,10 +173,14 @@ public abstract record ColumnStorage
     /// A read-only generated alias of a canonical stored column.
     /// </summary>
     /// <param name="CanonicalColumn">The stored/writable canonical column name.</param>
-    /// <param name="PresenceFkColumn">
-    /// Optional presence gate. When set, the alias evaluates to NULL when the presence FK is NULL.
+    /// <param name="PresenceColumn">
+    /// Presence gate. The alias evaluates to NULL when <c>PresenceColumn IS NULL</c>.
+    ///
+    /// PresenceColumn is one of:
+    /// - reference-site presence: the reference group’s <c>..._DocumentId</c> column, or
+    /// - scalar/path presence: a synthetic <c>..._Present</c> presence flag column (stored, nullable bool/bit).
     /// </param>
-    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName? PresenceFkColumn) : ColumnStorage;
+    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName PresenceColumn) : ColumnStorage;
 }
 
 public sealed record DbColumnModel(
@@ -176,14 +199,17 @@ Rules:
 - **Stored column**:
   - normal writable column
   - used for composite FKs and propagation cascades
-  - may be an “API-bound” column (has `SourceJsonPath`) or storage-only (no `SourceJsonPath`) depending on how the
-    canonical was selected (see “SourceJsonPath rules” below)
+  - may be an “API-bound” column (has `SourceJsonPath`) or storage-only (no `SourceJsonPath`)
+  - canonical storage columns are always storage-only (`SourceJsonPath = null`)
 - **UnifiedAlias column**:
   - read-only generated/computed alias of `CanonicalColumn`
   - retains `SourceJsonPath` so endpoint resolution, query compilation, and reconstitution bind by API-path semantics
-  - when `PresenceFkColumn` is set, the alias is presence-gated:
-    - `NULL` when `PresenceFkColumn IS NULL`
+  - presence-gated:
+    - `NULL` when `PresenceColumn IS NULL`
     - else `CanonicalColumn`
+  - `PresenceColumn` is one of:
+    - reference-site aliases use the reference group’s `..._DocumentId` column, and
+    - non-reference path aliases use a synthetic `..._Present` presence flag column.
   - must have a type compatible with `CanonicalColumn` (fail fast otherwise)
 
 This metadata provides a single dialect-neutral “walk” from an API-bound path column to its physical storage column:
@@ -198,16 +224,19 @@ Defaults:
 - When no key unification applies to a table, all columns are `Stored` and `KeyUnificationClasses` is empty.
 - When key unification applies, only the columns that are members of a unification class become `UnifiedAlias`; all
   other columns remain `Stored`.
+- For non-reference member path columns, key unification introduces additional stored `..._Present` presence flag
+  columns used for presence gating.
 
 ### SourceJsonPath rules under unification
 
 `DbColumnModel.SourceJsonPath` remains the authoritative “API JsonPath → binding column” mapping:
 
 - Every API JsonPath must map to **exactly one** column in the derived model.
-- A canonical stored column may retain a non-null `SourceJsonPath` only when it is itself the binding column for that
-  JsonPath (i.e., no competing alias column with the same `SourceJsonPath` may exist).
-- Canonical stored columns introduced solely for storage (common when unifying across multiple reference paths) must
-  have `SourceJsonPath = null` and be reachable only through alias metadata.
+- For any unification class, all equality-constrained API JsonPaths MUST remain bound to distinct **per-path columns**
+  in the table shape (`KeyUnificationClass.MemberPathColumns`); duplicates MUST NOT be dropped.
+- `KeyUnificationClass.CanonicalColumn` MUST be storage-only and MUST have `SourceJsonPath = null`:
+  - canonical columns MUST NOT participate in API JsonPath endpoint resolution, and
+  - canonical columns MUST be reachable only through alias metadata (`ColumnStorage.UnifiedAlias`).
 
 ### 2) Table-level “unification class” metadata (write coalescing inventory)
 
@@ -239,8 +268,8 @@ Semantics:
 - `MemberPathColumns` is an **ordered** list of the columns that:
   - participate in the unification class as equality-constrained endpoints, and
   - have `SourceJsonPath` (i.e., they represent API-visible “binding sites” in the document).
-- Members will usually be `UnifiedAlias` columns, but can include a stored scalar (e.g., `FiscalYear`) when an existing
-  base scalar column is selected as canonical and remains the binding column for its JsonPath.
+- Members are the API-bound “binding columns” for the class and are typically `UnifiedAlias` columns whose
+  `ColumnStorage.UnifiedAlias.CanonicalColumn` points at `CanonicalColumn`.
 - Ordering must be deterministic for a fixed effective schema (baseline rule: ordinal sort by
   `Member.SourceJsonPath.Canonical`; a future extension can add an explicit preferred-source override).
 
@@ -249,7 +278,7 @@ Semantics:
 **Queries + reconstitution**
 
 - Bind by `SourceJsonPath → ColumnName` as today.
-- Read/select the existing per-site identity part column names (aliases) to preserve query compilation and
+- Read/select the existing per-site/per-path binding column names (aliases) to preserve query compilation and
   reconstitution behavior.
 
 **Constraint derivation (composite reference FKs)**
@@ -265,6 +294,8 @@ Semantics:
 - Never write `UnifiedAlias` columns (they are read-only).
 - Always write `KeyUnificationClass.CanonicalColumn` (the single stored source of truth), even when the canonical has
   `SourceJsonPath = null`.
+- When `UnifiedAlias.PresenceColumn` is a synthetic `..._Present` presence flag column, writes MUST also populate that
+  presence flag column (`NULL` when absent; non-null when present) for each materialized row.
 - Writes MUST be deterministic and MUST NOT consult existing row values (“keep the previous value”) to fill missing
   unified values.
 
@@ -315,9 +346,9 @@ In addition to conflict detection, flattening MUST apply the following required 
 
 1. **Presence-gated non-null requirement**:
    - For a `KeyUnificationClass`, for each `MemberPathColumn` whose `DbColumnModel.Storage` is
-     `UnifiedAlias(CanonicalColumn, PresenceFkColumn)` with `PresenceFkColumn != null`:
-     - If the current row’s `PresenceFkColumn` value is non-null (i.e., that reference site is present), then the
-       canonical value computed for the class MUST be non-null.
+     `UnifiedAlias(CanonicalColumn, PresenceColumn)`:
+     - If the current row’s `PresenceColumn` value is non-null (i.e., that path’s presence gate indicates the member
+       site is present), then the canonical value computed for the class MUST be non-null.
    - If this requirement is violated, the write MUST fail closed (data validation error) rather than relying on a
      later database `CK_*_AllNone` violation. This produces actionable failures and prevents emitting doomed SQL.
 2. **Canonical nullability**:
@@ -329,7 +360,8 @@ In addition to conflict detection, flattening MUST apply the following required 
 - Emit `Stored` columns as normal columns.
 - Emit `UnifiedAlias` columns as generated/computed, persisted/stored columns using the recorded canonical/presence-gate
   metadata and dialect-specific syntax.
-- Ensure the canonical stored column appears before aliases in the physical column order (dependency).
+- Ensure canonical storage columns and any synthetic presence flag columns appear before aliases in the physical column
+  order (dependency).
 
 ## Deriving Unification Classes from ApiSchema
 
@@ -369,9 +401,7 @@ Key rules:
   - per-path/per-site alias columns retain the original `SourceJsonPath` so queries and reconstitution continue to bind
     by API-path semantics, and
   - canonical storage columns must not introduce ambiguity in JsonPath endpoint resolution:
-    - canonical columns introduced solely for storage have `SourceJsonPath = null`, and
-    - when an existing base scalar column is selected as canonical, it may retain `SourceJsonPath` as the binding
-      column for that path (no competing alias for the same `SourceJsonPath` may exist).
+    - canonical columns are storage-only and have `SourceJsonPath = null`.
 
 Resolution algorithm (per endpoint path):
 
@@ -433,24 +463,28 @@ Implications when descriptor identity parts participate in key unification:
 
 For each unification class on a table, select exactly one canonical column:
 
-1. Prefer an existing **non-reference-site** column (i.e., a column whose name is not `{RefBaseName}_...`) when one of
-   the unified endpoints is already represented as a “base” scalar column on the table.
-2. Otherwise, create a new canonical column and convert all member per-site columns into aliases.
+1. Create a new canonical stored column for the unification class.
+2. Convert all member path columns (the API-bound endpoints) into `UnifiedAlias` columns that point at the new
+   canonical column, preserving:
+   - existing column names, and
+   - existing `SourceJsonPath` bindings.
 
 ### Naming rules (deterministic)
 
 The canonical column name must be deterministic for a fixed effective schema and must remain stable under identifier
 shortening. The baseline rule for first cut:
 
-- If a “base” scalar column is selected as canonical, its name is unchanged.
-- Otherwise:
-  - Use the identity-part base name suffix that already appears in `{RefBaseName}_{IdentityPart}`.
-  - If that name collides with an existing column, apply a deterministic collision suffix.
+- Use the identity-part base name suffix that already appears in `{RefBaseName}_{IdentityPart}` (or the scalar leaf
+  name when unifying scalar paths).
+- If that name collides with an existing column (including any member path column that must be preserved), apply a
+  deterministic collision suffix.
 
 The alias columns keep the existing per-site names (e.g., `StudentSchoolAssociation_StudentUniqueId`) so query
 compilation and reconstitution can continue to bind by those names.
 
 ## Presence-Gated Alias Semantics
+
+### Reference sites (DocumentId presence)
 
 For a reference site `{RefBaseName}` and unified identity part canonical column `{Canonical}`:
 
@@ -463,6 +497,34 @@ This allows:
 - per-site predicates to continue using `{RefBaseName}_{IdentityPart}` without additionally checking
   `{RefBaseName}_DocumentId IS NOT NULL`
 - “all-or-none” nullability constraints to remain expressible at the per-reference-group level
+
+### Non-reference paths (presence flags)
+
+Equality constraints can also relate non-reference path columns (scalar values and `..._DescriptorId` columns). These
+paths can be independently present/absent in the API payload, and Core’s equality validation only rejects
+**conflicting values** (it does not require that all constrained paths are present).
+
+To preserve query and reconstitution semantics under unification, every non-reference member path column MUST be
+presence-gated with a synthetic presence flag column.
+
+For a member path column `{PathColumnName}` and canonical column `{Canonical}`:
+
+1. Create a stored presence flag column `{PathColumnName}_Present` with:
+   - type: nullable `bit` (SQL Server) / nullable `boolean` (PostgreSQL)
+   - `SourceJsonPath = null` (storage-only; not an API binding column)
+   - semantics:
+     - `NULL` → `{PathColumnName}` was absent for this row
+     - non-null (`1`/`TRUE`) → `{PathColumnName}` was present for this row
+   - record `{PathColumnName}_Present` as `ColumnStorage.UnifiedAlias.PresenceColumn` for `{PathColumnName}`
+2. Define alias column `{PathColumnName}` as:
+   - `NULL` when `{PathColumnName}_Present` is `NULL`
+   - `{Canonical}` otherwise
+3. Flattening MUST write `{PathColumnName}_Present` for each row:
+   - set to `1`/`TRUE` when the member’s `SourceJsonPath` is present for that row
+   - set to `NULL` when absent
+
+This prevents canonical values supplied at one JsonPath from “leaking” into a different absent JsonPath during reads
+or when evaluating predicates against the per-path binding columns.
 
 ## Dialect DDL
 
@@ -479,6 +541,21 @@ StudentSchoolAssociation_StudentUniqueId AS (
 ) PERSISTED
 ```
 
+Presence-flag-gated aliases (non-reference paths):
+
+```sql
+SchoolYear_Unified <type> NULL, -- canonical stored column
+
+GradingPeriodSchoolYear_Present bit NULL,
+
+GradingPeriodSchoolYear AS (
+  CASE
+    WHEN GradingPeriodSchoolYear_Present IS NULL THEN NULL
+    ELSE SchoolYear_Unified
+  END
+) PERSISTED
+```
+
 ### PostgreSQL
 
 Alias columns are generated, stored:
@@ -489,6 +566,22 @@ Alias columns are generated, stored:
     CASE
       WHEN "StudentSchoolAssociation_DocumentId" IS NULL THEN NULL
       ELSE "StudentUniqueId"
+    END
+  ) STORED
+```
+
+Presence-flag-gated aliases (non-reference paths):
+
+```sql
+"SchoolYear_Unified" <type> NULL, -- canonical stored column
+
+"GradingPeriodSchoolYear_Present" boolean NULL,
+
+"GradingPeriodSchoolYear" <type>
+  GENERATED ALWAYS AS (
+    CASE
+      WHEN "GradingPeriodSchoolYear_Present" IS NULL THEN NULL
+      ELSE "SchoolYear_Unified"
     END
   ) STORED
 ```
@@ -529,14 +622,15 @@ All-or-none constraints use the per-site alias columns, preserving the original 
 
 ### Reads (reconstitution)
 
-- Reconstitution continues to read from per-site identity columns.
-- Presence gating ensures absent optional reference sites do not “inherit” canonical values from other sites.
+- Reconstitution continues to read from per-path binding columns (aliases) for unified values.
+- Presence gating ensures absent optional reference sites and absent optional scalar paths do not “inherit” canonical
+  values from other sites/paths.
 
 ### Queries
 
-- Query compilation can continue to bind per-site predicates to per-site identity column names.
-- Presence gating preserves the existing semantics where filtering on a per-site identity part implies reference
-  presence.
+- Query compilation can continue to bind predicates to the per-path binding column names (aliases).
+- Presence gating preserves the existing semantics where filtering on a per-site/per-path value implies that
+  site/path was present.
 
 ## Interactions with Existing Design Docs
 
@@ -551,8 +645,6 @@ unification, some of those columns become generated/computed aliases.
 
 ## Pending Questions
 
-- Whether scalar (non-reference) columns that are equality-constrained should always keep per-path alias columns, or
-  whether some duplicates can be dropped without affecting query/reconstitution behavior.
 - The canonical-column naming rule when multiple per-site identity-part suffixes differ due to name overrides or when
   the leaf property name is ambiguous.
 - The canonical-column nullability rule when a unification class contains a mix of required and optional endpoints.
