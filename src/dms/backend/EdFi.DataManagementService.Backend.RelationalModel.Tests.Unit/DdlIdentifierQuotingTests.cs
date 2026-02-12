@@ -204,7 +204,8 @@ internal static class ReservedIdentifierFixture
                     new DbTriggerName(Identifier),
                     table,
                     DbTriggerKind.DocumentStamping,
-                    new[] { column }
+                    new[] { column },
+                    []
                 ),
             }
         );

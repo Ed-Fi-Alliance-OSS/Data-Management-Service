@@ -210,6 +210,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_Section_B"),
                     new DbTableName(sampleSchema, "Section"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -218,6 +219,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_School_B"),
                     new DbTableName(edfiSchema, "School"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -226,6 +228,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_SchoolTypeDescriptor"),
                     new DbTableName(edfiSchema, "SchoolTypeDescriptor"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -234,6 +237,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_School_A"),
                     new DbTableName(edfiSchema, "School"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );

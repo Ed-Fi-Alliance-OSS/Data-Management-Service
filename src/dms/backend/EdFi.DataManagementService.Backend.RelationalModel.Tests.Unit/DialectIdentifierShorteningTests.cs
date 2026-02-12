@@ -633,7 +633,8 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 new DbTriggerName(_identifiers.TriggerName),
                 tableName,
                 DbTriggerKind.DocumentStamping,
-                new[] { new DbColumnName(_identifiers.KeyColumnName) }
+                new[] { new DbColumnName(_identifiers.KeyColumnName) },
+                []
             )
         );
     }

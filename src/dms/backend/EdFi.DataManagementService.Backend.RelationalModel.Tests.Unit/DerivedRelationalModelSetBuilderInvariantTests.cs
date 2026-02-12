@@ -225,10 +225,22 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
             var table = new DbTableName(schema, "School");
 
             context.TriggerInventory.Add(
-                new DbTriggerInfo(new DbTriggerName("TR_School"), table, DbTriggerKind.DocumentStamping, [])
+                new DbTriggerInfo(
+                    new DbTriggerName("TR_School"),
+                    table,
+                    DbTriggerKind.DocumentStamping,
+                    [],
+                    []
+                )
             );
             context.TriggerInventory.Add(
-                new DbTriggerInfo(new DbTriggerName("TR_School"), table, DbTriggerKind.DocumentStamping, [])
+                new DbTriggerInfo(
+                    new DbTriggerName("TR_School"),
+                    table,
+                    DbTriggerKind.DocumentStamping,
+                    [],
+                    []
+                )
             );
         }
     }
@@ -421,10 +433,22 @@ file sealed class DuplicateTriggerNamesAcrossTablesPass : IRelationalModelSetPas
         var tableBeta = new DbTableName(schema, "Student");
 
         context.TriggerInventory.Add(
-            new DbTriggerInfo(new DbTriggerName("TR_Common"), tableAlpha, DbTriggerKind.DocumentStamping, [])
+            new DbTriggerInfo(
+                new DbTriggerName("TR_Common"),
+                tableAlpha,
+                DbTriggerKind.DocumentStamping,
+                [],
+                []
+            )
         );
         context.TriggerInventory.Add(
-            new DbTriggerInfo(new DbTriggerName("TR_Common"), tableBeta, DbTriggerKind.DocumentStamping, [])
+            new DbTriggerInfo(
+                new DbTriggerName("TR_Common"),
+                tableBeta,
+                DbTriggerKind.DocumentStamping,
+                [],
+                []
+            )
         );
     }
 }

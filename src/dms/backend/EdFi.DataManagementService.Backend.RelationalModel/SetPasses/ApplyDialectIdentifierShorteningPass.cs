@@ -697,8 +697,25 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         var updatedName = new DbTriggerName(dialectRules.ShortenIdentifier(trigger.Name.Value));
         var updatedTable = ShortenTable(trigger.Table, dialectRules);
         var updatedColumns = ShortenColumns(trigger.KeyColumns, dialectRules, out var columnsChanged);
+        var updatedIdentityColumns = ShortenColumns(
+            trigger.IdentityProjectionColumns,
+            dialectRules,
+            out var identityColumnsChanged
+        );
+        var updatedTargetTable = trigger.TargetTable is { } target
+            ? ShortenTable(target, dialectRules)
+            : trigger.TargetTable;
+        var targetTableChanged =
+            updatedTargetTable is not null
+            && trigger.TargetTable is not null
+            && !updatedTargetTable.Value.Equals(trigger.TargetTable.Value);
 
-        changed = columnsChanged || !updatedTable.Equals(trigger.Table) || !updatedName.Equals(trigger.Name);
+        changed =
+            columnsChanged
+            || identityColumnsChanged
+            || targetTableChanged
+            || !updatedTable.Equals(trigger.Table)
+            || !updatedName.Equals(trigger.Name);
 
         if (!changed)
         {
@@ -710,6 +727,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Name = updatedName,
             Table = updatedTable,
             KeyColumns = updatedColumns,
+            IdentityProjectionColumns = updatedIdentityColumns,
+            TargetTable = updatedTargetTable,
         };
     }
 
