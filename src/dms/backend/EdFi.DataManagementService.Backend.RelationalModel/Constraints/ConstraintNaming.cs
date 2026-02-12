@@ -94,6 +94,27 @@ internal static class ConstraintNaming
     }
 
     /// <summary>
+    /// Builds an FK-support index name following the <c>IX_{TableName}_{Col1}_{Col2}_...</c> convention,
+    /// with columns listed in index key order.
+    /// </summary>
+    internal static string BuildForeignKeySupportIndexName(
+        DbTableName table,
+        IReadOnlyList<DbColumnName> keyColumns
+    )
+    {
+        if (keyColumns is null || keyColumns.Count == 0)
+        {
+            throw new ArgumentException(
+                "FK-support index must include at least one key column.",
+                nameof(keyColumns)
+            );
+        }
+
+        var columnTokens = keyColumns.Select(c => c.Value).ToArray();
+        return BuildName("IX", table, columnTokens);
+    }
+
+    /// <summary>
     /// Applies dialect identifier limits to a constraint name by shortening it with a signature hash.
     /// </summary>
     internal static string ApplyDialectLimit(
