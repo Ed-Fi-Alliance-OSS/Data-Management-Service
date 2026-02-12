@@ -761,6 +761,57 @@ All-or-none constraints use the per-site alias columns, preserving the original 
 - Presence gating preserves the existing semantics where filtering on a per-site/per-path value implies that
   site/path was present.
 
+### Triggers (stamping + identity maintenance) under unified aliases (normative)
+
+Key unification introduces generated/computed **alias columns** (`ColumnStorage.UnifiedAlias`) whose values can change
+when their canonical column changes, even though the alias columns themselves are **read-only**.
+
+As a result, trigger implementations that care about “identity projection columns changed” MUST NOT rely on
+“column updated” detection (because aliases are never written directly):
+
+- PostgreSQL: do not use `UPDATE OF <aliasColumn>` to detect identity projection change.
+- SQL Server: do not use `IF UPDATE(<aliasColumn>)` (or similar) to detect identity projection change.
+
+Instead, triggers MUST treat “changed” as a **value-diff** between the pre-image and post-image of the row, where a
+unified member’s value is the **presence-gated expression** derived from `ColumnStorage.UnifiedAlias`:
+
+- `Stored` column value: `<Column>`
+- `UnifiedAlias` column value: `CASE WHEN <PresenceColumn> IS NULL THEN NULL ELSE <CanonicalColumn> END`
+
+This makes identity change detection robust to:
+
+- FK-cascade updates (or SQL Server trigger-based propagation fallbacks) that update canonical storage columns, and
+- presence changes that gate an alias between `NULL` and a canonical value.
+
+#### `DbTriggerKind.DocumentStamping` (stamps `dms.Document`)
+
+Implementation guidance (dialect-neutral semantics):
+
+- Fire on `INSERT`, `UPDATE`, and `DELETE` for each schema-derived table (as described in `update-tracking.md`).
+- Compute `affectedDocumentIds` from `inserted ∪ deleted` (dedupe).
+- Always bump **Content** stamps for `affectedDocumentIds` (representation changed).
+- Compute `identityChangedDocumentIds` by diffing the document’s identity projection values between `inserted` and
+  `deleted` (null-safe comparison). For unified members, diff the **presence-gated canonical expression** above (not
+  the alias column name).
+- Bump **Identity** stamps only for `identityChangedDocumentIds`.
+
+#### `DbTriggerKind.ReferentialIdentityMaintenance` + `DbTriggerKind.AbstractIdentityMaintenance`
+
+These triggers must use the same value-diff gating:
+
+- A trigger may execute on every `UPDATE`, but it MUST compute its workset as the rows whose identity projection
+  values differ between `inserted` and `deleted` (null-safe).
+- For unified identity members, the identity value is the presence-gated canonical expression above.
+
+This guarantees that cascades / propagation-fallback updates to canonical columns correctly cause referential-id and
+abstract-identity maintenance, even though alias columns are read-only.
+
+Design note (applies to `07-index-and-trigger-inventory.md` and any DDL emission docs):
+
+- Any phrase like “`UPDATE` when identity-projection columns change” MUST be interpreted as “identity projection
+  values are distinct between old/new row images (null-safe), using the `UnifiedAlias` expression for unified
+  members”, not “the column appears in the SET list”.
+
 ## Interactions with Existing Design Docs
 
 This design refines the baseline language in:
