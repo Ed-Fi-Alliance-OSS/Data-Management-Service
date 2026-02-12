@@ -34,6 +34,191 @@ public class Given_Pgsql_Identifier_Shortening
     {
         IdentifierShorteningAssertions.AssertShortened(_scenario);
     }
+
+    /// <summary>
+    /// It should shorten the project schema physical identifier.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_project_schema_identifiers()
+    {
+        var expectedSchema = _scenario.DialectRules.ShortenIdentifier(_scenario.Identifiers.SchemaName);
+        var projectSchema = _scenario.Result.ProjectSchemasInEndpointOrder.Single(schema =>
+            schema.ProjectEndpointName == ShorteningScenario.CoreProjectEndpointName
+        );
+
+        projectSchema.PhysicalSchema.Value.Should().Be(expectedSchema);
+    }
+
+    /// <summary>
+    /// It should shorten resource model schema, root table, primary key, and key column identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_resource_model_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedPrimaryKey = dialectRules.ShortenIdentifier($"PK_{identifiers.TableName}");
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+
+        var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
+
+        resourceModel.PhysicalSchema.Value.Should().Be(expectedSchema);
+        resourceModel.Root.Table.Schema.Value.Should().Be(expectedSchema);
+        resourceModel.Root.Table.Name.Should().Be(expectedTable);
+        resourceModel.Root.Key.ConstraintName.Should().Be(expectedPrimaryKey);
+        resourceModel.Root.Key.Columns.Single().ColumnName.Value.Should().Be(expectedKey);
+        resourceModel
+            .Root.Columns.Single(column => column.ColumnName.Value == expectedKey)
+            .ColumnName.Value.Should()
+            .Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should shorten unique constraint, foreign key, and all-or-none constraint identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_constraint_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
+        var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
+        var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
+        var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
+        var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
+
+        var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
+
+        var uniqueConstraint = resourceModel.Root.Constraints.OfType<TableConstraint.Unique>().Single();
+        uniqueConstraint.Name.Should().Be(expectedUnique);
+        uniqueConstraint.Columns.Single().Value.Should().Be(expectedKey);
+
+        var foreignKey = resourceModel.Root.Constraints.OfType<TableConstraint.ForeignKey>().Single();
+        foreignKey.Name.Should().Be(expectedForeign);
+        foreignKey.Columns.Single().Value.Should().Be(expectedFk);
+        foreignKey.TargetTable.Schema.Value.Should().Be(expectedSchema);
+        foreignKey.TargetTable.Name.Should().Be(expectedTable);
+        foreignKey.TargetColumns.Single().Value.Should().Be(expectedKey);
+
+        var allOrNone = resourceModel
+            .Root.Constraints.OfType<TableConstraint.AllOrNoneNullability>()
+            .Single();
+        allOrNone.Name.Should().Be(expectedAllNone);
+        allOrNone.FkColumn.Value.Should().Be(expectedFk);
+        allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
+    }
+
+    /// <summary>
+    /// It should shorten reference binding and descriptor edge identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_binding_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
+        var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
+        var expectedDescriptor = dialectRules.ShortenIdentifier(identifiers.DescriptorColumnName);
+
+        var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
+
+        var binding = resourceModel.DocumentReferenceBindings.Single();
+        binding.Table.Schema.Value.Should().Be(expectedSchema);
+        binding.Table.Name.Should().Be(expectedTable);
+        binding.FkColumn.Value.Should().Be(expectedFk);
+        binding.IdentityBindings.Single().Column.Value.Should().Be(expectedIdentity);
+
+        var edge = resourceModel.DescriptorEdgeSources.Single();
+        edge.Table.Schema.Value.Should().Be(expectedSchema);
+        edge.Table.Name.Should().Be(expectedTable);
+        edge.FkColumn.Value.Should().Be(expectedDescriptor);
+    }
+
+    /// <summary>
+    /// It should shorten index and trigger identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_index_and_trigger_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
+        var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
+
+        var index = _scenario.Result.IndexesInCreateOrder.Single();
+        index.Name.Value.Should().Be(expectedIndex);
+        index.Table.Schema.Value.Should().Be(expectedSchema);
+        index.Table.Name.Should().Be(expectedTable);
+        index.KeyColumns.Single().Value.Should().Be(expectedKey);
+
+        var trigger = _scenario.Result.TriggersInCreateOrder.Single();
+        trigger.Name.Value.Should().Be(expectedTrigger);
+        trigger.Table.Schema.Value.Should().Be(expectedSchema);
+        trigger.Table.Name.Should().Be(expectedTable);
+        trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should shorten abstract identity table identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_abstract_table_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedAbstractTable = dialectRules.ShortenIdentifier(identifiers.AbstractTableName);
+        var expectedAbstractPrimaryKey = dialectRules.ShortenIdentifier(
+            $"PK_{identifiers.AbstractTableName}"
+        );
+        var expectedAbstractColumn = dialectRules.ShortenIdentifier(identifiers.AbstractColumnName);
+
+        var abstractTable = _scenario.Result.AbstractIdentityTablesInNameOrder.Single();
+        abstractTable.TableModel.Table.Schema.Value.Should().Be(expectedSchema);
+        abstractTable.TableModel.Table.Name.Should().Be(expectedAbstractTable);
+        abstractTable.TableModel.Key.ConstraintName.Should().Be(expectedAbstractPrimaryKey);
+        abstractTable.TableModel.Key.Columns.Single().ColumnName.Value.Should().Be(expectedAbstractColumn);
+    }
+
+    /// <summary>
+    /// It should shorten abstract union view identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_abstract_view_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedView = dialectRules.ShortenIdentifier(identifiers.ViewName);
+        var expectedViewColumn = dialectRules.ShortenIdentifier(identifiers.ViewColumnName);
+
+        var abstractView = _scenario.Result.AbstractUnionViewsInNameOrder.Single();
+        abstractView.ViewName.Schema.Value.Should().Be(expectedSchema);
+        abstractView.ViewName.Name.Should().Be(expectedView);
+        abstractView.OutputColumnsInSelectOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+
+        var arm = abstractView.UnionArmsInOrder.Single();
+        arm.FromTable.Schema.Value.Should().Be(expectedSchema);
+        arm.FromTable.Name.Should().Be(expectedTable);
+        var sourceColumnProjection = arm
+            .ProjectionExpressionsInSelectOrder.Single()
+            .Should()
+            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Subject;
+        sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
+    }
 }
 
 /// <summary>
@@ -60,6 +245,191 @@ public class Given_Mssql_Identifier_Shortening
     public void It_should_shorten_identifiers_across_the_model()
     {
         IdentifierShorteningAssertions.AssertShortened(_scenario);
+    }
+
+    /// <summary>
+    /// It should shorten the project schema physical identifier.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_project_schema_identifiers()
+    {
+        var expectedSchema = _scenario.DialectRules.ShortenIdentifier(_scenario.Identifiers.SchemaName);
+        var projectSchema = _scenario.Result.ProjectSchemasInEndpointOrder.Single(schema =>
+            schema.ProjectEndpointName == ShorteningScenario.CoreProjectEndpointName
+        );
+
+        projectSchema.PhysicalSchema.Value.Should().Be(expectedSchema);
+    }
+
+    /// <summary>
+    /// It should shorten resource model schema, root table, primary key, and key column identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_resource_model_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedPrimaryKey = dialectRules.ShortenIdentifier($"PK_{identifiers.TableName}");
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+
+        var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
+
+        resourceModel.PhysicalSchema.Value.Should().Be(expectedSchema);
+        resourceModel.Root.Table.Schema.Value.Should().Be(expectedSchema);
+        resourceModel.Root.Table.Name.Should().Be(expectedTable);
+        resourceModel.Root.Key.ConstraintName.Should().Be(expectedPrimaryKey);
+        resourceModel.Root.Key.Columns.Single().ColumnName.Value.Should().Be(expectedKey);
+        resourceModel
+            .Root.Columns.Single(column => column.ColumnName.Value == expectedKey)
+            .ColumnName.Value.Should()
+            .Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should shorten unique constraint, foreign key, and all-or-none constraint identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_constraint_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
+        var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
+        var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
+        var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
+        var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
+
+        var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
+
+        var uniqueConstraint = resourceModel.Root.Constraints.OfType<TableConstraint.Unique>().Single();
+        uniqueConstraint.Name.Should().Be(expectedUnique);
+        uniqueConstraint.Columns.Single().Value.Should().Be(expectedKey);
+
+        var foreignKey = resourceModel.Root.Constraints.OfType<TableConstraint.ForeignKey>().Single();
+        foreignKey.Name.Should().Be(expectedForeign);
+        foreignKey.Columns.Single().Value.Should().Be(expectedFk);
+        foreignKey.TargetTable.Schema.Value.Should().Be(expectedSchema);
+        foreignKey.TargetTable.Name.Should().Be(expectedTable);
+        foreignKey.TargetColumns.Single().Value.Should().Be(expectedKey);
+
+        var allOrNone = resourceModel
+            .Root.Constraints.OfType<TableConstraint.AllOrNoneNullability>()
+            .Single();
+        allOrNone.Name.Should().Be(expectedAllNone);
+        allOrNone.FkColumn.Value.Should().Be(expectedFk);
+        allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
+    }
+
+    /// <summary>
+    /// It should shorten reference binding and descriptor edge identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_binding_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
+        var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
+        var expectedDescriptor = dialectRules.ShortenIdentifier(identifiers.DescriptorColumnName);
+
+        var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
+
+        var binding = resourceModel.DocumentReferenceBindings.Single();
+        binding.Table.Schema.Value.Should().Be(expectedSchema);
+        binding.Table.Name.Should().Be(expectedTable);
+        binding.FkColumn.Value.Should().Be(expectedFk);
+        binding.IdentityBindings.Single().Column.Value.Should().Be(expectedIdentity);
+
+        var edge = resourceModel.DescriptorEdgeSources.Single();
+        edge.Table.Schema.Value.Should().Be(expectedSchema);
+        edge.Table.Name.Should().Be(expectedTable);
+        edge.FkColumn.Value.Should().Be(expectedDescriptor);
+    }
+
+    /// <summary>
+    /// It should shorten index and trigger identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_index_and_trigger_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
+        var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
+
+        var index = _scenario.Result.IndexesInCreateOrder.Single();
+        index.Name.Value.Should().Be(expectedIndex);
+        index.Table.Schema.Value.Should().Be(expectedSchema);
+        index.Table.Name.Should().Be(expectedTable);
+        index.KeyColumns.Single().Value.Should().Be(expectedKey);
+
+        var trigger = _scenario.Result.TriggersInCreateOrder.Single();
+        trigger.Name.Value.Should().Be(expectedTrigger);
+        trigger.Table.Schema.Value.Should().Be(expectedSchema);
+        trigger.Table.Name.Should().Be(expectedTable);
+        trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should shorten abstract identity table identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_abstract_table_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedAbstractTable = dialectRules.ShortenIdentifier(identifiers.AbstractTableName);
+        var expectedAbstractPrimaryKey = dialectRules.ShortenIdentifier(
+            $"PK_{identifiers.AbstractTableName}"
+        );
+        var expectedAbstractColumn = dialectRules.ShortenIdentifier(identifiers.AbstractColumnName);
+
+        var abstractTable = _scenario.Result.AbstractIdentityTablesInNameOrder.Single();
+        abstractTable.TableModel.Table.Schema.Value.Should().Be(expectedSchema);
+        abstractTable.TableModel.Table.Name.Should().Be(expectedAbstractTable);
+        abstractTable.TableModel.Key.ConstraintName.Should().Be(expectedAbstractPrimaryKey);
+        abstractTable.TableModel.Key.Columns.Single().ColumnName.Value.Should().Be(expectedAbstractColumn);
+    }
+
+    /// <summary>
+    /// It should shorten abstract union view identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_abstract_view_identifiers()
+    {
+        var dialectRules = _scenario.DialectRules;
+        var identifiers = _scenario.Identifiers;
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
+        var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedView = dialectRules.ShortenIdentifier(identifiers.ViewName);
+        var expectedViewColumn = dialectRules.ShortenIdentifier(identifiers.ViewColumnName);
+
+        var abstractView = _scenario.Result.AbstractUnionViewsInNameOrder.Single();
+        abstractView.ViewName.Schema.Value.Should().Be(expectedSchema);
+        abstractView.ViewName.Name.Should().Be(expectedView);
+        abstractView.OutputColumnsInSelectOrder.Single().ColumnName.Value.Should().Be(expectedViewColumn);
+
+        var arm = abstractView.UnionArmsInOrder.Single();
+        arm.FromTable.Schema.Value.Should().Be(expectedSchema);
+        arm.FromTable.Name.Should().Be(expectedTable);
+        var sourceColumnProjection = arm
+            .ProjectionExpressionsInSelectOrder.Single()
+            .Should()
+            .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
+            .Subject;
+        sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
     }
 }
 
@@ -206,13 +576,10 @@ internal sealed record ShorteningScenario(
 
         var identifiers = ShorteningIdentifiers.Create(prefix, dialectRules.MaxIdentifierLength + 12);
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[]
-            {
-                new IdentifierShorteningFixturePass(effectiveSchemaSet, identifiers),
-                new ApplyDialectIdentifierShorteningPass(),
-            }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new IdentifierShorteningFixturePass(effectiveSchemaSet, identifiers),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
 
         var result = builder.Build(effectiveSchemaSet, dialectRules.Dialect, dialectRules);
 
@@ -455,8 +822,8 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new DbColumnName(_identifiers.KeyColumnName),
             ColumnKind.ParentKeyPart
         );
-        var columns = new[]
-        {
+        DbColumnModel[] columns =
+        [
             new DbColumnModel(
                 new DbColumnName(_identifiers.KeyColumnName),
                 ColumnKind.ParentKeyPart,
@@ -489,28 +856,28 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.descriptor"),
                 TargetResource: ShorteningScenario.AbstractResource
             ),
-        };
+        ];
 
-        var constraints = new TableConstraint[]
-        {
+        TableConstraint[] constraints =
+        [
             new TableConstraint.Unique(
                 _identifiers.UniqueConstraintName,
-                new[] { new DbColumnName(_identifiers.KeyColumnName) }
+                [new DbColumnName(_identifiers.KeyColumnName)]
             ),
             new TableConstraint.ForeignKey(
                 _identifiers.ForeignKeyConstraintName,
-                new[] { new DbColumnName(_identifiers.FkColumnName) },
+                [new DbColumnName(_identifiers.FkColumnName)],
                 tableName,
-                new[] { new DbColumnName(_identifiers.KeyColumnName) },
+                [new DbColumnName(_identifiers.KeyColumnName)],
                 ReferentialAction.NoAction,
                 ReferentialAction.NoAction
             ),
             new TableConstraint.AllOrNoneNullability(
                 _identifiers.AllOrNoneConstraintName,
                 new DbColumnName(_identifiers.FkColumnName),
-                new[] { new DbColumnName(_identifiers.IdentityColumnName) }
+                [new DbColumnName(_identifiers.IdentityColumnName)]
             ),
-        };
+        ];
 
         var table = new DbTableModel(
             tableName,
@@ -526,13 +893,13 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             Table: tableName,
             FkColumn: new DbColumnName(_identifiers.FkColumnName),
             TargetResource: ShorteningScenario.AbstractResource,
-            IdentityBindings: new[]
-            {
+            IdentityBindings:
+            [
                 new ReferenceIdentityBinding(
                     JsonPathExpressionCompiler.Compile("$.ref.identity"),
                     new DbColumnName(_identifiers.IdentityColumnName)
                 ),
-            }
+            ]
         );
 
         var descriptorEdge = new DescriptorEdgeSource(
@@ -548,9 +915,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             schema,
             ResourceStorageKind.RelationalTables,
             table,
-            new[] { table },
-            new[] { binding },
-            new[] { descriptorEdge }
+            [table],
+            [binding],
+            [descriptorEdge]
         );
 
         context.ConcreteResourcesInNameOrder.Add(
@@ -563,16 +930,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             JsonPathExpressionCompiler.Compile("$"),
             new TableKey(
                 ConstraintNaming.BuildPrimaryKeyName(abstractTableName),
-                new[]
-                {
-                    new DbKeyColumn(
-                        new DbColumnName(_identifiers.AbstractColumnName),
-                        ColumnKind.ParentKeyPart
-                    ),
-                }
+                [new DbKeyColumn(new DbColumnName(_identifiers.AbstractColumnName), ColumnKind.ParentKeyPart)]
             ),
-            new[]
-            {
+            [
                 new DbColumnModel(
                     new DbColumnName(_identifiers.AbstractColumnName),
                     ColumnKind.ParentKeyPart,
@@ -581,8 +941,8 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
-            },
-            Array.Empty<TableConstraint>()
+            ],
+            []
         );
 
         context.AbstractIdentityTablesInNameOrder.Add(
@@ -592,28 +952,25 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
         var abstractView = new AbstractUnionViewInfo(
             _abstractKey,
             new DbTableName(schema, _identifiers.ViewName),
-            new[]
-            {
+            [
                 new AbstractUnionViewOutputColumn(
                     new DbColumnName(_identifiers.ViewColumnName),
                     new RelationalScalarType(ScalarKind.Int64),
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
-            },
-            new[]
-            {
+            ],
+            [
                 new AbstractUnionViewArm(
                     _resourceKey,
                     tableName,
-                    new AbstractUnionViewProjectionExpression[]
-                    {
+                    [
                         new AbstractUnionViewProjectionExpression.SourceColumn(
                             new DbColumnName(_identifiers.KeyColumnName)
                         ),
-                    }
+                    ]
                 ),
-            }
+            ]
         );
 
         context.AbstractUnionViewsInNameOrder.Add(abstractView);
@@ -622,7 +979,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new DbIndexInfo(
                 new DbIndexName(_identifiers.IndexName),
                 tableName,
-                new[] { new DbColumnName(_identifiers.KeyColumnName) },
+                [new DbColumnName(_identifiers.KeyColumnName)],
                 IsUnique: true,
                 DbIndexKind.UniqueConstraint
             )
@@ -633,7 +990,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 new DbTriggerName(_identifiers.TriggerName),
                 tableName,
                 DbTriggerKind.DocumentStamping,
-                new[] { new DbColumnName(_identifiers.KeyColumnName) },
+                [new DbColumnName(_identifiers.KeyColumnName)],
                 []
             )
         );

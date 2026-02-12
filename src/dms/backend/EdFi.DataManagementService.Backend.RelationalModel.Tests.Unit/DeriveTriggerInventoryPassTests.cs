@@ -29,7 +29,7 @@ public class Given_Trigger_Set_Composition
             coreProjectSchema,
             isExtensionProject: false
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -95,7 +95,7 @@ public class Given_Trigger_Set_Composition
         );
 
         childStamp.KeyColumns.Should().ContainSingle();
-        childStamp.KeyColumns[0].Value.Should().Contain("DocumentId");
+        childStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
     }
 
     /// <summary>
@@ -159,19 +159,20 @@ public class Given_Extension_Table_Triggers
     [SetUp]
     public void Setup()
     {
-        var coreProjectSchema = TriggerInventoryTestSchemaBuilder.BuildExtensionCoreProjectSchema();
+        var coreProjectSchema = CommonInventoryTestSchemaBuilder.BuildExtensionCoreProjectSchema();
         var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
             coreProjectSchema,
             isExtensionProject: false
         );
-        var extensionProjectSchema = TriggerInventoryTestSchemaBuilder.BuildExtensionProjectSchema();
+        var extensionProjectSchema = CommonInventoryTestSchemaBuilder.BuildExtensionProjectSchema();
         var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
             extensionProjectSchema,
             isExtensionProject: true
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
-            new[] { coreProject, extensionProject }
-        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -186,11 +187,11 @@ public class Given_Extension_Table_Triggers
     [Test]
     public void It_should_create_DocumentStamping_trigger_on_extension_table()
     {
-        var extensionStampTriggers = _triggers.Where(t =>
-            t.Table.Name.Contains("Extension") && t.Kind == DbTriggerKind.DocumentStamping
+        var extensionStamp = _triggers.SingleOrDefault(t =>
+            t.Table.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
-        extensionStampTriggers.Should().NotBeEmpty();
+        extensionStamp.Should().NotBeNull();
     }
 
     /// <summary>
@@ -199,8 +200,8 @@ public class Given_Extension_Table_Triggers
     [Test]
     public void It_should_use_DocumentId_as_KeyColumns_on_extension_table_stamping_trigger()
     {
-        var extensionStamp = _triggers.First(t =>
-            t.Table.Name.Contains("Extension") && t.Kind == DbTriggerKind.DocumentStamping
+        var extensionStamp = _triggers.Single(t =>
+            t.Table.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         extensionStamp.KeyColumns.Should().ContainSingle();
@@ -222,12 +223,12 @@ public class Given_Descriptor_Resources_For_Trigger_Derivation
     [SetUp]
     public void Setup()
     {
-        var coreProjectSchema = TriggerInventoryTestSchemaBuilder.BuildDescriptorOnlyProjectSchema();
+        var coreProjectSchema = CommonInventoryTestSchemaBuilder.BuildDescriptorOnlyProjectSchema();
         var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
             coreProjectSchema,
             isExtensionProject: false
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -265,7 +266,7 @@ public class Given_IdentityPropagationFallback_Stub
             coreProjectSchema,
             isExtensionProject: false
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -305,7 +306,7 @@ public class Given_Three_Level_Nested_Collections
             coreProjectSchema,
             isExtensionProject: false
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -403,7 +404,7 @@ public class Given_Multiple_Sibling_Collections
             coreProjectSchema,
             isExtensionProject: false
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -484,7 +485,7 @@ public class Given_Deterministic_Trigger_Ordering
             coreProjectSchema,
             isExtensionProject: false
         );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { coreProject });
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
         var builder = new DerivedRelationalModelSetBuilder(
             TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
         );
@@ -550,48 +551,6 @@ internal static class TriggerInventoryTestSchemaBuilder
                 },
             },
             ["resourceSchemas"] = new JsonObject { ["schools"] = BuildSubclassSchoolWithAddressesSchema() },
-        };
-    }
-
-    /// <summary>
-    /// Build core project schema for extension testing.
-    /// </summary>
-    internal static JsonObject BuildExtensionCoreProjectSchema()
-    {
-        return new JsonObject
-        {
-            ["projectName"] = "Ed-Fi",
-            ["projectEndpointName"] = "ed-fi",
-            ["projectVersion"] = "1.0.0",
-            ["resourceSchemas"] = new JsonObject { ["contacts"] = BuildContactSchema() },
-        };
-    }
-
-    /// <summary>
-    /// Build extension project schema for extension testing.
-    /// </summary>
-    internal static JsonObject BuildExtensionProjectSchema()
-    {
-        return new JsonObject
-        {
-            ["projectName"] = "Sample",
-            ["projectEndpointName"] = "sample",
-            ["projectVersion"] = "1.0.0",
-            ["resourceSchemas"] = new JsonObject { ["contacts"] = BuildContactExtensionSchema() },
-        };
-    }
-
-    /// <summary>
-    /// Build project schema with only a descriptor.
-    /// </summary>
-    internal static JsonObject BuildDescriptorOnlyProjectSchema()
-    {
-        return new JsonObject
-        {
-            ["projectName"] = "Ed-Fi",
-            ["projectEndpointName"] = "ed-fi",
-            ["projectVersion"] = "1.0.0",
-            ["resourceSchemas"] = new JsonObject { ["gradeLevelDescriptors"] = BuildDescriptorSchema() },
         };
     }
 
@@ -674,105 +633,6 @@ internal static class TriggerInventoryTestSchemaBuilder
                     ["path"] = "$.educationOrganizationId",
                 },
             },
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
-    }
-
-    private static JsonObject BuildContactSchema()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["contactUniqueId"] = new JsonObject { ["type"] = "string", ["maxLength"] = 32 },
-            },
-            ["required"] = new JsonArray("contactUniqueId"),
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "Contact",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = true,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray { "$.contactUniqueId" },
-            ["documentPathsMapping"] = new JsonObject
-            {
-                ["ContactUniqueId"] = new JsonObject
-                {
-                    ["isReference"] = false,
-                    ["path"] = "$.contactUniqueId",
-                },
-            },
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
-    }
-
-    private static JsonObject BuildContactExtensionSchema()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["_ext"] = new JsonObject
-                {
-                    ["type"] = "object",
-                    ["properties"] = new JsonObject
-                    {
-                        ["sample"] = new JsonObject
-                        {
-                            ["type"] = "object",
-                            ["properties"] = new JsonObject
-                            {
-                                ["nickname"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
-                            },
-                        },
-                    },
-                },
-            },
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "Contact",
-            ["isDescriptor"] = false,
-            ["isResourceExtension"] = true,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray(),
-            ["documentPathsMapping"] = new JsonObject(),
-            ["jsonSchemaForInsert"] = jsonSchemaForInsert,
-        };
-    }
-
-    private static JsonObject BuildDescriptorSchema()
-    {
-        var jsonSchemaForInsert = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject
-            {
-                ["namespace"] = new JsonObject { ["type"] = "string", ["maxLength"] = 255 },
-                ["codeValue"] = new JsonObject { ["type"] = "string", ["maxLength"] = 50 },
-            },
-            ["required"] = new JsonArray("namespace", "codeValue"),
-        };
-
-        return new JsonObject
-        {
-            ["resourceName"] = "GradeLevelDescriptor",
-            ["isDescriptor"] = true,
-            ["isResourceExtension"] = false,
-            ["isSubclass"] = false,
-            ["allowIdentityUpdates"] = false,
-            ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray(),
-            ["documentPathsMapping"] = new JsonObject(),
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
     }

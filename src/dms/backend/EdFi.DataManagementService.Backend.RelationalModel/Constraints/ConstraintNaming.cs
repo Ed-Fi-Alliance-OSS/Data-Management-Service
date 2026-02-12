@@ -102,7 +102,9 @@ internal static class ConstraintNaming
         IReadOnlyList<DbColumnName> keyColumns
     )
     {
-        if (keyColumns is null || keyColumns.Count == 0)
+        ArgumentNullException.ThrowIfNull(keyColumns);
+
+        if (keyColumns.Count == 0)
         {
             throw new ArgumentException(
                 "FK-support index must include at least one key column.",
@@ -110,7 +112,7 @@ internal static class ConstraintNaming
             );
         }
 
-        var columnTokens = keyColumns.Select(c => c.Value).ToArray();
+        string[] columnTokens = [.. keyColumns.Select(c => c.Value)];
         return BuildName("IX", table, columnTokens);
     }
 

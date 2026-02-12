@@ -61,7 +61,7 @@ public static class RelationalNameConventions
             }
         }
 
-        if (builder.Length == 0 || !IsAsciiLetter(builder[0]))
+        if (builder.Length == 0 || !IsAsciiLowercaseLetter(builder[0]))
         {
             builder.Insert(0, 'p');
         }
@@ -229,7 +229,7 @@ public static class RelationalNameConventions
     /// <summary>
     /// Checks whether a character is an ASCII lowercase letter.
     /// </summary>
-    private static bool IsAsciiLetter(char value)
+    private static bool IsAsciiLowercaseLetter(char value)
     {
         return value is >= 'a' and <= 'z';
     }

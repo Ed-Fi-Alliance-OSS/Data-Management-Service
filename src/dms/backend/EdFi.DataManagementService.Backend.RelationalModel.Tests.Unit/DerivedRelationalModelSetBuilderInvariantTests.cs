@@ -24,9 +24,9 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateConcreteResourcesPass(effectiveSchemaSet) }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new DuplicateConcreteResourcesPass(effectiveSchemaSet),
+        ]);
 
         try
         {
@@ -102,9 +102,7 @@ public class Given_Duplicate_Index_Names_In_Derived_Model_Set
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateIndexNamesAcrossTablesPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([new DuplicateIndexNamesAcrossTablesPass()]);
 
         try
         {
@@ -144,9 +142,7 @@ public class Given_Duplicate_Index_Names_Across_Tables_For_Mssql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateIndexNamesAcrossTablesPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([new DuplicateIndexNamesAcrossTablesPass()]);
 
         try
         {
@@ -184,9 +180,7 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateTriggerNamesPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([new DuplicateTriggerNamesPass()]);
 
         try
         {
@@ -262,9 +256,7 @@ public class Given_Duplicate_Trigger_Names_Across_Tables_For_Pgsql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateTriggerNamesAcrossTablesPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([new DuplicateTriggerNamesAcrossTablesPass()]);
 
         try
         {
@@ -302,9 +294,7 @@ public class Given_Duplicate_Trigger_Names_Across_Tables_For_Mssql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new DuplicateTriggerNamesAcrossTablesPass() }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([new DuplicateTriggerNamesAcrossTablesPass()]);
 
         try
         {
@@ -359,8 +349,8 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
             RelationalNameConventions.DocumentIdColumnName,
             ColumnKind.ParentKeyPart
         );
-        var columns = new[]
-        {
+        DbColumnModel[] columns =
+        [
             new DbColumnModel(
                 RelationalNameConventions.DocumentIdColumnName,
                 ColumnKind.ParentKeyPart,
@@ -369,14 +359,14 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
                 SourceJsonPath: null,
                 TargetResource: null
             ),
-        };
+        ];
         var tableName = new DbTableName(schema, resource.ResourceName);
         var table = new DbTableModel(
             tableName,
             JsonPathExpressionCompiler.Compile("$"),
             new TableKey($"PK_{tableName.Name}", [keyColumn]),
             columns,
-            Array.Empty<TableConstraint>()
+            []
         );
 
         return new RelationalResourceModel(
@@ -385,8 +375,8 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
     }
 }

@@ -50,11 +50,15 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         List<DbIndexInfo> tableIndexes = [];
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
+        var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
+            ? ConstraintNaming.BuildPrimaryKeyName(table.Table)
+            : table.Key.ConstraintName;
+
         tableIndexes.Add(
             new DbIndexInfo(
-                new DbIndexName(table.Key.ConstraintName),
+                new DbIndexName(pkIndexName),
                 table.Table,
-                table.Key.Columns.Select(c => c.ColumnName).ToArray(),
+                [.. table.Key.Columns.Select(c => c.ColumnName)],
                 IsUnique: true,
                 DbIndexKind.PrimaryKey
             )

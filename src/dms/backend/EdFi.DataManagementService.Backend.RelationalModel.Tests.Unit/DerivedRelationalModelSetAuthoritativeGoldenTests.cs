@@ -73,9 +73,10 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             true
         );
 
-        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
-            new[] { coreProject, extensionProject }
-        );
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
 
         var extensionSiteCapture = new ExtensionSiteCapturePass();
         IRelationalModelSetPass[] passes =
@@ -377,9 +378,10 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
+        var errorTask = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
         process.WaitForExit();
+        var error = errorTask.Result;
 
         if (process.ExitCode == 0)
         {
@@ -684,9 +686,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         /// </summary>
         public IReadOnlyList<ExtensionSite> GetExtensionSites(QualifiedResourceName resource)
         {
-            return _sitesByResource.TryGetValue(resource, out var sites)
-                ? sites
-                : Array.Empty<ExtensionSite>();
+            return _sitesByResource.TryGetValue(resource, out var sites) ? sites : [];
         }
     }
 

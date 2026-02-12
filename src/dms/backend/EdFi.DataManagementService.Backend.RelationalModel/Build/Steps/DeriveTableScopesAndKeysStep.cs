@@ -67,7 +67,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         if (context.IsDescriptorResource)
         {
             var descriptorRootTableScope = CreateDescriptorRootTable();
-            var descriptorTables = new[] { descriptorRootTableScope.Table };
+            DbTableModel[] descriptorTables = [descriptorRootTableScope.Table];
 
             context.ResourceModel = new RelationalResourceModel(
                 new QualifiedResourceName(projectName, resourceName),
@@ -75,8 +75,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
                 storageKind,
                 descriptorRootTableScope.Table,
                 descriptorTables,
-                Array.Empty<DocumentReferenceBinding>(),
-                Array.Empty<DescriptorEdgeSource>()
+                [],
+                []
             );
 
             return;
@@ -113,8 +113,8 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             storageKind,
             rootTableScope.Table,
             tables,
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
     }
 
@@ -140,9 +140,9 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         [
             new TableConstraint.ForeignKey(
                 fkName,
-                new[] { RelationalNameConventions.DocumentIdColumnName },
+                [RelationalNameConventions.DocumentIdColumnName],
                 _documentTableName,
-                new[] { RelationalNameConventions.DocumentIdColumnName },
+                [RelationalNameConventions.DocumentIdColumnName],
                 OnDelete: ReferentialAction.Cascade
             ),
         ];
@@ -166,7 +166,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
             )
         );
 
-        return new TableScope(table, Array.Empty<string>(), Array.Empty<string>());
+        return new TableScope(table, [], []);
     }
 
     /// <summary>
@@ -189,16 +189,16 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
         [
             new TableConstraint.ForeignKey(
                 fkName,
-                new[] { RelationalNameConventions.DocumentIdColumnName },
+                [RelationalNameConventions.DocumentIdColumnName],
                 _documentTableName,
-                new[] { RelationalNameConventions.DocumentIdColumnName },
+                [RelationalNameConventions.DocumentIdColumnName],
                 OnDelete: ReferentialAction.Cascade
             ),
         ];
 
         var table = new DbTableModel(_descriptorTableName, jsonScope, key, columns, constraints);
 
-        return new TableScope(table, Array.Empty<string>(), Array.Empty<string>());
+        return new TableScope(table, [], []);
     }
 
     /// <summary>
@@ -506,10 +506,7 @@ public sealed class DeriveTableScopesAndKeysStep : IRelationalModelBuilderStep
     {
         return new TableKey(
             ConstraintNaming.BuildPrimaryKeyName(tableName),
-            new[]
-            {
-                new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
-            }
+            [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
         );
     }
 

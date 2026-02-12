@@ -129,26 +129,25 @@ internal static class ReservedIdentifierFixture
         var schema = new DbSchemaName(Identifier);
         var table = new DbTableName(schema, Identifier);
         var column = new DbColumnName(Identifier);
-        var jsonScope = new JsonPathExpression("$", Array.Empty<JsonPathSegment>());
+        var jsonScope = new JsonPathExpression("$", []);
         var resource = new QualifiedResourceName("TestProject", "TestResource");
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
 
         var tableModel = new DbTableModel(
             table,
             jsonScope,
-            new TableKey($"PK_{table.Name}", new[] { new DbKeyColumn(column, ColumnKind.ParentKeyPart) }),
-            new[] { new DbColumnModel(column, ColumnKind.ParentKeyPart, null, false, null, null) },
-            new[]
-            {
+            new TableKey($"PK_{table.Name}", [new DbKeyColumn(column, ColumnKind.ParentKeyPart)]),
+            [new DbColumnModel(column, ColumnKind.ParentKeyPart, null, false, null, null)],
+            [
                 new TableConstraint.ForeignKey(
                     Identifier,
-                    new[] { column },
+                    [column],
                     table,
-                    new[] { column },
+                    [column],
                     ReferentialAction.NoAction,
                     ReferentialAction.NoAction
                 ),
-            }
+            ]
         );
 
         var relationalModel = new RelationalResourceModel(
@@ -156,9 +155,9 @@ internal static class ReservedIdentifierFixture
             schema,
             ResourceStorageKind.RelationalTables,
             tableModel,
-            new[] { tableModel },
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [tableModel],
+            [],
+            []
         );
 
         return new DerivedRelationalModelSet(
@@ -167,9 +166,8 @@ internal static class ReservedIdentifierFixture
                 "1.0.0",
                 "hash",
                 1,
-                new byte[] { 0x01 },
-                new[]
-                {
+                [0x01],
+                [
                     new SchemaComponentInfo(
                         "test",
                         "TestProject",
@@ -177,37 +175,24 @@ internal static class ReservedIdentifierFixture
                         false,
                         "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
                     ),
-                },
-                new[] { resourceKey }
+                ],
+                [resourceKey]
             ),
             dialect,
-            new[] { new ProjectSchemaInfo("test", "TestProject", "1.0.0", false, schema) },
-            new[]
-            {
-                new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel),
-            },
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            new[]
-            {
-                new DbIndexInfo(
-                    new DbIndexName(Identifier),
-                    table,
-                    new[] { column },
-                    true,
-                    DbIndexKind.Explicit
-                ),
-            },
-            new[]
-            {
+            [new ProjectSchemaInfo("test", "TestProject", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [new DbIndexInfo(new DbIndexName(Identifier), table, [column], true, DbIndexKind.Explicit)],
+            [
                 new DbTriggerInfo(
                     new DbTriggerName(Identifier),
                     table,
                     DbTriggerKind.DocumentStamping,
-                    new[] { column },
+                    [column],
                     []
                 ),
-            }
+            ]
         );
     }
 }

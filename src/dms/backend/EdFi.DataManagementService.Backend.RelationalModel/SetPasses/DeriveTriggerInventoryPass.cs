@@ -86,11 +86,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 {
                     throw new InvalidOperationException(
                         $"DocumentStamping trigger derivation requires a DocumentId key column, "
-                            + $"but none was found on table '{table.Table.Name}'."
+                            + $"but none was found on table '{table.Table.Schema.Value}.{table.Table.Name}' "
+                            + $"for resource '{FormatResource(resource)}'."
                     );
                 }
 
-                var keyColumns = new[] { documentIdKeyColumn.ColumnName };
+                IReadOnlyList<DbColumnName> keyColumns = [documentIdKeyColumn.ColumnName];
                 var isRootTable = table.Table.Equals(rootTable.Table);
 
                 context.TriggerInventory.Add(
