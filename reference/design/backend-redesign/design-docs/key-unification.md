@@ -319,6 +319,9 @@ unification, some of those columns become generated/computed aliases.
   rely exclusively on Core validation.
 - Whether a canonical column shared across multiple composite FKs with `ON UPDATE CASCADE` can introduce transient FK
   violations during multi-edge cascades, and what the mitigation strategy is for PostgreSQL and SQL Server.
+- Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
+  `equalityConstraints` (e.g., DS 5.2 `Grade` uses both `SchoolYear` and `GradingPeriodSchoolYear`), and whether DMS
+  should unify those cases anyway (and if so, how to select canonical vs alias columns).
 - Whether the derived relational model needs explicit metadata to distinguish canonical vs alias columns for:
   - write plan compilation
   - read plan compilation
