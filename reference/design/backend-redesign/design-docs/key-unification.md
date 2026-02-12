@@ -597,6 +597,95 @@ Rules:
 - The ordering of `key_unification_classes` and `member_path_columns` MUST be deterministic and match the in-memory
   ordering rules above.
 
+#### Equality-constraint diagnostics surface (required)
+
+Key unification is derived from ApiSchema `resourceSchema.equalityConstraints`, but Option 3 intentionally applies only
+to a subset of those constraints (row-local, unambiguous bindings, same-table). Any remaining constraints are enforced
+by Core only.
+
+To avoid silent “Core-only vs DB-unified” drift, any relational-model manifest output used for diagnostics and/or
+golden tests MUST include a deterministic per-resource report that classifies every equality constraint as:
+
+- **applied** (contributed to a same-table unification class), or
+- **skipped** (left Core-only), with an explicit, machine-readable skip reason.
+
+Recommended manifest shape (illustrative):
+
+```json
+{
+  "resource": { "project_name": "Ed-Fi", "resource_name": "StudentAssessmentRegistration" },
+  "key_unification_equality_constraints": {
+    "applied": [
+      {
+        "endpoint_a_path": "$.studentSchoolAssociationReference.studentUniqueId",
+        "endpoint_b_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+        "table": { "schema": "edfi", "name": "StudentAssessmentRegistration" },
+        "endpoint_a_column": "StudentSchoolAssociation_StudentUniqueId",
+        "endpoint_b_column": "StudentEducationOrganizationAssociation_StudentUniqueId",
+        "canonical_column": "StudentUniqueId_Unified"
+      }
+    ],
+    "skipped": [
+      {
+        "endpoint_a_path": "$.schoolYear",
+        "endpoint_b_path": "$.gradingPeriods[*].schoolYear",
+        "reason": "cross_table",
+        "endpoint_a_binding": {
+          "table": { "schema": "edfi", "name": "StudentAssessmentRegistration" },
+          "column": "SchoolYear"
+        },
+        "endpoint_b_binding": {
+          "table": { "schema": "edfi", "name": "StudentAssessmentRegistration_GradingPeriods" },
+          "column": "GradingPeriodSchoolYear"
+        }
+      },
+      {
+        "endpoint_a_path": "$.somePathNotStored",
+        "endpoint_b_path": "$.someOtherPathNotStored",
+        "reason": "unresolved_endpoint",
+        "endpoint_a_binding": null,
+        "endpoint_b_binding": null
+      }
+    ],
+    "skipped_by_reason": {
+      "cross_table": 1,
+      "unresolved_endpoint": 1
+    }
+  }
+}
+```
+
+Rules:
+
+- The report is per-resource (same scope as ApiSchema `resourceSchema.equalityConstraints`).
+- Endpoints MUST be emitted in a canonical undirected order:
+  - `endpoint_a_path` is the ordinal-min of the two endpoint paths
+  - `endpoint_b_path` is the ordinal-max
+  This makes the report stable even if ApiSchema emits the same constraint in both directions.
+- `endpoint_*_binding` describes the resolved **path column** binding (the column that retains `SourceJsonPath`,
+  typically an alias under unification). It is either:
+  - `{ table, column }` when resolvable via `DbColumnModel.SourceJsonPath`, or
+  - `null` when the endpoint is not resolvable by the derived model and remains Core-only.
+- `applied[]` entries MUST include:
+  - the resolved owning table (same for both endpoints), and
+  - the two endpoint column names, and
+  - the canonical storage column name for the corresponding unification class.
+- `skipped[]` entries MUST include:
+  - `reason`, and
+  - both endpoint bindings (`null` when unresolved).
+- `skipped_by_reason` MUST match `skipped[]` exactly.
+- Ordering MUST be deterministic:
+  - `applied[]` and `skipped[]` sorted by `(endpoint_a_path, endpoint_b_path)` ordinal.
+  - `skipped_by_reason` keys sorted ordinal (or emitted in a deterministic fixed order if the writer does not
+    preserve key ordering).
+
+Skip reasons (v1):
+
+- `unresolved_endpoint`: one or both endpoints did not resolve to a derived column via `SourceJsonPath`.
+- `unsupported_endpoint_kind`: one or both endpoints resolved, but to an unsupported `ColumnKind` for unification (e.g.
+  `DocumentFk`, `Ordinal`, `ParentKeyPart`).
+- `cross_table`: both endpoints resolved, but to different physical tables.
+
 #### Mapping-pack payload surface (`.mpack`) (required)
 
 Mapping packs are required to contain enough information for a consumer to:
