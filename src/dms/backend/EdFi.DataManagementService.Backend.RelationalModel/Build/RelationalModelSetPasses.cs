@@ -27,6 +27,8 @@ public static class RelationalModelSetPasses
             new ReferenceConstraintPass(),
             new ArrayUniquenessConstraintPass(),
             new ApplyConstraintDialectHashingPass(),
+            new DeriveIndexInventoryPass(),
+            new DeriveTriggerInventoryPass(),
             new ApplyDialectIdentifierShorteningPass(),
             new CanonicalizeOrderingPass(),
         ];
