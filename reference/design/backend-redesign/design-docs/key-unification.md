@@ -299,6 +299,135 @@ Semantics:
 - Writes MUST be deterministic and MUST NOT consult existing row values (“keep the previous value”) to fill missing
   unified values.
 
+#### Plan compiler and flattener contract (normative)
+
+Key unification changes the write-time relationship between API-bound “binding columns” and physical writable
+storage:
+
+- API-bound columns for unified endpoints remain present in the table shape for query and reconstitution, but may be
+  `UnifiedAlias` columns (read-only generated aliases of a canonical stored column).
+- Canonical storage columns are writable but are storage-only (`SourceJsonPath = null`).
+- Some unified endpoints introduce additional stored synthetic `..._Present` columns that must be written
+  deterministically to preserve per-path presence semantics.
+
+Therefore, the write-plan layer described in `flattening-reconstitution.md` MUST be extended so the plan compiler and
+flattener can:
+
+1. emit DDL/SQL that writes only stored/writable columns,
+2. populate canonical storage columns whose `SourceJsonPath` is null, and
+3. populate synthetic `..._Present` flags deterministically (without consulting existing row values).
+
+##### Plan-layer shape changes
+
+Extend the plan-layer types (conceptually, as defined in `flattening-reconstitution.md`) as follows:
+
+```csharp
+public abstract record WriteValueSource
+{
+    // Existing cases omitted.
+
+    /// <summary>
+    /// The column value is produced by a table-local precompute step (e.g., key-unification coalescing).
+    /// </summary>
+    public sealed record Precomputed() : WriteValueSource;
+}
+
+public sealed record TableWritePlan(
+    DbTableModel TableModel,
+    string InsertSql,
+    string? UpdateSql,
+    string? DeleteByParentSql,
+    IReadOnlyList<WriteColumnBinding> ColumnBindings,
+    IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
+);
+```
+
+`KeyUnificationPlans` is empty when `DbTableModel.KeyUnificationClasses` is empty.
+
+Add a per-table inventory describing how to compute canonical and presence-flag values during row materialization:
+
+```csharp
+public sealed record KeyUnificationWritePlan(
+    DbColumnName CanonicalColumn,
+    int CanonicalBindingIndex,
+    IReadOnlyList<KeyUnificationMemberWritePlan> MembersInOrder
+);
+
+public sealed record KeyUnificationMemberWritePlan(
+    DbColumnName MemberPathColumn,
+    JsonPathExpression RelativePath,
+    ColumnKind Kind,
+    RelationalScalarType? ScalarType,
+    QualifiedResourceName? DescriptorResource,
+    DbColumnName PresenceColumn,
+    int PresenceBindingIndex,
+    bool PresenceIsSynthetic
+);
+```
+
+Rules:
+
+- `KeyUnificationMemberWritePlan.Kind` MUST be `Scalar` or `DescriptorFk`.
+- `RelativePath` MUST be relative to the table’s `JsonScope` node and MUST NOT contain `[*]` segments (row-local,
+  zero-or-one selection per row).
+- `CanonicalBindingIndex` and `PresenceBindingIndex` are indices into `TableWritePlan.ColumnBindings`:
+  - this preserves the existing “parameter ordering is defined by `ColumnBindings`” invariant for compiled SQL.
+- `MembersInOrder` ordering MUST exactly match the table’s `KeyUnificationClass.MemberPathColumns` ordering.
+
+##### Plan compiler rules (writes)
+
+For a `DbTableModel` with one or more `KeyUnificationClasses`, plan compilation MUST follow these rules:
+
+1. **Write only stored/writable columns**
+   - Exclude any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` from:
+     - `TableWritePlan.ColumnBindings`, and
+     - the emitted `InsertSql` / `UpdateSql` column lists.
+   - Include:
+     - key columns,
+     - all normal stored scalar/FK columns,
+     - all canonical stored columns (`KeyUnificationClass.CanonicalColumn`),
+     - all synthetic `..._Present` columns introduced for non-reference unified endpoints.
+2. **Canonical and synthetic presence-flag columns are `Precomputed`**
+   - Emit canonical columns and synthetic `..._Present` columns in `ColumnBindings` with
+     `WriteValueSource.Precomputed`.
+3. **Emit `KeyUnificationWritePlan` for every `KeyUnificationClass`**
+   - `CanonicalBindingIndex` MUST point at the canonical column’s `ColumnBindings` position.
+   - For each member endpoint in `KeyUnificationClass.MemberPathColumns`, emit a corresponding
+     `KeyUnificationMemberWritePlan` entry:
+     - `MemberPathColumn` is the API-bound binding-column name (typically a `UnifiedAlias` column).
+     - `RelativePath` is derived by relativizing the member column’s `SourceJsonPath` against the table’s `JsonScope`.
+     - `PresenceColumn` is taken from the member column’s `UnifiedAlias.PresenceColumn`.
+     - `PresenceBindingIndex` MUST point at `PresenceColumn`’s `ColumnBindings` position.
+     - `PresenceIsSynthetic` is `true` only when `PresenceColumn` is the synthetic `..._Present` column for a
+       non-reference member endpoint.
+4. **Fail-fast invariants**
+   - Any attempt to write a `UnifiedAlias` column MUST fail at plan compile time (do not emit doomed SQL).
+   - Every `WriteValueSource.Precomputed` binding MUST be populated by exactly one `KeyUnificationWritePlan`
+     (no orphan precomputed columns).
+
+##### Flattener algorithm (per row)
+
+When materializing a row for a table whose `TableWritePlan.KeyUnificationPlans` is non-empty, the flattener MUST use a
+two-phase approach:
+
+1. Allocate the row buffer in `ColumnBindings` order.
+2. Populate all non-`Precomputed` bindings as today (document id, parent keys, ordinals, scalars, references,
+   descriptors).
+   - Unified endpoints’ alias columns are not written and therefore do not participate in row materialization.
+3. For each `KeyUnificationWritePlan`:
+   1. Evaluate member endpoints in `MembersInOrder` against the current row’s scope node using `RelativePath`,
+      producing (present?, value) candidates per the “Canonical value coalescing (normative)” rule below.
+   2. When `PresenceIsSynthetic` is `true`, write the synthetic presence flag deterministically:
+      - absent → `NULL`
+      - present → `TRUE`/`1`
+      - `FALSE`/`0` MUST NOT be written (presence is “non-null means present”).
+   3. Convert/resolve each present member value to its canonical storage representation and apply conflict detection.
+   4. Choose the canonical value deterministically and write it to the canonical column at `CanonicalBindingIndex`.
+   5. Apply “Required write-time guardrails (fail-fast)” using the presence-column parameter values that are now in
+      the row buffer (including reference-site `..._DocumentId` values written in phase 1).
+4. After all unification plans complete, every `WriteValueSource.Precomputed` binding MUST have a value assigned
+   (possibly `NULL`); otherwise the write MUST fail closed.
+
 #### Canonical value coalescing (normative)
 
 For each table row being materialized, and for each `KeyUnificationClass` on that table:
