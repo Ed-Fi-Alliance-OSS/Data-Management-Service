@@ -263,15 +263,66 @@ Semantics:
 **Writes (flattening / write-plan compilation)**
 
 - Never write `UnifiedAlias` columns (they are read-only).
-- For each `KeyUnificationClass`:
-  - extract candidate values from the JSON document at each member’s `SourceJsonPath`
-  - apply deterministic coalescing:
-    - if multiple members are present with non-null values, they must be equal (fail closed on conflict)
-    - choose a canonical value deterministically (first present in member order)
-  - write the resulting value to `CanonicalColumn`
+- Always write `KeyUnificationClass.CanonicalColumn` (the single stored source of truth), even when the canonical has
+  `SourceJsonPath = null`.
+- Writes MUST be deterministic and MUST NOT consult existing row values (“keep the previous value”) to fill missing
+  unified values.
 
-This makes write behavior explicit even when `CanonicalColumn.SourceJsonPath` is null (the canonical column exists only
-to unify multiple paths).
+#### Canonical value coalescing (normative)
+
+For each table row being materialized, and for each `KeyUnificationClass` on that table:
+
+1. Evaluate each member path column in `MemberPathColumns` against the request document at the current row’s JSON
+   scope, producing **zero-or-one** candidate values per member:
+   - A member is **present** when its `SourceJsonPath` selects a scalar value for this row.
+   - A member is **absent** when the path selects no value.
+   - A selected JSON `null` value MUST be treated as **absent** (Core prunes null-valued properties; backend
+     coalescing must match that behavior).
+2. Materialize each present candidate value in canonical storage form:
+   - For `Scalar` members: convert the JSON scalar to the member’s storage scalar type using the same conversion rules
+     used for normal scalar columns (coercions are Core-owned; backend should treat incoming values as already
+     canonicalized).
+   - For `DescriptorFk` members: resolve the JSON descriptor URI string to the descriptor `DocumentId` (BIGINT) using:
+     - normalization consistent with descriptor resolution (baseline: `ToLowerInvariant()`), and
+     - the member’s `DbColumnModel.TargetResource` as part of the lookup key.
+     - recommended key shape: `DescriptorKey(NormalizedUri, DescriptorResource)` as defined in
+       `flattening-reconstitution.md` (`ResolvedReferenceSet.DescriptorIdByKey`).
+     If a descriptor URI is present but cannot be resolved to a `DocumentId`, the write MUST fail closed (descriptor
+     reference validation failure).
+3. Apply conflict detection:
+   - If **two or more** members are present with **non-null** values and the values are not equal after conversion,
+     the write MUST fail closed (data validation error). This is a defense-in-depth re-check of `equalityConstraints`
+     (Core already validates at the document level).
+     - For `DescriptorFk` members, equality comparison is `DocumentId` equality (resolved identifier equality), not raw
+       descriptor URI string equality.
+   - Equality comparison MUST be stable and based on the converted storage representation (e.g., ordinal string
+     equality for strings).
+4. Choose a canonical value deterministically:
+   - The canonical value is the value of the **first present** member in `MemberPathColumns` order.
+   - If **no** members are present, the canonical value is `NULL`.
+5. Write the canonical value to `CanonicalColumn`.
+
+Notes:
+- This coalescing rule applies identically to `POST` (upsert) and `PUT` (update-by-id) to preserve replace semantics
+  and idempotency.
+- “First present member” uses the deterministic ordering already required by `KeyUnificationClass.MemberPathColumns`.
+  The baseline ordering rule remains `SourceJsonPath.Canonical` ordinal sort unless an explicit preferred-source policy
+  is added later.
+
+#### Required write-time guardrails (fail-fast)
+
+In addition to conflict detection, flattening MUST apply the following required guardrails per row:
+
+1. **Presence-gated non-null requirement**:
+   - For a `KeyUnificationClass`, for each `MemberPathColumn` whose `DbColumnModel.Storage` is
+     `UnifiedAlias(CanonicalColumn, PresenceFkColumn)` with `PresenceFkColumn != null`:
+     - If the current row’s `PresenceFkColumn` value is non-null (i.e., that reference site is present), then the
+       canonical value computed for the class MUST be non-null.
+   - If this requirement is violated, the write MUST fail closed (data validation error) rather than relying on a
+     later database `CK_*_AllNone` violation. This produces actionable failures and prevents emitting doomed SQL.
+2. **Canonical nullability**:
+   - If `CanonicalColumn.IsNullable = false`, the canonical value computed for the class MUST be non-null; otherwise
+     the write MUST fail closed.
 
 **DDL generation**
 
@@ -350,10 +401,31 @@ Within a given table:
 All nodes within a unification class must have compatible physical types:
 
 - Scalar vs scalar
-- DescriptorFk vs DescriptorFk (both are stored as `BIGINT` / `bigint` document ids)
+- DescriptorFk vs DescriptorFk (both are stored as `BIGINT` / `bigint` descriptor document ids)
+  - DescriptorFk columns are compatible only when they target the **same** descriptor resource type
+    (`DbColumnModel.TargetResource`).
 - Scalar and DescriptorFk are not compatible
 
 The derived model build must fail fast if incompatible types are unified.
+
+### Descriptor identity parts (`..._DescriptorId`) under unification
+
+Descriptor values are API-facing URI strings but are stored as foreign keys to `dms.Descriptor` (`..._DescriptorId`,
+`BIGINT` / `bigint`).
+
+Implications when descriptor identity parts participate in key unification:
+
+- Unification for descriptor endpoints is over the **resolved descriptor `DocumentId`**, not the raw URI string.
+  - Canonical descriptor columns store the single source of truth `DocumentId`.
+  - Per-site/path columns remain present as `UnifiedAlias` aliases (presence-gated where applicable), preserving
+    query/reconstitution bindings by `SourceJsonPath`.
+- Coalescing and conflict detection operate on resolved `DocumentId`s, so the key-unification write planner depends on
+  descriptor resolution results (the same resolved descriptor-id map used to populate normal descriptor FK columns).
+- Descriptor FK unification MUST be resource-type safe: a unification class must not mix descriptor FK members that
+  target different descriptor resource types.
+- Descriptor resources are treated as immutable in this redesign, so descriptor FK columns generally do not
+  participate in `ON UPDATE CASCADE` identity propagation. Key unification still matters to prevent drift between
+  duplicated writable `..._DescriptorId` columns on the same row.
 
 ## Canonical Column Selection and Naming
 
@@ -451,8 +523,8 @@ All-or-none constraints use the per-site alias columns, preserving the original 
 ### Writes (flattening)
 
 - Only canonical columns are writable for unified identity parts.
-- Flattening must populate canonical columns from the JSON payload using the table’s `KeyUnificationClass` inventory:
-  deterministic coalescing across member-path JsonPaths and fail-closed conflict detection.
+- Flattening must populate canonical columns from the JSON payload using the table’s `KeyUnificationClass` inventory per
+  the “Canonical value coalescing (normative)” and “Required write-time guardrails (fail-fast)” rules above.
 - Per-site alias columns are not written.
 
 ### Reads (reconstitution)
@@ -479,16 +551,11 @@ unification, some of those columns become generated/computed aliases.
 
 ## Pending Questions
 
-- Whether descriptor identity parts stored as `..._DescriptorId` participate in key unification.
 - Whether scalar (non-reference) columns that are equality-constrained should always keep per-path alias columns, or
   whether some duplicates can be dropped without affecting query/reconstitution behavior.
 - The canonical-column naming rule when multiple per-site identity-part suffixes differ due to name overrides or when
   the leaf property name is ambiguous.
 - The canonical-column nullability rule when a unification class contains a mix of required and optional endpoints.
-- The write-time coalescing rule for canonical columns when some equality-constrained JSON paths are absent and others
-  are present, and what error behavior is required when conflicting values are supplied.
-- Whether backend write paths should re-validate equality constraints at flatten time as a fail-closed guardrail, or
-  rely exclusively on Core validation.
 - Whether a canonical column shared across multiple composite FKs with `ON UPDATE CASCADE` can introduce transient FK
   violations during multi-edge cascades, and what the mitigation strategy is for PostgreSQL and SQL Server.
 - Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
