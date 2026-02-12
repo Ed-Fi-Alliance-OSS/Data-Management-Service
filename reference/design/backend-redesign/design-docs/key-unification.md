@@ -112,7 +112,25 @@ This preserves optional-reference semantics while keeping FK propagation on writ
 
 ## Deriving Unification Classes from ApiSchema
 
-### Applicability
+### Scope of DB-Level Unification
+
+`equalityConstraints` are defined at the **document** level: a JSONPath may match multiple values (especially with
+`[*]`), and Core validation requires that all matched values across the document are equal.
+
+Option 3 does **not** attempt to enforce full document-level equality in the database. Instead, it uses
+`equalityConstraints` as a signal that the relational model has duplicated **stored identity values** that should be
+physically unified so they cannot drift.
+
+As a result, DB-level unification is strictly **row-local** (within a single physical table row), and only addresses
+the “duplicated storage” problem.
+
+Out of scope for Option 3 (Core-only unless a trigger-based design is added):
+
+- **Cross-table** equality: root ↔ child scopes, child ↔ child scopes, base ↔ extension scopes.
+- **Cross-row** equality: constraints that imply “all elements in a collection share the same value”, even when both
+  endpoints bind to the same table (because the table represents many rows for the document).
+
+### Applicability (in-scope constraints)
 
 This pass applies when both sides of an equality constraint resolve to value bindings on the **same physical table**.
 
@@ -267,8 +285,6 @@ unification, some of those columns become generated/computed aliases.
 
 ## Pending Questions
 
-- Which `equalityConstraints` are in scope for DB-level unification beyond “both endpoints bind to the same table” (for
-  example, constraints that cross root/child scopes or bind through `[*]` in different ways).
 - What the exact endpoint-resolution rules are for `equalityConstraints` paths that match multiple bindings on the same
   table (for example, repeated paths in nested collections).
 - Whether descriptor identity parts stored as `..._DescriptorId` participate in key unification.
