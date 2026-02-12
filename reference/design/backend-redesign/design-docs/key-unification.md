@@ -35,8 +35,7 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   - This design applies only when both sides of an equality constraint resolve to columns stored on the **same table
     row scope**.
 - Defining a general cross-table / cross-row equality enforcement mechanism.
-- Defining schema migrations for already-provisioned databases.
-  - The DDL generator is create-only (see `ddl-generation.md`); retrofit/migration planning is tracked separately.
+- Defining schema migrations. The implementation is in progress and there are no production deployments.
 
 ## Terminology
 
