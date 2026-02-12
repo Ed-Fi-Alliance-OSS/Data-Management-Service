@@ -504,6 +504,192 @@ In addition to conflict detection, flattening MUST apply the following required 
 - Ensure canonical storage columns and any synthetic presence flag columns appear before aliases in the physical column
   order (dependency).
 
+### 3) Model / manifest / mapping-pack surface (normative)
+
+Key unification introduces new “binding vs storage” semantics that MUST be represented explicitly and consistently in:
+
+- the in-memory derived model types,
+- any emitted relational-model manifest JSON (diagnostics + golden tests), and
+- any mapping-pack payloads (`.mpack`) used for AOT mode.
+
+No producer/consumer is allowed to infer unification behavior by naming conventions or ad-hoc SQL text parsing.
+
+#### In-memory derived model (required)
+
+The derived relational model types defined in `flattening-reconstitution.md` (and implemented in the shared
+`EdFi.DataManagementService.Backend.External` contracts) MUST carry the unification metadata explicitly:
+
+- `DbColumnModel.Storage` identifies whether a column is:
+  - `Stored` (writable physical column), or
+  - `UnifiedAlias` (read-only generated alias of a canonical stored column, optionally presence-gated).
+- `DbTableModel.KeyUnificationClasses` inventories per-table unification classes so writers can:
+  - compute canonical values for storage-only canonical columns (`SourceJsonPath = null`), and
+  - populate synthetic presence flags deterministically.
+
+Determinism requirements:
+
+- `DbTableModel.KeyUnificationClasses` MUST be in deterministic order for a fixed effective schema:
+  - baseline: ordinal sort by `CanonicalColumn.Value`.
+  - `MemberPathColumns` ordering is significant and MUST match the deterministic member-order rule defined above.
+- `DbColumnModel.Storage` references (`CanonicalColumn`, `PresenceColumn`) MUST refer to final physical column names
+  after any dialect identifier hashing/shortening; any renaming pass MUST update these references.
+
+#### Manifest JSON surface (required)
+
+Any relational-model manifest output used for diagnostics and/or golden tests MUST include the explicit unification
+metadata so drift is observable without inspecting generated SQL.
+
+At minimum, the manifest MUST include:
+
+1. For every table column:
+   - a `storage` object describing `Stored` vs `UnifiedAlias`, and
+   - for aliases, the `canonical_column` and optional `presence_column` column names.
+2. For every table:
+   - a `key_unification_classes` array describing each class’s canonical column and ordered member-path columns.
+
+Recommended manifest shape (illustrative):
+
+```json
+{
+  "tables": [
+    {
+      "schema": "edfi",
+      "name": "StudentAssessmentRegistration",
+      "scope": "$",
+      "key_unification_classes": [
+        {
+          "canonical_column": "StudentUniqueId_Unified",
+          "member_path_columns": [
+            "StudentEducationOrganizationAssociation_StudentUniqueId",
+            "StudentSchoolAssociation_StudentUniqueId"
+          ]
+        }
+      ],
+      "columns": [
+        {
+          "name": "StudentUniqueId_Unified",
+          "kind": "Scalar",
+          "source_path": null,
+          "storage": { "kind": "Stored" }
+        },
+        {
+          "name": "StudentSchoolAssociation_StudentUniqueId",
+          "kind": "Scalar",
+          "source_path": "$.studentSchoolAssociationReference.studentUniqueId",
+          "storage": {
+            "kind": "UnifiedAlias",
+            "canonical_column": "StudentUniqueId_Unified",
+            "presence_column": "StudentSchoolAssociation_DocumentId"
+          }
+        }
+      ]
+    }
+  ]
+}
+```
+
+Rules:
+
+- The manifest MUST represent unification metadata without embedding dialect SQL expressions (those are DDL-emitter
+  concerns). Canonical and presence columns are represented strictly by physical column names.
+- When `UnifiedAlias.PresenceColumn` is null (ungated alias), `presence_column` SHOULD be emitted as `null` for
+  clarity.
+- The ordering of `key_unification_classes` and `member_path_columns` MUST be deterministic and match the in-memory
+  ordering rules above.
+
+#### Mapping-pack payload surface (`.mpack`) (required)
+
+Mapping packs are required to contain enough information for a consumer to:
+
+- bind by API JsonPath (queries/reconstitution),
+- write only stored columns (never `UnifiedAlias`),
+- compute canonical values deterministically for storage-only canonical columns, and
+- populate synthetic presence flags deterministically.
+
+Therefore, the PackFormatVersion=1 payload schema defined in `mpack-format-v1.md` MUST be extended (wire-compatible
+additions only) to carry the unification metadata explicitly.
+
+##### Model payload additions (required)
+
+1. `DbColumnModel` MUST include storage metadata:
+
+- Add `ColumnStorage storage = 20;` where:
+  - `Stored` means “writable physical column”, and
+  - `UnifiedAlias` carries:
+    - `canonical_column` (required), and
+    - `presence_column` (optional; omitted for ungated aliases).
+
+2. `DbTableModel` MUST include per-table unification classes:
+
+- Add `repeated KeyUnificationClass key_unification_classes = 20;`
+- `KeyUnificationClass` includes:
+  - `canonical_column` (required), and
+  - `member_path_columns` (ordered; required to preserve deterministic coalescing behavior).
+
+Recommended proto shape (illustrative; exact message/field names are non-normative as long as the semantics match):
+
+```proto
+message ColumnStorage {
+  oneof kind {
+    StoredStorage stored = 1;
+    UnifiedAliasStorage unified_alias = 2;
+  }
+}
+
+message StoredStorage {}
+
+message UnifiedAliasStorage {
+  DbColumnName canonical_column = 1;
+  DbColumnName presence_column = 2; // optional; omitted for ungated aliases
+}
+
+message KeyUnificationClass {
+  DbColumnName canonical_column = 1;
+  repeated DbColumnName member_path_columns = 2; // ordered
+}
+```
+
+##### Plan payload additions (required)
+
+When using the “Plan compiler and flattener contract (normative)” described above, the mapping-pack plan schema MUST
+also carry the additional write-time unification planning constructs:
+
+- Add a `WriteValueSource` kind for precomputed values (e.g., `WritePrecomputed precomputed = 7;`).
+- Add `TableWritePlan.key_unification_plans` (repeated, recommended `= 30`) and the corresponding message shapes for:
+  - `KeyUnificationWritePlan`, and
+  - `KeyUnificationMemberWritePlan` (including the binding indices and presence semantics described above).
+
+These are payload-level equivalents of the in-memory plan-layer types so AOT mode does not require runtime derivation
+from `ApiSchema.json`.
+
+##### Payload validation rules (required)
+
+Pack producers and consumers MUST validate the following invariants at build/load time (fail fast on any violation):
+
+- `UnifiedAlias.canonical_column` exists on the same table and has `storage.kind = Stored`.
+- `UnifiedAlias.canonical_column` is storage-only (`source_json_path` absent/empty) and is not itself a `UnifiedAlias`.
+- When `UnifiedAlias.presence_column` is present:
+  - it exists on the same table and has `storage.kind = Stored`, and
+  - it is nullable and storage-only (`source_json_path` absent/empty).
+- `key_unification_classes[*].canonical_column` exists and is stored.
+- `key_unification_classes[*].member_path_columns`:
+  - are distinct,
+  - exist on the same table,
+  - each have a non-empty `source_json_path`, and
+  - each are `UnifiedAlias` columns whose `canonical_column` matches the class’s canonical column.
+- Plan-layer unification shapes are internally consistent:
+  - all referenced binding indices are in range for `TableWritePlan.column_bindings`,
+  - each precomputed binding index corresponds to a `WriteValueSource.Precomputed` binding, and
+  - each precomputed binding is populated by exactly one unification write plan.
+
+##### Versioning (required)
+
+Adding proto fields is wire-compatible and does not require bumping `PackFormatVersion`. However, key unification is a
+semantic change to mapping behavior and MUST be gated by `RelationalMappingVersion`:
+
+- Producers MUST bump `RelationalMappingVersion` when key unification semantics are enabled in emitted artifacts.
+- Consumers MUST reject mapping packs whose `relational_mapping_version` does not match the runtime’s expected value.
+
 ## Deriving Unification Classes from ApiSchema
 
 ### Scope of DB-Level Unification
@@ -969,6 +1155,66 @@ Design note (applies to `07-index-and-trigger-inventory.md` and any DDL emission
 - Any phrase like “`UPDATE` when identity-projection columns change” MUST be interpreted as “identity projection
   values are distinct between old/new row images (null-safe), using the `UnifiedAlias` expression for unified
   members”, not “the column appears in the SET list”.
+
+## Integration Point + Pass Ordering (DMS-1033) (normative)
+
+Key unification MUST be applied during derived-model-set compilation (E01) as a set-level pass over the full effective
+schema set. It MUST run late enough that all candidate endpoint columns exist (including propagated reference identity
+columns), and early enough that all downstream consumers (constraint derivation, index/trigger inventory, plan
+compilation, manifests, and DDL generation) see a unified model.
+
+### Recommended placement in `RelationalModelSetPasses` order
+
+Recommended set-level pass order (relative to the current default implementation in
+`src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`):
+
+1. `BaseTraversalAndDescriptorBindingPass`
+2. `DescriptorResourceMappingPass`
+3. `ExtensionTableDerivationPass`
+4. `ReferenceBindingPass`
+5. **`KeyUnificationPass` (new)** ← applies canonical columns + presence-gated aliases + `KeyUnificationClasses`
+6. `AbstractIdentityTableAndUnionViewDerivationPass`
+7. `RootIdentityConstraintPass`
+8. `ReferenceConstraintPass`
+9. `ArrayUniquenessConstraintPass`
+10. `ApplyConstraintDialectHashingPass`
+11. *(When implemented in E01)* `IndexAndTriggerInventoryPass` (DMS-945)
+12. `ApplyDialectIdentifierShorteningPass`
+13. `CanonicalizeOrderingPass`
+
+Notes:
+
+- `KeyUnificationPass` MUST run **after** `ReferenceBindingPass` so unified classes can include per-site propagated
+  identity-part columns (`{RefBaseName}_{IdentityPart}`) whose `SourceJsonPath` binds equality-constraint endpoints.
+- `KeyUnificationPass` MUST run **after** `ExtensionTableDerivationPass` so any equality-constraint endpoints that bind
+  to extension tables can still be resolved deterministically (even when the resulting constraint is out-of-scope for
+  DB-level unification due to cross-table scope).
+- `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
+  columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
+  the post-unification table/column inventory.
+- If E01 derives index/trigger inventories (DMS-945), that pass SHOULD run **after**
+  `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names reflect the final
+  hashed constraint identifiers.
+
+### Required postconditions for downstream passes
+
+After `KeyUnificationPass`:
+
+- All canonical storage columns and any synthetic presence-flag columns MUST already be present in the owning table’s
+  `DbTableModel.Columns`.
+- Every unified member path column MUST remain present under its existing column name and retain its existing
+  `SourceJsonPath` binding, but MUST be marked as a `UnifiedAlias` that points to the canonical storage column and
+  presence gate.
+- `DbTableModel.KeyUnificationClasses` MUST be populated for any table with one or more unification classes.
+
+These postconditions allow subsequent passes to be purely consumer-oriented:
+
+- Constraint derivation passes use `SourceJsonPath` for endpoint resolution and `ColumnStorage` for storage/FK
+  targeting.
+- Index/trigger inventory derivation (when present) can treat canonical columns as the physical “writable” identity
+  columns while still emitting query/reconstitution-facing metadata in terms of member path columns.
+- Dialect identifier shortening can rename columns and update all `UnifiedAlias` and `KeyUnificationClass` references
+  in one place.
 
 ## Interactions with Existing Design Docs
 
