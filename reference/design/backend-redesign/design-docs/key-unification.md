@@ -1,4 +1,4 @@
-# Backend Redesign: Key Unification (Canonical Columns + Presence-Gated Aliases)
+# Backend Redesign: Key Unification (Canonical Columns + Generated Aliases; Presence-Gated When Optional)
 
 ## Status
 
@@ -15,7 +15,8 @@ This design changes the relational model so equality-constrained identity parts 
 
 - A **canonical physical column** stores the unified value (writable, participates in composite FKs).
 - The existing **per-site / per-path columns** remain in the table shape, but become **generated/computed, persisted**
-  **presence-gated aliases** of the canonical column (read-only; `NULL` when the site/path is absent).
+  **aliases** of the canonical column (read-only; `NULL` when the site/path is absent). When the site/path can be
+  absent, aliases are **presence-gated**.
 - The derived relational model includes **explicit metadata** that links alias columns ↔ canonical storage columns and
   inventories per-table unification classes. This allows DDL generation, constraint derivation, and runtime planning to
   answer both “bind to API JsonPath” and “store/FK/cascade” questions deterministically.
@@ -62,12 +63,14 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
   generated alias.
 - **Presence column**: a physical column whose nullability indicates whether a binding site is present for this row.
   - For reference-site identity aliases: `{RefBaseName}_DocumentId`
-  - For non-reference per-path aliases: a synthetic presence flag column (see below)
-- **Presence flag column**: a stored boolean/bit column used as a presence column for non-reference paths:
-  - Optional paths: nullable; `NULL` means absent and `TRUE`/`1` means present.
-  - Required paths: `NOT NULL`; always `TRUE`/`1` (the path is always present).
-  - `FALSE`/`0` is not used (presence is `NULL` vs `TRUE`).
-- **Presence gating**: making an alias evaluate to `NULL` when its `PresenceColumn` is `NULL`.
+  - For optional non-reference per-path aliases: a synthetic presence flag column (see below)
+- **Presence flag column**: a stored nullable boolean/bit column used as a presence column for optional non-reference
+  paths:
+  - `NULL` → the path is absent for this row
+  - `TRUE`/`1` → the path is present for this row
+  - `FALSE`/`0` is not used (presence is `NULL` vs `TRUE`)
+- **Presence gating**: making an alias evaluate to `NULL` when its `PresenceColumn` is `NULL` (when a presence column is
+  defined).
 
 ## Background (current redesign behavior)
 
@@ -115,8 +118,8 @@ This preserves the invariant used throughout the redesign:
 
 > An absent optional reference site implies `NULL` for that site’s identity part columns.
 
-For equality-constrained non-reference path columns (scalar values and descriptor FK values), aliases are also
-presence-gated using a synthetic per-path presence flag column (stored, nullable `bool`/`bit`):
+For equality-constrained non-reference path columns (scalar values and descriptor FK values) that are optional,
+aliases are presence-gated using a synthetic per-path presence flag column (stored, nullable `bool`/`bit`):
 
 - When `{PathColumnName}_Present IS NULL` → alias evaluates to `NULL`
 - Else → alias evaluates to the canonical value
@@ -175,13 +178,17 @@ public abstract record ColumnStorage
     /// </summary>
     /// <param name="CanonicalColumn">The stored/writable canonical column name.</param>
     /// <param name="PresenceColumn">
-    /// Presence gate. The alias evaluates to NULL when <c>PresenceColumn IS NULL</c>.
+    /// Optional presence gate:
+    /// - When <c>PresenceColumn</c> is non-null, the alias evaluates to NULL when <c>PresenceColumn IS NULL</c>.
+    /// - When <c>PresenceColumn</c> is null, the alias is not presence-gated and always evaluates to
+    ///   <c>CanonicalColumn</c>.
     ///
     /// PresenceColumn is one of:
     /// - reference-site presence: the reference group’s <c>..._DocumentId</c> column, or
-    /// - scalar/path presence: a synthetic <c>..._Present</c> presence flag column (stored, nullable bool/bit).
+    /// - scalar/path presence: a synthetic <c>..._Present</c> presence flag column (stored, nullable bool/bit),
+    ///   used only for optional non-reference member endpoints.
     /// </param>
-    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName PresenceColumn) : ColumnStorage;
+    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName? PresenceColumn) : ColumnStorage;
 }
 
 public sealed record DbColumnModel(
@@ -205,12 +212,14 @@ Rules:
 - **UnifiedAlias column**:
   - read-only generated/computed alias of `CanonicalColumn`
   - retains `SourceJsonPath` so endpoint resolution, query compilation, and reconstitution bind by API-path semantics
-  - presence-gated:
-    - `NULL` when `PresenceColumn IS NULL`
-    - else `CanonicalColumn`
-  - `PresenceColumn` is one of:
-    - reference-site aliases use the reference group’s `..._DocumentId` column, and
-    - non-reference path aliases use a synthetic `..._Present` presence flag column.
+  - presence gating:
+    - when `PresenceColumn` is non-null:
+      - `NULL` when `PresenceColumn IS NULL`
+      - else `CanonicalColumn`
+    - when `PresenceColumn` is null: always `CanonicalColumn` (ungated alias)
+  - `PresenceColumn` is:
+    - the reference group’s `..._DocumentId` column for reference-site aliases, and
+    - a synthetic `..._Present` presence flag column only for optional non-reference path aliases.
   - must have a type compatible with `CanonicalColumn` (fail fast otherwise)
 
 This metadata provides a single dialect-neutral “walk” from an API-bound path column to its physical storage column:
@@ -225,8 +234,8 @@ Defaults:
 - When no key unification applies to a table, all columns are `Stored` and `KeyUnificationClasses` is empty.
 - When key unification applies, only the columns that are members of a unification class become `UnifiedAlias`; all
   other columns remain `Stored`.
-- For non-reference member path columns, key unification introduces additional stored `..._Present` presence flag
-  columns used for presence gating.
+- For optional non-reference member path columns, key unification introduces additional stored `..._Present` presence
+  flag columns used for presence gating.
 
 ### SourceJsonPath rules under unification
 
@@ -295,8 +304,8 @@ Semantics:
 - Never write `UnifiedAlias` columns (they are read-only).
 - Always write `KeyUnificationClass.CanonicalColumn` (the single stored source of truth), even when the canonical has
   `SourceJsonPath = null`.
-- When `UnifiedAlias.PresenceColumn` is a synthetic `..._Present` presence flag column, writes MUST also populate that
-  presence flag column (`NULL` when absent; non-null when present) for each materialized row.
+- When `UnifiedAlias.PresenceColumn` is non-null and is a synthetic `..._Present` presence flag column, writes MUST
+  also populate that presence flag column (`NULL` when absent; non-null when present) for each materialized row.
 - Writes MUST be deterministic and MUST NOT consult existing row values (“keep the previous value”) to fill missing
   unified values.
 
@@ -308,8 +317,8 @@ storage:
 - API-bound columns for unified endpoints remain present in the table shape for query and reconstitution, but may be
   `UnifiedAlias` columns (read-only generated aliases of a canonical stored column).
 - Canonical storage columns are writable but are storage-only (`SourceJsonPath = null`).
-- Some unified endpoints introduce additional stored synthetic `..._Present` columns that must be written
-  deterministically to preserve per-path presence semantics.
+- Some unified endpoints (optional non-reference paths) introduce additional stored synthetic `..._Present` columns
+  that must be written deterministically to preserve per-path presence semantics.
 
 Therefore, the write-plan layer described in `flattening-reconstitution.md` MUST be extended so the plan compiler and
 flattener can:
@@ -360,8 +369,8 @@ public sealed record KeyUnificationMemberWritePlan(
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     QualifiedResourceName? DescriptorResource,
-    DbColumnName PresenceColumn,
-    int PresenceBindingIndex,
+    DbColumnName? PresenceColumn,
+    int? PresenceBindingIndex,
     bool PresenceIsSynthetic
 );
 ```
@@ -371,8 +380,9 @@ Rules:
 - `KeyUnificationMemberWritePlan.Kind` MUST be `Scalar` or `DescriptorFk`.
 - `RelativePath` MUST be relative to the table’s `JsonScope` node and MUST NOT contain `[*]` segments (row-local,
   zero-or-one selection per row).
-- `CanonicalBindingIndex` and `PresenceBindingIndex` are indices into `TableWritePlan.ColumnBindings`:
+- `CanonicalBindingIndex` is an index into `TableWritePlan.ColumnBindings`:
   - this preserves the existing “parameter ordering is defined by `ColumnBindings`” invariant for compiled SQL.
+- When `PresenceColumn` is non-null, `PresenceBindingIndex` is an index into `TableWritePlan.ColumnBindings`.
 - `MembersInOrder` ordering MUST exactly match the table’s `KeyUnificationClass.MemberPathColumns` ordering.
 
 ##### Plan compiler rules (writes)
@@ -387,7 +397,7 @@ For a `DbTableModel` with one or more `KeyUnificationClasses`, plan compilation 
      - key columns,
      - all normal stored scalar/FK columns,
      - all canonical stored columns (`KeyUnificationClass.CanonicalColumn`),
-     - all synthetic `..._Present` columns introduced for non-reference unified endpoints.
+     - all synthetic `..._Present` columns introduced for optional non-reference unified endpoints.
 2. **Canonical and synthetic presence-flag columns are `Precomputed`**
    - Emit canonical columns and synthetic `..._Present` columns in `ColumnBindings` with
      `WriteValueSource.Precomputed`.
@@ -397,8 +407,9 @@ For a `DbTableModel` with one or more `KeyUnificationClasses`, plan compilation 
      `KeyUnificationMemberWritePlan` entry:
      - `MemberPathColumn` is the API-bound binding-column name (typically a `UnifiedAlias` column).
      - `RelativePath` is derived by relativizing the member column’s `SourceJsonPath` against the table’s `JsonScope`.
-     - `PresenceColumn` is taken from the member column’s `UnifiedAlias.PresenceColumn`.
-     - `PresenceBindingIndex` MUST point at `PresenceColumn`’s `ColumnBindings` position.
+     - `PresenceColumn` is taken from the member column’s `UnifiedAlias.PresenceColumn` (may be null).
+     - When `PresenceColumn` is non-null, `PresenceBindingIndex` MUST point at `PresenceColumn`’s `ColumnBindings`
+       position.
      - `PresenceIsSynthetic` is `true` only when `PresenceColumn` is the synthetic `..._Present` column for a
        non-reference member endpoint.
 4. **Fail-fast invariants**
@@ -476,7 +487,7 @@ In addition to conflict detection, flattening MUST apply the following required 
 
 1. **Presence-gated non-null requirement**:
    - For a `KeyUnificationClass`, for each `MemberPathColumn` whose `DbColumnModel.Storage` is
-     `UnifiedAlias(CanonicalColumn, PresenceColumn)`:
+     `UnifiedAlias(CanonicalColumn, PresenceColumn)` and `PresenceColumn` is non-null:
      - If the current row’s `PresenceColumn` value is non-null (i.e., that path’s presence gate indicates the member
        site is present), then the canonical value computed for the class MUST be non-null.
    - If this requirement is violated, the write MUST fail closed (data validation error) rather than relying on a
@@ -690,32 +701,32 @@ Equality constraints can also relate non-reference path columns (scalar values a
 paths can be independently present/absent in the API payload, and Core’s equality validation only rejects
 **conflicting values** (it does not require that all constrained paths are present).
 
-To preserve query and reconstitution semantics under unification, every non-reference member path column MUST be
-presence-gated with a synthetic presence flag column.
+To preserve query and reconstitution semantics under unification:
+
+- Optional non-reference member path columns MUST be presence-gated with a synthetic presence flag column.
+- Required non-reference member path columns MUST be ungated aliases (direct aliases of the canonical column).
 
 For a member path column `{PathColumnName}` and canonical column `{Canonical}`:
 
-1. Create a stored presence flag column `{PathColumnName}_Present` with:
-   - type: `bit` (SQL Server) / `boolean` (PostgreSQL)
-   - nullability:
-     - if `{PathColumnName}` is required (`IsNullable=false`): `{PathColumnName}_Present` MUST be `NOT NULL` and MUST
-       always be written as `1`/`TRUE`
-     - if `{PathColumnName}` is optional (`IsNullable=true`): `{PathColumnName}_Present` MUST be nullable (`NULL`
-       means absent; `1`/`TRUE` means present)
-   - `SourceJsonPath = null` (storage-only; not an API binding column)
-   - semantics:
-     - `NULL` → `{PathColumnName}` was absent for this row
-     - non-null (`1`/`TRUE`) → `{PathColumnName}` was present for this row
-   - record `{PathColumnName}_Present` as `ColumnStorage.UnifiedAlias.PresenceColumn` for `{PathColumnName}`
-2. Define alias column `{PathColumnName}` as:
-   - `NULL` when `{PathColumnName}_Present` is `NULL`
-   - `{Canonical}` otherwise
-3. Flattening MUST write `{PathColumnName}_Present` for each row:
-   - if the member path is required: set to `1`/`TRUE`
-   - if the member path is optional:
-     - set to `1`/`TRUE` when the member’s `SourceJsonPath` is present for that row, and
-     - set to `NULL` when absent
-   - flattening MUST NOT write `0`/`FALSE` (presence uses `NULL` vs `TRUE`)
+1. If `{PathColumnName}` is required (`IsNullable=false`):
+   - Do not create a `{PathColumnName}_Present` column.
+   - Define alias column `{PathColumnName}` as an ungated alias of `{Canonical}`.
+2. If `{PathColumnName}` is optional (`IsNullable=true`):
+   1. Create a stored presence flag column `{PathColumnName}_Present` with:
+      - type: `bit` (SQL Server) / `boolean` (PostgreSQL)
+      - nullability: nullable (`NULL` means absent; `1`/`TRUE` means present)
+      - `SourceJsonPath = null` (storage-only; not an API binding column)
+      - semantics:
+        - `NULL` → `{PathColumnName}` was absent for this row
+        - non-null (`1`/`TRUE`) → `{PathColumnName}` was present for this row
+      - record `{PathColumnName}_Present` as `ColumnStorage.UnifiedAlias.PresenceColumn` for `{PathColumnName}`
+   2. Define alias column `{PathColumnName}` as:
+      - `NULL` when `{PathColumnName}_Present` is `NULL`
+      - `{Canonical}` otherwise
+   3. Flattening MUST write `{PathColumnName}_Present` for each row:
+      - present → `TRUE`/`1`
+      - absent → `NULL`
+      - flattening MUST NOT write `0`/`FALSE` (presence uses `NULL` vs `TRUE`)
 
 This prevents canonical values supplied at one JsonPath from “leaking” into a different absent JsonPath during reads
 or when evaluating predicates against the per-path binding columns.
@@ -735,12 +746,12 @@ StudentSchoolAssociation_StudentUniqueId AS (
 ) PERSISTED
 ```
 
-Presence-flag-gated aliases (non-reference paths):
+Presence-flag-gated aliases (optional non-reference paths):
 
 ```sql
 SchoolYear_Unified <type> NULL, -- canonical stored column
 
-GradingPeriodSchoolYear_Present bit NULL, -- NULL if optional; NOT NULL if required
+GradingPeriodSchoolYear_Present bit NULL, -- optional path presence gate
 
 GradingPeriodSchoolYear AS (
   CASE
@@ -764,12 +775,12 @@ Alias columns are generated, stored:
   ) STORED
 ```
 
-Presence-flag-gated aliases (non-reference paths):
+Presence-flag-gated aliases (optional non-reference paths):
 
 ```sql
 "SchoolYear_Unified" <type> NULL, -- canonical stored column
 
-"GradingPeriodSchoolYear_Present" boolean NULL, -- NULL if optional; NOT NULL if required
+"GradingPeriodSchoolYear_Present" boolean NULL, -- optional path presence gate
 
 "GradingPeriodSchoolYear" <type>
   GENERATED ALWAYS AS (
@@ -841,7 +852,9 @@ Instead, triggers MUST treat “changed” as a **value-diff** between the pre-i
 unified member’s value is the **presence-gated expression** derived from `ColumnStorage.UnifiedAlias`:
 
 - `Stored` column value: `<Column>`
-- `UnifiedAlias` column value: `CASE WHEN <PresenceColumn> IS NULL THEN NULL ELSE <CanonicalColumn> END`
+- `UnifiedAlias` column value:
+  - when `<PresenceColumn>` is null: `<CanonicalColumn>`
+  - otherwise: `CASE WHEN <PresenceColumn> IS NULL THEN NULL ELSE <CanonicalColumn> END`
 
 This makes identity change detection robust to:
 
