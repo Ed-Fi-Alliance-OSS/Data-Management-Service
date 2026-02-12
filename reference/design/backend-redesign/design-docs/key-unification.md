@@ -63,9 +63,10 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
 - **Presence column**: a physical column whose nullability indicates whether a binding site is present for this row.
   - For reference-site identity aliases: `{RefBaseName}_DocumentId`
   - For non-reference per-path aliases: a synthetic presence flag column (see below)
-- **Presence flag column**: a stored nullable boolean/bit column used as a presence column for non-reference paths:
-  - `NULL` → the path is absent for this row
-  - `TRUE`/`1` → the path is present for this row
+- **Presence flag column**: a stored boolean/bit column used as a presence column for non-reference paths:
+  - Optional paths: nullable; `NULL` means absent and `TRUE`/`1` means present.
+  - Required paths: `NOT NULL`; always `TRUE`/`1` (the path is always present).
+  - `FALSE`/`0` is not used (presence is `NULL` vs `TRUE`).
 - **Presence gating**: making an alias evaluate to `NULL` when its `PresenceColumn` is `NULL`.
 
 ## Background (current redesign behavior)
@@ -557,15 +558,67 @@ Within a given table:
 
 ### Type compatibility
 
-All nodes within a unification class must have compatible physical types:
+All nodes within a unification class MUST have compatible physical types.
 
-- Scalar vs scalar
-- DescriptorFk vs DescriptorFk (both are stored as `BIGINT` / `bigint` descriptor document ids)
-  - DescriptorFk columns are compatible only when they target the **same** descriptor resource type
-    (`DbColumnModel.TargetResource`).
-- Scalar and DescriptorFk are not compatible
+More precisely: all members of a unification class MUST share the same physical **member signature** (fail fast
+otherwise).
 
-The derived model build must fail fast if incompatible types are unified.
+Compatibility rules:
+
+- Scalar vs Scalar:
+  - `DbColumnModel.Kind` MUST be `Scalar` for all members, and
+  - `DbColumnModel.ScalarType` MUST be **exactly equal** across all members, including:
+    - `ScalarKind`, and
+    - `MaxLength` (for strings), and
+    - `(Precision, Scale)` (for decimals).
+- DescriptorFk vs DescriptorFk:
+  - `DbColumnModel.Kind` MUST be `DescriptorFk` for all members,
+  - physical storage MUST be `BIGINT` / `bigint` (as in the base redesign), and
+  - `DbColumnModel.TargetResource` MUST be the **same** descriptor resource type across all members.
+- Scalar and DescriptorFk MUST NOT be unified.
+
+The derived model build MUST fail fast if incompatible types are unified.
+
+### Canonical column type derivation (normative)
+
+When a unification class is applied to a table, the builder MUST create exactly one storage-only canonical column for
+that class and MUST derive its physical type deterministically from the class member signature.
+
+Rules:
+
+1. Compute the class signature from the first member path column.
+2. Verify all other member path columns have the exact same signature per “Type compatibility” above (fail fast
+   otherwise).
+3. Create the canonical column with:
+   - `DbColumnModel.Kind` = member `Kind` (`Scalar` or `DescriptorFk`)
+   - `DbColumnModel.ScalarType` = member `ScalarType` (exact copy)
+   - `DbColumnModel.TargetResource`:
+     - `null` for `Scalar`, and
+     - the member descriptor resource type for `DescriptorFk`
+
+Notes:
+- This design does **not** attempt to “widen” or “merge” type constraints (e.g., picking the larger of two string
+  `MaxLength` values). Any mismatch is treated as a schema/design error and MUST fail fast to avoid silently changing
+  DDL, query behavior, or parameter binding semantics.
+- For descriptor-key unification, the canonical column stores the unified descriptor `DocumentId` (BIGINT), but retains
+  the descriptor resource type in `TargetResource` so downstream consumers can remain resource-type safe.
+
+### Canonical column nullability derivation (normative)
+
+The canonical column nullability MUST be derived deterministically from the class member-path column nullability.
+
+Rule:
+
+- `CanonicalColumn.IsNullable = MemberPathColumns.All(m => m.IsNullable)`
+
+Equivalently:
+- If **any** member path column is required (`IsNullable=false`), the canonical column MUST be `NOT NULL`.
+- The canonical column MAY be nullable only when **all** member path columns are nullable.
+
+Rationale:
+- A unification class represents a single logical value that may be absent when all binding sites are optional.
+- If any binding site is required, the unified value is required for every row in that table scope, so the canonical
+  storage column must be `NOT NULL` and write coalescing must always produce a non-null value.
 
 ### Descriptor identity parts (`..._DescriptorId`) under unification
 
@@ -597,6 +650,10 @@ For each unification class on a table, select exactly one canonical column:
    canonical column, preserving:
    - existing column names, and
    - existing `SourceJsonPath` bindings.
+
+The canonical column’s physical kind/type/nullability are derived per:
+- “Canonical column type derivation (normative)”
+- “Canonical column nullability derivation (normative)”
 
 ### Naming rules (deterministic)
 
@@ -639,7 +696,12 @@ presence-gated with a synthetic presence flag column.
 For a member path column `{PathColumnName}` and canonical column `{Canonical}`:
 
 1. Create a stored presence flag column `{PathColumnName}_Present` with:
-   - type: nullable `bit` (SQL Server) / nullable `boolean` (PostgreSQL)
+   - type: `bit` (SQL Server) / `boolean` (PostgreSQL)
+   - nullability:
+     - if `{PathColumnName}` is required (`IsNullable=false`): `{PathColumnName}_Present` MUST be `NOT NULL` and MUST
+       always be written as `1`/`TRUE`
+     - if `{PathColumnName}` is optional (`IsNullable=true`): `{PathColumnName}_Present` MUST be nullable (`NULL`
+       means absent; `1`/`TRUE` means present)
    - `SourceJsonPath = null` (storage-only; not an API binding column)
    - semantics:
      - `NULL` → `{PathColumnName}` was absent for this row
@@ -649,8 +711,11 @@ For a member path column `{PathColumnName}` and canonical column `{Canonical}`:
    - `NULL` when `{PathColumnName}_Present` is `NULL`
    - `{Canonical}` otherwise
 3. Flattening MUST write `{PathColumnName}_Present` for each row:
-   - set to `1`/`TRUE` when the member’s `SourceJsonPath` is present for that row
-   - set to `NULL` when absent
+   - if the member path is required: set to `1`/`TRUE`
+   - if the member path is optional:
+     - set to `1`/`TRUE` when the member’s `SourceJsonPath` is present for that row, and
+     - set to `NULL` when absent
+   - flattening MUST NOT write `0`/`FALSE` (presence uses `NULL` vs `TRUE`)
 
 This prevents canonical values supplied at one JsonPath from “leaking” into a different absent JsonPath during reads
 or when evaluating predicates against the per-path binding columns.
@@ -675,7 +740,7 @@ Presence-flag-gated aliases (non-reference paths):
 ```sql
 SchoolYear_Unified <type> NULL, -- canonical stored column
 
-GradingPeriodSchoolYear_Present bit NULL,
+GradingPeriodSchoolYear_Present bit NULL, -- NULL if optional; NOT NULL if required
 
 GradingPeriodSchoolYear AS (
   CASE
@@ -704,7 +769,7 @@ Presence-flag-gated aliases (non-reference paths):
 ```sql
 "SchoolYear_Unified" <type> NULL, -- canonical stored column
 
-"GradingPeriodSchoolYear_Present" boolean NULL,
+"GradingPeriodSchoolYear_Present" boolean NULL, -- NULL if optional; NOT NULL if required
 
 "GradingPeriodSchoolYear" <type>
   GENERATED ALWAYS AS (
@@ -827,7 +892,6 @@ unification, some of those columns become generated/computed aliases.
 
 - The canonical-column naming rule when multiple per-site identity-part suffixes differ due to name overrides or when
   the leaf property name is ambiguous.
-- The canonical-column nullability rule when a unification class contains a mix of required and optional endpoints.
 - Whether a canonical column shared across multiple composite FKs with `ON UPDATE CASCADE` can introduce transient FK
   violations during multi-edge cascades, and what the mitigation strategy is for PostgreSQL and SQL Server.
 - Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
