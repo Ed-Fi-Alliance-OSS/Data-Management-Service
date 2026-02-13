@@ -1178,6 +1178,27 @@ compilation and reconstitution can continue to bind by those names.
 
 ## Presence-Gated Alias Semantics
 
+### Reference-membership detection (required)
+
+KeyUnificationPass MUST decide whether a unified member endpoint uses reference-site presence
+(`{RefBaseName}_DocumentId`) vs a synthetic `..._Present` gate using the same authoritative lookup over
+`DocumentReferenceBinding` used for naming:
+
+Detection rule (required):
+
+- Determine reference-membership only by `DbColumnModel.SourceJsonPath` equality against
+  `DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath` (do not parse column names or infer reference
+  groups by naming conventions).
+- For a member path column `M` with `DbColumnModel.SourceJsonPath = MemberPath`:
+  - Locate the unique `DocumentReferenceBinding` whose `IdentityBindings[*].ReferenceJsonPath` equals `MemberPath`.
+    - If none exists, `M` is not a reference-identity binding.
+    - If more than one exists, fail fast (ambiguous binding; derived model bug).
+  - If such a binding exists, `M` is a reference-identity member and its `UnifiedAlias.PresenceColumn` MUST be that
+    binding’s `FkColumn` (`{RefBaseName}_DocumentId`).
+
+All members that are not reference-identity bindings are treated as non-reference paths; optional members are gated
+by synthetic `..._Present` columns and required members are ungated aliases, per the rules below.
+
 ### Reference sites (DocumentId presence)
 
 For a reference site `{RefBaseName}` and unified identity part canonical column `{Canonical}`:
@@ -1816,8 +1837,9 @@ are specified elsewhere in this document.
      - `SourceJsonPath = null` (storage-only), `Storage = Stored`.
    - For each member path column in `MemberPathColumns`:
      - Determine its presence-gating strategy:
-       - Reference site member: if the member column is an identity binding in a `DocumentReferenceBinding`, then
-         `PresenceColumn = DocumentReferenceBinding.FkColumn` (`{RefBaseName}_DocumentId`).
+       - Reference site member: when the member’s `SourceJsonPath` is the unique
+         `DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath` for some `DocumentReferenceBinding`, then
+         `PresenceColumn = binding.FkColumn` (`{RefBaseName}_DocumentId`).
        - Non-reference optional member (`IsNullable=true`): create a synthetic stored presence flag column and then
          `PresenceColumn = {PresenceColumnName}`:
          - `MemberSourceJsonPath` = the member path column’s `DbColumnModel.SourceJsonPath`.
