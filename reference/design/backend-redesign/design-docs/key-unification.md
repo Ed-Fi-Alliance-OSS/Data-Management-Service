@@ -352,11 +352,21 @@ Any consumer that needs a column for **DML/DDL that targets writable storage** M
 
 Any consumer that needs a column for **API-path semantics** MUST continue to use binding columns:
 
-- Query compilation binds predicates to binding columns to preserve “presence implies predicate participation”.
+- Query compilation preserves binding/path semantics; predicates MAY be emitted against binding columns or rewritten to
+  storage columns with explicit presence gating (see “Index and predicate planning (recommended)”).
 - Reconstitution reads from binding columns so optional sites/paths remain absent when absent.
 - API-semantic UNIQUE constraints are derived from JsonPaths and use binding columns (including aliases).
 
 Consumers MUST NOT attempt to infer binding vs storage behavior by column naming conventions.
+
+##### Derived-model FK invariants (normative)
+
+To keep DDL emission and runtime planning deterministic and dialect-neutral, the derived relational model MUST
+satisfy:
+
+- Every `TableConstraint.ForeignKey` MUST reference **storage columns** in both `Columns` and `TargetColumns` (after
+  mapping through `DbColumnModel.Storage`).
+- Foreign keys MUST NOT reference `UnifiedAlias` columns directly.
 
 ##### `DocumentReferenceBinding` and `ReferenceIdentityBinding` (normative)
 
@@ -475,6 +485,12 @@ Rules:
 - `KeyUnificationMemberWritePlan.Kind` MUST be `Scalar` or `DescriptorFk`.
 - `RelativePath` MUST be relative to the table’s `JsonScope` node and MUST NOT contain `[*]` segments (row-local,
   zero-or-one selection per row).
+- `RelativePath` MAY be empty (zero segments) to indicate “value-at-scope”:
+  - the selected JSON value is the table’s current `JsonScope` node itself, and
+  - this is required for scalar-at-scope bindings (e.g., descriptor-string element scopes where
+    `DbColumnModel.SourceJsonPath == DbTableModel.JsonScope`, such as `$.programDescriptors[*]`).
+  - plan compilation MUST fail fast if a value-at-scope member does not select a scalar value at that scope (e.g.,
+    if the scope node is an object/array).
 - `CanonicalBindingIndex` is an index into `TableWritePlan.ColumnBindings`:
   - this preserves the existing “parameter ordering is defined by `ColumnBindings`” invariant for compiled SQL.
 - When `PresenceColumn` is non-null, `PresenceBindingIndex` is an index into `TableWritePlan.ColumnBindings`.
@@ -545,6 +561,8 @@ For each table row being materialized, and for each `KeyUnificationClass` on tha
    - A member is **absent** when the path selects no value.
    - A selected JSON `null` value MUST be treated as **absent** (Core prunes null-valued properties; backend
      coalescing must match that behavior).
+   - When the member’s `KeyUnificationMemberWritePlan.RelativePath` is empty (value-at-scope), the selected value is
+     the table scope node itself.
 2. Materialize each present candidate value in canonical storage form:
    - For `Scalar` members: convert the JSON scalar to the member’s storage scalar type using the same conversion rules
      used for normal scalar columns (coercions are Core-owned; backend should treat incoming values as already
@@ -705,11 +723,20 @@ Key unification is derived from ApiSchema `resourceSchema.equalityConstraints`, 
 to a subset of those constraints (row-local, unambiguous bindings, same-table). Any remaining constraints are enforced
 by Core only.
 
+This design treats `equalityConstraints` as a **schema-derived invariant** for endpoints that are expected to be
+represented in the derived relational model. Therefore:
+
+- `unresolved_endpoint` and `unsupported_endpoint_kind` are **fail-fast errors** during derived-model compilation.
+- `cross_table` constraints are **ignored** by key unification (they remain Core-only).
+- Constraints whose endpoints resolve to the same binding (`(table, column)`) are **redundant** (no-op) and are ignored
+  by key unification, but are still reported for diagnostics.
+
 To avoid silent “Core-only vs DB-unified” drift, any relational-model manifest output used for diagnostics and/or
 golden tests MUST include a deterministic per-resource report that classifies every equality constraint as:
 
-- **applied** (contributed to a same-table unification class), or
-- **skipped** (left Core-only), with an explicit, machine-readable skip reason.
+- **applied** (contributed to a same-table unification class),
+- **redundant** (both endpoints resolved to the same binding), or
+- **ignored** (left Core-only due to cross-table scope), with an explicit, machine-readable ignore reason.
 
 Recommended manifest shape (illustrative):
 
@@ -727,7 +754,17 @@ Recommended manifest shape (illustrative):
         "canonical_column": "StudentUniqueId_Unified"
       }
     ],
-    "skipped": [
+    "redundant": [
+      {
+        "endpoint_a_path": "$.studentSchoolAssociationReference.studentUniqueId",
+        "endpoint_b_path": "$.studentSchoolAssociationReference.studentUniqueId",
+        "binding": {
+          "table": { "schema": "edfi", "name": "StudentAssessmentRegistration" },
+          "column": "StudentSchoolAssociation_StudentUniqueId"
+        }
+      }
+    ],
+    "ignored": [
       {
         "endpoint_a_path": "$.schoolYear",
         "endpoint_b_path": "$.gradingPeriods[*].schoolYear",
@@ -740,18 +777,10 @@ Recommended manifest shape (illustrative):
           "table": { "schema": "edfi", "name": "StudentAssessmentRegistration_GradingPeriods" },
           "column": "GradingPeriodSchoolYear"
         }
-      },
-      {
-        "endpoint_a_path": "$.somePathNotStored",
-        "endpoint_b_path": "$.someOtherPathNotStored",
-        "reason": "unresolved_endpoint",
-        "endpoint_a_binding": null,
-        "endpoint_b_binding": null
       }
     ],
-    "skipped_by_reason": {
-      "cross_table": 1,
-      "unresolved_endpoint": 1
+    "ignored_by_reason": {
+      "cross_table": 1
     }
   }
 }
@@ -764,28 +793,25 @@ Rules:
   - `endpoint_a_path` is the ordinal-min of the two endpoint paths
   - `endpoint_b_path` is the ordinal-max
   This makes the report stable even if ApiSchema emits the same constraint in both directions.
-- `endpoint_*_binding` describes the resolved **path column** binding (the column that retains `SourceJsonPath`,
-  typically an alias under unification). It is either:
-  - `{ table, column }` when resolvable via `DbColumnModel.SourceJsonPath`, or
-  - `null` when the endpoint is not resolvable by the derived model and remains Core-only.
+- `endpoint_*_binding` and `binding` describe the resolved **path column** binding (the column that retains
+  `SourceJsonPath`, typically an alias under unification).
 - `applied[]` entries MUST include:
   - the resolved owning table (same for both endpoints), and
   - the two endpoint column names, and
   - the canonical storage column name for the corresponding unification class.
-- `skipped[]` entries MUST include:
+- `redundant[]` entries MUST include:
+  - the resolved binding `(table, column)`.
+- `ignored[]` entries MUST include:
   - `reason`, and
-  - both endpoint bindings (`null` when unresolved).
-- `skipped_by_reason` MUST match `skipped[]` exactly.
+  - both endpoint bindings.
+- `ignored_by_reason` MUST match `ignored[]` exactly.
 - Ordering MUST be deterministic:
-  - `applied[]` and `skipped[]` sorted by `(endpoint_a_path, endpoint_b_path)` ordinal.
-  - `skipped_by_reason` keys sorted ordinal (or emitted in a deterministic fixed order if the writer does not
+  - `applied[]`, `redundant[]`, and `ignored[]` sorted by `(endpoint_a_path, endpoint_b_path)` ordinal.
+  - `ignored_by_reason` keys sorted ordinal (or emitted in a deterministic fixed order if the writer does not
     preserve key ordering).
 
-Skip reasons (v1):
+Ignore reasons (v1):
 
-- `unresolved_endpoint`: one or both endpoints did not resolve to a derived column via `SourceJsonPath`.
-- `unsupported_endpoint_kind`: one or both endpoints resolved, but to an unsupported `ColumnKind` for unification (e.g.
-  `DocumentFk`, `Ordinal`, `ParentKeyPart`).
 - `cross_table`: both endpoints resolved, but to different physical tables.
 
 #### Mapping-pack payload surface (`.mpack`) (required)
@@ -889,8 +915,8 @@ semantic change to mapping behavior and MUST be gated by `RelationalMappingVersi
 `[*]`), and Core validation requires that all matched values across the document are equal.
 
 Option 3 does **not** attempt to enforce full document-level equality in the database. Instead, it uses
-`equalityConstraints` as a signal that the relational model has duplicated **stored identity values** that should be
-physically unified so they cannot drift.
+`equalityConstraints` as a signal that the relational model has duplicated **stored Scalar/DescriptorFk values**
+(including identity parts) that should be physically unified so they cannot drift.
 
 As a result, DB-level unification is strictly **row-local** (within a single physical table row), and only addresses
 the “duplicated storage” problem.
@@ -903,7 +929,17 @@ Out of scope for Option 3 (Core-only unless a trigger-based design is added):
 
 ### Applicability (in-scope constraints)
 
-This pass applies when both sides of an equality constraint resolve to value bindings on the **same physical table**.
+This pass applies when both sides of an equality constraint resolve to value bindings on the **same physical table**
+and both endpoints resolve to supported endpoint kinds (`Scalar` or `DescriptorFk`).
+
+Constraints are handled as follows:
+
+- If either endpoint is **unresolved** (does not map to exactly one binding column via `SourceJsonPath`), the derived
+  model build MUST fail fast.
+- If either endpoint resolves but is an **unsupported endpoint kind**, the derived model build MUST fail fast.
+- If both endpoints resolve but bind to **different tables**, the constraint is ignored by key unification (Core-only).
+- If both endpoints resolve to the **same binding** (`(table, column)`), the constraint is redundant (no-op) and is
+  ignored by key unification (but must be reported for diagnostics).
 
 ### Endpoint resolution (authoritative mapping)
 
@@ -925,7 +961,8 @@ Resolution algorithm (per endpoint path):
 
 1. Find all `DbColumnModel` columns across the derived resource model whose `SourceJsonPath.Canonical` matches the
    endpoint JsonPath string exactly.
-2. If there are **zero** matches, the endpoint is not enforceable via Option 3 and remains Core-only.
+2. If there are **zero** matches, fail fast: the effective schema expects the endpoint to be represented in the
+   derived model.
 3. If there is **exactly one** match, that `(table, column)` is the resolved binding for this endpoint.
 4. If there is **more than one** match:
    - If all matches refer to the same physical column name on the same table, treat as a duplicate inventory and
@@ -933,8 +970,12 @@ Resolution algorithm (per endpoint path):
    - Otherwise, fail fast: the derived model has become ambiguous for a single API JsonPath endpoint, and any automatic
      “pick one” behavior risks unifying the wrong columns silently.
 
-If either endpoint fails to resolve to exactly one binding, or the two endpoints resolve to different tables, the
-constraint is not enforced by this design (it remains Core-only).
+After endpoint resolution:
+
+- If the two endpoints resolve to different tables, the constraint is ignored by key unification (Core-only).
+- If the two endpoints resolve to the same `(table, column)`, the constraint is redundant (no-op) and is ignored by
+  key unification.
+- If either resolved endpoint is not `ColumnKind.Scalar` or `ColumnKind.DescriptorFk`, fail fast.
 
 ### Class construction
 
@@ -1212,6 +1253,41 @@ Let `{PresenceColumnName}` be the final selected name produced by the rules abov
 
 This prevents canonical values supplied at one JsonPath from “leaking” into a different absent JsonPath during reads
 or when evaluating predicates against the per-path binding columns.
+
+#### Presence-flag hardening (required)
+
+Synthetic presence flag columns (`..._Present`) are defined as “`NULL` means absent; non-null means present”. To keep
+this invariant robust under direct SQL writes, bulk operations, and bugs, DDL generation MUST emit a CHECK constraint
+for every synthetic presence flag column that prohibits writing `FALSE`/`0`.
+
+Normative semantics (dialect-neutral):
+
+- For a synthetic presence flag column `{PresenceColumnName}`, enforce:
+  - `{PresenceColumnName} IS NULL OR {PresenceColumnName} IS TRUE`
+
+Dialect examples (illustrative):
+
+- SQL Server: `CHECK ({PresenceColumnName} IS NULL OR {PresenceColumnName} = 1)`
+- PostgreSQL: `CHECK ("{PresenceColumnName}" IS NULL OR "{PresenceColumnName}" IS TRUE)`
+
+Constraint naming + model surface (required):
+
+- Emit one CHECK constraint per synthetic presence flag column.
+- Constraint names MUST be derived deterministically from `(Table, PresenceColumnName)` and MUST participate in the
+  same dialect hashing/shortening rules as other derived constraints.
+- The derived relational model MUST represent these CHECK constraints explicitly in `DbTableModel.Constraints` so they
+  are observable in manifests and mapping packs (do not rely on ad-hoc DDL-writer inference).
+
+Recommended derived-constraint model shape (illustrative):
+
+```csharp
+public abstract record TableConstraint
+{
+    // Existing cases omitted.
+
+    public sealed record NullOrTrue(string Name, DbColumnName Column) : TableConstraint;
+}
+```
 
 ## Dialect DDL
 
@@ -1502,6 +1578,27 @@ Rationale:
 - Presence gating preserves the existing semantics where filtering on a per-site/per-path value implies that
   site/path was present.
 
+#### Index and predicate planning (recommended)
+
+Key unification can shift “useful” physical indexes to canonical storage columns (e.g., FK-supporting indexes) while
+query compilation continues to bind predicates to alias column names for API-path semantics.
+
+Because engines may not reliably use an index on the canonical storage column when a predicate is expressed against a
+generated/computed alias expression, query compilation MAY rewrite value predicates over unified binding columns to
+equivalent predicates over the canonical storage column (and the presence gate when applicable).
+
+For a binding column `A` with `Storage = UnifiedAlias(C, P)`:
+
+- When `P` is null (ungated alias): rewrite `A <op> @p` to `C <op> @p`.
+- When `P` is non-null (presence-gated alias): rewrite `A <op> @p` to `P IS NOT NULL AND C <op> @p`.
+
+`<op>` is any value comparison operator used by the query layer (e.g., `=`, `<`, `>`, `LIKE`, `IN`), and the rewrite
+assumes `@p` is non-null (the API does not surface null-valued query parameters).
+
+If predicate rewriting is not implemented and performance requires it, the DDL/index inventory MAY introduce
+additional indexes for unified binding columns. Prefer filtered/partial indexes keyed by `C` and gated by
+`P IS NOT NULL` to avoid indexing absent rows.
+
 ### Triggers (stamping + identity maintenance) under unified aliases (normative)
 
 Key unification introduces generated/computed **alias columns** (`ColumnStorage.UnifiedAlias`) whose values can change
@@ -1648,11 +1745,11 @@ semantics, or cascade correctness.
   - edges are built only for endpoints that resolve to the same physical table, and
   - connected components produce stable classes with deterministic member ordering.
 - Equality-constraint diagnostics surface is emitted and deterministic:
-  - every `equalityConstraint` is classified as `applied` or `skipped`,
-  - `skipped` includes a machine-readable reason (`unresolved_endpoint`, `unsupported_endpoint_kind`,
-    `cross_table`), and
+  - every `equalityConstraint` is classified as `applied`, `redundant`, or `ignored` (`cross_table`), and
   - output ordering and undirected endpoint normalization are stable.
 - Derived-model validation fails fast on:
+  - `equalityConstraints` with unresolved endpoints,
+  - `equalityConstraints` with unsupported endpoint kinds,
   - incompatible member types (scalar kind/type metadata mismatch, descriptor target resource mismatch),
   - scalar-vs-descriptor mixing in one class, and
   - “multi-value” endpoints that still contain `[*]` after binding-site stripping (where prohibited by naming and
@@ -1688,6 +1785,7 @@ semantics, or cascade correctness.
   - if descriptor endpoints unify, the table emits exactly one FK anchored on the canonical storage column
     (de-duplicated by `(table, StorageColumn)`).
 - All-or-none constraints remain on reference-group binding columns (aliases) plus `..._DocumentId`.
+- Synthetic `..._Present` columns have `NULL`-or-`TRUE` CHECK constraints (no `FALSE`/`0` allowed).
 - API-semantic UNIQUE constraints are defined over binding/path columns (aliases allowed) and do not collapse to
   canonicals.
 - FK-supporting referenced-key UNIQUE constraints are defined over canonical storage columns (after mapping + de-dup).
@@ -1743,7 +1841,7 @@ semantics, or cascade correctness.
 - Relational-model manifests include:
   - per-column storage metadata (`Stored` vs `UnifiedAlias` with canonical + optional presence), and
   - per-table `KeyUnificationClass` inventory (canonical + ordered members),
-  - per-resource applied/skipped equality-constraint diagnostics.
+  - per-resource applied/redundant/ignored equality-constraint diagnostics.
 - Mapping-pack payload carries the same unification metadata and validates invariants at build/load time:
   - alias canonical/presence references exist and are stored,
   - canonical columns are storage-only,
