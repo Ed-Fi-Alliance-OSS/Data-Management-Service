@@ -21,14 +21,14 @@ Draft. This is an initial design proposal for replacing the current three-table 
 1. **Relational-first storage**: Store resources in traditional relational tables (one root table per resource, plus child tables for collections).
 2. **Metadata-driven behavior**: Continue to drive validation, identity/reference extraction, and query semantics using `ApiSchema.json` (no handwritten per-resource code).
 3. **Low coupling to document shape**: Avoid hard-coding resource shapes in C#; schema awareness comes from metadata + conventions.
-4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist referenced identity natural-key fields alongside each `..._DocumentId` and keep them synchronized via `ON UPDATE CASCADE` when the referenced target allows identity updates (`allowIdentityUpdates=true`), otherwise `ON UPDATE NO ACTION`. This enables correct indirect-update semantics without a reverse-edge index, while constraining cascades to narrow identity columns (not full-row rewrites).
+4. **Bounded cascades with stable FKs**: Store relationships as stable surrogate keys (`DocumentId`) for referential integrity, but also persist the referenced identity parts needed for query/reconstitution at the reference site (the `{RefBaseName}_{IdentityPart}` *binding* columns). These values stay consistent via composite FKs with `ON UPDATE CASCADE` when the referenced target allows identity updates (`allowIdentityUpdates=true`), otherwise `ON UPDATE NO ACTION`. When `equalityConstraints` unify identity parts across sites/paths on the same row, those per-site/per-path bindings may be generated/persisted aliases of a canonical stored column (presence-gated when optional); see [key-unification.md](key-unification.md).
 5. **SQL Server + PostgreSQL parity**: The design must be implementable (DDL + CRUD + query) on both engines.
    - Target platforms: the latest generally-available (GA) non-cloud releases of PostgreSQL and SQL Server.
 
 ### Constraints / Explicit Decisions
 
 - **ETag/LastModified are representation metadata (required)**: DMS must change API `_etag` and `_lastModifiedDate` when the returned representation changes due to identity cascades (descriptor rows are treated as immutable in this redesign).
-  - This redesign stores representation metadata on `dms.Document` and updates it in-transaction. Indirect representation changes are realized as FK-cascade updates to stored reference identity columns on referrers, which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
+  - This redesign stores representation metadata on `dms.Document` and updates it in-transaction. Indirect representation changes are realized as FK-cascade updates to canonical stored identity columns that back the local reference-identity bindings (which may be generated/persisted aliases under key unification), which then trigger normal stamping. See [update-tracking.md](update-tracking.md).
 - **Schema updates are validated, not applied**: DMS does not perform in-place schema changes. On first use of a given database connection string (after instance routing), DMS reads the database’s recorded effective schema fingerprint (the singleton `dms.EffectiveSchema` row + `dms.SchemaComponent` rows keyed by `EffectiveSchemaHash`), caches it per connection string, and selects a matching compiled mapping set. Requests fail fast if no matching mapping is available. In-process schema reload/hot-reload is out of scope for this design.
 - **Authorization is out of scope**: authorization storage and query filtering is intentionally deferred and not part of this redesign phase.
 - **No code generation**: No generated per-resource C# or “checked-in generated SQL per resource” is required to compile/run DMS.
@@ -43,8 +43,8 @@ Draft. This is an initial design proposal for replacing the current three-table 
   - plus JSON rewrite cascades (`UpdateCascadeHandler`) to keep embedded reference identity values consistent.
 - In this redesign, canonical storage is relational (tables per resource). Referencing relationships are stored as stable `DocumentId` FKs, so:
   - the database enforces referential integrity via FKs (no `dms.Reference` required), and
-  - responses can reconstitute reference identity values directly from stored reference identity columns (kept consistent via composite FKs with `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`), avoiding read-time joins to referenced tables in the common case.
-- Identity/URI changes do not rewrite `..._DocumentId` foreign keys, but **do** propagate into stored reference identity columns via `ON UPDATE CASCADE` when `allowIdentityUpdates=true` (otherwise identity updates are rejected and FKs use `ON UPDATE NO ACTION`). Cascades still exist for derived artifacts, but they are handled row-locally:
+  - responses can reconstitute reference identity values directly from local reference-identity binding columns (kept consistent via composite FKs with `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`). Under key unification, those binding columns may be presence-gated aliases of canonical stored columns, preserving “absent optional reference ⇒ `NULL` at the binding columns”.
+- Identity/URI changes do not rewrite `..._DocumentId` foreign keys, but **do** propagate into the local canonical stored identity columns that underpin reference-identity bindings via `ON UPDATE CASCADE` when `allowIdentityUpdates=true` (otherwise identity updates are rejected and FKs use `ON UPDATE NO ACTION`). Cascades still exist for derived artifacts, but they are handled row-locally:
   - `dms.ReferentialIdentity` is maintained transactionally by per-resource triggers that recompute referential ids from locally present identity columns (including propagated reference identity values).
   - update tracking metadata is maintained by normal stamping on `dms.Document` (no read-time dependency derivation required); see [update-tracking.md](update-tracking.md).
 - Identity uniqueness is enforced by:
@@ -94,6 +94,7 @@ This preserves the Core/Backend boundary and avoids leaking relational concerns 
 This redesign is split into focused docs in this directory:
 
 - Data model (tables, constraints, naming, SQL Server parity notes): [data-model.md](data-model.md)
+- Key unification (canonical columns + generated aliases; presence-gated when optional): [key-unification.md](key-unification.md)
 - Flattening & reconstitution (derived mapping, compiled plans, C# shapes): [flattening-reconstitution.md](flattening-reconstitution.md)
 - Unified mapping models (shared in-memory shape for DDL/runtime/packs): [compiled-mapping-set.md](compiled-mapping-set.md)
 - AOT compilation (optional mapping pack distribution keyed by `EffectiveSchemaHash`): [aot-compilation.md](aot-compilation.md)
