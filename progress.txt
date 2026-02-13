@@ -16,3 +16,6 @@
 - Completed: tasks.json#4 Foreign Keys (DMS-1033)
 - Decisions: KeyUnificationPass mutates columns/classes only (no FK emission); ReferenceConstraintPass emits composite ref FKs by mapping binding→storage via `DbColumnModel.Storage`; referential actions unchanged (ON UPDATE allowIdentityUpdates-gated + existing SQL Server fallback; ON DELETE NO ACTION)
 - Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
+- Completed: tasks.json#1 Dialect Hashing (DMS-1033)
+- Decisions: NullOrTrue constraint signature = (kind="NullOrTrue", table=(schema,name), column=PresenceColumnName); explicitly participates in ApplyConstraintDialectHashingPass + ApplyDialectIdentifierShorteningPass; shortening updates Name + Column references
+- Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
