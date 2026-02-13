@@ -157,7 +157,7 @@
       "Run: `rg -n \"DocumentReferenceBinding\" reference/design/backend-redesign/design-docs/flattening-reconstitution.md` and confirm reference identity binding semantics explicitly allow binding columns to be `UnifiedAlias` (read-only) while FK derivation/writes target storage columns.",
       "Manual read: verify all SQL canonicalization and ordering invariants remain intact after introducing precompute-only column bindings."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Compiled Mapping Set",

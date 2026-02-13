@@ -32,3 +32,6 @@
 - Completed: tasks.json#2 Examples (design doc) (DMS-1033)
 - Decisions: worked example for optional non-reference scalar unification w/ synthetic `..._Present` flags; shows canonical stored col + two presence gates + two unified aliases; includes SQL Server + PostgreSQL DDL; enumerates coalescing scenarios + “absent path stays absent” semantics
 - Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
+- Completed: tasks.json#15 Docs: Flattening + Reconstitution (DMS-1033)
+- Decisions: add `DbColumnModel.Storage` + `DbTableModel.KeyUnificationClasses`; add `WriteValueSource.Precomputed` + `KeyUnificationWritePlan`; plan compiler excludes `UnifiedAlias` from writes; flattener two-phase materialization w/ deterministic coalescing + conflict detection + synthetic presence flags (absent=NULL, present=TRUE)
+- Files: reference/design/backend-redesign/design-docs/flattening-reconstitution.md; tasks.json; progress.txt
