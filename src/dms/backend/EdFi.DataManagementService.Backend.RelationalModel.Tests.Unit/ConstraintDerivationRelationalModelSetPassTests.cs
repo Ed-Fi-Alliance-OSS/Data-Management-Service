@@ -874,6 +874,118 @@ public class Given_Abstract_Reference_Constraint_Derivation
 }
 
 /// <summary>
+/// Test fixture for reference constraint derivation on MSSQL dialect.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Constraint_Derivation_On_Mssql
+{
+    private DbTableModel _enrollmentTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+
+        var enrollmentModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+
+        _enrollmentTable = enrollmentModel.Root;
+    }
+
+    /// <summary>
+    /// It should use NoAction for all reference FKs on MSSQL.
+    /// </summary>
+    [Test]
+    public void It_should_use_NoAction_for_all_reference_FKs_on_Mssql()
+    {
+        var schoolFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+        var studentFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.Columns[0].Value == "Student_DocumentId");
+
+        schoolFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        studentFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// Test fixture for abstract reference constraint derivation on MSSQL dialect.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Reference_Constraint_Derivation_On_Mssql
+{
+    private DbTableModel _enrollmentTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildAbstractReferenceProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new ReferenceBindingPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+
+        var enrollmentModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+
+        _enrollmentTable = enrollmentModel.Root;
+    }
+
+    /// <summary>
+    /// It should use NoAction for abstract target on MSSQL.
+    /// </summary>
+    [Test]
+    public void It_should_use_NoAction_for_abstract_target_on_Mssql()
+    {
+        var educationOrganizationFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.Columns[0].Value == "EducationOrganization_DocumentId");
+
+        educationOrganizationFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+        educationOrganizationFk.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
+    }
+}
+
+/// <summary>
 /// Test fixture for array uniqueness constraint derivation.
 /// </summary>
 [TestFixture]

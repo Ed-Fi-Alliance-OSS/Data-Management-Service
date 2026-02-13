@@ -19,12 +19,13 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private const string StampToken = "Stamp";
     private const string ReferentialIdentityToken = "ReferentialIdentity";
     private const string AbstractIdentityToken = "AbstractIdentity";
+    private const string PropagationFallbackPrefix = "Propagation";
 
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.TriggerInventory"/> with
-    /// <c>DocumentStamping</c>, <c>ReferentialIdentityMaintenance</c>, and
-    /// <c>AbstractIdentityMaintenance</c> triggers. <c>IdentityPropagationFallback</c> is
-    /// stubbed as empty (full cascade-path analysis deferred).
+    /// <c>DocumentStamping</c>, <c>ReferentialIdentityMaintenance</c>,
+    /// <c>AbstractIdentityMaintenance</c>, and (MSSQL only) <c>IdentityPropagationFallback</c>
+    /// triggers.
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
@@ -37,6 +38,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         var abstractTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>
             table.AbstractResourceKey.Resource
         );
+
+        var resourceContextsByResource = BuildResourceContextLookup(context);
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
@@ -66,11 +69,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
             var resourceModel = concreteModel.RelationalModel;
             var rootTable = resourceModel.Root;
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
             // Resolve identity projection columns for the root table.
             var identityProjectionColumns = BuildRootIdentityProjectionColumns(
                 resourceModel,
-                context.GetOrCreateResourceBuilderContext(resourceContext),
+                builderContext,
                 resource
             );
 
@@ -154,7 +158,20 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 }
             }
 
-            // IdentityPropagationFallback — stubbed as empty (TODO: full cascade-path analysis).
+            // IdentityPropagationFallback — MSSQL only: emits triggers for reference FKs that
+            // would use ON UPDATE CASCADE on PostgreSQL but must use NO ACTION on SQL Server.
+            if (context.Dialect == SqlDialect.Mssql && builderContext.DocumentReferenceMappings.Count > 0)
+            {
+                EmitPropagationFallbackTriggers(
+                    context,
+                    builderContext,
+                    resourceModel,
+                    rootTable,
+                    abstractTablesByResource,
+                    resourceContextsByResource,
+                    resource
+                );
+            }
         }
     }
 
@@ -204,6 +221,131 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         }
 
         return uniqueColumns.ToArray();
+    }
+
+    /// <summary>
+    /// Emits <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers for each root-table
+    /// reference binding whose target is abstract or allows identity updates. These replace the
+    /// <c>ON UPDATE CASCADE</c> that PostgreSQL handles natively but SQL Server rejects due to
+    /// multiple cascade paths.
+    /// </summary>
+    private static void EmitPropagationFallbackTriggers(
+        RelationalModelSetBuilderContext context,
+        RelationalModelBuilderContext builderContext,
+        RelationalResourceModel resourceModel,
+        DbTableModel rootTable,
+        IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
+        QualifiedResourceName resource
+    )
+    {
+        var bindingByReferencePath = resourceModel.DocumentReferenceBindings.ToDictionary(
+            binding => binding.ReferenceObjectPath.Canonical,
+            StringComparer.Ordinal
+        );
+
+        foreach (var mapping in builderContext.DocumentReferenceMappings)
+        {
+            if (!bindingByReferencePath.TryGetValue(mapping.ReferenceObjectPath.Canonical, out var binding))
+            {
+                continue;
+            }
+
+            // Only consider root-table bindings.
+            if (!binding.Table.Equals(rootTable.Table))
+            {
+                continue;
+            }
+
+            DbTableName? targetTable;
+
+            if (abstractTablesByResource.TryGetValue(mapping.TargetResource, out var abstractTableInfo))
+            {
+                targetTable = abstractTableInfo.TableModel.Table;
+            }
+            else if (
+                resourceContextsByResource.TryGetValue(mapping.TargetResource, out var targetResourceContext)
+            )
+            {
+                var targetBuilderContext = context.GetOrCreateResourceBuilderContext(targetResourceContext);
+
+                if (!targetBuilderContext.AllowIdentityUpdates)
+                {
+                    continue;
+                }
+
+                var targetEntry = context.ConcreteResourcesInNameOrder.FirstOrDefault(model =>
+                    model.ResourceKey.Resource == mapping.TargetResource
+                );
+
+                if (targetEntry is null)
+                {
+                    continue;
+                }
+
+                targetTable = targetEntry.RelationalModel.Root.Table;
+            }
+            else
+            {
+                continue;
+            }
+
+            var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn);
+            var propagatedColumns = binding.IdentityBindings.Select(ib => ib.Column).ToArray();
+
+            context.TriggerInventory.Add(
+                new DbTriggerInfo(
+                    new DbTriggerName(
+                        BuildTriggerName(rootTable.Table, $"{PropagationFallbackPrefix}_{referenceBaseName}")
+                    ),
+                    rootTable.Table,
+                    DbTriggerKind.IdentityPropagationFallback,
+                    [binding.FkColumn],
+                    propagatedColumns,
+                    targetTable
+                )
+            );
+        }
+    }
+
+    /// <summary>
+    /// Resolves the base reference name from a reference FK column by trimming the <c>_DocumentId</c> suffix.
+    /// </summary>
+    private static string ResolveReferenceBaseName(DbColumnName fkColumn)
+    {
+        const string DocumentIdSuffix = "_DocumentId";
+
+        return fkColumn.Value.EndsWith(DocumentIdSuffix, StringComparison.Ordinal)
+            ? fkColumn.Value[..^DocumentIdSuffix.Length]
+            : fkColumn.Value;
+    }
+
+    /// <summary>
+    /// Builds a lookup from qualified resource name to its concrete schema context (excluding extensions).
+    /// </summary>
+    private static IReadOnlyDictionary<
+        QualifiedResourceName,
+        ConcreteResourceSchemaContext
+    > BuildResourceContextLookup(RelationalModelSetBuilderContext context)
+    {
+        Dictionary<QualifiedResourceName, ConcreteResourceSchemaContext> lookup = new();
+
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            if (IsResourceExtension(resourceContext))
+            {
+                continue;
+            }
+
+            var resource = new QualifiedResourceName(
+                resourceContext.Project.ProjectSchema.ProjectName,
+                resourceContext.ResourceName
+            );
+
+            lookup[resource] = resourceContext;
+        }
+
+        return lookup;
     }
 
     /// <summary>

@@ -248,10 +248,11 @@ public class Given_Descriptor_Resources_For_Trigger_Derivation
 }
 
 /// <summary>
-/// Test fixture for IdentityPropagationFallback stub.
+/// Test fixture verifying IdentityPropagationFallback triggers are not emitted on Pgsql,
+/// even for schemas that have references qualifying for cascade propagation.
 /// </summary>
 [TestFixture]
-public class Given_IdentityPropagationFallback_Stub
+public class Given_IdentityPropagationFallback_On_Pgsql
 {
     private IReadOnlyList<DbTriggerInfo> _triggers = default!;
 
@@ -261,7 +262,7 @@ public class Given_IdentityPropagationFallback_Stub
     [SetUp]
     public void Setup()
     {
-        var coreProjectSchema = TriggerInventoryTestSchemaBuilder.BuildCompositeProjectSchema();
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
         var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
             coreProjectSchema,
             isExtensionProject: false
@@ -276,14 +277,196 @@ public class Given_IdentityPropagationFallback_Stub
     }
 
     /// <summary>
-    /// It should not emit any IdentityPropagationFallback triggers.
+    /// It should not emit any IdentityPropagationFallback triggers on Pgsql.
     /// </summary>
     [Test]
-    public void It_should_not_emit_any_IdentityPropagationFallback_triggers()
+    public void It_should_not_emit_any_IdentityPropagationFallback_triggers_on_Pgsql()
     {
         var fallbackTriggers = _triggers.Where(t => t.Kind == DbTriggerKind.IdentityPropagationFallback);
 
         fallbackTriggers.Should().BeEmpty();
+    }
+}
+
+/// <summary>
+/// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with concrete
+/// reference targets (allowIdentityUpdates).
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should emit propagation trigger for allowIdentityUpdates target.
+    /// </summary>
+    [Test]
+    public void It_should_emit_propagation_trigger_for_allowIdentityUpdates_target()
+    {
+        var schoolPropagation = _triggers.SingleOrDefault(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_School"
+        );
+
+        schoolPropagation.Should().NotBeNull();
+        schoolPropagation!.Table.Name.Should().Be("Enrollment");
+    }
+
+    /// <summary>
+    /// It should not emit propagation trigger for non-updatable target.
+    /// </summary>
+    [Test]
+    public void It_should_not_emit_propagation_trigger_for_non_updatable_target()
+    {
+        var studentPropagation = _triggers.SingleOrDefault(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_Student"
+        );
+
+        studentPropagation.Should().BeNull();
+    }
+
+    /// <summary>
+    /// It should use FK column as key column.
+    /// </summary>
+    [Test]
+    public void It_should_use_FK_column_as_key_column()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_School"
+        );
+
+        schoolPropagation.KeyColumns.Should().ContainSingle();
+        schoolPropagation.KeyColumns[0].Value.Should().Be("School_DocumentId");
+    }
+
+    /// <summary>
+    /// It should include propagated identity columns.
+    /// </summary>
+    [Test]
+    public void It_should_include_propagated_identity_columns()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_School"
+        );
+
+        schoolPropagation
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Contain("School_EducationOrganizationId")
+            .And.Contain("School_SchoolId");
+    }
+
+    /// <summary>
+    /// It should set target table to referenced resource root.
+    /// </summary>
+    [Test]
+    public void It_should_set_target_table_to_referenced_resource_root()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_School"
+        );
+
+        schoolPropagation.TargetTable.Should().NotBeNull();
+        schoolPropagation.TargetTable!.Value.Name.Should().Be("School");
+    }
+}
+
+/// <summary>
+/// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with abstract
+/// reference targets.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildAbstractReferenceProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should emit propagation trigger for abstract target.
+    /// </summary>
+    [Test]
+    public void It_should_emit_propagation_trigger_for_abstract_target()
+    {
+        var propagation = _triggers.SingleOrDefault(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+        );
+
+        propagation.Should().NotBeNull();
+        propagation!.Table.Name.Should().Be("Enrollment");
+    }
+
+    /// <summary>
+    /// It should target the abstract identity table.
+    /// </summary>
+    [Test]
+    public void It_should_target_the_abstract_identity_table()
+    {
+        var propagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+        );
+
+        propagation.TargetTable.Should().NotBeNull();
+        propagation.TargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
+    }
+
+    /// <summary>
+    /// It should use FK column as key column for abstract reference.
+    /// </summary>
+    [Test]
+    public void It_should_use_FK_column_as_key_column_for_abstract_reference()
+    {
+        var propagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+        );
+
+        propagation.KeyColumns.Should().ContainSingle();
+        propagation.KeyColumns[0].Value.Should().Be("EducationOrganization_DocumentId");
     }
 }
 
