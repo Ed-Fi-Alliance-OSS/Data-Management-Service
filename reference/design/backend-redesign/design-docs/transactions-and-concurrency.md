@@ -93,7 +93,7 @@ relational model distinguishes:
 - **Canonical/storage columns**: the single stored/writable source of truth for unified values; used for cascades,
   composite FKs, and propagation.
 
-#### Document references (`..._DocumentId` + propagated identity columns)
+#### Document references (`..._DocumentId` + identity-part columns)
 
 For each document reference site, the referencing table includes:
 - the stable `..._DocumentId` (stored/writable), and

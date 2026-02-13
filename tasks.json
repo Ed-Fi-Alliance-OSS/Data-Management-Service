@@ -197,6 +197,6 @@
       "Run: `rg -n \"CHECK \\(|colA = colB|equality\" reference/design/backend-redesign/design-docs/update-tracking.md reference/design/backend-redesign/design-docs/etl-view-sketch.md reference/design/backend-redesign/design-docs/referential-identity-test-plan.md` and confirm none recommend unsafe DB-level equality enforcement as an alternative to unification.",
       "Manual read: verify these docs still correctly describe stamping, ETL projection intent, and referential-identity correctness risks under the updated terminology."
     ],
-    "completed": false
+    "completed": true
   }
 ]
