@@ -400,6 +400,10 @@ Required interpretation rules:
      preserving the “reference site absent implies identity parts are null” meaning.
    - All-or-none constraints MUST NOT be rewritten to use canonical columns, because canonical columns may remain
      non-null due to another reference site and would change the constraint’s semantics.
+   - Dialect note (required): All-or-none CHECK constraints reference these per-site binding columns even when they are
+     generated/computed `UnifiedAlias` columns. This is valid in both SQL Server and PostgreSQL because `UnifiedAlias`
+     columns are emitted as persisted/stored generated/computed columns (see “Dialect DDL”), so no additional
+     workaround is required.
 
 ##### `DescriptorEdgeSource` (normative)
 
