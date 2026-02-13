@@ -1194,12 +1194,12 @@ For a unification class, compute each member’s logical base-name token per the
 - If all members have the **same** logical base-name token (ordinal comparison), use that token as the class base-name.
 - Otherwise:
   - Choose the class base-name as the logical base-name token of the **first** member in `MemberPathColumns` order.
-  - Mark the class as requiring a name disambiguator (see below).
 
 Rationale:
 - A disagreement is rare and indicates that the equality constraint relates two different-looking paths that are still
   logically unified (or that the effective schema is inconsistent). In either case, we must pick a deterministic name
-  without silently “choosing” a semantic interpretation.
+  without having to consult override-mutated physical column names. When base-name tokens disagree, the class base-name
+  is still the first member’s token; the hash-based disambiguator is used only if a collision actually occurs.
 
 #### Canonical column naming template (normative)
 
@@ -1215,9 +1215,8 @@ The canonical column name MUST be:
 
 Where:
 - `Disambiguator` is empty by default.
-- `Disambiguator` MUST be `_U{Hash8}` when:
-  - member base-name tokens disagree (per the selection rule above), or
-  - the initial computed canonical column name collides with an existing column name on the table.
+- `Disambiguator` MUST be `_U{Hash8}` only when the initial computed canonical column name collides with an existing
+  column name on the table.
 
 Collision handling (required):
 - If `{Base}_Unified` (or `{Base}_Unified_DescriptorId`) collides and applying the `_U{Hash8}` disambiguator still
@@ -1400,24 +1399,25 @@ Both endpoints resolve to the same table row scope. Key unification introduces o
 synthetic presence flag per optional path, and converts the two binding columns into presence-gated unified aliases:
 
 - Canonical storage column (storage-only; `SourceJsonPath = null`):
-  - `FiscalYear_Ue25e6108_Unified` (`int`, nullable)
+  - `FiscalYear_Unified` (`int`, nullable)
 - Synthetic presence flags (storage-only; `SourceJsonPath = null`):
   - `FiscalYear_Present` (nullable `bit`/`boolean`; `NULL` vs `TRUE/1`)
   - `LocalFiscalYear_Present` (nullable `bit`/`boolean`; `NULL` vs `TRUE/1`)
 - Binding/path columns (retain `SourceJsonPath`; read-only aliases):
-  - `FiscalYear` → `UnifiedAlias(CanonicalColumn = FiscalYear_Ue25e6108_Unified, PresenceColumn = FiscalYear_Present)`
-  - `LocalFiscalYear` → `UnifiedAlias(CanonicalColumn = FiscalYear_Ue25e6108_Unified, PresenceColumn = LocalFiscalYear_Present)`
+  - `FiscalYear` → `UnifiedAlias(CanonicalColumn = FiscalYear_Unified, PresenceColumn = FiscalYear_Present)`
+  - `LocalFiscalYear` → `UnifiedAlias(CanonicalColumn = FiscalYear_Unified, PresenceColumn = LocalFiscalYear_Present)`
 
 Notes:
 
-- `_Ue25e6108` is the canonical-name disambiguator derived from the members’ canonical JSONPaths per the naming rules.
+- A canonical-name disambiguator is not required here because `FiscalYear_Unified` does not collide on the table.
+  If it did, apply the `_U{Hash8}` disambiguator per the naming rules.
 
 Representative DDL (abbreviated):
 
 SQL Server:
 
 ```sql
-FiscalYear_Ue25e6108_Unified int NULL,
+FiscalYear_Unified int NULL,
 
 FiscalYear_Present bit NULL,
 LocalFiscalYear_Present bit NULL,
@@ -1425,14 +1425,14 @@ LocalFiscalYear_Present bit NULL,
 FiscalYear AS (
   CASE
     WHEN FiscalYear_Present IS NULL THEN NULL
-    ELSE FiscalYear_Ue25e6108_Unified
+    ELSE FiscalYear_Unified
   END
 ) PERSISTED,
 
 LocalFiscalYear AS (
   CASE
     WHEN LocalFiscalYear_Present IS NULL THEN NULL
-    ELSE FiscalYear_Ue25e6108_Unified
+    ELSE FiscalYear_Unified
   END
 ) PERSISTED,
 
@@ -1443,7 +1443,7 @@ CONSTRAINT CK_Example_LocalFiscalYear_Present_NullOrTrue CHECK (LocalFiscalYear_
 PostgreSQL:
 
 ```sql
-"FiscalYear_Ue25e6108_Unified" integer NULL,
+"FiscalYear_Unified" integer NULL,
 
 "FiscalYear_Present" boolean NULL,
 "LocalFiscalYear_Present" boolean NULL,
@@ -1452,7 +1452,7 @@ PostgreSQL:
   GENERATED ALWAYS AS (
     CASE
       WHEN "FiscalYear_Present" IS NULL THEN NULL
-      ELSE "FiscalYear_Ue25e6108_Unified"
+      ELSE "FiscalYear_Unified"
     END
   ) STORED,
 
@@ -1460,7 +1460,7 @@ PostgreSQL:
   GENERATED ALWAYS AS (
     CASE
       WHEN "LocalFiscalYear_Present" IS NULL THEN NULL
-      ELSE "FiscalYear_Ue25e6108_Unified"
+      ELSE "FiscalYear_Unified"
     END
   ) STORED,
 
@@ -2019,14 +2019,14 @@ are specified elsewhere in this document.
          - Fail fast if no such `Property` segment exists in the prefix.
      - Choose the class base-name token:
        - if all member tokens agree: use that token,
-       - otherwise: use the first member’s token and require `_U{Hash8}` disambiguation.
+       - otherwise: use the first member’s token.
      - Compute `Hash8` (first 8 hex characters) as:
        - `sha256hex(utf8("key-unification-canonical-name:v1\n" + join(sorted(member SourceJsonPath.Canonical), "\n")))`
      - Create the canonical column name:
        - `Scalar`: `{Base}{Disambiguator}_Unified`
        - `DescriptorFk`: `{Base}{Disambiguator}_Unified_DescriptorId`
-       where `Disambiguator` is empty by default and MUST be `_U{Hash8}` when required by the rules (member token
-       disagreement and/or collision with an existing column name).
+       where `Disambiguator` is empty by default and MUST be `_U{Hash8}` only when the initial computed canonical
+       column name collides with an existing column name on the table.
      - If disambiguation still collides, append a deterministic numeric fallback before the unified suffix:
        - scalar: `{Base}_U{Hash8}_{n}_Unified`
        - descriptor: `{Base}_U{Hash8}_{n}_Unified_DescriptorId`
@@ -2137,7 +2137,7 @@ semantics, or cascade correctness.
   - canonical is `NOT NULL` when any member is required.
 - Canonical naming and collision handling are deterministic and stable under overrides:
   - base-name derived from JsonPath semantics (not overrides),
-  - `_U{Hash8}` disambiguator when required,
+  - `_U{Hash8}` disambiguator only when required by collision handling,
   - deterministic numeric fallback when collisions persist.
 - Presence-gated alias behavior is correct:
   - reference-site aliases gated by `{RefBaseName}_DocumentId`,

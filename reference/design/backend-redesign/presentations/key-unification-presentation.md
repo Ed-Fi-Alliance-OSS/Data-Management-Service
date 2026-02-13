@@ -113,7 +113,7 @@ Deterministic naming derived from API JsonPath semantics (not from override-muta
 3. Column name template:
    - Scalar: `{Base}{Disambiguator}_Unified`
    - DescriptorFk: `{Base}{Disambiguator}_Unified_DescriptorId`
-4. `Disambiguator` = `_U{Hash8}` when member tokens disagree or the initial name collides with an existing column. `Hash8` is the first 8 hex chars of a SHA-256 over sorted member `SourceJsonPath` values.
+4. `Disambiguator` = `_U{Hash8}` only when the initial name collides with an existing column. `Hash8` is the first 8 hex chars of a SHA-256 over sorted member `SourceJsonPath` values.
 
 ## Dialect DDL
 
@@ -215,11 +215,11 @@ All members of a class must share the exact same physical signature:
 
 ## Worked Example: Synthetic Presence Flags
 
-Two optional scalar endpoints `$.fiscalYear` and `$.localFiscalYear` are equality-constrained. Because their base-name tokens disagree ("FiscalYear" vs "LocalFiscalYear"), the canonical column name requires a `_U{Hash8}` disambiguator — hence `FiscalYear_Ue25e6108_Unified` rather than plain `FiscalYear_Unified`:
+Two optional scalar endpoints `$.fiscalYear` and `$.localFiscalYear` are equality-constrained. Their base-name tokens disagree ("FiscalYear" vs "LocalFiscalYear"), so the class base-name is chosen as the first member’s token. Because `FiscalYear_Unified` does not collide on the table, no `_U{Hash8}` disambiguator is required:
 
 | Column | Role | Storage |
 |---|---|---|
-| `FiscalYear_Ue25e6108_Unified` | Canonical (nullable int) | Stored |
+| `FiscalYear_Unified` | Canonical (nullable int) | Stored |
 | `FiscalYear_Present` | Presence flag (nullable boolean) | Stored |
 | `LocalFiscalYear_Present` | Presence flag (nullable boolean) | Stored |
 | `FiscalYear` | Alias → canonical, gated by `FiscalYear_Present` | UnifiedAlias |
