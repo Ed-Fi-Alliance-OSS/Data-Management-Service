@@ -1,0 +1,102 @@
+[
+  {
+    "category": "Algorithm",
+    "description": "Add a consolidated \"Algorithm (step-by-step)\" subsection under \"Integration Point + Pass Ordering\" that describes KeyUnificationPass execution in strict order, assembling the currently distributed rules (endpoint resolution, applied/redundant/ignored classification, class construction, type/nullability validation, canonical/presence/alias creation, constraint + diagnostics emission, and model updates). Acceptance: the subsection (1) is a single ordered list that an implementer can follow without cross-reading other sections, (2) explicitly calls out all fail-fast conditions already described elsewhere, (3) explicitly states what the pass mutates/creates (DbTableModel.Columns, DbTableModel.Constraints, DbTableModel.KeyUnificationClasses, per-resource equality-constraint diagnostics), and (4) matches the normative rules in the rest of the document without introducing new semantics.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Algorithm \\(step-by-step\\)\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm the new subsection exists under \"Integration Point + Pass Ordering\".",
+      "Verify the algorithm enumerates, in order, endpoint resolution, constraint classification, per-table connected-components, signature validation, canonical column derivation, presence gating selection, synthetic presence column creation, alias conversion, NullOrTrue CHECK creation, KeyUnificationClasses population, and diagnostics emission.",
+      "Verify the algorithm text explicitly states who owns FK derivation (ReferenceConstraintPass after unification) and that KeyUnificationPass does not attempt to rewrite pre-existing constraints."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Dialect Hashing",
+    "description": "Clarify that `TableConstraint.NullOrTrue` participates in both `ApplyConstraintDialectHashingPass` and `ApplyDialectIdentifierShorteningPass`, and define its canonical constraint signature for hashing. Acceptance: key-unification.md explicitly states (1) NullOrTrue constraints are stored in `DbTableModel.Constraints` and therefore are processed by the existing hashing/shortening passes, (2) the canonical signature for hashing is unambiguous and documented (recommended: `(kind = \"NullOrTrue\", table = (schema,name), column = PresenceColumnName)`), and (3) any renaming/shortening pass must update references consistently (constraint name + any referenced column name).",
+    "steps-to-verify": [
+      "Run: `rg -n \"NullOrTrue\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm there is an explicit note about hashing/shortening participation and the signature fields.",
+      "Run: `rg -n \"ApplyConstraintDialectHashingPass|ApplyDialectIdentifierShorteningPass\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm the doc ties NullOrTrue to these passes explicitly (not only by implication).",
+      "Verify the documented signature matches the general constraint-signature guidance in `reference/design/backend-redesign/design-docs/data-model.md`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Examples",
+    "description": "Add a concrete, end-to-end worked example of non-reference-path unification that requires a synthetic `_Present` flag (two optional scalar or descriptor endpoints, neither inside a reference object, both resolving to the same table). Acceptance: the example includes (1) the input `resourceSchema.equalityConstraints` pair, (2) the resulting canonical stored column + synthetic presence column(s) + unified alias column(s) (with representative DDL for both SQL Server and PostgreSQL), (3) write-time coalescing scenarios (both absent, one present, both present same value, both present conflicting values → fail), and (4) reconstitution/predicate semantics showing that absent paths remain absent (`NULL` at the binding alias) even when canonical is non-null due to the other path.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Worked example|Example\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm a new example exists specifically for the synthetic presence-flag (non-reference) path.",
+      "Verify the example shows the `_Present` column being written as `NULL` vs `TRUE/1` and references the NullOrTrue hardening CHECK constraint.",
+      "Verify the example explicitly ties binding columns (aliases) vs storage (canonical) and demonstrates how reconstitution preserves per-path absence."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Presence Gating",
+    "description": "Make the member ↔ reference-group detection rule normative for presence gating (not only for naming). Acceptance: key-unification.md explicitly states that KeyUnificationPass decides whether a member endpoint uses reference-site presence (`{RefBaseName}_DocumentId`) vs synthetic `_Present` by using the same authoritative lookup: find the unique `DocumentReferenceBinding` whose `IdentityBindings[*].ReferenceJsonPath` equals the member `DbColumnModel.SourceJsonPath`; if found, gate by that binding’s `FkColumn`; otherwise treat as non-reference and gate optional members with synthetic presence flags.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Detection rule \\(required\\)\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm there is an explicit statement that this rule is used for presence-gating strategy selection.",
+      "Verify the algorithm (or presence-gating section) describes the three cases explicitly: reference-site gating, synthetic gating for optional non-reference, and ungated aliases for required non-reference members.",
+      "Verify the doc warns against alternative heuristics (e.g., name parsing) for determining reference membership."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Foreign Keys",
+    "description": "Clarify responsibility and referential-action behavior for FK derivation under key unification. Acceptance: key-unification.md explicitly states (1) KeyUnificationPass does not rewrite or emit reference FKs; it only mutates the derived model (storage metadata + columns + classes), (2) `ReferenceConstraintPass` (and any other constraint derivation pass) runs after KeyUnificationPass and must map identity-part binding columns to canonical storage columns via `DbColumnModel.Storage` when emitting composite FKs, (3) `ON UPDATE` decisions remain governed by `allowIdentityUpdates` (no semantic change), and (4) `ON DELETE` behavior is unchanged by key unification.",
+    "steps-to-verify": [
+      "Run: `rg -n \"ReferenceConstraintPass\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm an explicit statement of responsibility (who derives/emits FKs) is present.",
+      "Verify the FK section mentions both `OnUpdate` and `OnDelete` (or the equivalent referential-action language) and states they are unchanged by unification.",
+      "Verify the postconditions section (after KeyUnificationPass) explains how downstream passes discover canonical columns (via `DbColumnModel.Storage`) for FK emission."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Diagnostics",
+    "description": "Define a diagnostic/manifest surface for descriptor-FK de-duplication when multiple descriptor binding columns map to the same canonical storage column. Acceptance: key-unification.md either (A) adds a normative requirement for a deterministic diagnostic entry when descriptor FKs are de-duplicated (recommended) or (B) explicitly states that no diagnostic is emitted and justifies why that is acceptable. If (A), the doc specifies a stable manifest shape and ordering (e.g., per table: `descriptor_fk_deduplications[]` with `storage_column`, `binding_columns`, and the final emitted FK constraint name).",
+    "steps-to-verify": [
+      "Run: `rg -n \"descriptor FK|De-duplication\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm the doc includes an explicit diagnostic decision (emit vs not emit).",
+      "If emitting diagnostics, verify the manifest shape is described, deterministic ordering rules are stated, and the data is sufficient to explain why only one FK exists.",
+      "Verify the diagnostic text distinguishes descriptor-FK de-duplication from equality-constraint applied/redundant/ignored diagnostics."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Schema Exceptions",
+    "description": "Resolve (or explicitly scope) the pending question about ApiSchema `equalityConstraints` that appear inconsistent with legacy ODS schemas (e.g., `SchoolYear` vs `GradingPeriodSchoolYear` in `Grade`). Acceptance: key-unification.md updates \"Pending Questions\" into a resolved decision section that clearly states one of: (1) DMS always trusts ApiSchema and unifies anyway (ODS differences are not authoritative), or (2) DMS supports an explicit suppression/override mechanism for specific constraints (document the configuration surface, precedence, and how suppressed constraints are reported in diagnostics), or (3) the issue is explicitly deferred with a bounded scope, including what the implementation will do today and what risks remain.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Pending Questions\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm the section no longer leaves the behavior ambiguous for implementers.",
+      "Verify the chosen policy is reflected consistently in the algorithm/diagnostics language (e.g., whether a suppressed constraint is \"ignored\" with reason `suppressed`).",
+      "Verify any new ignore/suppress reason is added to the equality-constraint diagnostics contract (manifest shape + ignore reason taxonomy)."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Ordering",
+    "description": "Make the alias-dependency ordering invariant explicit for `CanonicalizeOrderingPass` (and any later reordering), not only for DDL emission. Acceptance: key-unification.md explicitly states that after KeyUnificationPass introduces canonical and synthetic presence columns, subsequent passes (especially `CanonicalizeOrderingPass`) MUST preserve or re-establish the invariant: for every `UnifiedAlias` column, its `CanonicalColumn` and optional `PresenceColumn` appear earlier in `DbTableModel.Columns`. The doc should also state whether KeyUnificationPass sets final ordering or whether CanonicalizeOrderingPass is responsible for enforcing it.",
+    "steps-to-verify": [
+      "Run: `rg -n \"CanonicalizeOrderingPass\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm it mentions alias dependency ordering requirements.",
+      "Verify the document ties the ordering requirement to the `DbColumnModel.Storage` metadata (canonical/presence references) rather than name-based heuristics.",
+      "Verify the recommended per-table ordering list remains consistent with the new statement (key columns, unification support columns, then remaining columns)."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Constraints",
+    "description": "Add a normative clarification that CHECK constraints (notably `AllOrNoneNullability`) may reference generated/computed persisted/stored alias columns in both PostgreSQL and SQL Server. Acceptance: key-unification.md explicitly confirms (1) the redesign relies on CHECK constraints over binding alias columns for all-or-none semantics, (2) this is valid in both dialects when the alias is persisted/stored, and (3) no additional workaround is required (or, if there are dialect caveats, they are documented).",
+    "steps-to-verify": [
+      "Run: `rg -n \"All-or-none\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm there is an explicit note about CHECK constraints referencing aliases being supported in both dialects.",
+      "Verify the note is placed near the all-or-none constraint rules (so implementers see it when implementing constraint emission).",
+      "Verify the DDL examples remain consistent with the claim (aliases are persisted/stored, not virtual-only)."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Defaults",
+    "description": "Make default behavior explicit when `ColumnStorage` is newly introduced and when `KeyUnificationClasses` is empty. Acceptance: key-unification.md adds an explicit migration/default rule stating that all existing columns start as `Storage = Stored` (writable) by default, and KeyUnificationPass converts only member path columns in applied classes to `UnifiedAlias` and adds any new canonical/presence support columns as `Stored`. The doc also clarifies how older artifacts (manifests/mpacks) without storage metadata are handled (e.g., rejected via `RelationalMappingVersion` gating or interpreted as `Stored` only if backward-compat is required).",
+    "steps-to-verify": [
+      "Run: `rg -n \"Defaults:\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm the default initialization/migration behavior for `ColumnStorage` is explicitly stated.",
+      "Verify the document explicitly states that when no applied classes exist for a table, `DbTableModel.KeyUnificationClasses` is empty and all columns are stored (no synthetic presence columns).",
+      "Verify the mapping-pack/versioning section reflects the chosen backward-compat story (interpret vs reject)."
+    ],
+    "completed": false
+  }
+]
