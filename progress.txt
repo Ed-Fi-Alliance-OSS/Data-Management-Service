@@ -42,3 +42,6 @@
 - Completed: tasks.json#12 Docs: Data Model (DMS-1033)
 - Decisions: bind vs store clarified; NK uniques are API/binding-path columns; RefKey uniques + composite ref FKs use storage columns (canonical via `DbColumnModel.Storage`); all-or-none CHECK remains over per-site binding/alias cols; name docs now mention `_Unified` canonical + `_Present` synthetic flags (delegated to key-unification.md); examples updated to show NK vs RefKey + composite FKs
 - Files: reference/design/backend-redesign/design-docs/data-model.md; tasks.json; progress.txt
+- Completed: tasks.json#13 Docs: DDL Generation (DMS-1033)
+- Decisions: replace outdated key unification note; canonical stored cols + persisted/stored generated aliases; presence gating uses `..._DocumentId` or synthetic `..._Present`; composite ref FKs + descriptor FKs anchored on storage cols via `DbColumnModel.Storage`; descriptor FK de-dup by (table, storage col); no DB CHECK colA=colB for writable cols; cross-ref key-unification.md for dialect DDL
+- Files: reference/design/backend-redesign/design-docs/ddl-generation.md; tasks.json; progress.txt

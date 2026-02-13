@@ -137,7 +137,7 @@
       "Run: `rg -n \"UnifiedAlias|canonical|presence\" reference/design/backend-redesign/design-docs/ddl-generation.md` and confirm the updated rules for FK emission over storage columns are stated.",
       "Manual read: verify the deterministic column/constraint ordering rules remain compatible with the added canonical/presence columns and alias dependencies."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Transactions + Concurrency",
