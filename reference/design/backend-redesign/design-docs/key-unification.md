@@ -1770,6 +1770,16 @@ These postconditions allow subsequent passes to be purely consumer-oriented:
   columns while still emitting query/reconstitution-facing metadata in terms of member path columns.
 - Dialect identifier shortening can rename columns and update all `UnifiedAlias` and `KeyUnificationClass` references
   in one place.
+- `KeyUnificationPass` is not required to establish the final `DbTableModel.Columns` ordering; it may append canonical
+  and synthetic presence columns without placing them in their final canonical positions.
+- `CanonicalizeOrderingPass` (and any later pass that reorders columns) MUST preserve or re-establish the alias
+  dependency invariant using `DbColumnModel.Storage` metadata (not name-based heuristics):
+  - For every `DbColumnModel` whose `Storage` is `UnifiedAlias(CanonicalColumn, PresenceColumn)`, the referenced
+    `CanonicalColumn` and non-null `PresenceColumn` MUST appear earlier in `DbTableModel.Columns` than the alias
+    column.
+  - The recommended per-table ordering remains: key columns, then key-unification support columns (canonical storage
+    columns + synthetic presence flags), then remaining columns (baseline canonical rules), subject to the dependency
+    invariant above.
 
 ### Algorithm (step-by-step)
 

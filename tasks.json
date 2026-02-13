@@ -77,7 +77,7 @@
       "Verify the document ties the ordering requirement to the `DbColumnModel.Storage` metadata (canonical/presence references) rather than name-based heuristics.",
       "Verify the recommended per-table ordering list remains consistent with the new statement (key columns, unification support columns, then remaining columns)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Constraints",
