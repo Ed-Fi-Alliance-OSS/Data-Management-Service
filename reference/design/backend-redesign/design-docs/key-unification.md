@@ -1,9 +1,5 @@
 # Backend Redesign: Key Unification (Canonical Columns + Generated Aliases; Presence-Gated When Optional)
 
-## Status
-
-Draft.
-
 ## Summary
 
 ApiSchema supports “key unification” via `resourceSchema.equalityConstraints`: the same logical identity value can
