@@ -127,7 +127,7 @@
       "Run: `rg -n \"_Unified|_Present|presence flag\" reference/design/backend-redesign/design-docs/data-model.md` and confirm canonical/presence naming is documented or explicitly delegated to `key-unification.md`.",
       "Manual read: verify `data-model.md` no longer claims per-site propagated identity part columns are the FK/cascade targets when they are unified aliases."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: DDL Generation",
