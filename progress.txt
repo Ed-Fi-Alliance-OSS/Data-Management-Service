@@ -26,3 +26,6 @@
 - Completed: tasks.json#5 Diagnostics (design doc)
 - Decisions: emit deterministic `descriptor_fk_deduplications[]` per-table manifest entries when descriptor FK constraints are de-duplicated (storage_column + binding_columns + final constraint_name); deterministic ordering; explicitly separate from equality-constraint applied/redundant/ignored report
 - Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
+- Completed: tasks.json#8 Constraints (design doc)
+- Decisions: All-or-none CHECK constraints reference per-site binding columns even when they are persisted/stored `UnifiedAlias` computed/generated cols; valid in SQL Server + PostgreSQL; no workaround
+- Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt

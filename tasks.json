@@ -87,7 +87,7 @@
       "Verify the note is placed near the all-or-none constraint rules (so implementers see it when implementing constraint emission).",
       "Verify the DDL examples remain consistent with the claim (aliases are persisted/stored, not virtual-only)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Defaults",
