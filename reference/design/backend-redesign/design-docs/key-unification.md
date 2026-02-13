@@ -1391,14 +1391,27 @@ Notes:
 
 ### Composite reference foreign keys
 
-For a reference site, the composite FK uses canonical columns for unified identity parts:
+Reference composite FKs are emitted by `ReferenceConstraintPass` after `KeyUnificationPass` has introduced canonical
+storage columns and converted unified member path columns into read-only aliases. `KeyUnificationPass` does not
+rewrite or emit reference FKs; it only mutates the derived model (columns + storage metadata + unification classes)
+and adds `NullOrTrue` hardening constraints for synthetic presence flags.
+
+For a reference site, the composite FK uses canonical storage columns for unified identity parts:
 
 - Local FK columns:
   - `{RefBaseName}_DocumentId`
-  - `<CanonicalIdentityParts...>` (in the referenced target’s identity path order)
+  - `<CanonicalIdentityParts...>` (in the referenced target’s identity path order; derived by mapping each identity
+    part binding column through `DbColumnModel.Storage`)
 - Target columns:
   - `DocumentId`
-  - `<TargetIdentityColumns...>`
+  - `<TargetIdentityColumns...>` (derived by mapping each target identity binding column through
+    `DbColumnModel.Storage`)
+
+Referential actions (no semantic change from the baseline redesign):
+
+- `ON UPDATE` remains governed by `allowIdentityUpdates` (and SQL Server feasibility): emit `CASCADE` only when
+  allowed/accepted; otherwise `NO ACTION` with trigger-based propagation fallback as already specified.
+- `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
 
