@@ -17,7 +17,7 @@
       "Run: `rg -n \"ApplyConstraintDialectHashingPass|ApplyDialectIdentifierShorteningPass\" reference/design/backend-redesign/design-docs/key-unification.md` and confirm the doc ties NullOrTrue to these passes explicitly (not only by implication).",
       "Verify the documented signature matches the general constraint-signature guidance in `reference/design/backend-redesign/design-docs/data-model.md`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Examples",

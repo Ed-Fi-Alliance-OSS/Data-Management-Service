@@ -1311,6 +1311,19 @@ Constraint naming + model surface (required):
 - The derived relational model MUST represent these CHECK constraints explicitly in `DbTableModel.Constraints` so they
   are observable in manifests and mapping packs (do not rely on ad-hoc DDL-writer inference).
 
+Dialect hashing/shortening participation (required):
+
+- Because `TableConstraint.NullOrTrue` constraints are stored in `DbTableModel.Constraints`, they MUST participate in
+  both:
+  - `ApplyConstraintDialectHashingPass`, and
+  - `ApplyDialectIdentifierShorteningPass`.
+- Canonical constraint signature for hashing (matches the general constraint-signature guidance in `data-model.md`):
+  - `(kind = "NullOrTrue", table = (schema, name), column = PresenceColumnName)`
+- Any renaming/shortening pass MUST update references consistently:
+  - `TableConstraint.NullOrTrue.Name` (constraint identifier), and
+  - `TableConstraint.NullOrTrue.Column` (referenced presence-column identifier; and therefore the emitted CHECK
+    predicate).
+
 Recommended derived-constraint model shape (illustrative):
 
 ```csharp
