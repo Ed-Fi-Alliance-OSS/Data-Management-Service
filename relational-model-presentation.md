@@ -199,6 +199,19 @@ classDiagram
 | Collection | `$.addresses[*]` | `edfi.SchoolAddress` |
 | Nested collection | `$.addresses[*].periods[*]` | `edfi.SchoolAddressPeriod` |
 
+### ColumnKind examples
+
+| `ColumnKind` | Purpose | Example column | `ScalarType` | `SourceJsonPath` | `TargetResource` |
+|---|---|---|---|---|---|
+| `Scalar` | A value projected from the request JSON | `FirstName varchar(75)` | set | set (`$.firstName`) | null |
+| `Scalar` | Propagated reference identity binding column (see note below) | `Student_StudentUniqueId varchar(32)` | set | set | set (`Ed-Fi.Student`) |
+| `DocumentFk` | FK to another document's `DocumentId` | `Student_DocumentId bigint` | null (always bigint) | null | set (`Ed-Fi.Student`) |
+| `DescriptorFk` | FK to `dms.Descriptor(DocumentId)` | `SchoolTypeDescriptor_DescriptorId bigint` | null (always bigint) | null | set (`Ed-Fi.SchoolTypeDescriptor`) |
+| `Ordinal` | Array ordering column preserving element order | `Ordinal int` | null (always int) | null | null |
+| `ParentKeyPart` | Key column inherited from an ancestor scope | `School_DocumentId bigint` (on a child table) | null (inherited) | null | null |
+
+> **Note on reference identity binding columns**: Columns like `Student_StudentUniqueId` are `ColumnKind.Scalar` — from the table model's perspective they are typed, JSON-sourced scalar columns. Their reference semantics (composite FK participation, `ON UPDATE CASCADE` propagation) are captured separately in `DocumentReferenceBinding` and its `ReferenceIdentityBinding` list, not in the column kind. You can distinguish them from plain scalars by the presence of a non-null `TargetResource`.
+
 ---
 
 ## 3b. Zooming In: Constraints
@@ -287,7 +300,9 @@ classDiagram
 - a `..._DocumentId` FK column, plus
 - per-identity-part binding columns (e.g., `Student_StudentUniqueId`)
 
-**`DescriptorEdgeSource`** — records how a descriptor value path maps to a `..._DescriptorId` FK column.
+**`DescriptorEdgeSource`** — records how a descriptor value path maps to:
+- a `..._DescriptorId` FK column (targeting `dms.Descriptor(DocumentId)`)
+- a `DescriptorResource` identifying the expected descriptor type (e.g., `Ed-Fi.SchoolTypeDescriptor`)
 
 ---
 
