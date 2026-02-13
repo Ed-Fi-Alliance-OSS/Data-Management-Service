@@ -6,3 +6,7 @@
 - Completed: tasks.json#3 Presence Gating (design doc)
 - Decisions: presence gating uses authoritative lookup (member SourceJsonPath == DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath); gate by binding FkColumn when found; non-reference optional uses synthetic ..._Present; non-reference required is ungated; fail fast on ambiguous multiple bindings; avoid name parsing heuristics
 - Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
+- Completed: tasks.json#2 Schema Exceptions (DMS-1033)
+- Decisions: ApiSchema `equalityConstraints` authoritative; legacy ODS physical-schema differences are non-authoritative; no v1 suppression/override; canonical always new column + members become `UnifiedAlias` (presence-gated when optional)
+- Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
+- Notes: if an equality constraint appears incorrect, fix upstream (ApiSchema generation / effective schema inputs); diagnostics remain `applied`/`redundant`/`ignored`

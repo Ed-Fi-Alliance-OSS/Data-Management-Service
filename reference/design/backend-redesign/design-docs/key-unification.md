@@ -2033,8 +2033,20 @@ semantics, or cascade correctness.
   - `KeyUnificationClass` member lists.
 - No dangling pre-shortening/pre-hashing column names remain in manifests, plans, constraints, indexes, or triggers.
 
-## Pending Questions
+## Schema authority (ApiSchema vs legacy ODS)
 
-- Why the legacy Ed-Fi ODS schema sometimes does not physically unify columns that are related by ApiSchema
-  `equalityConstraints` (e.g., DS 5.2 `Grade` uses both `SchoolYear` and `GradingPeriodSchoolYear` - is this a bug in
-  ApiSchema generation?), and whether DMS should unify those cases anyway (and if so, how to select canonical vs alias columns).
+DMS treats ApiSchema `resourceSchema.equalityConstraints` as the authoritative contract for both document validity and
+derived-model key unification. Legacy Ed-Fi ODS physical schema choices (including cases where two equality-constrained
+values are stored as separate writable columns) are not authoritative for DMS and do not change key-unification
+behavior.
+
+Therefore:
+
+- `KeyUnificationPass` MUST apply the normal endpoint-resolution and classification rules to all ApiSchema
+  `equalityConstraints`; it MUST NOT special-case or suppress constraints based on legacy ODS physical storage.
+- DMS does not provide a v1 suppression/override mechanism for individual equality constraints. If an emitted
+  `equalityConstraint` is incorrect, it must be corrected upstream (ApiSchema generation / effective schema inputs);
+  until then, Core validation and key-unification diagnostics continue to treat it as authoritative.
+- Canonical vs alias selection is not based on legacy ODS column choices: `KeyUnificationPass` always introduces a new
+  canonical storage column and converts all member path columns to `UnifiedAlias` columns (presence-gated when
+  optional).
