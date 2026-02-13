@@ -147,7 +147,7 @@
       "Run: `rg -n \"multiple cascade paths|trigger-based propagation\" reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` and confirm the mitigation matches the normative rules in `reference/design/backend-redesign/design-docs/key-unification.md`.",
       "Manual read: verify the doc still treats cross-table equality constraints as Core-only and does not claim DB enforcement beyond row-local unification."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Flattening + Reconstitution",

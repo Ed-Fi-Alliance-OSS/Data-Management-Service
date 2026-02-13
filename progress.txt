@@ -45,3 +45,7 @@
 - Completed: tasks.json#13 Docs: DDL Generation (DMS-1033)
 - Decisions: replace outdated key unification note; canonical stored cols + persisted/stored generated aliases; presence gating uses `..._DocumentId` or synthetic `..._Present`; composite ref FKs + descriptor FKs anchored on storage cols via `DbColumnModel.Storage`; descriptor FK de-dup by (table, storage col); no DB CHECK colA=colB for writable cols; cross-ref key-unification.md for dialect DDL
 - Files: reference/design/backend-redesign/design-docs/ddl-generation.md; tasks.json; progress.txt
+- Completed: tasks.json#14 Docs: Transactions + Concurrency (DMS-1033)
+- Decisions: binding/path vs canonical/storage explicitly called out; cascades + SQL Server trigger-based fallback update canonical/storage cols (never aliases); writers set canonical cols + synthetic presence flags deterministically (no keep previous)
+- Files: reference/design/backend-redesign/design-docs/transactions-and-concurrency.md; tasks.json; progress.txt
+- Notes: remaining doc tasks: #10 #11 #16 #18 #19
