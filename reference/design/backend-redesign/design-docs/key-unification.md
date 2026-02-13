@@ -1381,6 +1381,113 @@ public abstract record TableConstraint
 }
 ```
 
+#### Worked example (synthetic presence flags) (illustrative)
+
+Consider a single-table resource row with two optional scalar endpoints that are equality-constrained, neither of
+which is inside a reference object:
+
+- `$.fiscalYear` (optional `int`)
+- `$.localFiscalYear` (optional `int`)
+
+ApiSchema input:
+
+```json
+"equalityConstraints": [
+  {
+    "sourceJsonPath": "$.fiscalYear",
+    "targetJsonPath": "$.localFiscalYear"
+  }
+]
+```
+
+Both endpoints resolve to the same table row scope. Key unification introduces one canonical stored column plus one
+synthetic presence flag per optional path, and converts the two binding columns into presence-gated unified aliases:
+
+- Canonical storage column (storage-only; `SourceJsonPath = null`):
+  - `FiscalYear_Ue25e6108_Unified` (`int`, nullable)
+- Synthetic presence flags (storage-only; `SourceJsonPath = null`):
+  - `FiscalYear_Present` (nullable `bit`/`boolean`; `NULL` vs `TRUE/1`)
+  - `LocalFiscalYear_Present` (nullable `bit`/`boolean`; `NULL` vs `TRUE/1`)
+- Binding/path columns (retain `SourceJsonPath`; read-only aliases):
+  - `FiscalYear` → `UnifiedAlias(CanonicalColumn = FiscalYear_Ue25e6108_Unified, PresenceColumn = FiscalYear_Present)`
+  - `LocalFiscalYear` → `UnifiedAlias(CanonicalColumn = FiscalYear_Ue25e6108_Unified, PresenceColumn = LocalFiscalYear_Present)`
+
+Notes:
+
+- `_Ue25e6108` is the canonical-name disambiguator derived from the members’ canonical JSONPaths per the naming rules.
+
+Representative DDL (abbreviated):
+
+SQL Server:
+
+```sql
+FiscalYear_Ue25e6108_Unified int NULL,
+
+FiscalYear_Present bit NULL,
+LocalFiscalYear_Present bit NULL,
+
+FiscalYear AS (
+  CASE
+    WHEN FiscalYear_Present IS NULL THEN NULL
+    ELSE FiscalYear_Ue25e6108_Unified
+  END
+) PERSISTED,
+
+LocalFiscalYear AS (
+  CASE
+    WHEN LocalFiscalYear_Present IS NULL THEN NULL
+    ELSE FiscalYear_Ue25e6108_Unified
+  END
+) PERSISTED,
+
+CONSTRAINT CK_Example_FiscalYear_Present_NullOrTrue CHECK (FiscalYear_Present IS NULL OR FiscalYear_Present = 1),
+CONSTRAINT CK_Example_LocalFiscalYear_Present_NullOrTrue CHECK (LocalFiscalYear_Present IS NULL OR LocalFiscalYear_Present = 1)
+```
+
+PostgreSQL:
+
+```sql
+"FiscalYear_Ue25e6108_Unified" integer NULL,
+
+"FiscalYear_Present" boolean NULL,
+"LocalFiscalYear_Present" boolean NULL,
+
+"FiscalYear" integer
+  GENERATED ALWAYS AS (
+    CASE
+      WHEN "FiscalYear_Present" IS NULL THEN NULL
+      ELSE "FiscalYear_Ue25e6108_Unified"
+    END
+  ) STORED,
+
+"LocalFiscalYear" integer
+  GENERATED ALWAYS AS (
+    CASE
+      WHEN "LocalFiscalYear_Present" IS NULL THEN NULL
+      ELSE "FiscalYear_Ue25e6108_Unified"
+    END
+  ) STORED,
+
+CONSTRAINT "CK_Example_FiscalYear_Present_NullOrTrue" CHECK ("FiscalYear_Present" IS NULL OR "FiscalYear_Present" IS TRUE),
+CONSTRAINT "CK_Example_LocalFiscalYear_Present_NullOrTrue" CHECK ("LocalFiscalYear_Present" IS NULL OR "LocalFiscalYear_Present" IS TRUE)
+```
+
+Write-time coalescing scenarios (per row, from the request document):
+
+- Both absent → write `FiscalYear_Present = NULL`, `LocalFiscalYear_Present = NULL`, canonical `NULL`.
+- Only `$.fiscalYear` present (e.g., `2025`) → write `FiscalYear_Present = TRUE/1`, `LocalFiscalYear_Present = NULL`, canonical `2025`.
+- Only `$.localFiscalYear` present (e.g., `2025`) → write `FiscalYear_Present = NULL`, `LocalFiscalYear_Present = TRUE/1`, canonical `2025`.
+- Both present, same value → write both presence flags `TRUE/1`, canonical `2025` (chosen deterministically as the first present member in `MemberPathColumns` order).
+- Both present, conflicting values (e.g., `2024` vs `2025`) → fail closed (conflict detection).
+
+Reconstitution + predicate semantics:
+
+- If only `$.fiscalYear` was provided, then `LocalFiscalYear` evaluates to `NULL` because `LocalFiscalYear_Present IS NULL`,
+  even though the canonical storage column is non-null. This preserves “absent path remains absent”.
+- Predicates over `LocalFiscalYear` (e.g., `LocalFiscalYear IS NOT NULL` or `LocalFiscalYear = 2025`) only match rows
+  where the `LocalFiscalYear` path was present (i.e., `LocalFiscalYear_Present` is non-null); values supplied at
+  `$.fiscalYear` do not “leak” into the absent `$.localFiscalYear` path.
+
 ## Dialect DDL
 
 ### SQL Server
