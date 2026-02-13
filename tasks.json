@@ -177,7 +177,7 @@
       "Run: `rg -n \"RelationalMappingVersion\" reference/design/backend-redesign/design-docs/mpack-format-v1.md` and confirm the gating story matches `reference/design/backend-redesign/design-docs/key-unification.md`.",
       "Manual read: verify consumer validation rules include fail-fast checks for storage metadata consistency and unification-plan invariants."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Manifests + Test Harness",

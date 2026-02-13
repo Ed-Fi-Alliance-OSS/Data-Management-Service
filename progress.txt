@@ -35,3 +35,7 @@
 - Completed: tasks.json#15 Docs: Flattening + Reconstitution (DMS-1033)
 - Decisions: add `DbColumnModel.Storage` + `DbTableModel.KeyUnificationClasses`; add `WriteValueSource.Precomputed` + `KeyUnificationWritePlan`; plan compiler excludes `UnifiedAlias` from writes; flattener two-phase materialization w/ deterministic coalescing + conflict detection + synthetic presence flags (absent=NULL, present=TRUE)
 - Files: reference/design/backend-redesign/design-docs/flattening-reconstitution.md; tasks.json; progress.txt
+- Completed: tasks.json#17 Docs: Mapping Pack Format (DMS-1033)
+- Decisions: add `DbColumnModel.storage` (Stored vs UnifiedAlias canonical+presence); add `DbTableModel.key_unification_classes`; add `WriteValueSource.Precomputed` + `TableWritePlan.key_unification_plans`; determinism rules for new repeated fields; key-unification gating via `RelationalMappingVersion` (reject older packs missing metadata unless explicitly in older mode)
+- Files: reference/design/backend-redesign/design-docs/mpack-format-v1.md; tasks.json; progress.txt
+- Notes: proto uses `optional uint32 presence_binding_index`; ensure contracts generator/protoc version supports proto3 optional
