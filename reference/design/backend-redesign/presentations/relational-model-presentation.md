@@ -351,8 +351,17 @@ classDiagram
     AbstractIdentityTableInfo --> DbTableModel
 ```
 
-- **Identity table** — trigger-maintained, composite FK target for polymorphic references
-- **Union view** — `UNION ALL` of concrete member root tables; diagnostic/query use
+**`AbstractIdentityTableInfo`** — a trigger-maintained identity table that serves as a composite FK target for polymorphic references.
+
+**`AbstractUnionViewInfo`** — a `UNION ALL` view across concrete member root tables, for diagnostic/query use:
+- an `OutputColumnsInSelectOrder` defining the view's column list
+- an `UnionArmsInOrder` list of per-concrete-member SELECT arms
+
+**`AbstractUnionViewArm`** — one arm of the union view for a single concrete member:
+- a `FromTable` identifying the concrete member's root table
+- a `ProjectionExpressionsInSelectOrder` list of column expressions
+
+**`AbstractUnionViewProjectionExpression`** — either a `SourceColumn` (real column from the member table) or a `StringLiteral` (constant, e.g., the resource type name).
 
 ---
 
