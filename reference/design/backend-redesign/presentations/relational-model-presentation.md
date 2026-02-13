@@ -458,11 +458,11 @@ flowchart TD
         direction TB
         S1["ExtractInputsStep<br/>Parse ApiSchema metadata:<br/>identity paths, references,<br/>overrides, constraints,<br/>descriptor paths, decimals"]
 
-        S2["ValidateJsonSchemaStep<br/>Validate jsonSchemaForInsert:<br/>no &#36;ref/oneOf/anyOf/allOf,<br/>arrays-are-tables rule,<br/>identity paths exist"]
+        S2["ValidateJsonSchemaStep<br/>Validate jsonSchemaForInsert:<br/>no $ref/oneOf/anyOf/allOf,<br/>arrays-are-tables rule,<br/>identity paths exist"]
 
         S3["DiscoverExtensionSitesStep<br/>Walk schema for _ext properties,<br/>record ExtensionSite metadata<br/>(owning scope, project keys)"]
 
-        S4["DeriveTableScopesAndKeysStep<br/>Create root table (&#36;) and<br/>child tables for arrays,<br/>build composite PKs<br/>(DocumentId + ordinals)"]
+        S4["DeriveTableScopesAndKeysStep<br/>Create root table and<br/>child tables for arrays,<br/>build composite PKs<br/>(DocumentId + ordinals)"]
 
         S5["DeriveColumnsAndBindDescriptorEdgesStep<br/>Walk each table scope,<br/>derive scalar columns,<br/>convert descriptor values<br/>to *_DescriptorId FK columns"]
 
