@@ -3,3 +3,6 @@
 - Decisions: single ordered list; explicitly lists fail-fast + pass mutations (Columns/Constraints/KeyUnificationClasses/eq-constraint diagnostics); inlines canonical+presence naming + hash formulas; explicit non-goals (no FK rewrite; FK derivation later in ReferenceConstraintPass)
 - Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
 - Notes: follow-up tasks likely: #4 FK responsibility/allowIdentityUpdates/ON DELETE wording; #3 make ref-membership detection rule normative for presence gating (SourceJsonPath lookup vs current "identity binding" wording)
+- Completed: tasks.json#3 Presence Gating (design doc)
+- Decisions: presence gating uses authoritative lookup (member SourceJsonPath == DocumentReferenceBinding.IdentityBindings[*].ReferenceJsonPath); gate by binding FkColumn when found; non-reference optional uses synthetic ..._Present; non-reference required is ungated; fail fast on ambiguous multiple bindings; avoid name parsing heuristics
+- Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt

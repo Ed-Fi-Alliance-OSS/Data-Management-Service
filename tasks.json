@@ -37,7 +37,7 @@
       "Verify the algorithm (or presence-gating section) describes the three cases explicitly: reference-site gating, synthetic gating for optional non-reference, and ungated aliases for required non-reference members.",
       "Verify the doc warns against alternative heuristics (e.g., name parsing) for determining reference membership."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Foreign Keys",
