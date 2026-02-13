@@ -47,7 +47,7 @@
       "Verify the FK section mentions both `OnUpdate` and `OnDelete` (or the equivalent referential-action language) and states they are unchanged by unification.",
       "Verify the postconditions section (after KeyUnificationPass) explains how downstream passes discover canonical columns (via `DbColumnModel.Storage`) for FK emission."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Diagnostics",
