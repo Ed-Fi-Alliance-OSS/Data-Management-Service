@@ -697,8 +697,25 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         var updatedName = new DbTriggerName(dialectRules.ShortenIdentifier(trigger.Name.Value));
         var updatedTable = ShortenTable(trigger.Table, dialectRules);
         var updatedColumns = ShortenColumns(trigger.KeyColumns, dialectRules, out var columnsChanged);
+        var updatedIdentityColumns = ShortenColumns(
+            trigger.IdentityProjectionColumns,
+            dialectRules,
+            out var identityColumnsChanged
+        );
+        var updatedTargetTable = trigger.TargetTable is { } target
+            ? ShortenTable(target, dialectRules)
+            : trigger.TargetTable;
+        var targetTableChanged =
+            updatedTargetTable is not null
+            && trigger.TargetTable is not null
+            && !updatedTargetTable.Value.Equals(trigger.TargetTable.Value);
 
-        changed = columnsChanged || !updatedTable.Equals(trigger.Table) || !updatedName.Equals(trigger.Name);
+        changed =
+            columnsChanged
+            || identityColumnsChanged
+            || targetTableChanged
+            || !updatedTable.Equals(trigger.Table)
+            || !updatedName.Equals(trigger.Name);
 
         if (!changed)
         {
@@ -710,6 +727,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Name = updatedName,
             Table = updatedTable,
             KeyColumns = updatedColumns,
+            IdentityProjectionColumns = updatedIdentityColumns,
+            TargetTable = updatedTargetTable,
         };
     }
 
@@ -766,29 +785,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
 
         RegisterSchemaCollisions(context, detector);
 
-        var orderedConcreteResources = context
-            .ConcreteResourcesInNameOrder.OrderBy(
-                resource => resource.ResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(resource => resource.ResourceKey.Resource.ResourceName, StringComparer.Ordinal)
-            .ToArray();
-
-        var orderedAbstractIdentityTables = context
-            .AbstractIdentityTablesInNameOrder.OrderBy(
-                table => table.AbstractResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(table => table.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
-            .ToArray();
-
-        var orderedAbstractUnionViews = context
-            .AbstractUnionViewsInNameOrder.OrderBy(
-                view => view.AbstractResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(view => view.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
-            .ToArray();
+        // ConcreteResourcesInNameOrder, AbstractIdentityTablesInNameOrder, and
+        // AbstractUnionViewsInNameOrder are already maintained in (ProjectName, ResourceName)
+        // order by construction, so no re-sorting is needed.
 
         var canonicalIndexes = context
             .IndexInventory.OrderBy(index => index.Table.Schema.Value, StringComparer.Ordinal)
@@ -804,7 +803,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         var registeredTables = new HashSet<DbTableName>();
         var registeredColumns = new HashSet<(DbTableName Table, DbColumnName Column)>();
 
-        foreach (var resource in orderedConcreteResources)
+        foreach (var resource in context.ConcreteResourcesInNameOrder)
         {
             var resourceLabel = FormatResource(resource.ResourceKey.Resource);
 
@@ -861,7 +860,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             }
         }
 
-        foreach (var table in orderedAbstractIdentityTables)
+        foreach (var table in context.AbstractIdentityTablesInNameOrder)
         {
             var resourceLabel = FormatResource(table.AbstractResourceKey.Resource);
             var tableModel = table.TableModel;
@@ -920,7 +919,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             }
         }
 
-        foreach (var view in orderedAbstractUnionViews)
+        foreach (var view in context.AbstractUnionViewsInNameOrder)
         {
             var resourceLabel = FormatResource(view.AbstractResourceKey.Resource);
 
@@ -1046,15 +1045,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             );
         }
 
-        var orderedConcreteResources = context
-            .ConcreteResourcesInNameOrder.OrderBy(
-                resource => resource.ResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(resource => resource.ResourceKey.Resource.ResourceName, StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var resource in orderedConcreteResources)
+        foreach (var resource in context.ConcreteResourcesInNameOrder)
         {
             var resourceLabel = FormatResource(resource.ResourceKey.Resource);
 
@@ -1075,15 +1066,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             }
         }
 
-        var orderedAbstractIdentityTables = context
-            .AbstractIdentityTablesInNameOrder.OrderBy(
-                table => table.AbstractResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(table => table.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var table in orderedAbstractIdentityTables)
+        foreach (var table in context.AbstractIdentityTablesInNameOrder)
         {
             var schema = table.TableModel.Table.Schema.Value;
 
@@ -1099,15 +1082,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             );
         }
 
-        var orderedAbstractUnionViews = context
-            .AbstractUnionViewsInNameOrder.OrderBy(
-                view => view.AbstractResourceKey.Resource.ProjectName,
-                StringComparer.Ordinal
-            )
-            .ThenBy(view => view.AbstractResourceKey.Resource.ResourceName, StringComparer.Ordinal)
-            .ToArray();
-
-        foreach (var view in orderedAbstractUnionViews)
+        foreach (var view in context.AbstractUnionViewsInNameOrder)
         {
             var schema = view.ViewName.Schema.Value;
 

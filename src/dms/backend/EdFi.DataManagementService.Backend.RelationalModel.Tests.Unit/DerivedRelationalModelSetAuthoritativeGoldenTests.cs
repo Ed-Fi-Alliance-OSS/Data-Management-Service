@@ -73,9 +73,10 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             true
         );
 
-        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
-            new[] { coreProject, extensionProject }
-        );
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
 
         var extensionSiteCapture = new ExtensionSiteCapturePass();
         IRelationalModelSetPass[] passes =
@@ -149,6 +150,8 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             WriteProjects(writer, modelSet.ProjectSchemasInEndpointOrder);
             WriteResourcesSummary(writer, modelSet.ConcreteResourcesInNameOrder);
             WriteAbstractIdentityTables(writer, modelSet.AbstractIdentityTablesInNameOrder);
+            WriteIndexes(writer, modelSet.IndexesInCreateOrder);
+            WriteTriggers(writer, modelSet.TriggersInCreateOrder);
 
             writer.WritePropertyName("resource_details");
             writer.WriteStartArray();
@@ -244,6 +247,62 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
     }
 
     /// <summary>
+    /// Write indexes.
+    /// </summary>
+    private static void WriteIndexes(Utf8JsonWriter writer, IReadOnlyList<DbIndexInfo> indexes)
+    {
+        writer.WritePropertyName("indexes");
+        writer.WriteStartArray();
+
+        foreach (var index in indexes)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", index.Name.Value);
+            writer.WritePropertyName("table");
+            WriteTableReference(writer, index.Table);
+            writer.WriteString("kind", index.Kind.ToString());
+            writer.WriteBoolean("is_unique", index.IsUnique);
+            writer.WritePropertyName("key_columns");
+            WriteColumnNameList(writer, index.KeyColumns);
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Write triggers.
+    /// </summary>
+    private static void WriteTriggers(Utf8JsonWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
+    {
+        writer.WritePropertyName("triggers");
+        writer.WriteStartArray();
+
+        foreach (var trigger in triggers)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("name", trigger.Name.Value);
+            writer.WritePropertyName("table");
+            WriteTableReference(writer, trigger.Table);
+            writer.WriteString("kind", trigger.Kind.ToString());
+            writer.WritePropertyName("key_columns");
+            WriteColumnNameList(writer, trigger.KeyColumns);
+            writer.WritePropertyName("identity_projection_columns");
+            WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
+
+            if (trigger.TargetTable is { } targetTable)
+            {
+                writer.WritePropertyName("target_table");
+                WriteTableReference(writer, targetTable);
+            }
+
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
     /// Write resource details.
     /// </summary>
     private static void WriteResourceDetails(
@@ -319,9 +378,10 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
+        var errorTask = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
         process.WaitForExit();
+        var error = errorTask.Result;
 
         if (process.ExitCode == 0)
         {
@@ -626,9 +686,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         /// </summary>
         public IReadOnlyList<ExtensionSite> GetExtensionSites(QualifiedResourceName resource)
         {
-            return _sitesByResource.TryGetValue(resource, out var sites)
-                ? sites
-                : Array.Empty<ExtensionSite>();
+            return _sitesByResource.TryGetValue(resource, out var sites) ? sites : [];
         }
     }
 

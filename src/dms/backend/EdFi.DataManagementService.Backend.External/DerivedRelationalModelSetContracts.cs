@@ -249,12 +249,27 @@ public readonly record struct DbTriggerName(string Value);
 /// <param name="Name">The trigger name.</param>
 /// <param name="Table">The owning table.</param>
 /// <param name="Kind">The trigger intent classification.</param>
-/// <param name="KeyColumns">Key columns associated with trigger behavior.</param>
+/// <param name="KeyColumns">Key columns used to identify the affected <c>DocumentId</c>.</param>
+/// <param name="IdentityProjectionColumns">
+/// Columns whose change affects the resource identity projection. For
+/// <see cref="DbTriggerKind.DocumentStamping"/> triggers on root tables, these are the columns
+/// that should additionally bump <c>IdentityVersion</c>. For
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> and
+/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, these are the columns that
+/// trigger recomputation. Empty for child/extension table stamping triggers.
+/// </param>
+/// <param name="TargetTable">
+/// The maintenance target table, when applicable. For
+/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, this identifies the abstract
+/// identity table being maintained. <c>null</c> for other trigger kinds.
+/// </param>
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
     DbTableName Table,
     DbTriggerKind Kind,
-    IReadOnlyList<DbColumnName> KeyColumns
+    IReadOnlyList<DbColumnName> KeyColumns,
+    IReadOnlyList<DbColumnName> IdentityProjectionColumns,
+    DbTableName? TargetTable = null
 );
 
 /// <summary>

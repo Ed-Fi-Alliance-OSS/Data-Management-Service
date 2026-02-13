@@ -24,9 +24,9 @@ public class Given_Unordered_Derived_Collections
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[] { new PopulateUnorderedCollectionsPass(effectiveSchemaSet) }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new PopulateUnorderedCollectionsPass(effectiveSchemaSet),
+        ]);
 
         _derivedModelSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
@@ -210,6 +210,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_Section_B"),
                     new DbTableName(sampleSchema, "Section"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -218,6 +219,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_School_B"),
                     new DbTableName(edfiSchema, "School"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -226,6 +228,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_SchoolTypeDescriptor"),
                     new DbTableName(edfiSchema, "SchoolTypeDescriptor"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -234,6 +237,7 @@ public class Given_Unordered_Derived_Collections
                     new DbTriggerName("TR_School_A"),
                     new DbTableName(edfiSchema, "School"),
                     DbTriggerKind.DocumentStamping,
+                    [],
                     []
                 )
             );
@@ -251,10 +255,7 @@ public class Given_Unordered_Derived_Collections
             var jsonScope = JsonPathExpressionCompiler.FromSegments([]);
             var key = new TableKey(
                 $"PK_{tableName}",
-                new[]
-                {
-                    new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
-                }
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
             );
             DbColumnModel[] columns =
             [
@@ -268,13 +269,7 @@ public class Given_Unordered_Derived_Collections
                 ),
             ];
 
-            var table = new DbTableModel(
-                new DbTableName(schema, tableName),
-                jsonScope,
-                key,
-                columns,
-                Array.Empty<TableConstraint>()
-            );
+            var table = new DbTableModel(new DbTableName(schema, tableName), jsonScope, key, columns, []);
 
             return new AbstractIdentityTableInfo(resourceKey, table);
         }
@@ -293,28 +288,25 @@ public class Given_Unordered_Derived_Collections
             return new AbstractUnionViewInfo(
                 abstractResourceKey,
                 new DbTableName(schema, viewName),
-                new[]
-                {
+                [
                     new AbstractUnionViewOutputColumn(
                         RelationalNameConventions.DocumentIdColumnName,
                         new RelationalScalarType(ScalarKind.Int64),
                         SourceJsonPath: null,
                         TargetResource: null
                     ),
-                },
-                new[]
-                {
+                ],
+                [
                     new AbstractUnionViewArm(
                         concreteMemberResourceKey,
                         new DbTableName(schema, tableName),
-                        new AbstractUnionViewProjectionExpression[]
-                        {
+                        [
                             new AbstractUnionViewProjectionExpression.SourceColumn(
                                 RelationalNameConventions.DocumentIdColumnName
                             ),
-                        }
+                        ]
                     ),
-                }
+                ]
             );
         }
 

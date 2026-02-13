@@ -198,7 +198,8 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             targetColumns.AddRange(identityColumns.TargetColumns);
 
             var onUpdate =
-                targetInfo.IsAbstract ? ReferentialAction.Cascade
+                context.SetContext.Dialect == SqlDialect.Mssql ? ReferentialAction.NoAction
+                : targetInfo.IsAbstract ? ReferentialAction.Cascade
                 : targetInfo.AllowIdentityUpdates ? ReferentialAction.Cascade
                 : ReferentialAction.NoAction;
 

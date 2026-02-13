@@ -925,10 +925,12 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         string resourceLabel
     )
     {
-        var collectionBaseNames = parent.CollectionBaseNames.Concat(new[] { collectionBaseName }).ToArray();
-        var defaultCollectionBaseNames = parent
-            .DefaultCollectionBaseNames.Concat(new[] { defaultCollectionBaseName })
-            .ToArray();
+        string[] collectionBaseNames = [.. parent.CollectionBaseNames, collectionBaseName];
+        string[] defaultCollectionBaseNames =
+        [
+            .. parent.DefaultCollectionBaseNames,
+            defaultCollectionBaseName,
+        ];
 
         var tableName = new DbTableName(
             extensionProject.PhysicalSchema,
@@ -1118,7 +1120,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 
         if (lastArrayIndex < 0)
         {
-            return Array.Empty<JsonPathSegment>();
+            return [];
         }
 
         return segments.Take(lastArrayIndex + 1).ToArray();
@@ -1317,9 +1319,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             tableBuilder.AddConstraint(
                 new TableConstraint.ForeignKey(
                     ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
-                    new[] { columnName },
+                    [columnName],
                     _descriptorTableName,
-                    new[] { RelationalNameConventions.DocumentIdColumnName },
+                    [RelationalNameConventions.DocumentIdColumnName],
                     OnDelete: ReferentialAction.NoAction,
                     OnUpdate: ReferentialAction.NoAction
                 )
@@ -1790,10 +1792,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     {
         return new TableKey(
             ConstraintNaming.BuildPrimaryKeyName(tableName),
-            new[]
-            {
-                new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart),
-            }
+            [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
         );
     }
 
@@ -1883,7 +1882,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         return keyColumn.Kind switch
         {
             ColumnKind.Ordinal => new RelationalScalarType(ScalarKind.Int32),
-            ColumnKind.ParentKeyPart => IsDocumentIdColumn(keyColumn.ColumnName)
+            ColumnKind.ParentKeyPart => RelationalNameConventions.IsDocumentIdColumn(keyColumn.ColumnName)
                 ? new RelationalScalarType(ScalarKind.Int64)
                 : new RelationalScalarType(ScalarKind.Int32),
             ColumnKind.DocumentFk => new RelationalScalarType(ScalarKind.Int64),
@@ -1891,25 +1890,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 $"Unsupported key column kind '{keyColumn.Kind}' for {keyColumn.ColumnName.Value}."
             ),
         };
-    }
-
-    /// <summary>
-    /// Returns true when the column name represents a document id key part.
-    /// </summary>
-    private static bool IsDocumentIdColumn(DbColumnName columnName)
-    {
-        if (
-            string.Equals(
-                columnName.Value,
-                RelationalNameConventions.DocumentIdColumnName.Value,
-                StringComparison.Ordinal
-            )
-        )
-        {
-            return true;
-        }
-
-        return columnName.Value.EndsWith("_DocumentId", StringComparison.Ordinal);
     }
 
     /// <summary>

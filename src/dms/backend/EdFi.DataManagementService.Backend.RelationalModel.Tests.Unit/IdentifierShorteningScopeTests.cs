@@ -24,13 +24,10 @@ public class Given_Index_Name_Shortening_Collision_Across_Tables_For_Pgsql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[]
-            {
-                new IndexShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningPass(),
-            }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new IndexShorteningCollisionAcrossTablesPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
         var dialectRules = new MappedDialectRules(
             SqlDialect.Pgsql,
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -79,13 +76,10 @@ public class Given_Index_Name_Shortening_Collision_Across_Tables_For_Mssql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[]
-            {
-                new IndexShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningPass(),
-            }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new IndexShorteningCollisionAcrossTablesPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
         var dialectRules = new MappedDialectRules(
             SqlDialect.Mssql,
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -132,13 +126,10 @@ public class Given_Trigger_Name_Shortening_Collision_Across_Tables_For_Pgsql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[]
-            {
-                new TriggerShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningPass(),
-            }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TriggerShorteningCollisionAcrossTablesPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
         var dialectRules = new MappedDialectRules(
             SqlDialect.Pgsql,
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -184,13 +175,10 @@ public class Given_Trigger_Name_Shortening_Collision_Across_Tables_For_Mssql
     public void Setup()
     {
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
-        var builder = new DerivedRelationalModelSetBuilder(
-            new IRelationalModelSetPass[]
-            {
-                new TriggerShorteningCollisionAcrossTablesPass(),
-                new ApplyDialectIdentifierShorteningPass(),
-            }
-        );
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TriggerShorteningCollisionAcrossTablesPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
         var dialectRules = new MappedDialectRules(
             SqlDialect.Mssql,
             new Dictionary<string, string>(StringComparer.Ordinal)
@@ -275,11 +263,18 @@ file sealed class TriggerShorteningCollisionAcrossTablesPass : IRelationalModelS
                 new DbTriggerName("TR_LongAlpha"),
                 tableAlpha,
                 DbTriggerKind.DocumentStamping,
+                [],
                 []
             )
         );
         context.TriggerInventory.Add(
-            new DbTriggerInfo(new DbTriggerName("TR_LongBeta"), tableBeta, DbTriggerKind.DocumentStamping, [])
+            new DbTriggerInfo(
+                new DbTriggerName("TR_LongBeta"),
+                tableBeta,
+                DbTriggerKind.DocumentStamping,
+                [],
+                []
+            )
         );
     }
 }
