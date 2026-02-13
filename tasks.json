@@ -27,7 +27,7 @@
       "Verify the example shows the `_Present` column being written as `NULL` vs `TRUE/1` and references the NullOrTrue hardening CHECK constraint.",
       "Verify the example explicitly ties binding columns (aliases) vs storage (canonical) and demonstrates how reconstitution preserves per-path absence."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Presence Gating",
