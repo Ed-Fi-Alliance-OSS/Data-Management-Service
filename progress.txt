@@ -61,3 +61,7 @@
 - Decisions: add key-unification to doc lists; clarify binding vs storage (per-site/per-path bindings may be generated/persisted aliases; canonical stored cols are write/FK/cascade targets); explicitly call out presence-gated aliases keep absent optional ref/path as `NULL` at binding even when canonical is non-null
 - Files: reference/design/backend-redesign/design-docs/overview.md; reference/design/backend-redesign/design-docs/summary.md; tasks.json; progress.txt
 - Notes: remaining doc tasks: #11 #19
+- Completed: tasks.json#19 Docs: Terminology Sweep (DMS-1033)
+- Decisions: replace "propagated identity columns" wording w/ canonical storage + per-site binding terminology; clarify cascades target canonical/storage cols and binding cols may be generated aliases; cross-ref `key-unification.md`
+- Files: reference/design/backend-redesign/design-docs/update-tracking.md; reference/design/backend-redesign/design-docs/etl-view-sketch.md; reference/design/backend-redesign/design-docs/transactions-and-concurrency.md; tasks.json; progress.txt
+- Notes: remaining doc tasks: #11
