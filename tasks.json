@@ -98,5 +98,105 @@
       "Verify the mapping-pack/versioning section reflects the chosen backward-compat story (interpret vs reject)."
     ],
     "completed": true
+  },
+  {
+    "category": "Docs: Overview + Summary",
+    "description": "Update `reference/design/backend-redesign/design-docs/overview.md` and `reference/design/backend-redesign/design-docs/summary.md` to explicitly include key unification and to avoid implying equality-constrained reference identity parts are independent writable columns. Acceptance: (1) both docs link to `key-unification.md` in their doc lists (Deep Dives / Source documents) and add a short, accurate description of the feature, (2) all mentions of \"stored reference identity columns\" clarify binding-vs-storage semantics (per-site/per-path binding columns may be generated/persisted aliases; canonical stored columns are the write/FK/cascade targets), and (3) the high-level cascade/propagation narrative remains correct under presence-gated aliases (absent optional reference/path implies `NULL` at binding columns even when canonical is non-null).",
+    "steps-to-verify": [
+      "Run: `rg -n \"key-unification|key unification\" reference/design/backend-redesign/design-docs/overview.md reference/design/backend-redesign/design-docs/summary.md` and confirm both docs reference `key-unification.md` explicitly.",
+      "Run: `rg -n \"stored reference identity columns|propagated identity columns\" reference/design/backend-redesign/design-docs/overview.md reference/design/backend-redesign/design-docs/summary.md` and confirm wording no longer implies per-site identity-part columns are writable sources of truth.",
+      "Manual read: verify the docs describe presence-gated alias behavior at a high level without contradicting the normative rules in `reference/design/backend-redesign/design-docs/key-unification.md`."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Strengths + Risks",
+    "description": "Update `reference/design/backend-redesign/design-docs/strengths-risks.md` to incorporate key unification’s benefits and new risks. Acceptance: (1) add a Strength that explicitly calls out DB-level single-source-of-truth for equality-constrained identity parts (canonical columns + generated/persisted aliases) and why it prevents drift, (2) update the SQL Server cascade-path risk to mention multi-edge cascades created by shared canonical columns across multiple composite FKs, and (3) add a Risk that captures generated-column + synthetic presence-flag complexity (DDL, indexing, write planning, and diagnostics).",
+    "steps-to-verify": [
+      "Run: `rg -n \"key unification|canonical column|UnifiedAlias|presence\" reference/design/backend-redesign/design-docs/strengths-risks.md` and confirm the new Strength/Risk language exists.",
+      "Run: `rg -n \"multiple cascade paths|cascade-path\" reference/design/backend-redesign/design-docs/strengths-risks.md` and confirm the risk narrative matches the mitigation strategy in `reference/design/backend-redesign/design-docs/key-unification.md` (trigger-based fallback updates canonical storage columns, not aliases).",
+      "Manual read: verify the risk/mitigation wording stays consistent with `transactions-and-concurrency.md` and does not imply cross-table equality constraints are enforced by the database."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Data Model",
+    "description": "Update `reference/design/backend-redesign/design-docs/data-model.md` so its table/column/constraint language matches the key-unification design. Acceptance: (1) the \"Reference columns\" description states composite reference FKs are defined over canonical storage columns for unified identity parts (mapping binding columns through `DbColumnModel.Storage`), (2) the \"all-or-none\" CHECK constraint description explicitly remains defined over per-site binding columns (aliases) to preserve presence semantics, (3) naming rules include canonical unified column naming and synthetic presence-flag naming (or reference `key-unification.md` as the single source of truth), and (4) UNIQUE/Index guidance distinguishes API-semantic UNIQUEs (binding columns) from FK-supporting referenced-key UNIQUEs (canonical storage columns) per `key-unification.md`.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Reference columns|all-or-none|composite FK|propagated identity\" reference/design/backend-redesign/design-docs/data-model.md` and confirm the updated constraint language is present and consistent.",
+      "Run: `rg -n \"_Unified|_Present|presence flag\" reference/design/backend-redesign/design-docs/data-model.md` and confirm canonical/presence naming is documented or explicitly delegated to `key-unification.md`.",
+      "Manual read: verify `data-model.md` no longer claims per-site propagated identity part columns are the FK/cascade targets when they are unified aliases."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: DDL Generation",
+    "description": "Update `reference/design/backend-redesign/design-docs/ddl-generation.md` to reflect key-unification DDL and constraint emission rules. Acceptance: (1) replace the outdated \"Key unification note\" with a summary that matches `key-unification.md` (canonical stored column + presence-gated generated aliases; no DB CHECK equality across two writable columns), (2) update the \"Reference constraints\" requirements so composite FKs and descriptor FKs are emitted over storage columns only (never `UnifiedAlias`), including descriptor-FK de-duplication behavior, and (3) add an explicit cross-reference to `key-unification.md` for dialect DDL syntax for persisted/stored generated columns and synthetic presence flags.",
+    "steps-to-verify": [
+      "Run: `rg -n \"Key unification note\" reference/design/backend-redesign/design-docs/ddl-generation.md` and confirm the section no longer describes per-site writable duplication as the intended design.",
+      "Run: `rg -n \"UnifiedAlias|canonical|presence\" reference/design/backend-redesign/design-docs/ddl-generation.md` and confirm the updated rules for FK emission over storage columns are stated.",
+      "Manual read: verify the deterministic column/constraint ordering rules remain compatible with the added canonical/presence columns and alias dependencies."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Transactions + Concurrency",
+    "description": "Update `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` to align propagation semantics with canonical storage columns + generated aliases. Acceptance: (1) identity propagation language describes cascade updates targeting canonical storage columns for unified identity parts (aliases recompute and preserve presence semantics), (2) SQL Server \"multiple cascade paths\" guidance explicitly covers key-unification multi-edge cases and states trigger-based propagation fallback MUST update canonical columns (never alias columns), and (3) write-path descriptions note that writers populate canonical columns and any synthetic presence flags deterministically (no \"keep previous\" behavior).",
+    "steps-to-verify": [
+      "Run: `rg -n \"propagated identity columns|stored reference identity columns\" reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` and confirm the text distinguishes binding aliases vs canonical storage columns where necessary.",
+      "Run: `rg -n \"multiple cascade paths|trigger-based propagation\" reference/design/backend-redesign/design-docs/transactions-and-concurrency.md` and confirm the mitigation matches the normative rules in `reference/design/backend-redesign/design-docs/key-unification.md`.",
+      "Manual read: verify the doc still treats cross-table equality constraints as Core-only and does not claim DB enforcement beyond row-local unification."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Flattening + Reconstitution",
+    "description": "Update `reference/design/backend-redesign/design-docs/flattening-reconstitution.md` to carry and consume key-unification metadata. Acceptance: (1) update the in-memory derived model types to include `DbColumnModel.Storage` and `DbTableModel.KeyUnificationClasses` as defined in `key-unification.md`, (2) update write-plan types to include `WriteValueSource.Precomputed` and per-table `KeyUnificationWritePlan` inventory so canonical/presence values can be computed during row materialization, (3) update plan compiler rules so it never writes `UnifiedAlias` columns and always writes canonical storage columns + synthetic presence flags when present, and (4) update the flattener algorithm section to include deterministic canonical coalescing + conflict detection (fail closed) and presence-flag population rules.",
+    "steps-to-verify": [
+      "Run: `rg -n \"ColumnStorage|UnifiedAlias|KeyUnificationClass|Precomputed|KeyUnificationWritePlan\" reference/design/backend-redesign/design-docs/flattening-reconstitution.md` and confirm the new/updated type definitions and rules exist.",
+      "Run: `rg -n \"DocumentReferenceBinding\" reference/design/backend-redesign/design-docs/flattening-reconstitution.md` and confirm reference identity binding semantics explicitly allow binding columns to be `UnifiedAlias` (read-only) while FK derivation/writes target storage columns.",
+      "Manual read: verify all SQL canonicalization and ordering invariants remain intact after introducing precompute-only column bindings."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Compiled Mapping Set",
+    "description": "Update `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` to describe binding-vs-storage semantics and key-unification impacts on runtime usage. Acceptance: (1) the write-path usage section notes that `TableWritePlan.ColumnBindings` excludes alias columns and that canonical/presence columns are bound via `WriteValueSource.Precomputed` plus `KeyUnificationWritePlan`, (2) the read-path and query notes clarify that API JsonPath binding continues to target binding/path columns (including aliases) to preserve presence semantics, and (3) descriptor and composite-FK narratives mention storage-column mapping and descriptor-FK de-duplication diagnostics.",
+    "steps-to-verify": [
+      "Run: `rg -n \"ColumnBindings|WriteValueSource|Precomputed|KeyUnification\" reference/design/backend-redesign/design-docs/compiled-mapping-set.md` and confirm the write-path narrative reflects the new plan constructs.",
+      "Run: `rg -n \"propagated identity columns|reference identity\" reference/design/backend-redesign/design-docs/compiled-mapping-set.md` and confirm the doc no longer implies those binding columns are always writable.",
+      "Manual read: verify the read-path steps still guarantee reference-object omission when the reference FK/presence column is null (presence-gated alias semantics preserved)."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Mapping Pack Format",
+    "description": "Update `reference/design/backend-redesign/design-docs/mpack-format-v1.md` to include the wire-compatible payload additions required by key unification. Acceptance: (1) the normative proto schema adds explicit column storage metadata (`Stored` vs `UnifiedAlias` with canonical/presence columns) and per-table `key_unification_classes`, (2) the write-plan proto adds `WriteValueSource.Precomputed` and `TableWritePlan.key_unification_plans` message shapes matching `key-unification.md`, (3) ordering rules in section 4.2 include deterministic ordering for the new repeated fields, and (4) versioning guidance states key unification is gated by `RelationalMappingVersion` (not `PackFormatVersion`) and that consumers must reject older artifacts lacking required metadata when operating in the key-unification mapping version.",
+    "steps-to-verify": [
+      "Run: `rg -n \"ColumnStorage|UnifiedAlias|key_unification\" reference/design/backend-redesign/design-docs/mpack-format-v1.md` and confirm the new proto fields/messages and ordering rules are documented.",
+      "Run: `rg -n \"RelationalMappingVersion\" reference/design/backend-redesign/design-docs/mpack-format-v1.md` and confirm the gating story matches `reference/design/backend-redesign/design-docs/key-unification.md`.",
+      "Manual read: verify consumer validation rules include fail-fast checks for storage metadata consistency and unification-plan invariants."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Manifests + Test Harness",
+    "description": "Update `reference/design/backend-redesign/design-docs/ddl-generator-testing.md` (and any referenced manifest-shape descriptions) to require key-unification metadata in manifests used for goldens and pack equivalence. Acceptance: (1) `relational-model.manifest.json` and pack/mappingset manifests are specified to include per-column `storage` (stored vs unified alias + canonical/presence), per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics (`applied`/`redundant`/`ignored` with reason taxonomy) as required by `key-unification.md`, and (2) fixture guidance explicitly calls for at least one small fixture that exercises reference-site unification and one that exercises optional non-reference synthetic presence flags.",
+    "steps-to-verify": [
+      "Run: `rg -n \"key_unification|storage\" reference/design/backend-redesign/design-docs/ddl-generator-testing.md` and confirm the manifest requirements mention the new fields and their determinism expectations.",
+      "Run: `rg -n \"equality\" reference/design/backend-redesign/design-docs/ddl-generator-testing.md` and confirm equality-constraint diagnostics are treated as a first-class golden surface (not implicit via SQL).",
+      "Manual read: verify the harness design still compares semantics (manifests) rather than raw `.mpack` bytes and that the new fields are included in the semantic comparison surfaces."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs: Terminology Sweep",
+    "description": "Sweep remaining design docs in `reference/design/backend-redesign/design-docs` that reference propagated identity columns (at minimum: `update-tracking.md`, `etl-view-sketch.md`, and `referential-identity-test-plan.md`) and update terminology to match key unification without changing their intent. Acceptance: (1) where these docs mention cascades updating propagated identity columns, they either clarify canonical-vs-alias behavior or refer to `key-unification.md` as the source of truth, and (2) none of these docs imply equality-constrained duplicates can drift or that DB-level equality checks across two writable columns are safe.",
+    "steps-to-verify": [
+      "Run: `rg -n \"propagated identity columns|stored reference identity columns\" reference/design/backend-redesign/design-docs/update-tracking.md reference/design/backend-redesign/design-docs/etl-view-sketch.md reference/design/backend-redesign/design-docs/referential-identity-test-plan.md` and confirm wording aligns with canonical storage + alias semantics.",
+      "Run: `rg -n \"CHECK \\(|colA = colB|equality\" reference/design/backend-redesign/design-docs/update-tracking.md reference/design/backend-redesign/design-docs/etl-view-sketch.md reference/design/backend-redesign/design-docs/referential-identity-test-plan.md` and confirm none recommend unsafe DB-level equality enforcement as an alternative to unification.",
+      "Manual read: verify these docs still correctly describe stamping, ETL projection intent, and referential-identity correctness risks under the updated terminology."
+    ],
+    "completed": false
   }
 ]
