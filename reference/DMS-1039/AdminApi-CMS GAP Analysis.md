@@ -643,6 +643,32 @@ CMS includes `/authorizationStrategies`, but Admin API does not. For parity we e
 
 Vendor POST in Admin API returns a `201 Created` with an empty body, while CMS emits a body with `id`, `status`, and `title`. Although the extra fields are not harmful, CMS should still send the Admin status codes and ensure the schema matches what clients expect. An example CMS payload today:
 
+#### AdminApi (Response)
+
+```
+HTTP/1.1 201 Created
+Server: nginx/1.27.2
+Date: Fri, 13 Feb 2026 15:35:50 GMT
+Content-Length: 0
+Connection: close
+Location: /vendors/1
+```
+
+```json
+```
+
+#### CMS (Response)
+
+```
+HTTP/1.1 201 Created
+Connection: close
+Content-Type: application/json; charset=utf-8
+Date: Fri, 13 Feb 2026 15:36:56 GMT
+Server: Kestrel
+Location: http://localhost:8081/v2/vendors/1
+Transfer-Encoding: chunked
+```
+
 ```json
 {
   "id": 1,
