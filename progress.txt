@@ -49,3 +49,7 @@
 - Decisions: binding/path vs canonical/storage explicitly called out; cascades + SQL Server trigger-based fallback update canonical/storage cols (never aliases); writers set canonical cols + synthetic presence flags deterministically (no keep previous)
 - Files: reference/design/backend-redesign/design-docs/transactions-and-concurrency.md; tasks.json; progress.txt
 - Notes: remaining doc tasks: #10 #11 #16 #18 #19
+- Completed: tasks.json#16 Docs: Compiled Mapping Set (DMS-1033)
+- Decisions: write path clarifies `ColumnBindings` excludes `UnifiedAlias`; canonical + synthetic `..._Present` cols are `WriteValueSource.Precomputed` via `KeyUnificationWritePlan`; read/query binds by per-path columns incl `UnifiedAlias`; call out composite-FK storage mapping + descriptor-FK de-dup diagnostics
+- Files: reference/design/backend-redesign/design-docs/compiled-mapping-set.md; tasks.json; progress.txt
+- Notes: remaining doc tasks: #10 #11 #18 #19

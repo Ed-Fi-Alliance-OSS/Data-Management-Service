@@ -167,7 +167,7 @@
       "Run: `rg -n \"propagated identity columns|reference identity\" reference/design/backend-redesign/design-docs/compiled-mapping-set.md` and confirm the doc no longer implies those binding columns are always writable.",
       "Manual read: verify the read-path steps still guarantee reference-object omission when the reference FK/presence column is null (presence-gated alias semantics preserved)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Mapping Pack Format",
