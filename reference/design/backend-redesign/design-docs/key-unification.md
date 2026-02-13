@@ -1712,6 +1712,159 @@ These postconditions allow subsequent passes to be purely consumer-oriented:
 - Dialect identifier shortening can rename columns and update all `UnifiedAlias` and `KeyUnificationClass` references
   in one place.
 
+### Algorithm (step-by-step)
+
+This algorithm is a strict, implementer-oriented ordering for `KeyUnificationPass` and consolidates the rules that
+are specified elsewhere in this document.
+
+1. Inputs / outputs (set-level):
+   - Input: the full derived relational model set **after** `ReferenceBindingPass`, plus ApiSchema
+     `resourceSchema.equalityConstraints` for each resource.
+   - This pass mutates/creates:
+     - `DbTableModel.Columns`: adds canonical storage columns and (when needed) synthetic `..._Present` columns; marks
+       unified member path columns as `Storage = UnifiedAlias(...)` without changing their physical column names or
+       `SourceJsonPath`.
+     - `DbTableModel.Constraints`: appends one `TableConstraint.NullOrTrue` per synthetic presence flag column.
+     - `DbTableModel.KeyUnificationClasses`: populates per-table unification class inventory (canonical + ordered
+       members).
+     - Per-resource equality-constraint diagnostics: emits deterministic `applied`/`redundant`/`ignored` classification
+       for every ApiSchema `equalityConstraint`.
+
+2. Resolve and classify ApiSchema `equalityConstraints` (per resource):
+   - For each `equalityConstraint (pathA, pathB)`:
+     - Resolve each endpoint path to exactly one binding column using `DbColumnModel.SourceJsonPath` as the sole
+       authoritative mapping:
+       - Find all columns whose `SourceJsonPath.Canonical` equals the endpoint path string exactly.
+       - Fail fast if zero matches (unresolved endpoint).
+       - If multiple matches:
+         - If every match is the same physical binding `(table, column)` (duplicate inventory), de-duplicate.
+         - Otherwise fail fast (ambiguous endpoint binding).
+     - Fail fast if either resolved endpoint is not `ColumnKind.Scalar` or `ColumnKind.DescriptorFk` (unsupported
+       endpoint kind).
+     - Canonicalize endpoint ordering for determinism:
+       - `endpoint_a_path` is the ordinal-min path; `endpoint_b_path` is the ordinal-max path.
+     - Classify:
+       - If endpoints bind to different tables: `ignored` with reason `cross_table` (record both endpoint bindings for
+         diagnostics; do not build a unification edge).
+       - Else if endpoints bind to the same `(table, column)`: `redundant` (record the binding for diagnostics; do not
+         build a unification edge).
+       - Else: `applied` (record a provisional applied entry and add an undirected edge between the two binding
+         columns in that table’s unification graph).
+
+3. Build candidate unification classes (per table):
+   - For each table that has one or more applied edges:
+     - Build an undirected graph whose nodes are binding columns and whose edges are the applied constraints.
+     - Connected components are candidate unification classes.
+     - For each connected component:
+       - `MemberPathColumns` are the distinct binding columns in the component.
+       - Order `MemberPathColumns` deterministically by `Member.SourceJsonPath.Canonical` ordinal.
+
+4. Validate each candidate class and derive canonical storage metadata (per class; fail fast on any violation):
+   - Member signature compatibility:
+     - All members MUST be `Scalar` with exactly equal `ScalarType` (`ScalarKind`, `MaxLength`, and `(Precision,Scale)`
+       where applicable), OR
+     - all members MUST be `DescriptorFk` with exactly equal `TargetResource`.
+     - Mixing `Scalar` and `DescriptorFk` in one class is forbidden.
+   - Canonical kind/type derivation:
+     - Copy `Kind`, `ScalarType`, and `TargetResource` exactly from the first member (after validating all match).
+   - Canonical nullability derivation:
+     - `CanonicalColumn.IsNullable = MemberPathColumns.All(m => m.IsNullable)`
+       (canonical is `NOT NULL` when any member is required).
+   - Canonical naming (deterministic; fail fast on prohibited path shapes):
+     - Canonical naming MUST be derived from API JsonPath semantics and MUST NOT consult override-mutated physical
+       column names.
+     - For each member, derive a logical base-name token from the member’s `SourceJsonPath`:
+       - Determine the binding-site prefix path:
+         - If the member column is an identity binding in a `DocumentReferenceBinding`, the prefix is that binding’s
+           `DocumentReferenceBinding.ReferenceObjectPath`.
+         - Otherwise, the prefix is the owning table’s `DbTableModel.JsonScope`.
+       - Strip the prefix segments from the member’s `SourceJsonPath` segments to produce a relative segment list
+         (fail fast if the prefix is not a true prefix).
+       - If the relative segment list contains any `AnyArrayElement` (`[*]`) segments, fail fast:
+         - row-local key unification cannot safely name or enforce multi-value endpoints that still contain wildcards
+           after binding-site stripping.
+       - If the relative segment list contains one or more `Property` segments:
+         - the base-name token is the concatenation of `ToPascalCase(property.Name)` for each `Property` segment, in
+           order.
+       - If the relative segment list is empty (the `SourceJsonPath` equals the binding-site prefix):
+         - derive the base-name token from the final `Property` segment in the prefix path before any trailing
+           `AnyArrayElement` segments, then apply:
+           - deterministic singularization:
+             - if ends with `ies`, replace with `y`
+             - else if ends with `ches`/`shes`/`xes`/`zes`/`ses`, remove the trailing `es`
+             - else if ends with `s` (but not `ss`), remove the trailing `s`
+             - else leave unchanged
+           - `ToPascalCase` to the singularized value
+         - Fail fast if no such `Property` segment exists in the prefix.
+     - Choose the class base-name token:
+       - if all member tokens agree: use that token,
+       - otherwise: use the first member’s token and require `_U{Hash8}` disambiguation.
+     - Compute `Hash8` (first 8 hex characters) as:
+       - `sha256hex(utf8("key-unification-canonical-name:v1\n" + join(sorted(member SourceJsonPath.Canonical), "\n")))`
+     - Create the canonical column name:
+       - `Scalar`: `{Base}{Disambiguator}_Unified`
+       - `DescriptorFk`: `{Base}{Disambiguator}_Unified_DescriptorId`
+       where `Disambiguator` is empty by default and MUST be `_U{Hash8}` when required by the rules (member token
+       disagreement and/or collision with an existing column name).
+     - If disambiguation still collides, append a deterministic numeric fallback before the unified suffix:
+       - scalar: `{Base}_U{Hash8}_{n}_Unified`
+       - descriptor: `{Base}_U{Hash8}_{n}_Unified_DescriptorId`
+       starting with `n = 2` and incrementing until the name is unique for that table.
+
+5. Mutate `DbTableModel.Columns` for each class:
+   - Add the canonical storage column to the table:
+     - `SourceJsonPath = null` (storage-only), `Storage = Stored`.
+   - For each member path column in `MemberPathColumns`:
+     - Determine its presence-gating strategy:
+       - Reference site member: if the member column is an identity binding in a `DocumentReferenceBinding`, then
+         `PresenceColumn = DocumentReferenceBinding.FkColumn` (`{RefBaseName}_DocumentId`).
+       - Non-reference optional member (`IsNullable=true`): create a synthetic stored presence flag column and then
+         `PresenceColumn = {PresenceColumnName}`:
+         - `MemberSourceJsonPath` = the member path column’s `DbColumnModel.SourceJsonPath`.
+         - base name: `{PathColumnName}_Present`
+         - if it collides on the table:
+           - `Hash8` = first 8 hex of
+             `sha256hex(utf8("key-unification-presence-name:v1\n" + MemberSourceJsonPath.Canonical))`
+           - candidate name: `{PathColumnName}_U{Hash8}_Present`
+         - if the candidate name still collides, append a deterministic numeric suffix before `_Present`:
+           - `{PathColumnName}_U{Hash8}_{n}_Present`, starting with `n = 2` and incrementing until unique.
+         - Create `{PresenceColumnName}` with:
+           - type: `bit` (SQL Server) / `boolean` (PostgreSQL)
+           - nullability: nullable (`NULL` means absent; `TRUE`/`1` means present)
+           - `SourceJsonPath = null`, `Storage = Stored` (storage-only)
+           - writes MUST populate `NULL` (absent) or `TRUE`/`1` (present) only (never `FALSE`/`0`).
+       - Non-reference required member (`IsNullable=false`): `PresenceColumn = null` (ungated alias).
+     - Convert the member path column in-place to:
+       - `Storage = UnifiedAlias(CanonicalColumn = <canonical>, PresenceColumn = <presence or null>)`
+       - while retaining the member’s existing physical column name and `SourceJsonPath`.
+
+6. Harden synthetic presence flags (`..._Present`) (per table):
+   - For every synthetic presence flag column created in step 5:
+     - Append a `TableConstraint.NullOrTrue` constraint to `DbTableModel.Constraints` enforcing:
+       - `{PresenceColumnName} IS NULL OR {PresenceColumnName} IS TRUE`
+     - The constraint name MUST be derived deterministically from `(Table, PresenceColumnName)` and later passes may
+       hash/shorten that name like any other derived constraint identifier.
+
+7. Populate `DbTableModel.KeyUnificationClasses` (per table):
+   - Emit one `KeyUnificationClass` per connected component with:
+     - `CanonicalColumn = <canonical storage column name>`, and
+     - `MemberPathColumns = <ordered members from step 3>`.
+   - Order classes deterministically by `CanonicalColumn` ordinal.
+
+8. Finalize per-resource equality-constraint diagnostics:
+   - For each `applied` constraint, resolve the canonical column by mapping either endpoint’s member binding column to
+     its owning class’s `CanonicalColumn`.
+   - Sort `applied[]`, `redundant[]`, and `ignored[]` entries deterministically by
+     `(endpoint_a_path, endpoint_b_path)` ordinal.
+
+9. Downstream ownership (explicit non-goals of `KeyUnificationPass`):
+   - This pass MUST NOT rewrite or emit pre-existing constraints (PK/UK/FK/all-or-none); it only:
+     - mutates column storage metadata and adds new canonical/presence columns, and
+     - adds `NullOrTrue` hardening CHECK constraints for synthetic presence flags.
+   - Reference composite FKs and descriptor FKs are emitted later by `ReferenceConstraintPass` (and any other
+     constraint derivation passes), which MUST map identity-part / descriptor binding columns to their canonical
+     storage columns via `DbColumnModel.Storage` before emitting FK definitions.
+
 ## Interactions with Existing Design Docs
 
 This design refines the baseline language in:
