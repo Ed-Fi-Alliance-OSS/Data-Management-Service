@@ -673,6 +673,8 @@ At minimum, the manifest MUST include:
    - for aliases, the `canonical_column` and optional `presence_column` column names.
 2. For every table:
    - a `key_unification_classes` array describing each class’s canonical column and ordered member-path columns.
+3. For every table where descriptor FK de-duplication occurs (see “Descriptor foreign keys (`dms.Descriptor`) (normative)”):
+   - a `descriptor_fk_deduplications` array describing each de-duplication group.
 
 Recommended manifest shape (illustrative):
 
@@ -723,6 +725,46 @@ Rules:
   clarity.
 - The ordering of `key_unification_classes` and `member_path_columns` MUST be deterministic and match the in-memory
   ordering rules above.
+
+##### Descriptor FK De-duplication diagnostics (required)
+
+Descriptor FK emission performs a storage-column mapping and may de-duplicate multiple descriptor binding columns into
+a single descriptor FK constraint per `(table, storage_column)` pair.
+
+To make this behavior observable in golden tests and diagnostics, the relational-model manifest MUST include a
+deterministic per-table report when such de-duplication occurs.
+
+Recommended manifest shape (illustrative; per table):
+
+```json
+{
+  "descriptor_fk_deduplications": [
+    {
+      "storage_column": "SchoolYear_Unified_DescriptorId",
+      "binding_columns": [
+        "GradingPeriodSchoolYear_DescriptorId",
+        "SchoolYear_DescriptorId"
+      ],
+      "constraint_name": "FK_...derived from (Table, StorageColumn)..."
+    }
+  ]
+}
+```
+
+Rules:
+
+- Emit one entry per `(table, storage_column)` where **two or more** descriptor binding columns map to the same storage
+  column.
+- `storage_column` is the final physical storage column name after mapping through `DbColumnModel.Storage`.
+- `binding_columns` is the set of binding/path column names (`SourceJsonPath != null`) that mapped to `storage_column`.
+- `constraint_name` is the single emitted descriptor FK constraint name for that `(table, storage_column)` pair (the
+  same name that appears in the table’s emitted constraints list after any dialect hashing/shortening).
+- Ordering MUST be deterministic:
+  - `descriptor_fk_deduplications[]` sorted by `storage_column` ordinal.
+  - `binding_columns[]` sorted ordinal.
+
+This report is a descriptor-FK emission diagnostic only; it is not part of the per-resource
+`key_unification_equality_constraints` applied/redundant/ignored classification.
 
 #### Equality-constraint diagnostics surface (required)
 
@@ -1448,6 +1490,9 @@ Normative rules:
 3. **De-duplication**:
    - If multiple descriptor binding columns map to the same `StorageColumn` on the same table (e.g., because they are
      unified), emit exactly one descriptor FK constraint for that `(table, StorageColumn)` pair.
+   - When De-duplication occurs (two or more descriptor binding columns map to one storage column), producers MUST emit a
+     deterministic `descriptor_fk_deduplications[]` diagnostic entry in the relational-model manifest (see “Descriptor
+     FK De-duplication diagnostics (required)” above).
 4. **Naming + supporting indexes**:
    - Descriptor FK constraint names MUST be derived from `(Table, StorageColumn)` (e.g.,
      `BuildDescriptorForeignKeyName(table, StorageColumn)`).

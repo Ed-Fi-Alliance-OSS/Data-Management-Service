@@ -23,3 +23,6 @@
 - Decisions: KeyUnificationPass not required to establish final `DbTableModel.Columns` order; CanonicalizeOrderingPass (or later reorder) must restore alias dependency invariant using `DbColumnModel.Storage` (CanonicalColumn/PresenceColumn before alias); restate recommended per-table ordering (key, support cols, remaining)
 - Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt
 - Notes: implementation note: current canonical ordering needs to account for alias dependencies (avoid name-sort breaking canonical-before-alias)
+- Completed: tasks.json#5 Diagnostics (design doc)
+- Decisions: emit deterministic `descriptor_fk_deduplications[]` per-table manifest entries when descriptor FK constraints are de-duplicated (storage_column + binding_columns + final constraint_name); deterministic ordering; explicitly separate from equality-constraint applied/redundant/ignored report
+- Files: reference/design/backend-redesign/design-docs/key-unification.md; tasks.json; progress.txt

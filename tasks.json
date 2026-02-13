@@ -57,7 +57,7 @@
       "If emitting diagnostics, verify the manifest shape is described, deterministic ordering rules are stated, and the data is sufficient to explain why only one FK exists.",
       "Verify the diagnostic text distinguishes descriptor-FK de-duplication from equality-constraint applied/redundant/ignored diagnostics."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Schema Exceptions",
