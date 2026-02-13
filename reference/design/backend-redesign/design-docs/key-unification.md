@@ -231,11 +231,18 @@ No string parsing is required (e.g., no need to infer reference groups by trimmi
 
 Defaults:
 
-- When no key unification applies to a table, all columns are `Stored` and `KeyUnificationClasses` is empty.
-- When key unification applies, only the columns that are members of a unification class become `UnifiedAlias`; all
-  other columns remain `Stored`.
-- For optional non-reference member path columns, key unification introduces additional stored `..._Present` presence
-  flag columns used for presence gating.
+- **Migration / initialization default**: when `ColumnStorage` is introduced, every existing derived `DbColumnModel`
+  MUST start as `Storage = Stored` (writable) by default.
+- `KeyUnificationPass` is the only pass that introduces `UnifiedAlias` columns:
+  - it converts only member path columns that are in **applied** unification classes to `Storage = UnifiedAlias(...)`,
+    and
+  - it leaves all non-member columns as `Storage = Stored`.
+- When key unification applies, `KeyUnificationPass` adds any new support columns as `Storage = Stored`:
+  - canonical storage columns (storage-only; `SourceJsonPath = null`), and
+  - synthetic optional-path `..._Present` presence-flag columns (storage-only; `SourceJsonPath = null`).
+- When no applied unification classes exist for a table:
+  - `DbTableModel.KeyUnificationClasses` MUST be empty, and
+  - no canonical / synthetic presence-flag columns are introduced; all columns remain `Stored`.
 
 ### SourceJsonPath rules under unification
 
@@ -905,7 +912,12 @@ Adding proto fields is wire-compatible and does not require bumping `PackFormatV
 semantic change to mapping behavior and MUST be gated by `RelationalMappingVersion`:
 
 - Producers MUST bump `RelationalMappingVersion` when key unification semantics are enabled in emitted artifacts.
-- Consumers MUST reject mapping packs whose `relational_mapping_version` does not match the runtime’s expected value.
+- Consumers MUST reject mapping packs whose `relational_mapping_version` does not match the runtime’s expected value,
+  including older artifacts that omit storage/unification metadata.
+- If backward compatibility for older artifacts is required, it MUST be explicit:
+  - Consumers may interpret missing `storage` metadata as `Stored` and missing `key_unification_classes` as empty
+    only when the consumer is explicitly operating in the older `RelationalMappingVersion` mode.
+  - A key-unification-enabled consumer MUST NOT silently apply these defaults.
 
 ## Deriving Unification Classes from ApiSchema
 

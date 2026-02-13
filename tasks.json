@@ -97,6 +97,6 @@
       "Verify the document explicitly states that when no applied classes exist for a table, `DbTableModel.KeyUnificationClasses` is empty and all columns are stored (no synthetic presence columns).",
       "Verify the mapping-pack/versioning section reflects the chosen backward-compat story (interpret vs reject)."
     ],
-    "completed": false
+    "completed": true
   }
 ]
