@@ -300,6 +300,10 @@ classDiagram
 - a `..._DocumentId` FK column, plus
 - per-identity-part binding columns (e.g., `Student_StudentUniqueId`)
 
+**`ReferenceIdentityBinding`** — maps a single identity scalar within a reference to:
+- a `ReferenceJsonPath` locating the scalar in the JSON reference object
+- a `Column` storing that value (e.g., `Student_StudentUniqueId`)
+
 **`DescriptorEdgeSource`** — records how a descriptor value path maps to:
 - a `..._DescriptorId` FK column (targeting `dms.Descriptor(DocumentId)`)
 - a `DescriptorResource` identifying the expected descriptor type (e.g., `Ed-Fi.SchoolTypeDescriptor`)
