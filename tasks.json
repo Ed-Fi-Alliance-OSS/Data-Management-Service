@@ -187,7 +187,7 @@
       "Run: `rg -n \"equality\" reference/design/backend-redesign/design-docs/ddl-generator-testing.md` and confirm equality-constraint diagnostics are treated as a first-class golden surface (not implicit via SQL).",
       "Manual read: verify the harness design still compares semantics (manifests) rather than raw `.mpack` bytes and that the new fields are included in the semantic comparison surfaces."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Terminology Sweep",

@@ -53,3 +53,7 @@
 - Decisions: write path clarifies `ColumnBindings` excludes `UnifiedAlias`; canonical + synthetic `..._Present` cols are `WriteValueSource.Precomputed` via `KeyUnificationWritePlan`; read/query binds by per-path columns incl `UnifiedAlias`; call out composite-FK storage mapping + descriptor-FK de-dup diagnostics
 - Files: reference/design/backend-redesign/design-docs/compiled-mapping-set.md; tasks.json; progress.txt
 - Notes: remaining doc tasks: #10 #11 #18 #19
+- Completed: tasks.json#18 Docs: Manifests + Test Harness (DMS-1033)
+- Decisions: manifest surfaces must include key-unification metadata + diagnostics (per-column `storage`; per-table `key_unification_classes` + `descriptor_fk_deduplications`; per-resource applied/redundant/ignored equality report); pack/mappingset semantic manifests include same; add small fixtures for reference-site unification + optional scalar synthetic `..._Present`
+- Files: reference/design/backend-redesign/design-docs/ddl-generator-testing.md; tasks.json; progress.txt
+- Notes: remaining doc tasks: #10 #11 #19
