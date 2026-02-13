@@ -20,20 +20,20 @@ jobs:
     if: github.event.workflow_run.conclusion != 'skipped'
 
     permissions:
+      contents: read
       checks: write
       pull-requests: write
       # only needed for private repository
-      # contents: read
       # issues: read
     steps:
       - name: Download and Extract Artifacts
-        uses: dawidd6/action-download-artifact@80620a5d27ce0ae443b965134db88467fc607b43 # v7
+        uses: dawidd6/action-download-artifact@ac66b43f0e6a346234dd65d4d0c8fbb31cb316e5 # v11
         with:
           run_id: ${{ github.event.workflow_run.id }}
           path: artifacts
 
       - name: Publish Test Results
-        uses: EnricoMi/publish-unit-test-result-action@f355d34d53ad4e7f506f699478db2dd71da9de5f # v2.15.1
+        uses: EnricoMi/publish-unit-test-result-action@3a74b2957438d0b6e2e61d67b05318aa25c9e6c6 # v2.20.0
         with:
           commit: ${{ github.event.workflow_run.head_sha }}
           event_file: artifacts/Event File/event.json
