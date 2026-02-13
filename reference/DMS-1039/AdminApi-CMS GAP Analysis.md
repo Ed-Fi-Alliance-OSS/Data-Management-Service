@@ -477,9 +477,167 @@ CMS implements `/v2/tenants` and `/v2/tenants/{id}` but expects an integer ident
 
 None of the `/v2/resourceClaims*` endpoints are present in CMS. These routes power the Admin UI pages used to browse claims/actions and configure overrides. We created a ticket previously [DMS-853](https://edfi.atlassian.net/browse/DMS-853)
 
+#### /v2/resourceClaims (AdminApi)
+
+##### Schema
+
+```json
+[
+  {
+    "id": 0,
+    "name": "string",
+    "parentId": 0,
+    "parentName": "string",
+    "children": [
+      "string"
+    ]
+  }
+]
+```
+
+##### Payload (Response)
+
+```json
+{
+    "id": 382,
+    "name": "epdm",
+    "parentId": 0,
+    "parentName": null,
+    "children": [
+        "id": 386,
+        "name": "performanceEvaluation",
+        "parentId": 382,
+        "parentName": "epdm",
+        "children": [
+          {
+            "id": 387,
+            "name": "performanceEvaluation",
+            "parentId": 386,
+            "parentName": "performanceEvaluation",
+            "children": []
+          },
+          {
+            "id": 388,
+            "name": "evaluation",
+            "parentId": 386,
+            "parentName": "performanceEvaluation",
+            "children": []
+          }
+        ]
+    ]
+}
+```
+
+#### /v2/resourceClaimActionAuthStrategies (AdminApi)
+
+##### Schema
+
+```json
+[
+  {
+    "resourceClaimId": 0,
+    "resourceName": "string",
+    "claimName": "string",
+    "authorizationStrategiesForActions": [
+      {
+        "actionId": 0,
+        "actionName": "string",
+        "authorizationStrategies": [
+          {
+            "authStrategyId": 0,
+            "authStrategyName": "string"
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
+##### Payload (Response)
+
+```json
+[
+  {
+    "resourceClaimId": 448,
+    "resourceName": "candidate",
+    "claimName": "http://ed-fi.org/ods/identity/claims/ed-fi/candidate",
+    "authorizationStrategiesForActions": [
+      {
+        "actionId": 1,
+        "actionName": "Create",
+        "authorizationStrategies": [
+          {
+            "authStrategyId": 1,
+            "authStrategyName": "NoFurtherAuthorizationRequired"
+          }
+        ]
+      },
+      {
+        "actionId": 2,
+        "actionName": "Read",
+        "authorizationStrategies": [
+          {
+            "authStrategyId": 1,
+            "authStrategyName": "NoFurtherAuthorizationRequired"
+          }
+        ]
+      },
+      {
+        "actionId": 3,
+        "actionName": "Update",
+        "authorizationStrategies": [
+          {
+            "authStrategyId": 1,
+            "authStrategyName": "NoFurtherAuthorizationRequired"
+          }
+        ]
+      },
+      {
+        "actionId": 4,
+        "actionName": "Delete",
+        "authorizationStrategies": [
+          {
+            "authStrategyId": 1,
+            "authStrategyName": "NoFurtherAuthorizationRequired"
+          }
+        ]
+      },
+      {
+        "actionId": 5,
+        "actionName": "ReadChanges",
+        "authorizationStrategies": [
+          {
+            "authStrategyId": 1,
+            "authStrategyName": "NoFurtherAuthorizationRequired"
+          }
+        ]
+      }
+    ]
+  }
+]
+```
+
 ### Authorization strategies
 
 CMS includes `/authorizationStrategies`, but Admin API does not. For parity we either need to backfill the endpoint in Admin API (preferred) or retire it from CMS. Regardless of direction, both services should describe the response schema and supported error codes.
+
+##### Payload (Response)
+
+```json
+[
+  {
+    "id": 11,
+    "name": "RelationshipsWithEdOrgsOnlyInverted",
+    "displayName": "Relationships with Education Organizations only (Inverted)"
+  },
+  {
+    "id": 12,
+    "name": "RelationshipsWithEdOrgsAndPeopleInverted",
+    "displayName": "Relationships with Education Organizations and People (Inverted)"
+  }
+]
+```
 
 ### Vendors
 
