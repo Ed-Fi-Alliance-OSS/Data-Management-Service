@@ -215,7 +215,7 @@ All members of a class must share the exact same physical signature:
 
 ## Worked Example: Synthetic Presence Flags
 
-Two optional scalar endpoints `$.fiscalYear` and `$.localFiscalYear` are equality-constrained:
+Two optional scalar endpoints `$.fiscalYear` and `$.localFiscalYear` are equality-constrained. Because their base-name tokens disagree ("FiscalYear" vs "LocalFiscalYear"), the canonical column name requires a `_U{Hash8}` disambiguator — hence `FiscalYear_Ue25e6108_Unified` rather than plain `FiscalYear_Unified`:
 
 | Column | Role | Storage |
 |---|---|---|
