@@ -67,7 +67,7 @@
       "Verify the chosen policy is reflected consistently in the algorithm/diagnostics language (e.g., whether a suppressed constraint is \"ignored\" with reason `suppressed`).",
       "Verify any new ignore/suppress reason is added to the equality-constraint diagnostics contract (manifest shape + ignore reason taxonomy)."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Ordering",
