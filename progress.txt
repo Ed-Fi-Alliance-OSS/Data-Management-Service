@@ -65,3 +65,6 @@
 - Decisions: replace "propagated identity columns" wording w/ canonical storage + per-site binding terminology; clarify cascades target canonical/storage cols and binding cols may be generated aliases; cross-ref `key-unification.md`
 - Files: reference/design/backend-redesign/design-docs/update-tracking.md; reference/design/backend-redesign/design-docs/etl-view-sketch.md; reference/design/backend-redesign/design-docs/transactions-and-concurrency.md; tasks.json; progress.txt
 - Notes: remaining doc tasks: #11
+- Completed: tasks.json#11 Docs: Strengths + Risks (DMS-1033)
+- Decisions: add key-unification strength (canonical single source of truth + generated/persisted aliases); SQL Server cascade-path risk calls out key-unification multi-edge cascades via shared canonical cols across multiple composite FKs; add key-unification complexity risk (generated aliases + synthetic `..._Present` flags: DDL/indexing/write planning/diagnostics); update doc terminology to binding vs canonical
+- Files: reference/design/backend-redesign/design-docs/strengths-risks.md; tasks.json; progress.txt
