@@ -228,7 +228,10 @@ Two optional scalar endpoints `$.fiscalYear` and `$.localFiscalYear` are equalit
 Write scenarios:
 - Both absent → canonical `NULL`, both flags `NULL`.
 - Only `$.fiscalYear = 2025` → canonical `2025`, `FiscalYear_Present = TRUE`, `LocalFiscalYear_Present = NULL`.
+- Only `$.localFiscalYear = 2025` → canonical `2025`, `FiscalYear_Present = NULL`, `LocalFiscalYear_Present = TRUE`.
 - Both present, same value → canonical from first member, both flags `TRUE`.
 - Both present, conflicting → fail closed.
 
-On read, `LocalFiscalYear` returns `NULL` when only `$.fiscalYear` was provided — no cross-path leakage.
+Read behavior for the "only `$.fiscalYear = 2025`" scenario above:
+- `FiscalYear` returns `2025` — its presence flag is `TRUE`, so the alias evaluates to the canonical value.
+- `LocalFiscalYear` returns `NULL` — its presence flag is `NULL`, so the alias is masked even though the canonical column holds `2025`. No cross-path leakage.
