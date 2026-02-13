@@ -129,6 +129,11 @@ Minimum required fields:
     - physical schema/table names
     - columns (in physical column order)
     - constraints/indexes/views/triggers (names + key columns)
+  - Key unification surface (required; per `key-unification.md`):
+    - per-column `storage` (`Stored` vs `UnifiedAlias` with `canonical_column` + optional `presence_column`)
+    - per-table `key_unification_classes[]` (canonical column + ordered `member_path_columns[]`)
+    - per-table `descriptor_fk_deduplications[]` diagnostics (when two or more descriptor binding columns map to the same storage column)
+    - per-resource `key_unification_equality_constraints` diagnostics (`applied`/`redundant`/`ignored` with ignore-reason taxonomy and deterministic ordering)
 - `pack.manifest.json`
   - `effective_schema_hash`, `dialect`, `relational_mapping_version`, `pack_format_version`
   - `payload_sha256`
@@ -136,9 +141,11 @@ Minimum required fields:
   - `resources[]` plan summaries:
     - per plan: `normalized_sql_sha256` (store SQL hashes, not the raw SQL text for large fixtures)
     - binding order metadata required for correctness (parameter order, keyset ordering, etc.)
+  - Must include the same key-unification model surface required by `relational-model.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `mappingset.manifest.json`
   - Same semantic shape as `pack.manifest.json` for the runtime mapping-set object graph
   - MUST match pack-derived mapping sets exactly (after normalization)
+  - Must include the same key-unification model surface required by `relational-model.manifest.json` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics).
 - `ddl.manifest.json` (when emitted)
   - `effective_schema_hash`, `relational_mapping_version`
   - `ddl[]` ordered by dialect:
@@ -303,7 +310,8 @@ Instead:
   - envelope key fields (`effective_schema_hash`, `dialect`, `relational_mapping_version`, `pack_format_version`),
   - uncompressed payload SHA-256,
   - resource key list summary (`count`, `seed_hash`),
-  - per-resource plan summaries (e.g., counts + SHA-256 of normalized SQL strings).
+  - per-resource plan summaries (e.g., counts + SHA-256 of normalized SQL strings),
+  - and the key-unification model/diagnostic surface required for golden comparisons (per `key-unification.md`).
 - Snapshot and/or golden-compare the manifest, not the raw bytes.
 
 ## AOT pack object-graph tests (build → decode → expected graph)
@@ -334,6 +342,7 @@ Manifests should include:
 - envelope key fields (`effective_schema_hash`, `dialect`, `relational_mapping_version`, `pack_format_version`),
 - `resource_keys` list + derived `(count, seed_hash)`,
 - per-resource derived model shape (tables/columns/constraints/views as applicable),
+- key-unification model/diagnostic surface required by `key-unification.md` (per-column `storage`, per-table `key_unification_classes`, descriptor-FK de-duplication diagnostics, and per-resource equality-constraint diagnostics),
 - per-resource plan summaries:
   - either normalized SQL strings, or stable hashes (preferred if SQL is large),
   - plus binding/parameter ordering metadata needed to guarantee correctness.
@@ -366,6 +375,8 @@ This equivalence test is required because it catches:
 
 Small fixtures (used by unit + snapshot tests):
 - `minimal`: 1 resource + 1 reference + 1 descriptor
+- `key-unification-ref`: reference-site identity-part unification (presence gating via `..._DocumentId`)
+- `key-unification-optional-scalar`: optional non-reference scalar unification (synthetic `..._Present` gating)
 - `nested`: nested collections + reference inside nested collection (ordinal-path binding)
 - `polymorphic`: abstract + subclasses (union view)
 - `ext`: `_ext` at root and in a collection; multi-extension projects
