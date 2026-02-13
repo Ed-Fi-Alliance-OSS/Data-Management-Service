@@ -57,3 +57,7 @@
 - Decisions: manifest surfaces must include key-unification metadata + diagnostics (per-column `storage`; per-table `key_unification_classes` + `descriptor_fk_deduplications`; per-resource applied/redundant/ignored equality report); pack/mappingset semantic manifests include same; add small fixtures for reference-site unification + optional scalar synthetic `..._Present`
 - Files: reference/design/backend-redesign/design-docs/ddl-generator-testing.md; tasks.json; progress.txt
 - Notes: remaining doc tasks: #10 #11 #19
+- Completed: tasks.json#10 Docs: Overview + Summary (DMS-1033)
+- Decisions: add key-unification to doc lists; clarify binding vs storage (per-site/per-path bindings may be generated/persisted aliases; canonical stored cols are write/FK/cascade targets); explicitly call out presence-gated aliases keep absent optional ref/path as `NULL` at binding even when canonical is non-null
+- Files: reference/design/backend-redesign/design-docs/overview.md; reference/design/backend-redesign/design-docs/summary.md; tasks.json; progress.txt
+- Notes: remaining doc tasks: #11 #19

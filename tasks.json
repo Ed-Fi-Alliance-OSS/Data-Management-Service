@@ -107,7 +107,7 @@
       "Run: `rg -n \"stored reference identity columns|propagated identity columns\" reference/design/backend-redesign/design-docs/overview.md reference/design/backend-redesign/design-docs/summary.md` and confirm wording no longer implies per-site identity-part columns are writable sources of truth.",
       "Manual read: verify the docs describe presence-gated alias behavior at a high level without contradicting the normative rules in `reference/design/backend-redesign/design-docs/key-unification.md`."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Strengths + Risks",
