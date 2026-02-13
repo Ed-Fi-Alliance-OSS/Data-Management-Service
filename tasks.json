@@ -117,7 +117,7 @@
       "Run: `rg -n \"multiple cascade paths|cascade-path\" reference/design/backend-redesign/design-docs/strengths-risks.md` and confirm the risk narrative matches the mitigation strategy in `reference/design/backend-redesign/design-docs/key-unification.md` (trigger-based fallback updates canonical storage columns, not aliases).",
       "Manual read: verify the risk/mitigation wording stays consistent with `transactions-and-concurrency.md` and does not imply cross-table equality constraints are enforced by the database."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs: Data Model",
