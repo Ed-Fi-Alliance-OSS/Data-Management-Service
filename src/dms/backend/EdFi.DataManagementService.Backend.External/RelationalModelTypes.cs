@@ -224,6 +224,22 @@ public sealed record DbTableModel(
     TableKey Key,
     IReadOnlyList<DbColumnModel> Columns,
     IReadOnlyList<TableConstraint> Constraints
+)
+{
+    /// <summary>
+    /// Per-table key-unification classes in deterministic order.
+    /// </summary>
+    public IReadOnlyList<KeyUnificationClass> KeyUnificationClasses { get; init; } = [];
+}
+
+/// <summary>
+/// Describes one key-unification class on a table.
+/// </summary>
+/// <param name="CanonicalColumn">The canonical stored source-of-truth column.</param>
+/// <param name="MemberPathColumns">The ordered member path columns in the class.</param>
+public sealed record KeyUnificationClass(
+    DbColumnName CanonicalColumn,
+    IReadOnlyList<DbColumnName> MemberPathColumns
 );
 
 /// <summary>
@@ -249,6 +265,31 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 /// <param name="IsNullable">Whether the column allows NULL.</param>
 /// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
 /// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
+public abstract record ColumnStorage
+{
+    /// <summary>
+    /// Column is physically stored and writable.
+    /// </summary>
+    public sealed record Stored : ColumnStorage;
+
+    /// <summary>
+    /// Column is a generated alias over a canonical stored column, optionally presence-gated.
+    /// </summary>
+    /// <param name="CanonicalColumn">Canonical stored column on the same table.</param>
+    /// <param name="PresenceColumn">Optional presence-gate column on the same table.</param>
+    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName? PresenceColumn)
+        : ColumnStorage;
+}
+
+/// <summary>
+/// A derived table column definition.
+/// </summary>
+/// <param name="ColumnName">The physical column name.</param>
+/// <param name="Kind">The semantic role for the column.</param>
+/// <param name="ScalarType">The scalar type metadata (when applicable).</param>
+/// <param name="IsNullable">Whether the column allows NULL.</param>
+/// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
+/// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -256,7 +297,14 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
     QualifiedResourceName? TargetResource
-);
+)
+{
+    /// <summary>
+    /// Storage metadata for bind-vs-storage behavior.
+    /// Defaults to <see cref="ColumnStorage.Stored"/> for existing schemas.
+    /// </summary>
+    public ColumnStorage Storage { get; init; } = new ColumnStorage.Stored();
+}
 
 /// <summary>
 /// Base type for table constraint models derived from schema and metadata.

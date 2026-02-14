@@ -132,3 +132,62 @@ public class Given_An_EffectiveSchemaSet_With_A_Physical_Schema_Collision
         _exception.Message.Should().Contain("edfi");
     }
 }
+
+/// <summary>
+/// Test fixture for key-unification defaults on schemas with no unification classes.
+/// </summary>
+[TestFixture]
+public class Given_A_Derived_Relational_Model_Set_Without_Key_Unification
+{
+    private DerivedRelationalModelSet _derived = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+
+        _derived = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should default all columns to stored storage metadata.
+    /// </summary>
+    [Test]
+    public void It_should_default_all_columns_to_stored_storage_metadata()
+    {
+        var columns = EnumerateTables(_derived).SelectMany(table => table.Columns).ToArray();
+
+        columns.Should().NotBeEmpty();
+        columns.Should().OnlyContain(column => column.Storage is ColumnStorage.Stored);
+    }
+
+    /// <summary>
+    /// It should default all tables to empty key-unification class inventories.
+    /// </summary>
+    [Test]
+    public void It_should_default_all_tables_to_empty_key_unification_class_inventories()
+    {
+        var tables = EnumerateTables(_derived).ToArray();
+
+        tables.Should().NotBeEmpty();
+        tables.Should().OnlyContain(table => table.KeyUnificationClasses.Count == 0);
+    }
+
+    /// <summary>
+    /// Enumerates all table models in the derived set.
+    /// </summary>
+    private static IEnumerable<DbTableModel> EnumerateTables(DerivedRelationalModelSet derived)
+    {
+        ArgumentNullException.ThrowIfNull(derived);
+
+        return derived
+            .ConcreteResourcesInNameOrder.SelectMany(resource =>
+                resource.RelationalModel.TablesInDependencyOrder
+            )
+            .Concat(derived.AbstractIdentityTablesInNameOrder.Select(table => table.TableModel));
+    }
+}

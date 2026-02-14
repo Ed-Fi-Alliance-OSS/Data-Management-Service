@@ -80,7 +80,7 @@
       "Add/update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` that validate the default behavior: when no unification applies, all columns are `Stored` and `KeyUnificationClasses` is empty.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Key Unification",

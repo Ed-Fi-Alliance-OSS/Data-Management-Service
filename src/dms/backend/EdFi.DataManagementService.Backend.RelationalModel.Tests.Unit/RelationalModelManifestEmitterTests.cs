@@ -155,6 +155,53 @@ public class Given_A_Relational_Model_Manifest_Emitter
     }
 
     /// <summary>
+    /// It should emit default key-unification metadata.
+    /// </summary>
+    [Test]
+    public void It_should_emit_default_key_unification_metadata()
+    {
+        var root =
+            JsonNode.Parse(_manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        foreach (
+            var table in tables
+                .Select(tableNode => tableNode as JsonObject)
+                .Where(tableNode => tableNode is not null)
+        )
+        {
+            var keyUnificationClasses =
+                table!["key_unification_classes"] as JsonArray
+                ?? throw new InvalidOperationException(
+                    "Expected key_unification_classes to be a JSON array."
+                );
+
+            keyUnificationClasses.Should().BeEmpty();
+
+            var columns =
+                table["columns"] as JsonArray
+                ?? throw new InvalidOperationException("Expected columns to be a JSON array.");
+
+            foreach (
+                var column in columns
+                    .Select(columnNode => columnNode as JsonObject)
+                    .Where(columnNode => columnNode is not null)
+            )
+            {
+                var storage =
+                    column!["storage"] as JsonObject
+                    ?? throw new InvalidOperationException("Expected storage to be a JSON object.");
+
+                storage["kind"]!.GetValue<string>().Should().Be("Stored");
+            }
+        }
+    }
+
+    /// <summary>
     /// It should emit all or none nullability constraints.
     /// </summary>
     [Test]
