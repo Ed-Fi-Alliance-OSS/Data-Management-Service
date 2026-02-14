@@ -49,7 +49,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     {
         List<DbIndexInfo> tableIndexes = [];
         var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
-        var syntheticPresenceFlags = BuildSyntheticPresenceFlagSet(table);
+        var syntheticPresenceFlags = BuildSyntheticPresenceFlagSet(table, columnsByName);
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
         var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
@@ -156,9 +156,11 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     /// <summary>
     /// Builds the set of synthetic optional-path presence flags referenced by unified aliases on a table.
     /// </summary>
-    private static IReadOnlySet<DbColumnName> BuildSyntheticPresenceFlagSet(DbTableModel table)
+    private static IReadOnlySet<DbColumnName> BuildSyntheticPresenceFlagSet(
+        DbTableModel table,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName
+    )
     {
-        var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
         HashSet<DbColumnName> syntheticPresenceFlags = [];
 
         foreach (var column in table.Columns)
