@@ -341,8 +341,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 column => column.ColumnName,
                 column => column
             );
-            var referrerPresenceColumns = BuildPresenceColumnSet(bindingTable);
-            var referencedPresenceColumns = BuildPresenceColumnSet(referencedTableModel);
+            var referrerPresenceGateColumns = BuildPresenceGateColumnSet(bindingTable);
+            var referencedPresenceGateColumns = BuildPresenceGateColumnSet(referencedTableModel);
             HashSet<(
                 DbColumnName ReferrerStorageColumn,
                 DbColumnName ReferencedStorageColumn
@@ -382,7 +382,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 var referrerStorageColumn = ResolveStorageColumn(
                     referrerIdentityColumn,
                     referrerColumnsByName,
-                    referrerPresenceColumns,
+                    referrerPresenceGateColumns,
                     bindingTable.Table,
                     resource,
                     mapping,
@@ -391,7 +391,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 var referencedStorageColumn = ResolveStorageColumn(
                     referencedIdentityColumn,
                     referencedColumnsByName,
-                    referencedPresenceColumns,
+                    referencedPresenceGateColumns,
                     referencedTableModel.Table,
                     mapping.TargetResource,
                     mapping,
@@ -560,7 +560,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private static DbColumnName ResolveStorageColumn(
         DbColumnName column,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
-        IReadOnlySet<DbColumnName> presenceColumns,
+        IReadOnlySet<DbColumnName> presenceGateColumns,
         DbTableName table,
         QualifiedResourceName resource,
         DocumentReferenceMapping mapping,
@@ -575,11 +575,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             );
         }
 
-        if (presenceColumns.Contains(column))
+        if (presenceGateColumns.Contains(column))
         {
             throw new InvalidOperationException(
                 $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                    + $"resolved {role} '{column.Value}' to a synthetic presence column on table '{table}'."
+                    + $"resolved {role} '{column.Value}' to a presence-gate column on table '{table}'."
             );
         }
 
@@ -597,11 +597,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
 
-                if (presenceColumns.Contains(unifiedAlias.CanonicalColumn))
+                if (presenceGateColumns.Contains(unifiedAlias.CanonicalColumn))
                 {
                     throw new InvalidOperationException(
                         $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                            + $"resolved {role} '{column.Value}' to synthetic presence column "
+                            + $"resolved {role} '{column.Value}' to presence-gate column "
                             + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
                     );
                 }
@@ -626,21 +626,22 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the set of synthetic presence columns referenced by unified aliases on a table.
+    /// Builds the set of presence-gate columns referenced by unified aliases on a table.
+    /// This includes synthetic optional-path flags and reference-site document-id gates.
     /// </summary>
-    private static IReadOnlySet<DbColumnName> BuildPresenceColumnSet(DbTableModel table)
+    private static IReadOnlySet<DbColumnName> BuildPresenceGateColumnSet(DbTableModel table)
     {
-        HashSet<DbColumnName> presenceColumns = [];
+        HashSet<DbColumnName> presenceGateColumns = [];
 
         foreach (var column in table.Columns)
         {
             if (column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn })
             {
-                presenceColumns.Add(presenceColumn);
+                presenceGateColumns.Add(presenceColumn);
             }
         }
 
-        return presenceColumns;
+        return presenceGateColumns;
     }
 
     /// <summary>
