@@ -14,6 +14,9 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 {
+    private const string UnifiedStorageSuffix = "_Unified";
+    private const string PresenceColumnSuffix = "_Present";
+
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.IndexInventory"/> with PK-implied,
     /// UK-implied, and FK-support indexes for each derived table.
@@ -48,6 +51,9 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     private static void DeriveIndexesForTable(DbTableModel table, List<DbIndexInfo> inventory)
     {
         List<DbIndexInfo> tableIndexes = [];
+        var tableColumnNames = table
+            .Columns.Select(column => column.ColumnName.Value)
+            .ToHashSet(StringComparer.Ordinal);
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
         var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
@@ -82,6 +88,8 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
         foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
         {
+            ValidateForeignKeyColumns(table, fk, tableColumnNames);
+
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
             {
                 continue;
@@ -100,6 +108,69 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         }
 
         inventory.AddRange(tableIndexes);
+    }
+
+    /// <summary>
+    /// Validates that FK columns target real table columns and avoid key-unification alias/presence columns.
+    /// </summary>
+    private static void ValidateForeignKeyColumns(
+        DbTableModel table,
+        TableConstraint.ForeignKey foreignKey,
+        IReadOnlySet<string> tableColumnNames
+    )
+    {
+        if (foreignKey.Columns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Foreign key '{foreignKey.Name}' on table '{table.Table}' must define at least one local column."
+            );
+        }
+
+        foreach (var column in foreignKey.Columns)
+        {
+            if (!tableColumnNames.Contains(column.Value))
+            {
+                throw new InvalidOperationException(
+                    $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references unknown column "
+                        + $"'{column.Value}'."
+                );
+            }
+
+            if (column.Value.EndsWith(PresenceColumnSuffix, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references synthetic presence "
+                        + $"column '{column.Value}'. Foreign keys must target storage columns."
+                );
+            }
+
+            if (ReferencesUnifiedAliasColumn(column, tableColumnNames))
+            {
+                var canonicalStorageColumn = $"{column.Value}{UnifiedStorageSuffix}";
+
+                throw new InvalidOperationException(
+                    $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references binding/alias column "
+                        + $"'{column.Value}' while canonical storage column '{canonicalStorageColumn}' is present. "
+                        + "Foreign keys must target canonical storage columns."
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Returns true when the FK column appears to be an alias with a sibling canonical storage column.
+    /// </summary>
+    private static bool ReferencesUnifiedAliasColumn(
+        DbColumnName column,
+        IReadOnlySet<string> tableColumnNames
+    )
+    {
+        if (column.Value.EndsWith(UnifiedStorageSuffix, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return tableColumnNames.Contains($"{column.Value}{UnifiedStorageSuffix}");
     }
 
     /// <summary>

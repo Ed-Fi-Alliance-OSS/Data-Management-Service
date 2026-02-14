@@ -89,3 +89,7 @@
 - Decisions: DDL trigger owner always from `DbTriggerInfo.TriggerTable`; for MSSQL emit schema-qualified trigger identifiers (`[TriggerTable.Schema].[TriggerName]`) to match schema-scoped trigger namespace and avoid default-schema drift; keep propagation body placeholder unchanged (`AS BEGIN END;` / `EXECUTE FUNCTION noop();`)
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/RelationalModelDdlEmitterTests.cs; tasks.json; progress.txt
 - Notes: next likely task #5 Index Inventory (storage-column FK/index invariants for key-unification)
+- Completed: tasks.json#5 Index Inventory (DMS-945 / reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md)
+- Decisions: DeriveIndexInventoryPass now fail-fast validates FK columns pre-indexing; rejects unknown columns + synthetic `..._Present`; rejects alias/binding FK columns when sibling canonical `..._Unified` exists; keep leftmost-prefix suppression unchanged so converged storage-key FK sets emit one deterministic support index
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs; tasks.json; progress.txt
+- Notes: alias detection is currently naming-based (`<column>_Unified` sibling) until typed storage metadata lands; next likely task #6 Docs (or #7 Query Planning)

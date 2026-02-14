@@ -422,6 +422,285 @@ public class Given_Long_Index_Names_After_Derivation
 }
 
 /// <summary>
+/// Test fixture for key-unification storage-column FK index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Storage_Columns_For_FK_Indexes
+{
+    private IReadOnlyList<DbIndexInfo> _firstRunIndexes = default!;
+    private IReadOnlyList<DbIndexInfo> _secondRunIndexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationStorageForeignKeysFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        _firstRunIndexes = builder
+            .Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules())
+            .IndexesInCreateOrder;
+        _secondRunIndexes = builder
+            .Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules())
+            .IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive one FK-support index when multiple FK endpoints converge on one storage key set.
+    /// </summary>
+    [Test]
+    public void It_should_derive_one_FK_support_index_for_converged_storage_key_sets()
+    {
+        var fkIndexes = _firstRunIndexes
+            .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.ForeignKeySupport)
+            .ToArray();
+
+        fkIndexes.Should().ContainSingle();
+        var fkIndex = fkIndexes.Single();
+
+        fkIndex
+            .KeyColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId", "School_SchoolId_Unified");
+        fkIndex.Name.Value.Should().Be("IX_Enrollment_School_DocumentId_School_SchoolId_Unified");
+    }
+
+    /// <summary>
+    /// It should remain deterministic and collision-free across runs.
+    /// </summary>
+    [Test]
+    public void It_should_remain_deterministic_and_collision_free_across_runs()
+    {
+        _firstRunIndexes
+            .Select(BuildIndexSignature)
+            .Should()
+            .Equal(_secondRunIndexes.Select(BuildIndexSignature));
+
+        var duplicateIndexNames = _firstRunIndexes
+            .GroupBy(index => $"{index.Table.Schema.Value}|{index.Name.Value}", StringComparer.Ordinal)
+            .Where(group => group.Count() > 1);
+
+        duplicateIndexNames.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Builds a stable index signature used to compare deterministic output.
+    /// </summary>
+    private static string BuildIndexSignature(DbIndexInfo index)
+    {
+        return $"{index.Kind}|{index.Table.Schema.Value}.{index.Table.Name}|{index.Name.Value}|"
+            + $"{string.Join(",", index.KeyColumns.Select(column => column.Value))}|{index.IsUnique}";
+    }
+}
+
+/// <summary>
+/// Test fixture for key-unification alias-column FK invariant.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Alias_Columns_In_FKs
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationAliasForeignKeyFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when FK columns target alias columns while canonical storage columns exist.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_FKs_target_alias_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("canonical storage column");
+        _exception.Message.Should().Contain("School_SchoolId");
+        _exception.Message.Should().Contain("School_SchoolId_Unified");
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model where two FK endpoints share one storage key set.
+/// </summary>
+file sealed class KeyUnificationStorageForeignKeysFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: true
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model with an FK targeting an alias column.
+/// </summary>
+file sealed class KeyUnificationAliasForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: true,
+            addDuplicateForeignKeyEndpoint: false
+        );
+    }
+}
+
+/// <summary>
+/// Helpers that build synthetic key-unification fixtures for index inventory testing.
+/// </summary>
+file static class KeyUnificationIndexInventoryFixtureBuilder
+{
+    /// <summary>
+    /// Adds one synthetic resource model to the context with configurable FK column choices.
+    /// </summary>
+    public static void AddFixtureResource(
+        RelationalModelSetBuilderContext context,
+        bool useAliasColumnInForeignKey,
+        bool addDuplicateForeignKeyEndpoint
+    )
+    {
+        var resourceKey = context.EffectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder[0];
+        var schema = new DbSchemaName("edfi");
+        var rootTableName = new DbTableName(schema, "Enrollment");
+        var targetTable = new DbTableName(schema, "School");
+        var selectedIdentityColumn = new DbColumnName(
+            useAliasColumnInForeignKey ? "School_SchoolId" : "School_SchoolId_Unified"
+        );
+
+        List<TableConstraint> constraints =
+        [
+            new TableConstraint.ForeignKey(
+                "FK_Enrollment_SchoolPrimary_RefKey",
+                [new DbColumnName("School_DocumentId"), selectedIdentityColumn],
+                targetTable,
+                [RelationalNameConventions.DocumentIdColumnName, new DbColumnName("SchoolId_Unified")],
+                OnDelete: ReferentialAction.NoAction,
+                OnUpdate: ReferentialAction.NoAction
+            ),
+        ];
+
+        if (addDuplicateForeignKeyEndpoint)
+        {
+            constraints.Add(
+                new TableConstraint.ForeignKey(
+                    "FK_Enrollment_SchoolAlias_RefKey",
+                    [new DbColumnName("School_DocumentId"), selectedIdentityColumn],
+                    targetTable,
+                    [RelationalNameConventions.DocumentIdColumnName, new DbColumnName("SchoolId_Unified")],
+                    OnDelete: ReferentialAction.NoAction,
+                    OnUpdate: ReferentialAction.NoAction
+                )
+            );
+        }
+
+        DbColumnModel[] columns =
+        [
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_DocumentId"),
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_SchoolId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("SchoolAlias_SchoolId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolAliasReference.schoolId"),
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_SchoolId_Unified"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+
+        var rootTable = new DbTableModel(
+            rootTableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_Enrollment",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            columns,
+            constraints
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+
+        context.ConcreteResourcesInNameOrder.Add(
+            new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        );
+    }
+}
+
+/// <summary>
 /// Test schema builder for index inventory pass tests.
 /// </summary>
 internal static class IndexInventoryTestSchemaBuilder
