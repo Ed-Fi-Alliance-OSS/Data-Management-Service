@@ -350,6 +350,68 @@ public class Given_Root_Trigger_Identity_Projection_With_Identity_Component_Refe
 }
 
 /// <summary>
+/// Test fixture for root identity projections with interleaved identity JSON paths.
+/// </summary>
+[TestFixture]
+public class Given_Root_Trigger_Identity_Projection_With_Interleaved_Identity_Paths
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            TriggerInventoryTestSchemaBuilder.BuildReferenceIdentityProjectSchemaWithInterleavedIdentityPaths();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should order root stamping identity projection columns by identityJsonPaths.
+    /// </summary>
+    [Test]
+    public void It_should_order_root_stamping_identity_projection_columns_by_identity_json_paths()
+    {
+        var enrollmentStamp = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        enrollmentStamp
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "Student_StudentUniqueId", "School_EducationOrganizationId");
+    }
+
+    /// <summary>
+    /// It should order root referential identity projection columns by identityJsonPaths.
+    /// </summary>
+    [Test]
+    public void It_should_order_root_referential_identity_projection_columns_by_identity_json_paths()
+    {
+        var referentialIdentity = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
+        );
+
+        referentialIdentity
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "Student_StudentUniqueId", "School_EducationOrganizationId");
+    }
+}
+
+/// <summary>
 /// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with concrete
 /// reference targets (allowIdentityUpdates).
 /// </summary>
@@ -979,6 +1041,37 @@ internal static class TriggerInventoryTestSchemaBuilder
             new DeriveIndexInventoryPass(),
             new DeriveTriggerInventoryPass(),
         ];
+    }
+
+    /// <summary>
+    /// Build reference identity project schema with interleaved identityJsonPaths.
+    /// </summary>
+    internal static JsonObject BuildReferenceIdentityProjectSchemaWithInterleavedIdentityPaths()
+    {
+        var projectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema();
+
+        if (projectSchema["resourceSchemas"] is not JsonObject resourceSchemas)
+        {
+            throw new InvalidOperationException(
+                "Reference identity project schema is missing resourceSchemas."
+            );
+        }
+
+        if (resourceSchemas["enrollments"] is not JsonObject enrollmentSchema)
+        {
+            throw new InvalidOperationException(
+                "Reference identity project schema is missing enrollments resource schema."
+            );
+        }
+
+        enrollmentSchema["identityJsonPaths"] = new JsonArray
+        {
+            "$.schoolReference.schoolId",
+            "$.studentReference.studentUniqueId",
+            "$.schoolReference.educationOrganizationId",
+        };
+
+        return projectSchema;
     }
 
     /// <summary>
