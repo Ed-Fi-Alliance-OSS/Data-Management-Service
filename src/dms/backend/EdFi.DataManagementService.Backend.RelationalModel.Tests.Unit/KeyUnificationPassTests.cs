@@ -30,9 +30,7 @@ public class Given_Key_Unification_For_Reference_Sites
             isExtensionProject: false
         );
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
-        var builder = new DerivedRelationalModelSetBuilder(
-            KeyUnificationPassTestSchemaBuilder.BuildPassesThroughKeyUnification()
-        );
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
 
         var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
         _rootTable = result
@@ -110,9 +108,7 @@ public class Given_Key_Unification_For_Optional_NonReference_Scalars
             isExtensionProject: false
         );
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
-        var builder = new DerivedRelationalModelSetBuilder(
-            KeyUnificationPassTestSchemaBuilder.BuildPassesThroughKeyUnification()
-        );
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
 
         var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
         _rootTable = result
@@ -188,22 +184,6 @@ public class Given_Key_Unification_For_Optional_NonReference_Scalars
 /// </summary>
 file static class KeyUnificationPassTestSchemaBuilder
 {
-    /// <summary>
-    /// Build pass list up to key-unification.
-    /// </summary>
-    internal static IRelationalModelSetPass[] BuildPassesThroughKeyUnification()
-    {
-        return
-        [
-            new BaseTraversalAndDescriptorBindingPass(),
-            new DescriptorResourceMappingPass(),
-            new ExtensionTableDerivationPass(),
-            new ReferenceBindingPass(),
-            new KeyUnificationPass(),
-            new CanonicalizeOrderingPass(),
-        ];
-    }
-
     /// <summary>
     /// Build project schema for reference-site unification.
     /// </summary>

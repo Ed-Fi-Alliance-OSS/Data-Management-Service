@@ -288,7 +288,9 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         QualifiedResourceName resource
     )
     {
-        if (!bindingsByPath.TryGetValue(endpointPath.Canonical, out var candidates))
+        var candidates = ResolveEndpointCandidates(bindingsByPath, endpointPath);
+
+        if (candidates.Length == 0)
         {
             throw new InvalidOperationException(
                 $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
@@ -313,6 +315,11 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return distinctCandidates[0];
         }
 
+        if (TryResolveAmbiguousReferenceEndpoint(endpointPath, distinctCandidates, out var resolvedCandidate))
+        {
+            return resolvedCandidate;
+        }
+
         var details = string.Join(
             ", ",
             distinctCandidates
@@ -330,6 +337,162 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
                 + $"'{FormatResource(resource)}' resolved to multiple distinct bindings: {details}."
         );
+    }
+
+    /// <summary>
+    /// Resolves legacy ambiguous reference endpoints that bind to the same table/path but multiple propagated
+    /// identity columns (for example, repeated <c>...schoolId</c> bindings). Uses deterministic first-column
+    /// selection so default pipeline execution remains stable.
+    /// </summary>
+    private static bool TryResolveAmbiguousReferenceEndpoint(
+        JsonPathExpression endpointPath,
+        IReadOnlyList<TableBoundColumn> candidates,
+        out TableBoundColumn resolvedCandidate
+    )
+    {
+        resolvedCandidate = default!;
+
+        var sourcePaths = candidates
+            .Select(candidate => candidate.Column.SourceJsonPath?.Canonical)
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        if (
+            sourcePaths.Length != 1
+            || !string.Equals(sourcePaths[0], endpointPath.Canonical, StringComparison.Ordinal)
+        )
+        {
+            return false;
+        }
+
+        var tableScopes = candidates
+            .Select(candidate => (candidate.TableIndex, candidate.Table.Table, candidate.Table.JsonScope))
+            .Distinct()
+            .ToArray();
+
+        if (tableScopes.Length != 1)
+        {
+            return false;
+        }
+
+        resolvedCandidate = candidates
+            .OrderBy(candidate => candidate.Column.ColumnName.Value, StringComparer.Ordinal)
+            .First();
+
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves endpoint candidates from direct SourceJsonPath bindings, with a deterministic fallback for
+    /// reference-relative identity aliases (for example, <c>gradingPeriodSchoolId</c>).
+    /// </summary>
+    private static TableBoundColumn[] ResolveEndpointCandidates(
+        IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
+        JsonPathExpression endpointPath
+    )
+    {
+        if (bindingsByPath.TryGetValue(endpointPath.Canonical, out var directCandidates))
+        {
+            return directCandidates.ToArray();
+        }
+
+        return FindReferenceRelativeAliasCandidates(bindingsByPath, endpointPath);
+    }
+
+    /// <summary>
+    /// Finds candidates for endpoints expressed with reference-relative identity aliases that differ from the
+    /// bound SourceJsonPath tail token.
+    /// </summary>
+    private static TableBoundColumn[] FindReferenceRelativeAliasCandidates(
+        IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
+        JsonPathExpression endpointPath
+    )
+    {
+        if (
+            endpointPath.Segments.Count == 0
+            || endpointPath.Segments[^1] is not JsonPathSegment.Property endpointProperty
+        )
+        {
+            return [];
+        }
+
+        var endpointAliasToken = NormalizeReferenceAliasToken(
+            RelationalNameConventions.ToPascalCase(endpointProperty.Name)
+        );
+        var parentSegmentCount = endpointPath.Segments.Count - 1;
+        List<TableBoundColumn> candidates = [];
+
+        foreach (var boundColumn in bindingsByPath.Values.SelectMany(static value => value))
+        {
+            if (boundColumn.Column.SourceJsonPath is not { } sourcePath)
+            {
+                continue;
+            }
+
+            if (!HasSameParentPath(sourcePath, endpointPath, parentSegmentCount))
+            {
+                continue;
+            }
+
+            var columnAliasToken = NormalizeReferenceAliasToken(
+                ExtractColumnIdentityAliasToken(boundColumn.Column.ColumnName)
+            );
+
+            if (!string.Equals(endpointAliasToken, columnAliasToken, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            candidates.Add(boundColumn);
+        }
+
+        return candidates.ToArray();
+    }
+
+    /// <summary>
+    /// Returns true when two paths share the same parent scope (all segments except the terminal property).
+    /// </summary>
+    private static bool HasSameParentPath(
+        JsonPathExpression sourcePath,
+        JsonPathExpression endpointPath,
+        int parentSegmentCount
+    )
+    {
+        if (sourcePath.Segments.Count != parentSegmentCount + 1)
+        {
+            return false;
+        }
+
+        for (var index = 0; index < parentSegmentCount; index++)
+        {
+            if (!Equals(sourcePath.Segments[index], endpointPath.Segments[index]))
+            {
+                return false;
+            }
+        }
+
+        return sourcePath.Segments[^1] is JsonPathSegment.Property;
+    }
+
+    /// <summary>
+    /// Extracts the identity alias token from a column name by removing the reference-base prefix.
+    /// </summary>
+    private static string ExtractColumnIdentityAliasToken(DbColumnName columnName)
+    {
+        var value = columnName.Value;
+        var separatorIndex = value.IndexOf('_');
+
+        return separatorIndex >= 0 && separatorIndex < value.Length - 1
+            ? value[(separatorIndex + 1)..]
+            : value;
+    }
+
+    /// <summary>
+    /// Normalizes a reference-identity alias token by stripping the optional <c>Reference</c> marker.
+    /// </summary>
+    private static string NormalizeReferenceAliasToken(string token)
+    {
+        return token.Replace("Reference", string.Empty, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -455,9 +618,17 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return table;
         }
 
+        var rewrittenConstraints = RewriteForeignKeyColumnsToStorage(
+            table.Constraints,
+            updatedColumns,
+            resource,
+            table.Table
+        );
+
         return table with
         {
             Columns = updatedColumns.ToArray(),
+            Constraints = rewrittenConstraints,
             KeyUnificationClasses = keyUnificationClasses
                 .OrderBy(@class => @class.CanonicalColumn.Value, StringComparer.Ordinal)
                 .ToArray(),
@@ -811,6 +982,112 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             }
 
             return new DbColumnName(fallbackName);
+        }
+    }
+
+    /// <summary>
+    /// Rewrites local FK columns to canonical storage columns after unification converts member columns into aliases.
+    /// </summary>
+    private static IReadOnlyList<TableConstraint> RewriteForeignKeyColumnsToStorage(
+        IReadOnlyList<TableConstraint> constraints,
+        IReadOnlyList<DbColumnModel> columns,
+        QualifiedResourceName resource,
+        DbTableName table
+    )
+    {
+        var columnsByName = columns.ToDictionary(column => column.ColumnName, column => column);
+        List<TableConstraint> rewritten = new(constraints.Count);
+        var changed = false;
+
+        foreach (var constraint in constraints)
+        {
+            if (constraint is not TableConstraint.ForeignKey foreignKey)
+            {
+                rewritten.Add(constraint);
+                continue;
+            }
+
+            HashSet<DbColumnName> seenColumns = [];
+            List<DbColumnName> mappedColumns = new(foreignKey.Columns.Count);
+
+            foreach (var column in foreignKey.Columns)
+            {
+                var storageColumn = ResolveForeignKeyStorageColumn(
+                    column,
+                    columnsByName,
+                    resource,
+                    table,
+                    foreignKey.Name
+                );
+
+                if (seenColumns.Add(storageColumn))
+                {
+                    mappedColumns.Add(storageColumn);
+                }
+            }
+
+            if (mappedColumns.SequenceEqual(foreignKey.Columns))
+            {
+                rewritten.Add(constraint);
+                continue;
+            }
+
+            changed = true;
+            rewritten.Add(foreignKey with { Columns = mappedColumns.ToArray() });
+        }
+
+        return changed ? rewritten.ToArray() : constraints;
+    }
+
+    /// <summary>
+    /// Resolves one FK column to its canonical stored column for the local table.
+    /// </summary>
+    private static DbColumnName ResolveForeignKeyStorageColumn(
+        DbColumnName column,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
+        QualifiedResourceName resource,
+        DbTableName table,
+        string constraintName
+    )
+    {
+        if (!columnsByName.TryGetValue(column, out var columnModel))
+        {
+            throw new InvalidOperationException(
+                $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
+                    + $"could not resolve FK column '{column.Value}' for constraint '{constraintName}'."
+            );
+        }
+
+        switch (columnModel.Storage)
+        {
+            case ColumnStorage.Stored:
+                return columnModel.ColumnName;
+            case ColumnStorage.UnifiedAlias unifiedAlias:
+                if (!columnsByName.TryGetValue(unifiedAlias.CanonicalColumn, out var canonicalColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
+                            + $"resolved alias FK column '{column.Value}' to missing canonical column "
+                            + $"'{unifiedAlias.CanonicalColumn.Value}' for constraint '{constraintName}'."
+                    );
+                }
+
+                if (canonicalColumn.Storage is not ColumnStorage.Stored)
+                {
+                    throw new InvalidOperationException(
+                        $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
+                            + $"resolved alias FK column '{column.Value}' to non-stored canonical column "
+                            + $"'{unifiedAlias.CanonicalColumn.Value}' for constraint '{constraintName}'."
+                    );
+                }
+
+                return canonicalColumn.ColumnName;
+            default:
+                throw new InvalidOperationException(
+                    $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
+                        + $"encountered unsupported storage metadata for FK column '{column.Value}' "
+                        + $"on constraint '{constraintName}'."
+                );
         }
     }
 
