@@ -171,7 +171,7 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Trigger Inventory",

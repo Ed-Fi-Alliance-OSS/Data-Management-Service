@@ -22,6 +22,7 @@ public static class RelationalModelSetPasses
             new DescriptorResourceMappingPass(),
             new ExtensionTableDerivationPass(),
             new ReferenceBindingPass(),
+            new KeyUnificationPass(),
             new AbstractIdentityTableAndUnionViewDerivationPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),

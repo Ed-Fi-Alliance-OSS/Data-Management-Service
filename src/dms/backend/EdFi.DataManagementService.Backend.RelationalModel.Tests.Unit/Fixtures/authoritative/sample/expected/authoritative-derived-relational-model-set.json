@@ -3439,7 +3439,7 @@
       ]
     },
     {
-      "name": "IX_AssessmentScoreRangeLearningStandard_Assessment_D_73fc2365a4",
+      "name": "IX_AssessmentScoreRangeLearningStandard_Assessment_D_6670461100",
       "table": {
         "schema": "edfi",
         "name": "AssessmentScoreRangeLearningStandard"
@@ -3448,12 +3448,12 @@
       "is_unique": false,
       "key_columns": [
         "Assessment_DocumentId",
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace"
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified"
       ]
     },
     {
-      "name": "IX_AssessmentScoreRangeLearningStandard_ObjectiveAss_3e9d522829",
+      "name": "IX_AssessmentScoreRangeLearningStandard_ObjectiveAss_7be51e2999",
       "table": {
         "schema": "edfi",
         "name": "AssessmentScoreRangeLearningStandard"
@@ -3462,8 +3462,8 @@
       "is_unique": false,
       "key_columns": [
         "ObjectiveAssessment_DocumentId",
-        "ObjectiveAssessment_AssessmentIdentifier",
-        "ObjectiveAssessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "ObjectiveAssessment_IdentificationCode"
       ]
     },
@@ -3978,7 +3978,7 @@
       ]
     },
     {
-      "name": "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__9c10324e52",
+      "name": "IX_ChartOfAccount_BalanceSheetBalanceSheetDimension__77028b2a34",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -3988,7 +3988,7 @@
       "key_columns": [
         "BalanceSheetBalanceSheetDimension_DocumentId",
         "BalanceSheetBalanceSheetDimension_Code",
-        "BalanceSheetBalanceSheetDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -4005,7 +4005,7 @@
       ]
     },
     {
-      "name": "IX_ChartOfAccount_FunctionFunctionDimension_Document_426414e75b",
+      "name": "IX_ChartOfAccount_FunctionFunctionDimension_Document_eef47fa2c8",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4015,11 +4015,11 @@
       "key_columns": [
         "FunctionFunctionDimension_DocumentId",
         "FunctionFunctionDimension_Code",
-        "FunctionFunctionDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
-      "name": "IX_ChartOfAccount_FundFundDimension_DocumentId_FundF_41acc872da",
+      "name": "IX_ChartOfAccount_FundFundDimension_DocumentId_FundF_262d3fa057",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4029,11 +4029,11 @@
       "key_columns": [
         "FundFundDimension_DocumentId",
         "FundFundDimension_Code",
-        "FundFundDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
-      "name": "IX_ChartOfAccount_ObjectObjectDimension_DocumentId_O_112ace6fa5",
+      "name": "IX_ChartOfAccount_ObjectObjectDimension_DocumentId_O_87d4ede3e4",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4043,11 +4043,11 @@
       "key_columns": [
         "ObjectObjectDimension_DocumentId",
         "ObjectObjectDimension_Code",
-        "ObjectObjectDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
-      "name": "IX_ChartOfAccount_OperationalUnitOperationalUnitDime_f6732f5024",
+      "name": "IX_ChartOfAccount_OperationalUnitOperationalUnitDime_2efd995016",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4057,11 +4057,11 @@
       "key_columns": [
         "OperationalUnitOperationalUnitDimension_DocumentId",
         "OperationalUnitOperationalUnitDimension_Code",
-        "OperationalUnitOperationalUnitDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
-      "name": "IX_ChartOfAccount_ProgramProgramDimension_DocumentId_090c960d0f",
+      "name": "IX_ChartOfAccount_ProgramProgramDimension_DocumentId_cdac350ae1",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4071,11 +4071,11 @@
       "key_columns": [
         "ProgramProgramDimension_DocumentId",
         "ProgramProgramDimension_Code",
-        "ProgramProgramDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
-      "name": "IX_ChartOfAccount_ProjectProjectDimension_DocumentId_3b5d67a167",
+      "name": "IX_ChartOfAccount_ProjectProjectDimension_DocumentId_44514bb8da",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4085,11 +4085,11 @@
       "key_columns": [
         "ProjectProjectDimension_DocumentId",
         "ProjectProjectDimension_Code",
-        "ProjectProjectDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
-      "name": "IX_ChartOfAccount_SourceSourceDimension_DocumentId_S_00c6636cbb",
+      "name": "IX_ChartOfAccount_SourceSourceDimension_DocumentId_S_1fa3477f2f",
       "table": {
         "schema": "edfi",
         "name": "ChartOfAccount"
@@ -4099,7 +4099,7 @@
       "key_columns": [
         "SourceSourceDimension_DocumentId",
         "SourceSourceDimension_Code",
-        "SourceSourceDimension_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -4140,7 +4140,7 @@
         "DocumentId",
         "AccountIdentifier",
         "EducationOrganization_EducationOrganizationId",
-        "FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -6191,7 +6191,7 @@
       ]
     },
     {
-      "name": "IX_CourseOffering_School_DocumentId_School_SchoolId",
+      "name": "IX_CourseOffering_School_DocumentId_SchoolId_Unified",
       "table": {
         "schema": "edfi",
         "name": "CourseOffering"
@@ -6200,11 +6200,11 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
-        "School_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
-      "name": "IX_CourseOffering_Session_DocumentId_Session_SchoolI_55cac3f8a3",
+      "name": "IX_CourseOffering_Session_DocumentId_SchoolId_Unifie_471dc353b9",
       "table": {
         "schema": "edfi",
         "name": "CourseOffering"
@@ -6213,7 +6213,7 @@
       "is_unique": false,
       "key_columns": [
         "Session_DocumentId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ]
@@ -6255,8 +6255,8 @@
       "key_columns": [
         "DocumentId",
         "LocalCourseCode",
-        "School_SchoolId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ]
@@ -9138,7 +9138,7 @@
       ]
     },
     {
-      "name": "IX_Grade_GradingPeriodGradingPeriod_DocumentId_Gradi_c6b7b02311",
+      "name": "IX_Grade_GradingPeriodGradingPeriod_DocumentId_Gradi_05c399db25",
       "table": {
         "schema": "edfi",
         "name": "Grade"
@@ -9149,8 +9149,8 @@
         "GradingPeriodGradingPeriod_DocumentId",
         "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodName",
-        "GradingPeriodGradingPeriod_SchoolId",
-        "GradingPeriodGradingPeriod_SchoolYear"
+        "SchoolId_Unified",
+        "SchoolYear_Unified"
       ]
     },
     {
@@ -9178,7 +9178,7 @@
       ]
     },
     {
-      "name": "IX_Grade_StudentSectionAssociation_DocumentId_Studen_c889454221",
+      "name": "IX_Grade_StudentSectionAssociation_DocumentId_Studen_eb5c081b9d",
       "table": {
         "schema": "edfi",
         "name": "Grade"
@@ -9189,8 +9189,8 @@
         "StudentSectionAssociation_DocumentId",
         "StudentSectionAssociation_BeginDate",
         "StudentSectionAssociation_LocalCourseCode",
-        "StudentSectionAssociation_SchoolId",
-        "StudentSectionAssociation_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "StudentSectionAssociation_SectionIdentifier",
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
@@ -9235,12 +9235,12 @@
         "GradeTypeDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodName",
-        "GradingPeriodGradingPeriod_SchoolId",
-        "GradingPeriodGradingPeriod_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "StudentSectionAssociation_BeginDate",
         "StudentSectionAssociation_LocalCourseCode",
-        "StudentSectionAssociation_SchoolId",
-        "StudentSectionAssociation_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "StudentSectionAssociation_SectionIdentifier",
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
@@ -9310,7 +9310,7 @@
       ]
     },
     {
-      "name": "IX_GradebookEntry_GradingPeriod_DocumentId_GradingPe_4284c314ef",
+      "name": "IX_GradebookEntry_GradingPeriod_DocumentId_GradingPe_fab4126bc1",
       "table": {
         "schema": "edfi",
         "name": "GradebookEntry"
@@ -9321,8 +9321,8 @@
         "GradingPeriod_DocumentId",
         "GradingPeriod_GradingPeriodDescriptor_DescriptorId",
         "GradingPeriod_GradingPeriodName",
-        "GradingPeriod_SchoolId",
-        "GradingPeriod_SchoolYear"
+        "SchoolId_Unified",
+        "SchoolYear_Unified"
       ]
     },
     {
@@ -9338,7 +9338,7 @@
       ]
     },
     {
-      "name": "IX_GradebookEntry_Section_DocumentId_Section_LocalCo_f4e8655c9b",
+      "name": "IX_GradebookEntry_Section_DocumentId_Section_LocalCo_134838dd12",
       "table": {
         "schema": "edfi",
         "name": "GradebookEntry"
@@ -9348,8 +9348,8 @@
       "key_columns": [
         "Section_DocumentId",
         "Section_LocalCourseCode",
-        "Section_SchoolId",
-        "Section_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "Section_SessionName",
         "Section_SectionIdentifier"
       ]
@@ -11266,7 +11266,7 @@
       ]
     },
     {
-      "name": "IX_LocalAccount_ChartOfAccountChartOfAccount_Documen_447ca68044",
+      "name": "IX_LocalAccount_ChartOfAccountChartOfAccount_Documen_101e8d676f",
       "table": {
         "schema": "edfi",
         "name": "LocalAccount"
@@ -11277,7 +11277,7 @@
         "ChartOfAccountChartOfAccount_DocumentId",
         "ChartOfAccountChartOfAccount_AccountIdentifier",
         "ChartOfAccountChartOfAccount_EducationOrganizationId",
-        "ChartOfAccountChartOfAccount_FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -11331,7 +11331,7 @@
         "DocumentId",
         "AccountIdentifier",
         "EducationOrganization_EducationOrganizationId",
-        "FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -12351,7 +12351,7 @@
       ]
     },
     {
-      "name": "IX_ObjectiveAssessment_Assessment_DocumentId_Assessm_35526a747a",
+      "name": "IX_ObjectiveAssessment_Assessment_DocumentId_Assessm_c6ab434586",
       "table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
@@ -12360,12 +12360,12 @@
       "is_unique": false,
       "key_columns": [
         "Assessment_DocumentId",
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace"
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified"
       ]
     },
     {
-      "name": "IX_ObjectiveAssessment_ParentObjectiveAssessment_Doc_c6c7dcd0c4",
+      "name": "IX_ObjectiveAssessment_ParentObjectiveAssessment_Doc_e13dce6b30",
       "table": {
         "schema": "edfi",
         "name": "ObjectiveAssessment"
@@ -12374,8 +12374,8 @@
       "is_unique": false,
       "key_columns": [
         "ParentObjectiveAssessment_DocumentId",
-        "ParentObjectiveAssessment_AssessmentIdentifier",
-        "ParentObjectiveAssessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "ParentObjectiveAssessment_IdentificationCode"
       ]
     },
@@ -12414,8 +12414,8 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId",
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "IdentificationCode"
       ]
     },
@@ -14074,43 +14074,7 @@
       ]
     },
     {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_6877710772",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationElement"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_7695510e2e",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationElement"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_91551d1ba1",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationElement"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_b186fd1884",
+      "name": "IX_ProgramEvaluationElement_ProgramEvaluationObjecti_ce71a74398",
       "table": {
         "schema": "edfi",
         "name": "ProgramEvaluationElement"
@@ -14120,16 +14084,40 @@
       "key_columns": [
         "ProgramEvaluationObjective_DocumentId",
         "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
-        "ProgramEvaluationObjective_ProgramEducationOrganizationId",
-        "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
-        "ProgramEvaluationObjective_ProgramEvaluationTitle",
-        "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
-        "ProgramEvaluationObjective_ProgramName",
-        "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId"
+        "ProgramEducationOrganizationId_Unified",
+        "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+        "ProgramEvaluationTitle_Unified",
+        "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+        "ProgramName_Unified",
+        "ProgramTypeDescriptor_Unified_DescriptorId"
       ]
     },
     {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluation_Docume_8986a40de3",
+      "name": "IX_ProgramEvaluationElement_ProgramEvaluationPeriodD_4f026fa474",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluationElement"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_ProgramEvaluationElement_ProgramEvaluationTypeDes_e18c4d5559",
+      "table": {
+        "schema": "edfi",
+        "name": "ProgramEvaluationElement"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "ProgramEvaluationTypeDescriptor_Unified_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_ProgramEvaluationElement_ProgramEvaluation_Docume_3327e2faf9",
       "table": {
         "schema": "edfi",
         "name": "ProgramEvaluationElement"
@@ -14138,16 +14126,16 @@
       "is_unique": false,
       "key_columns": [
         "ProgramEvaluation_DocumentId",
-        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-        "ProgramEvaluation_ProgramEvaluationTitle",
-        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-        "ProgramEvaluation_ProgramEducationOrganizationId",
-        "ProgramEvaluation_ProgramName",
-        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+        "ProgramEvaluationTitle_Unified",
+        "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+        "ProgramEducationOrganizationId_Unified",
+        "ProgramName_Unified",
+        "ProgramTypeDescriptor_Unified_DescriptorId"
       ]
     },
     {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluation_Progra_38bbac4be3",
+      "name": "IX_ProgramEvaluationElement_ProgramTypeDescriptor_Un_cb949dfd3b",
       "table": {
         "schema": "edfi",
         "name": "ProgramEvaluationElement"
@@ -14155,31 +14143,7 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluation_Progra_a626120cc9",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationElement"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
-      ]
-    },
-    {
-      "name": "IX_ProgramEvaluationElement_ProgramEvaluation_Progra_b7d456136d",
-      "table": {
-        "schema": "edfi",
-        "name": "ProgramEvaluationElement"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+        "ProgramTypeDescriptor_Unified_DescriptorId"
       ]
     },
     {
@@ -14218,12 +14182,12 @@
       "key_columns": [
         "DocumentId",
         "ProgramEvaluationElementTitle",
-        "ProgramEvaluation_ProgramEducationOrganizationId",
-        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-        "ProgramEvaluation_ProgramEvaluationTitle",
-        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-        "ProgramEvaluation_ProgramName",
-        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        "ProgramEducationOrganizationId_Unified",
+        "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+        "ProgramEvaluationTitle_Unified",
+        "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+        "ProgramName_Unified",
+        "ProgramTypeDescriptor_Unified_DescriptorId"
       ]
     },
     {
@@ -14834,7 +14798,7 @@
       ]
     },
     {
-      "name": "IX_RestraintEvent_DisciplineIncident_DocumentId_Disc_bf9ba8897a",
+      "name": "IX_RestraintEvent_DisciplineIncident_DocumentId_Disc_efed62b7ac",
       "table": {
         "schema": "edfi",
         "name": "RestraintEvent"
@@ -14844,7 +14808,7 @@
       "key_columns": [
         "DisciplineIncident_DocumentId",
         "DisciplineIncident_IncidentIdentifier",
-        "DisciplineIncident_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
@@ -14860,7 +14824,7 @@
       ]
     },
     {
-      "name": "IX_RestraintEvent_School_DocumentId_School_SchoolId",
+      "name": "IX_RestraintEvent_School_DocumentId_SchoolId_Unified",
       "table": {
         "schema": "edfi",
         "name": "RestraintEvent"
@@ -14869,7 +14833,7 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
-        "School_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
@@ -15663,7 +15627,7 @@
       ]
     },
     {
-      "name": "IX_Section_LocationLocation_DocumentId_LocationLocat_eb3b475c20",
+      "name": "IX_Section_LocationLocation_DocumentId_LocationLocat_40553ed1a9",
       "table": {
         "schema": "edfi",
         "name": "Section"
@@ -15673,11 +15637,11 @@
       "key_columns": [
         "LocationLocation_DocumentId",
         "LocationLocation_ClassroomIdentificationCode",
-        "LocationLocation_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
-      "name": "IX_Section_LocationSchool_DocumentId_LocationSchool_SchoolId",
+      "name": "IX_Section_LocationSchool_DocumentId_SchoolId_Unified",
       "table": {
         "schema": "edfi",
         "name": "Section"
@@ -15686,7 +15650,7 @@
       "is_unique": false,
       "key_columns": [
         "LocationSchool_DocumentId",
-        "LocationSchool_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
@@ -15768,7 +15732,7 @@
       ]
     },
     {
-      "name": "IX_SectionAttendanceTakenEvent_CalendarDate_Document_84f916fd5d",
+      "name": "IX_SectionAttendanceTakenEvent_CalendarDate_Document_d2f3bac1c1",
       "table": {
         "schema": "edfi",
         "name": "SectionAttendanceTakenEvent"
@@ -15778,13 +15742,13 @@
       "key_columns": [
         "CalendarDate_DocumentId",
         "CalendarDate_CalendarCode",
-        "CalendarDate_SchoolId",
-        "CalendarDate_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "CalendarDate_Date"
       ]
     },
     {
-      "name": "IX_SectionAttendanceTakenEvent_Section_DocumentId_Se_7134b5a95a",
+      "name": "IX_SectionAttendanceTakenEvent_Section_DocumentId_Se_4b118d84e8",
       "table": {
         "schema": "edfi",
         "name": "SectionAttendanceTakenEvent"
@@ -15794,8 +15758,8 @@
       "key_columns": [
         "Section_DocumentId",
         "Section_LocalCourseCode",
-        "Section_SchoolId",
-        "Section_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "Section_SessionName",
         "Section_SectionIdentifier"
       ]
@@ -16722,22 +16686,6 @@
       ]
     },
     {
-      "name": "IX_StaffEducationOrganizationAssignmentAssociation_E_50f54371de",
-      "table": {
-        "schema": "edfi",
-        "name": "StaffEducationOrganizationAssignmentAssociation"
-      },
-      "kind": "ForeignKeySupport",
-      "is_unique": false,
-      "key_columns": [
-        "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b",
-        "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de",
-        "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56",
-        "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337",
-        "EmploymentStaffEducationOrganizationEmploymentAssoci_3d5ca61d33"
-      ]
-    },
-    {
       "name": "IX_StaffEducationOrganizationAssignmentAssociation_E_ab257a90d1",
       "table": {
         "schema": "edfi",
@@ -16763,7 +16711,7 @@
       ]
     },
     {
-      "name": "IX_StaffEducationOrganizationAssignmentAssociation_S_96e42ef4fc",
+      "name": "IX_StaffEducationOrganizationAssignmentAssociation_E_cac11f84c8",
       "table": {
         "schema": "edfi",
         "name": "StaffEducationOrganizationAssignmentAssociation"
@@ -16771,8 +16719,11 @@
       "kind": "ForeignKeySupport",
       "is_unique": false,
       "key_columns": [
-        "Staff_DocumentId",
-        "Staff_StaffUniqueId"
+        "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b",
+        "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de",
+        "EmploymentStaffEducationOrganizationEmploymentAssoci_48a7f76b56",
+        "EmploymentStaffEducationOrganizationEmploymentAssoci_0cbe1eb337",
+        "StaffUniqueId_Unified"
       ]
     },
     {
@@ -16785,6 +16736,19 @@
       "is_unique": false,
       "key_columns": [
         "StaffClassificationDescriptor_DescriptorId"
+      ]
+    },
+    {
+      "name": "IX_StaffEducationOrganizationAssignmentAssociation_S_da9b0896bd",
+      "table": {
+        "schema": "edfi",
+        "name": "StaffEducationOrganizationAssignmentAssociation"
+      },
+      "kind": "ForeignKeySupport",
+      "is_unique": false,
+      "key_columns": [
+        "Staff_DocumentId",
+        "StaffUniqueId_Unified"
       ]
     },
     {
@@ -16827,7 +16791,7 @@
         "BeginDate",
         "EducationOrganization_EducationOrganizationId",
         "StaffClassificationDescriptor_DescriptorId",
-        "Staff_StaffUniqueId"
+        "StaffUniqueId_Unified"
       ]
     },
     {
@@ -17701,7 +17665,7 @@
       ]
     },
     {
-      "name": "IX_StaffSchoolAssociation_Calendar_DocumentId_Calend_8d7a985df9",
+      "name": "IX_StaffSchoolAssociation_Calendar_DocumentId_Calend_7eb92b25de",
       "table": {
         "schema": "edfi",
         "name": "StaffSchoolAssociation"
@@ -17711,12 +17675,12 @@
       "key_columns": [
         "Calendar_DocumentId",
         "Calendar_CalendarCode",
-        "Calendar_SchoolId",
-        "Calendar_SchoolYear"
+        "SchoolId_Unified",
+        "SchoolYear_Unified"
       ]
     },
     {
-      "name": "IX_StaffSchoolAssociation_SchoolYear_DocumentId_Scho_c32d6d00d4",
+      "name": "IX_StaffSchoolAssociation_SchoolYear_DocumentId_Scho_f08589e459",
       "table": {
         "schema": "edfi",
         "name": "StaffSchoolAssociation"
@@ -17725,11 +17689,11 @@
       "is_unique": false,
       "key_columns": [
         "SchoolYear_DocumentId",
-        "SchoolYear_SchoolYear"
+        "SchoolYear_Unified"
       ]
     },
     {
-      "name": "IX_StaffSchoolAssociation_School_DocumentId_School_SchoolId",
+      "name": "IX_StaffSchoolAssociation_School_DocumentId_SchoolId_Unified",
       "table": {
         "schema": "edfi",
         "name": "StaffSchoolAssociation"
@@ -17738,7 +17702,7 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
-        "School_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
@@ -19480,7 +19444,7 @@
       ]
     },
     {
-      "name": "IX_StudentAssessmentRegistration_StudentEducationOrg_e90aa0c8a0",
+      "name": "IX_StudentAssessmentRegistration_StudentEducationOrg_3e71d86255",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistration"
@@ -19490,11 +19454,11 @@
       "key_columns": [
         "StudentEducationOrganizationAssociation_DocumentId",
         "StudentEducationOrganizationAssociation_EducationOrganizationId",
-        "StudentEducationOrganizationAssociation_StudentUniqueId"
+        "StudentUniqueId_Unified"
       ]
     },
     {
-      "name": "IX_StudentAssessmentRegistration_StudentSchoolAssoci_2ec39180dd",
+      "name": "IX_StudentAssessmentRegistration_StudentSchoolAssoci_d2b9233f53",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistration"
@@ -19505,7 +19469,7 @@
         "StudentSchoolAssociation_DocumentId",
         "StudentSchoolAssociation_EntryDate",
         "StudentSchoolAssociation_SchoolId",
-        "StudentSchoolAssociation_StudentUniqueId"
+        "StudentUniqueId_Unified"
       ]
     },
     {
@@ -19561,7 +19525,7 @@
         "AssessmentAdministration_AssigningEducationOrganizationId",
         "AssessmentAdministration_Namespace",
         "StudentEducationOrganizationAssociation_EducationOrganizationId",
-        "StudentEducationOrganizationAssociation_StudentUniqueId"
+        "StudentUniqueId_Unified"
       ]
     },
     {
@@ -19629,7 +19593,7 @@
       ]
     },
     {
-      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_10ed2da45d",
+      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_b3f96da127",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistrationBatteryPartAssociation"
@@ -19639,12 +19603,12 @@
       "key_columns": [
         "AssessmentBatteryPart_DocumentId",
         "AssessmentBatteryPart_AssessmentBatteryPartName",
-        "AssessmentBatteryPart_AssessmentIdentifier",
-        "AssessmentBatteryPart_Namespace"
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified"
       ]
     },
     {
-      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_b2704d1530",
+      "name": "IX_StudentAssessmentRegistrationBatteryPartAssociati_b5f5cdbceb",
       "table": {
         "schema": "edfi",
         "name": "StudentAssessmentRegistrationBatteryPartAssociation"
@@ -19654,9 +19618,9 @@
       "key_columns": [
         "StudentAssessmentRegistration_DocumentId",
         "StudentAssessmentRegistration_AdministrationIdentifier",
-        "StudentAssessmentRegistration_AssessmentIdentifier",
+        "AssessmentIdentifier_Unified",
         "StudentAssessmentRegistration_AssigningEducationOrganizationId",
-        "StudentAssessmentRegistration_Namespace",
+        "Namespace_Unified",
         "StudentAssessmentRegistration_EducationOrganizationId",
         "StudentAssessmentRegistration_StudentUniqueId"
       ]
@@ -23906,7 +23870,7 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_Calendar_DocumentId_Cale_de48ad4b7d",
+      "name": "IX_StudentSchoolAssociation_Calendar_DocumentId_Cale_5c13d94c06",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
@@ -23916,8 +23880,8 @@
       "key_columns": [
         "Calendar_DocumentId",
         "Calendar_CalendarCode",
-        "Calendar_SchoolId",
-        "Calendar_SchoolYear"
+        "SchoolId_Unified",
+        "SchoolYear_Unified"
       ]
     },
     {
@@ -24070,7 +24034,7 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_SchoolYear_DocumentId_Sc_0981e8e0e6",
+      "name": "IX_StudentSchoolAssociation_SchoolYear_DocumentId_Sc_8da6286496",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
@@ -24079,11 +24043,11 @@
       "is_unique": false,
       "key_columns": [
         "SchoolYear_DocumentId",
-        "SchoolYear_SchoolYear"
+        "SchoolYear_Unified"
       ]
     },
     {
-      "name": "IX_StudentSchoolAssociation_School_DocumentId_School_SchoolId",
+      "name": "IX_StudentSchoolAssociation_School_DocumentId_SchoolId_Unified",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAssociation"
@@ -24092,7 +24056,7 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
-        "School_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
@@ -24145,7 +24109,7 @@
       "key_columns": [
         "DocumentId",
         "EntryDate",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Student_StudentUniqueId"
       ]
     },
@@ -24240,7 +24204,7 @@
       ]
     },
     {
-      "name": "IX_StudentSchoolAttendanceEvent_School_DocumentId_Sc_37d0808601",
+      "name": "IX_StudentSchoolAttendanceEvent_School_DocumentId_Sc_4eb7cf3d94",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAttendanceEvent"
@@ -24249,11 +24213,11 @@
       "is_unique": false,
       "key_columns": [
         "School_DocumentId",
-        "School_SchoolId"
+        "SchoolId_Unified"
       ]
     },
     {
-      "name": "IX_StudentSchoolAttendanceEvent_Session_DocumentId_S_34267f391a",
+      "name": "IX_StudentSchoolAttendanceEvent_Session_DocumentId_S_f5e0a6d70e",
       "table": {
         "schema": "edfi",
         "name": "StudentSchoolAttendanceEvent"
@@ -24262,7 +24226,7 @@
       "is_unique": false,
       "key_columns": [
         "Session_DocumentId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ]
@@ -25779,7 +25743,7 @@
       ]
     },
     {
-      "name": "IX_Survey_SchoolYear_DocumentId_SchoolYear_SchoolYear",
+      "name": "IX_Survey_SchoolYear_DocumentId_SchoolYear_Unified",
       "table": {
         "schema": "edfi",
         "name": "Survey"
@@ -25788,11 +25752,11 @@
       "is_unique": false,
       "key_columns": [
         "SchoolYear_DocumentId",
-        "SchoolYear_SchoolYear"
+        "SchoolYear_Unified"
       ]
     },
     {
-      "name": "IX_Survey_Session_DocumentId_Session_SchoolId_Sessio_50d29b251a",
+      "name": "IX_Survey_Session_DocumentId_Session_SchoolId_School_c370ef80b8",
       "table": {
         "schema": "edfi",
         "name": "Survey"
@@ -25802,7 +25766,7 @@
       "key_columns": [
         "Session_DocumentId",
         "Session_SchoolId",
-        "Session_SchoolYear",
+        "SchoolYear_Unified",
         "Session_SessionName"
       ]
     },
@@ -25989,7 +25953,7 @@
       ]
     },
     {
-      "name": "IX_SurveyQuestion_SurveySection_DocumentId_SurveySec_fba5596be1",
+      "name": "IX_SurveyQuestion_SurveySection_DocumentId_Namespace_e270e8fabc",
       "table": {
         "schema": "edfi",
         "name": "SurveyQuestion"
@@ -25998,13 +25962,13 @@
       "is_unique": false,
       "key_columns": [
         "SurveySection_DocumentId",
-        "SurveySection_Namespace",
-        "SurveySection_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySection_SurveySectionTitle"
       ]
     },
     {
-      "name": "IX_SurveyQuestion_Survey_DocumentId_Survey_Namespace_66675c5cd4",
+      "name": "IX_SurveyQuestion_Survey_DocumentId_Namespace_Unifie_c282b98d87",
       "table": {
         "schema": "edfi",
         "name": "SurveyQuestion"
@@ -26013,8 +25977,8 @@
       "is_unique": false,
       "key_columns": [
         "Survey_DocumentId",
-        "Survey_Namespace",
-        "Survey_SurveyIdentifier"
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified"
       ]
     },
     {
@@ -26053,8 +26017,8 @@
       "key_columns": [
         "DocumentId",
         "QuestionCode",
-        "Survey_Namespace",
-        "Survey_SurveyIdentifier"
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified"
       ]
     },
     {
@@ -26084,7 +26048,7 @@
       ]
     },
     {
-      "name": "IX_SurveyQuestionResponse_SurveyQuestion_DocumentId__e86c921966",
+      "name": "IX_SurveyQuestionResponse_SurveyQuestion_DocumentId__d59e808f2a",
       "table": {
         "schema": "edfi",
         "name": "SurveyQuestionResponse"
@@ -26094,12 +26058,12 @@
       "key_columns": [
         "SurveyQuestion_DocumentId",
         "SurveyQuestion_QuestionCode",
-        "SurveyQuestion_Namespace",
-        "SurveyQuestion_SurveyIdentifier"
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified"
       ]
     },
     {
-      "name": "IX_SurveyQuestionResponse_SurveyResponse_DocumentId__9562bac486",
+      "name": "IX_SurveyQuestionResponse_SurveyResponse_DocumentId__e43813d341",
       "table": {
         "schema": "edfi",
         "name": "SurveyQuestionResponse"
@@ -26108,8 +26072,8 @@
       "is_unique": false,
       "key_columns": [
         "SurveyResponse_DocumentId",
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
@@ -26564,7 +26528,7 @@
       ]
     },
     {
-      "name": "IX_SurveySectionResponse_SurveyResponse_DocumentId_S_0cf601cbeb",
+      "name": "IX_SurveySectionResponse_SurveyResponse_DocumentId_N_9e35c7c3fd",
       "table": {
         "schema": "edfi",
         "name": "SurveySectionResponse"
@@ -26573,13 +26537,13 @@
       "is_unique": false,
       "key_columns": [
         "SurveyResponse_DocumentId",
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
-      "name": "IX_SurveySectionResponse_SurveySection_DocumentId_Su_f32fe8c9cf",
+      "name": "IX_SurveySectionResponse_SurveySection_DocumentId_Na_f243a79b4c",
       "table": {
         "schema": "edfi",
         "name": "SurveySectionResponse"
@@ -26588,8 +26552,8 @@
       "is_unique": false,
       "key_columns": [
         "SurveySection_DocumentId",
-        "SurveySection_Namespace",
-        "SurveySection_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySection_SurveySectionTitle"
       ]
     },
@@ -26628,11 +26592,11 @@
       "is_unique": true,
       "key_columns": [
         "DocumentId",
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier",
-        "SurveySection_Namespace",
-        "SurveySection_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveySection_SurveySectionTitle"
       ]
     },
@@ -38950,7 +38914,9 @@
               "is_nullable": true,
               "source_path": "$.calendarReference.schoolId",
               "storage": {
-                "kind": "Stored"
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolId_Unified",
+                "presence_column": "Calendar_DocumentId"
               }
             },
             {
@@ -38962,7 +38928,9 @@
               "is_nullable": true,
               "source_path": "$.calendarReference.schoolYear",
               "storage": {
-                "kind": "Stored"
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolYear_Unified",
+                "presence_column": "Calendar_DocumentId"
               }
             },
             {
@@ -39112,6 +39080,18 @@
               }
             },
             {
+              "name": "SchoolId_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "SchoolYear_SchoolYear",
               "kind": "Scalar",
               "type": {
@@ -39119,6 +39099,20 @@
               },
               "is_nullable": true,
               "source_path": "$.schoolYearTypeReference.schoolYear",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolYear_Unified",
+                "presence_column": "SchoolYear_DocumentId"
+              }
+            },
+            {
+              "name": "SchoolYear_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": null,
               "storage": {
                 "kind": "Stored"
               }
@@ -39132,7 +39126,9 @@
               "is_nullable": false,
               "source_path": "$.schoolReference.schoolId",
               "storage": {
-                "kind": "Stored"
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolId_Unified",
+                "presence_column": "School_DocumentId"
               }
             },
             {
@@ -39245,7 +39241,22 @@
               }
             }
           ],
-          "key_unification_classes": [],
+          "key_unification_classes": [
+            {
+              "canonical_column": "SchoolId_Unified",
+              "member_path_columns": [
+                "Calendar_SchoolId",
+                "School_SchoolId"
+              ]
+            },
+            {
+              "canonical_column": "SchoolYear_Unified",
+              "member_path_columns": [
+                "Calendar_SchoolYear",
+                "SchoolYear_SchoolYear"
+              ]
+            }
+          ],
           "constraints": [
             {
               "kind": "Unique",
@@ -39262,7 +39273,7 @@
               "columns": [
                 "DocumentId",
                 "EntryDate",
-                "School_SchoolId",
+                "SchoolId_Unified",
                 "Student_StudentUniqueId"
               ]
             },
@@ -39272,8 +39283,8 @@
               "columns": [
                 "Calendar_DocumentId",
                 "Calendar_CalendarCode",
-                "Calendar_SchoolId",
-                "Calendar_SchoolYear"
+                "SchoolId_Unified",
+                "SchoolYear_Unified"
               ],
               "target_table": {
                 "schema": "edfi",
@@ -39511,7 +39522,7 @@
               "name": "FK_StudentSchoolAssociation_SchoolYear_RefKey",
               "columns": [
                 "SchoolYear_DocumentId",
-                "SchoolYear_SchoolYear"
+                "SchoolYear_Unified"
               ],
               "target_table": {
                 "schema": "edfi",
@@ -39529,7 +39540,7 @@
               "name": "FK_StudentSchoolAssociation_School_RefKey",
               "columns": [
                 "School_DocumentId",
-                "School_SchoolId"
+                "SchoolId_Unified"
               ],
               "target_table": {
                 "schema": "edfi",
