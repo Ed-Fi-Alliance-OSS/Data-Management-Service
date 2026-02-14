@@ -1512,6 +1512,26 @@ internal static class ConstraintDerivationTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build reference constraint project schema with both root and child references to the same target.
+    /// </summary>
+    internal static JsonObject BuildReferenceConstraintProjectSchemaWithChildReference()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildReferenceConstraintEnrollmentSchema(),
+                ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(new JsonArray()),
+                ["schools"] = BuildReferenceConstraintSchoolSchema(),
+                ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build target unique mutation project schema.
     /// </summary>
     internal static JsonObject BuildTargetUniqueMutationProjectSchema()
