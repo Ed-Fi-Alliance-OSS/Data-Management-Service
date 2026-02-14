@@ -385,12 +385,11 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_emit_propagation_trigger_for_allowIdentityUpdates_target()
     {
         var schoolPropagation = _triggers.SingleOrDefault(t =>
-            t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
         );
 
         schoolPropagation.Should().NotBeNull();
-        schoolPropagation!.TriggerTable.Name.Should().Be("Enrollment");
+        schoolPropagation!.TriggerTable.Name.Should().Be("School");
     }
 
     /// <summary>
@@ -400,8 +399,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_not_emit_propagation_trigger_for_non_updatable_target()
     {
         var studentPropagation = _triggers.SingleOrDefault(t =>
-            t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_Student"
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_Student_Propagation"
         );
 
         studentPropagation.Should().BeNull();
@@ -414,8 +412,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_carry_referrer_action_payload_with_FK_document_id_column()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
         );
 
         schoolPropagation.KeyColumns.Should().BeEmpty();
@@ -435,8 +432,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_include_ordered_storage_column_pairs_in_propagation_payload()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
         );
 
         var identityColumnPairs = schoolPropagation
@@ -459,11 +455,71 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     public void It_should_not_set_maintenance_target_for_propagation_fallback()
     {
         var schoolPropagation = _triggers.Single(t =>
-            t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
         );
 
         schoolPropagation.MaintenanceTargetTable.Should().BeNull();
+    }
+}
+
+/// <summary>
+/// Test fixture for IdentityPropagationFallback fan-out on MSSQL with mixed root and child referrers.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Non_Root_Referrers
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should include child-table referrer actions in the referenced-table fan-out payload.
+    /// </summary>
+    [Test]
+    public void It_should_include_child_referrer_action_in_referenced_table_fan_out_payload()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
+        );
+
+        schoolPropagation.TriggerTable.Name.Should().Be("School");
+        schoolPropagation.PropagationFallback.Should().NotBeNull();
+        schoolPropagation.PropagationFallback!.ReferrerActions.Should().HaveCount(2);
+
+        var childAction = schoolPropagation.PropagationFallback.ReferrerActions.Single(action =>
+            action.ReferrerTable.Name == "BusRouteAddress"
+        );
+
+        childAction.ReferrerDocumentIdColumn.Value.Should().Be("School_DocumentId");
+        childAction.ReferencedDocumentIdColumn.Value.Should().Be("DocumentId");
+        childAction
+            .IdentityColumnPairs.Select(pair =>
+                (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value)
+            )
+            .Should()
+            .ContainInOrder(
+                ("School_SchoolId", "SchoolId"),
+                ("School_EducationOrganizationId", "EducationOrganizationId")
+            );
     }
 }
 
@@ -504,11 +560,11 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.SingleOrDefault(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
         );
 
         propagation.Should().NotBeNull();
-        propagation!.TriggerTable.Name.Should().Be("Enrollment");
+        propagation!.TriggerTable.Name.Should().Be("EducationOrganizationIdentity");
     }
 
     /// <summary>
@@ -519,7 +575,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
         );
 
         var action = propagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
@@ -542,7 +598,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
         );
 
         propagation.KeyColumns.Should().BeEmpty();

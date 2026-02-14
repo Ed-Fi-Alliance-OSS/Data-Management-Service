@@ -25,7 +25,7 @@
       "Add/extend a fixture with a non-root reference binding (child or extension) and assert it appears in the propagation trigger’s fan-out list on MSSQL.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Identifier Shortening",

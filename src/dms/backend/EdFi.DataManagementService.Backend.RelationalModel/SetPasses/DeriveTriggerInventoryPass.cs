@@ -34,6 +34,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         var resourcesByKey = context
             .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
             .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
+        Dictionary<
+            DbTableName,
+            List<DbIdentityPropagationReferrerAction>
+        > propagationFallbackActionsByTriggerTable = new();
 
         var abstractTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>
             table.AbstractResourceKey.Resource
@@ -162,16 +166,22 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             // would use ON UPDATE CASCADE on PostgreSQL but must use NO ACTION on SQL Server.
             if (context.Dialect == SqlDialect.Mssql && builderContext.DocumentReferenceMappings.Count > 0)
             {
-                EmitPropagationFallbackTriggers(
+                CollectPropagationFallbackActions(
                     context,
                     builderContext,
                     resourceModel,
-                    rootTable,
+                    resourcesByKey,
                     abstractTablesByResource,
                     resourceContextsByResource,
-                    resource
+                    resource,
+                    propagationFallbackActionsByTriggerTable
                 );
             }
+        }
+
+        if (context.Dialect == SqlDialect.Mssql)
+        {
+            EmitPropagationFallbackTriggers(context, propagationFallbackActionsByTriggerTable);
         }
     }
 
@@ -254,19 +264,19 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Emits <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers for each root-table
-    /// reference binding whose target is abstract or allows identity updates. These replace the
-    /// <c>ON UPDATE CASCADE</c> that PostgreSQL handles natively but SQL Server rejects due to
-    /// multiple cascade paths.
+    /// Collects <see cref="DbTriggerKind.IdentityPropagationFallback"/> fan-out actions keyed by
+    /// referenced table. This replaces PostgreSQL <c>ON UPDATE CASCADE</c> behavior for SQL Server,
+    /// which must use <c>NO ACTION</c> due to multiple cascade path restrictions.
     /// </summary>
-    private static void EmitPropagationFallbackTriggers(
+    private static void CollectPropagationFallbackActions(
         RelationalModelSetBuilderContext context,
         RelationalModelBuilderContext builderContext,
         RelationalResourceModel resourceModel,
-        DbTableModel rootTable,
+        IReadOnlyDictionary<QualifiedResourceName, ResourceEntry> resourcesByKey,
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
-        QualifiedResourceName resource
+        QualifiedResourceName resource,
+        IDictionary<DbTableName, List<DbIdentityPropagationReferrerAction>> actionsByTriggerTable
     )
     {
         var bindingByReferencePath = resourceModel.DocumentReferenceBindings.ToDictionary(
@@ -281,46 +291,21 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 continue;
             }
 
-            // Only consider root-table bindings.
-            if (!binding.Table.Equals(rootTable.Table))
-            {
-                continue;
-            }
-
-            DbTableModel? referencedTableModel;
-
-            if (abstractTablesByResource.TryGetValue(mapping.TargetResource, out var abstractTableInfo))
-            {
-                referencedTableModel = abstractTableInfo.TableModel;
-            }
-            else if (
-                resourceContextsByResource.TryGetValue(mapping.TargetResource, out var targetResourceContext)
+            if (
+                !TryResolvePropagationTargetTable(
+                    context,
+                    mapping.TargetResource,
+                    resourcesByKey,
+                    abstractTablesByResource,
+                    resourceContextsByResource,
+                    out var referencedTableModel
+                )
             )
             {
-                var targetBuilderContext = context.GetOrCreateResourceBuilderContext(targetResourceContext);
-
-                if (!targetBuilderContext.AllowIdentityUpdates)
-                {
-                    continue;
-                }
-
-                var targetEntry = context.ConcreteResourcesInNameOrder.FirstOrDefault(model =>
-                    model.ResourceKey.Resource == mapping.TargetResource
-                );
-
-                if (targetEntry is null)
-                {
-                    continue;
-                }
-
-                referencedTableModel = targetEntry.RelationalModel.Root;
-            }
-            else
-            {
                 continue;
             }
 
-            var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn);
+            var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
             var referrerIdentityColumnsByReferencePath = binding.IdentityBindings.ToDictionary(
                 identityBinding => identityBinding.ReferenceJsonPath.Canonical,
                 identityBinding => identityBinding.Column,
@@ -330,6 +315,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 referencedTableModel,
                 mapping.TargetResource
             );
+            HashSet<string> seenIdentityColumnPairs = new(StringComparer.Ordinal);
             List<DbIdentityPropagationColumnPair> identityColumnPairs = new(mapping.ReferenceJsonPaths.Count);
 
             foreach (var identityPathBinding in mapping.ReferenceJsonPaths)
@@ -362,43 +348,242 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
 
-                identityColumnPairs.Add(
-                    new DbIdentityPropagationColumnPair(referrerIdentityColumn, referencedIdentityColumn)
+                AddIdentityColumnPair(
+                    referrerIdentityColumn,
+                    referencedIdentityColumn,
+                    identityColumnPairs,
+                    seenIdentityColumnPairs
                 );
             }
 
+            var referrerAction = new DbIdentityPropagationReferrerAction(
+                bindingTable.Table,
+                binding.FkColumn,
+                RelationalNameConventions.DocumentIdColumnName,
+                identityColumnPairs.ToArray()
+            );
+
+            if (!actionsByTriggerTable.TryGetValue(referencedTableModel.Table, out var referrerActions))
+            {
+                referrerActions = [];
+                actionsByTriggerTable[referencedTableModel.Table] = referrerActions;
+            }
+
+            AddPropagationReferrerAction(referrerActions, referrerAction);
+        }
+    }
+
+    /// <summary>
+    /// Emits one <see cref="DbTriggerKind.IdentityPropagationFallback"/> trigger per referenced table.
+    /// </summary>
+    private static void EmitPropagationFallbackTriggers(
+        RelationalModelSetBuilderContext context,
+        IReadOnlyDictionary<DbTableName, List<DbIdentityPropagationReferrerAction>> actionsByTriggerTable
+    )
+    {
+        foreach (
+            var (triggerTable, referrerActions) in actionsByTriggerTable
+                .OrderBy(entry => entry.Key.Schema.Value, StringComparer.Ordinal)
+                .ThenBy(entry => entry.Key.Name, StringComparer.Ordinal)
+        )
+        {
+            var orderedReferrerActions = referrerActions
+                .OrderBy(action => action.ReferrerTable.Schema.Value, StringComparer.Ordinal)
+                .ThenBy(action => action.ReferrerTable.Name, StringComparer.Ordinal)
+                .ThenBy(action => action.ReferrerDocumentIdColumn.Value, StringComparer.Ordinal)
+                .ThenBy(
+                    action => BuildIdentityColumnPairSignature(action.IdentityColumnPairs),
+                    StringComparer.Ordinal
+                )
+                .ToArray();
+
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
-                    new DbTriggerName(
-                        BuildTriggerName(rootTable.Table, $"{PropagationFallbackPrefix}_{referenceBaseName}")
-                    ),
-                    rootTable.Table,
+                    new DbTriggerName(BuildTriggerName(triggerTable, PropagationFallbackPrefix)),
+                    triggerTable,
                     DbTriggerKind.IdentityPropagationFallback,
                     [],
                     [],
-                    PropagationFallback: new DbIdentityPropagationFallbackInfo([
-                        new DbIdentityPropagationReferrerAction(
-                            rootTable.Table,
-                            binding.FkColumn,
-                            RelationalNameConventions.DocumentIdColumnName,
-                            identityColumnPairs.ToArray()
-                        ),
-                    ])
+                    PropagationFallback: new DbIdentityPropagationFallbackInfo(orderedReferrerActions)
                 )
             );
         }
     }
 
     /// <summary>
-    /// Resolves the base reference name from a reference FK column by trimming the <c>_DocumentId</c> suffix.
+    /// Resolves the propagation trigger target table for a reference mapping.
     /// </summary>
-    private static string ResolveReferenceBaseName(DbColumnName fkColumn)
+    private static bool TryResolvePropagationTargetTable(
+        RelationalModelSetBuilderContext context,
+        QualifiedResourceName targetResource,
+        IReadOnlyDictionary<QualifiedResourceName, ResourceEntry> resourcesByKey,
+        IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
+        out DbTableModel referencedTableModel
+    )
     {
-        const string DocumentIdSuffix = "_DocumentId";
+        if (abstractTablesByResource.TryGetValue(targetResource, out var abstractTable))
+        {
+            referencedTableModel = abstractTable.TableModel;
+            return true;
+        }
 
-        return fkColumn.Value.EndsWith(DocumentIdSuffix, StringComparison.Ordinal)
-            ? fkColumn.Value[..^DocumentIdSuffix.Length]
-            : fkColumn.Value;
+        if (!resourceContextsByResource.TryGetValue(targetResource, out var targetResourceContext))
+        {
+            referencedTableModel = default!;
+            return false;
+        }
+
+        var targetBuilderContext = context.GetOrCreateResourceBuilderContext(targetResourceContext);
+
+        if (!targetBuilderContext.AllowIdentityUpdates)
+        {
+            referencedTableModel = default!;
+            return false;
+        }
+
+        if (!resourcesByKey.TryGetValue(targetResource, out var targetEntry))
+        {
+            throw new InvalidOperationException(
+                $"Reference target resource '{FormatResource(targetResource)}' was not found "
+                    + "for trigger propagation derivation."
+            );
+        }
+
+        referencedTableModel = targetEntry.Model.RelationalModel.Root;
+        return true;
+    }
+
+    /// <summary>
+    /// Resolves the concrete table model for a reference binding, selecting the best matching JSON scope
+    /// when a table name appears in multiple scopes.
+    /// </summary>
+    private static DbTableModel ResolveReferenceBindingTable(
+        DocumentReferenceBinding binding,
+        RelationalResourceModel resourceModel,
+        QualifiedResourceName resource
+    )
+    {
+        var candidates = resourceModel
+            .TablesInDependencyOrder.Where(table => table.Table.Equals(binding.Table))
+            .ToArray();
+
+        if (candidates.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not map to table '{binding.Table}'."
+            );
+        }
+
+        if (candidates.Length == 1)
+        {
+            return candidates[0];
+        }
+
+        var orderedCandidates = candidates
+            .OrderBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ToArray();
+        DbTableModel? bestMatch = null;
+
+        foreach (var candidate in orderedCandidates)
+        {
+            if (!IsPrefixOf(candidate.JsonScope.Segments, binding.ReferenceObjectPath.Segments))
+            {
+                continue;
+            }
+
+            if (bestMatch is null || candidate.JsonScope.Segments.Count > bestMatch.JsonScope.Segments.Count)
+            {
+                bestMatch = candidate;
+            }
+        }
+
+        if (bestMatch is null)
+        {
+            var scopeList = string.Join(", ", orderedCandidates.Select(table => table.JsonScope.Canonical));
+
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
+                    + $"Candidates: {scopeList}."
+            );
+        }
+
+        if (
+            binding.ReferenceObjectPath.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+            && !bestMatch.JsonScope.Segments.Any(segment =>
+                segment is JsonPathSegment.Property { Name: "_ext" }
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
+            );
+        }
+
+        return bestMatch;
+    }
+
+    /// <summary>
+    /// Adds an identity column pair once, preserving first-seen ordering.
+    /// </summary>
+    private static void AddIdentityColumnPair(
+        DbColumnName referrerStorageColumn,
+        DbColumnName referencedStorageColumn,
+        ICollection<DbIdentityPropagationColumnPair> pairs,
+        ISet<string> seenPairs
+    )
+    {
+        var key = $"{referrerStorageColumn.Value}\u001F{referencedStorageColumn.Value}";
+
+        if (!seenPairs.Add(key))
+        {
+            return;
+        }
+
+        pairs.Add(new DbIdentityPropagationColumnPair(referrerStorageColumn, referencedStorageColumn));
+    }
+
+    /// <summary>
+    /// Adds a propagation action exactly once using semantic equality on referrer + identity mappings.
+    /// </summary>
+    private static void AddPropagationReferrerAction(
+        ICollection<DbIdentityPropagationReferrerAction> referrerActions,
+        DbIdentityPropagationReferrerAction candidate
+    )
+    {
+        if (
+            referrerActions.Any(existing =>
+                existing.ReferrerTable.Equals(candidate.ReferrerTable)
+                && existing.ReferrerDocumentIdColumn.Equals(candidate.ReferrerDocumentIdColumn)
+                && existing.ReferencedDocumentIdColumn.Equals(candidate.ReferencedDocumentIdColumn)
+                && existing.IdentityColumnPairs.SequenceEqual(candidate.IdentityColumnPairs)
+            )
+        )
+        {
+            return;
+        }
+
+        referrerActions.Add(candidate);
+    }
+
+    /// <summary>
+    /// Builds a deterministic signature for an ordered identity-column-pair sequence.
+    /// </summary>
+    private static string BuildIdentityColumnPairSignature(
+        IReadOnlyList<DbIdentityPropagationColumnPair> identityColumnPairs
+    )
+    {
+        return string.Join(
+            "|",
+            identityColumnPairs.Select(pair =>
+                $"{pair.ReferrerStorageColumn.Value}>{pair.ReferencedStorageColumn.Value}"
+            )
+        );
     }
 
     /// <summary>
