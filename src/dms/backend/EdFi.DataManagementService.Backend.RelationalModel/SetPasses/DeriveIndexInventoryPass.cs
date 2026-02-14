@@ -49,7 +49,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     {
         List<DbIndexInfo> tableIndexes = [];
         var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
-        var syntheticPresenceColumns = BuildPresenceColumnSet(table);
+        var syntheticPresenceFlags = BuildSyntheticPresenceFlagSet(table);
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
         var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
@@ -84,7 +84,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
         foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
         {
-            ValidateForeignKeyColumns(table, fk, columnsByName, syntheticPresenceColumns);
+            ValidateForeignKeyColumns(table, fk, columnsByName, syntheticPresenceFlags);
 
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
             {
@@ -113,7 +113,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         DbTableModel table,
         TableConstraint.ForeignKey foreignKey,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
-        IReadOnlySet<DbColumnName> syntheticPresenceColumns
+        IReadOnlySet<DbColumnName> syntheticPresenceFlags
     )
     {
         if (foreignKey.Columns.Count == 0)
@@ -133,7 +133,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            if (syntheticPresenceColumns.Contains(columnModel.ColumnName))
+            if (syntheticPresenceFlags.Contains(columnModel.ColumnName))
             {
                 throw new InvalidOperationException(
                     $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references synthetic presence "
@@ -154,12 +154,12 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the set of synthetic presence columns referenced by unified aliases on a table.
+    /// Builds the set of synthetic optional-path presence flags referenced by unified aliases on a table.
     /// </summary>
-    private static IReadOnlySet<DbColumnName> BuildPresenceColumnSet(DbTableModel table)
+    private static IReadOnlySet<DbColumnName> BuildSyntheticPresenceFlagSet(DbTableModel table)
     {
         var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
-        HashSet<DbColumnName> presenceColumns = [];
+        HashSet<DbColumnName> syntheticPresenceFlags = [];
 
         foreach (var column in table.Columns)
         {
@@ -169,11 +169,11 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
                 && presenceColumnModel.Kind == ColumnKind.Scalar
             )
             {
-                presenceColumns.Add(presenceColumn);
+                syntheticPresenceFlags.Add(presenceColumn);
             }
         }
 
-        return presenceColumns;
+        return syntheticPresenceFlags;
     }
 
     /// <summary>
