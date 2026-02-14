@@ -52,7 +52,7 @@
       "Add a unit fixture (post key-unification implementation) that unifies at least one identity-part column and assert FK constraints are emitted only over storage columns and `DeriveIndexInventoryPass` derives FK-support indexes using those storage columns.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs",
