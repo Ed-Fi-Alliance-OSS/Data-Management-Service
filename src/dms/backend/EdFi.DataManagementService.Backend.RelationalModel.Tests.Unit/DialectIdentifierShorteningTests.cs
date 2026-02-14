@@ -161,11 +161,22 @@ public class Given_Pgsql_Identifier_Shortening
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
 
-        var trigger = _scenario.Result.TriggersInCreateOrder.Single();
+        var trigger = _scenario.Result.TriggersInCreateOrder.Single(entry =>
+            entry.Kind == DbTriggerKind.DocumentStamping
+        );
         trigger.Name.Value.Should().Be(expectedTrigger);
         trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
         trigger.TriggerTable.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should shorten identity-propagation fallback trigger identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_identity_propagation_fallback_trigger_identifiers()
+    {
+        IdentifierShorteningAssertions.AssertPropagationFallbackShortened(_scenario);
     }
 
     /// <summary>
@@ -373,11 +384,22 @@ public class Given_Mssql_Identifier_Shortening
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
 
-        var trigger = _scenario.Result.TriggersInCreateOrder.Single();
+        var trigger = _scenario.Result.TriggersInCreateOrder.Single(entry =>
+            entry.Kind == DbTriggerKind.DocumentStamping
+        );
         trigger.Name.Value.Should().Be(expectedTrigger);
         trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
         trigger.TriggerTable.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// It should shorten identity-propagation fallback trigger identifiers.
+    /// </summary>
+    [Test]
+    public void It_should_shorten_identity_propagation_fallback_trigger_identifiers()
+    {
+        IdentifierShorteningAssertions.AssertPropagationFallbackShortened(_scenario);
     }
 
     /// <summary>
@@ -603,6 +625,13 @@ internal sealed record ShorteningIdentifiers(
     string AllOrNoneConstraintName,
     string IndexName,
     string TriggerName,
+    string PropagationTriggerName,
+    string PropagationTriggerTableName,
+    string PropagationReferrerTableName,
+    string PropagationReferrerDocumentIdColumnName,
+    string PropagationReferencedDocumentIdColumnName,
+    string PropagationReferrerStorageColumnName,
+    string PropagationReferencedStorageColumnName,
     string AbstractTableName,
     string AbstractColumnName,
     string ViewName,
@@ -631,6 +660,29 @@ internal sealed record ShorteningIdentifiers(
             AllOrNoneConstraintName: BuildLongIdentifier(prefix, "AllOrNoneConstraint", length),
             IndexName: BuildLongIdentifier(prefix, "Index", length),
             TriggerName: BuildLongIdentifier(prefix, "Trigger", length),
+            PropagationTriggerName: BuildLongIdentifier(prefix, "PropagationTrigger", length),
+            PropagationTriggerTableName: BuildLongIdentifier(prefix, "PropagationTriggerTable", length),
+            PropagationReferrerTableName: BuildLongIdentifier(prefix, "PropagationReferrerTable", length),
+            PropagationReferrerDocumentIdColumnName: BuildLongIdentifier(
+                prefix,
+                "PropagationReferrerDocumentIdColumn",
+                length
+            ),
+            PropagationReferencedDocumentIdColumnName: BuildLongIdentifier(
+                prefix,
+                "PropagationReferencedDocumentIdColumn",
+                length
+            ),
+            PropagationReferrerStorageColumnName: BuildLongIdentifier(
+                prefix,
+                "PropagationReferrerStorageColumn",
+                length
+            ),
+            PropagationReferencedStorageColumnName: BuildLongIdentifier(
+                prefix,
+                "PropagationReferencedStorageColumn",
+                length
+            ),
             AbstractTableName: BuildLongIdentifier(prefix, "AbstractTable", length),
             AbstractColumnName: BuildLongIdentifier(prefix, "AbstractColumn", length),
             ViewName: BuildLongIdentifier(prefix, "View", length),
@@ -743,11 +795,15 @@ internal static class IdentifierShorteningAssertions
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
 
-        var trigger = result.TriggersInCreateOrder.Single();
+        var trigger = result.TriggersInCreateOrder.Single(entry =>
+            entry.Kind == DbTriggerKind.DocumentStamping
+        );
         trigger.Name.Value.Should().Be(expectedTrigger);
         trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
         trigger.TriggerTable.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
+
+        AssertPropagationFallbackShortened(scenario);
 
         var abstractTable = result.AbstractIdentityTablesInNameOrder.Single();
         abstractTable.TableModel.Table.Schema.Value.Should().Be(expectedSchema);
@@ -769,6 +825,53 @@ internal static class IdentifierShorteningAssertions
             .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
             .Subject;
         sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
+    }
+
+    /// <summary>
+    /// Asserts that propagation fallback payload identifiers are shortened as expected for the dialect.
+    /// </summary>
+    public static void AssertPropagationFallbackShortened(ShorteningScenario scenario)
+    {
+        ArgumentNullException.ThrowIfNull(scenario);
+
+        var dialectRules = scenario.DialectRules;
+        var identifiers = scenario.Identifiers;
+        var trigger = scenario.Result.TriggersInCreateOrder.Single(entry =>
+            entry.Kind == DbTriggerKind.IdentityPropagationFallback
+        );
+        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
+        var expectedTriggerName = dialectRules.ShortenIdentifier(identifiers.PropagationTriggerName);
+        var expectedTriggerTable = dialectRules.ShortenIdentifier(identifiers.PropagationTriggerTableName);
+        var expectedReferrerTable = dialectRules.ShortenIdentifier(identifiers.PropagationReferrerTableName);
+        var expectedReferrerDocumentIdColumn = dialectRules.ShortenIdentifier(
+            identifiers.PropagationReferrerDocumentIdColumnName
+        );
+        var expectedReferencedDocumentIdColumn = dialectRules.ShortenIdentifier(
+            identifiers.PropagationReferencedDocumentIdColumnName
+        );
+        var expectedReferrerStorageColumn = dialectRules.ShortenIdentifier(
+            identifiers.PropagationReferrerStorageColumnName
+        );
+        var expectedReferencedStorageColumn = dialectRules.ShortenIdentifier(
+            identifiers.PropagationReferencedStorageColumnName
+        );
+
+        trigger.Name.Value.Should().Be(expectedTriggerName);
+        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
+        trigger.TriggerTable.Name.Should().Be(expectedTriggerTable);
+        trigger.KeyColumns.Should().BeEmpty();
+        trigger.IdentityProjectionColumns.Should().BeEmpty();
+        trigger.PropagationFallback.Should().NotBeNull();
+
+        var action = trigger.PropagationFallback!.ReferrerActions.Single();
+        action.ReferrerTable.Schema.Value.Should().Be(expectedSchema);
+        action.ReferrerTable.Name.Should().Be(expectedReferrerTable);
+        action.ReferrerDocumentIdColumn.Value.Should().Be(expectedReferrerDocumentIdColumn);
+        action.ReferencedDocumentIdColumn.Value.Should().Be(expectedReferencedDocumentIdColumn);
+
+        var identityColumnPair = action.IdentityColumnPairs.Single();
+        identityColumnPair.ReferrerStorageColumn.Value.Should().Be(expectedReferrerStorageColumn);
+        identityColumnPair.ReferencedStorageColumn.Value.Should().Be(expectedReferencedStorageColumn);
     }
 }
 
@@ -992,6 +1095,32 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 DbTriggerKind.DocumentStamping,
                 [new DbColumnName(_identifiers.KeyColumnName)],
                 []
+            )
+        );
+
+        var propagationTriggerTable = new DbTableName(schema, _identifiers.PropagationTriggerTableName);
+        var propagationReferrerTable = new DbTableName(schema, _identifiers.PropagationReferrerTableName);
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName(_identifiers.PropagationTriggerName),
+                propagationTriggerTable,
+                DbTriggerKind.IdentityPropagationFallback,
+                [],
+                [],
+                PropagationFallback: new DbIdentityPropagationFallbackInfo([
+                    new DbIdentityPropagationReferrerAction(
+                        propagationReferrerTable,
+                        new DbColumnName(_identifiers.PropagationReferrerDocumentIdColumnName),
+                        new DbColumnName(_identifiers.PropagationReferencedDocumentIdColumnName),
+                        [
+                            new DbIdentityPropagationColumnPair(
+                                new DbColumnName(_identifiers.PropagationReferrerStorageColumnName),
+                                new DbColumnName(_identifiers.PropagationReferencedStorageColumnName)
+                            ),
+                        ]
+                    ),
+                ])
             )
         );
     }
