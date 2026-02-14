@@ -43,7 +43,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` (covers DDL identifier quoting and related invariants).",
       "If DDL golden outputs exist for triggers, update them to reflect `TriggerTable` semantics and verify diffs are only the intended structural changes."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Index Inventory",
