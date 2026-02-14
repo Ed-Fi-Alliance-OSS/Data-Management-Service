@@ -323,7 +323,25 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 continue;
             }
 
-            var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
+            var bindingTableCandidates = resourceModel
+                .TablesInDependencyOrder.Where(table => table.Table.Equals(binding.Table))
+                .ToArray();
+
+            if (bindingTableCandidates.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                        + $"'{FormatResource(resource)}' did not map to table '{binding.Table}'."
+                );
+            }
+
+            var bindingTable = ReferenceObjectPathScopeResolver.ResolveOwningTableScope(
+                binding.ReferenceObjectPath,
+                bindingTableCandidates,
+                static table => table.JsonScope,
+                resource,
+                binding.Table.ToString()
+            );
             var referrerIdentityColumnsByReferencePath = binding.IdentityBindings.ToDictionary(
                 identityBinding => identityBinding.ReferenceJsonPath.Canonical,
                 identityBinding => identityBinding.Column,
@@ -502,56 +520,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
         referencedTableModel = targetEntry.Model.RelationalModel.Root;
         return true;
-    }
-
-    /// <summary>
-    /// Resolves the concrete table model for a reference binding, selecting the best matching JSON scope
-    /// when a table name appears in multiple scopes.
-    /// </summary>
-    private static DbTableModel ResolveReferenceBindingTable(
-        DocumentReferenceBinding binding,
-        RelationalResourceModel resourceModel,
-        QualifiedResourceName resource
-    )
-    {
-        var candidates = resourceModel
-            .TablesInDependencyOrder.Where(table => table.Table.Equals(binding.Table))
-            .ToArray();
-
-        if (candidates.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' did not map to table '{binding.Table}'."
-            );
-        }
-
-        return ReferenceObjectPathScopeResolver.ResolveDeepestMatchingScope(
-            binding.ReferenceObjectPath,
-            candidates,
-            static table => table.JsonScope,
-            candidateScopes =>
-            {
-                var scopeList = string.Join(", ", candidateScopes);
-
-                return new InvalidOperationException(
-                    $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
-                        + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
-                        + $"Candidates: {scopeList}."
-                );
-            },
-            candidateScopes => new InvalidOperationException(
-                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' matched multiple table scopes with the same depth "
-                    + $"for '{binding.Table}': "
-                    + $"{string.Join(", ", candidateScopes.Select(scope => $"'{scope}'"))}."
-            ),
-            () =>
-                new InvalidOperationException(
-                    $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
-                        + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
-                )
-        );
     }
 
     /// <summary>
