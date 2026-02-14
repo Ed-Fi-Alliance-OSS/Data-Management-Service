@@ -241,7 +241,21 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
 
-                foreach (var identityBinding in binding.IdentityBindings)
+                var identityBindingsForPath = binding
+                    .IdentityBindings.Where(identityBinding =>
+                        identityBinding.ReferenceJsonPath.Canonical == identityPath.Canonical
+                    )
+                    .ToArray();
+
+                if (identityBindingsForPath.Length == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
+                            + "did not resolve to a local identity-part column for trigger derivation."
+                    );
+                }
+
+                foreach (var identityBinding in identityBindingsForPath)
                 {
                     AddUniqueColumn(identityBinding.Column, uniqueColumns, seenColumns);
                 }
