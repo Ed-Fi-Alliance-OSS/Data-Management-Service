@@ -505,56 +505,32 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             );
         }
 
-        if (candidates.Length == 1)
-        {
-            return candidates[0];
-        }
-
-        var orderedCandidates = candidates
-            .OrderBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
-            .ToArray();
-        DbTableModel? bestMatch = null;
-
-        foreach (var candidate in orderedCandidates)
-        {
-            if (!IsPrefixOf(candidate.JsonScope.Segments, binding.ReferenceObjectPath.Segments))
+        return ReferenceObjectPathScopeResolver.ResolveDeepestMatchingScope(
+            binding.ReferenceObjectPath,
+            candidates,
+            static table => table.JsonScope,
+            candidateScopes =>
             {
-                continue;
-            }
+                var scopeList = string.Join(", ", candidateScopes);
 
-            if (bestMatch is null || candidate.JsonScope.Segments.Count > bestMatch.JsonScope.Segments.Count)
-            {
-                bestMatch = candidate;
-            }
-        }
-
-        if (bestMatch is null)
-        {
-            var scopeList = string.Join(", ", orderedCandidates.Select(table => table.JsonScope.Canonical));
-
-            throw new InvalidOperationException(
+                return new InvalidOperationException(
+                    $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                        + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
+                        + $"Candidates: {scopeList}."
+                );
+            },
+            candidateScopes => new InvalidOperationException(
                 $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' did not match any table scope for '{binding.Table}'. "
-                    + $"Candidates: {scopeList}."
-            );
-        }
-
-        if (
-            binding.ReferenceObjectPath.Segments.Any(segment =>
-                segment is JsonPathSegment.Property { Name: "_ext" }
-            )
-            && !bestMatch.JsonScope.Segments.Any(segment =>
-                segment is JsonPathSegment.Property { Name: "_ext" }
-            )
-        )
-        {
-            throw new InvalidOperationException(
-                $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
-            );
-        }
-
-        return bestMatch;
+                    + $"'{FormatResource(resource)}' matched multiple table scopes with the same depth "
+                    + $"for '{binding.Table}': "
+                    + $"{string.Join(", ", candidateScopes.Select(scope => $"'{scope}'"))}."
+            ),
+            () =>
+                new InvalidOperationException(
+                    $"Reference object path '{binding.ReferenceObjectPath.Canonical}' on resource "
+                        + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
+                )
+        );
     }
 
     /// <summary>

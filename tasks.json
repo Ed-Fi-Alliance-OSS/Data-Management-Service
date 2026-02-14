@@ -144,7 +144,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "Spot-check extension scenarios (paths including `._ext`) in existing fixtures to confirm the same error conditions are raised when an extension scope is required but missing."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
