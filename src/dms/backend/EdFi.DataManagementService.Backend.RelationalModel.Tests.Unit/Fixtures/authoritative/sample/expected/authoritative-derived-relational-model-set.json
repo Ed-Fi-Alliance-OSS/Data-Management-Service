@@ -29359,7 +29359,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "School_DocumentId",
+        "School_SchoolId",
         "WeekIdentifier"
       ]
     },
@@ -29374,7 +29374,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "School_DocumentId",
+        "School_SchoolId",
         "WeekIdentifier"
       ]
     },
@@ -29389,9 +29389,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "RatingTitle",
-        "SchoolYear_DocumentId"
+        "SchoolYear_SchoolYear"
       ]
     },
     {
@@ -29405,9 +29405,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "RatingTitle",
-        "SchoolYear_DocumentId"
+        "SchoolYear_SchoolYear"
       ]
     },
     {
@@ -29464,8 +29464,9 @@
       ],
       "identity_projection_columns": [
         "AdministrationIdentifier",
-        "Assessment_DocumentId",
-        "AssigningEducationOrganization_DocumentId"
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
+        "AssigningEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -29480,8 +29481,9 @@
       ],
       "identity_projection_columns": [
         "AdministrationIdentifier",
-        "Assessment_DocumentId",
-        "AssigningEducationOrganization_DocumentId"
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
+        "AssigningEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -29507,8 +29509,11 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "AssessmentAdministration_DocumentId",
-        "ParticipatingEducationOrganization_DocumentId"
+        "AssessmentAdministration_AdministrationIdentifier",
+        "AssessmentAdministration_AssessmentIdentifier",
+        "AssessmentAdministration_Namespace",
+        "AssessmentAdministration_AssigningEducationOrganizationId",
+        "ParticipatingEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -29522,8 +29527,11 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "AssessmentAdministration_DocumentId",
-        "ParticipatingEducationOrganization_DocumentId"
+        "AssessmentAdministration_AdministrationIdentifier",
+        "AssessmentAdministration_AssessmentIdentifier",
+        "AssessmentAdministration_Namespace",
+        "AssessmentAdministration_AssigningEducationOrganizationId",
+        "ParticipatingEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -29586,7 +29594,8 @@
       ],
       "identity_projection_columns": [
         "AssessmentBatteryPartName",
-        "Assessment_DocumentId"
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace"
       ]
     },
     {
@@ -29601,7 +29610,8 @@
       ],
       "identity_projection_columns": [
         "AssessmentBatteryPartName",
-        "Assessment_DocumentId"
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace"
       ]
     },
     {
@@ -29639,7 +29649,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "IdentificationCode"
       ]
     },
@@ -29654,7 +29665,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "IdentificationCode"
       ]
     },
@@ -29765,7 +29777,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "ScoreRangeId"
       ]
     },
@@ -29780,7 +29793,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "ScoreRangeId"
       ]
     },
@@ -29862,7 +29876,7 @@
       ],
       "identity_projection_columns": [
         "BellScheduleName",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -29877,7 +29891,7 @@
       ],
       "identity_projection_columns": [
         "BellScheduleName",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -29928,8 +29942,8 @@
       ],
       "identity_projection_columns": [
         "CalendarCode",
-        "School_DocumentId",
-        "SchoolYear_DocumentId"
+        "School_SchoolId",
+        "SchoolYear_SchoolYear"
       ]
     },
     {
@@ -29944,8 +29958,8 @@
       ],
       "identity_projection_columns": [
         "CalendarCode",
-        "School_DocumentId",
-        "SchoolYear_DocumentId"
+        "School_SchoolId",
+        "SchoolYear_SchoolYear"
       ]
     },
     {
@@ -29959,7 +29973,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Calendar_DocumentId",
+        "Calendar_CalendarCode",
+        "Calendar_SchoolId",
+        "Calendar_SchoolYear",
         "Date"
       ]
     },
@@ -29974,7 +29990,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Calendar_DocumentId",
+        "Calendar_CalendarCode",
+        "Calendar_SchoolId",
+        "Calendar_SchoolYear",
         "Date"
       ]
     },
@@ -30014,7 +30032,7 @@
       ],
       "identity_projection_columns": [
         "AccountIdentifier",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "FiscalYear"
       ]
     },
@@ -30030,7 +30048,7 @@
       ],
       "identity_projection_columns": [
         "AccountIdentifier",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "FiscalYear"
       ]
     },
@@ -30058,7 +30076,7 @@
       ],
       "identity_projection_columns": [
         "ClassPeriodName",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -30073,7 +30091,7 @@
       ],
       "identity_projection_columns": [
         "ClassPeriodName",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -30100,7 +30118,7 @@
       ],
       "identity_projection_columns": [
         "CohortIdentifier",
-        "EducationOrganization_DocumentId"
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -30115,7 +30133,7 @@
       ],
       "identity_projection_columns": [
         "CohortIdentifier",
-        "EducationOrganization_DocumentId"
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -30425,7 +30443,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "CommunityProvider_DocumentId",
+        "CommunityProvider_CommunityProviderId",
         "LicenseIdentifier",
         "LicensingOrganization"
       ]
@@ -30441,7 +30459,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "CommunityProvider_DocumentId",
+        "CommunityProvider_CommunityProviderId",
         "LicenseIdentifier",
         "LicensingOrganization"
       ]
@@ -30457,7 +30475,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "Objective",
         "ObjectiveGradeLevelDescriptor_DescriptorId"
       ]
@@ -30473,7 +30491,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "Objective",
         "ObjectiveGradeLevelDescriptor_DescriptorId"
       ]
@@ -30626,7 +30644,7 @@
       ],
       "identity_projection_columns": [
         "CourseCode",
-        "EducationOrganization_DocumentId"
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -30641,7 +30659,7 @@
       ],
       "identity_projection_columns": [
         "CourseCode",
-        "EducationOrganization_DocumentId"
+        "EducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -30728,8 +30746,10 @@
       ],
       "identity_projection_columns": [
         "LocalCourseCode",
-        "School_DocumentId",
-        "Session_DocumentId"
+        "School_SchoolId",
+        "Session_SchoolId",
+        "Session_SchoolYear",
+        "Session_SessionName"
       ]
     },
     {
@@ -30744,8 +30764,10 @@
       ],
       "identity_projection_columns": [
         "LocalCourseCode",
-        "School_DocumentId",
-        "Session_DocumentId"
+        "School_SchoolId",
+        "Session_SchoolId",
+        "Session_SchoolYear",
+        "Session_SessionName"
       ]
     },
     {
@@ -30796,8 +30818,12 @@
       ],
       "identity_projection_columns": [
         "CourseAttemptResultDescriptor_DescriptorId",
-        "CourseCourse_DocumentId",
-        "StudentAcademicRecord_DocumentId"
+        "CourseCourse_CourseCode",
+        "CourseCourse_EducationOrganizationId",
+        "StudentAcademicRecord_EducationOrganizationId",
+        "StudentAcademicRecord_SchoolYear",
+        "StudentAcademicRecord_StudentUniqueId",
+        "StudentAcademicRecord_TermDescriptor_DescriptorId"
       ]
     },
     {
@@ -30812,8 +30838,12 @@
       ],
       "identity_projection_columns": [
         "CourseAttemptResultDescriptor_DescriptorId",
-        "CourseCourse_DocumentId",
-        "StudentAcademicRecord_DocumentId"
+        "CourseCourse_CourseCode",
+        "CourseCourse_EducationOrganizationId",
+        "StudentAcademicRecord_EducationOrganizationId",
+        "StudentAcademicRecord_SchoolYear",
+        "StudentAcademicRecord_StudentUniqueId",
+        "StudentAcademicRecord_TermDescriptor_DescriptorId"
       ]
     },
     {
@@ -31053,7 +31083,7 @@
       "identity_projection_columns": [
         "DisciplineActionIdentifier",
         "DisciplineDate",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -31069,7 +31099,7 @@
       "identity_projection_columns": [
         "DisciplineActionIdentifier",
         "DisciplineDate",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -31120,7 +31150,7 @@
       ],
       "identity_projection_columns": [
         "IncidentIdentifier",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -31135,7 +31165,7 @@
       ],
       "identity_projection_columns": [
         "IncidentIdentifier",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -31297,8 +31327,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "InterventionPrescriptionInterventionPrescription_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
+        "InterventionPrescriptionInterventionPrescription_Int_409fc39d28"
       ]
     },
     {
@@ -31312,8 +31343,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "InterventionPrescriptionInterventionPrescription_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
+        "InterventionPrescriptionInterventionPrescription_Int_409fc39d28"
       ]
     },
     {
@@ -31397,8 +31429,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "MemberEducationOrganization_DocumentId"
+        "EducationOrganizationNetwork_EducationOrganizationNetworkId",
+        "MemberEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -31412,8 +31444,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganizationNetwork_DocumentId",
-        "MemberEducationOrganization_DocumentId"
+        "EducationOrganizationNetwork_EducationOrganizationNetworkId",
+        "MemberEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -31499,8 +31531,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "PeerEducationOrganization_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "PeerEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -31514,8 +31546,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "PeerEducationOrganization_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "PeerEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -31672,7 +31704,13 @@
       ],
       "identity_projection_columns": [
         "EvaluationRubricRating",
-        "ProgramEvaluationElement_DocumentId"
+        "ProgramEvaluationElement_ProgramEvaluationElementTitle",
+        "ProgramEvaluationElement_ProgramEducationOrganizationId",
+        "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706",
+        "ProgramEvaluationElement_ProgramEvaluationTitle",
+        "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71",
+        "ProgramEvaluationElement_ProgramName",
+        "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -31687,7 +31725,13 @@
       ],
       "identity_projection_columns": [
         "EvaluationRubricRating",
-        "ProgramEvaluationElement_DocumentId"
+        "ProgramEvaluationElement_ProgramEvaluationElementTitle",
+        "ProgramEvaluationElement_ProgramEducationOrganizationId",
+        "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706",
+        "ProgramEvaluationElement_ProgramEvaluationTitle",
+        "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71",
+        "ProgramEvaluationElement_ProgramName",
+        "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -31702,8 +31746,8 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "FeederSchool_DocumentId",
-        "School_DocumentId"
+        "FeederSchool_SchoolId",
+        "School_SchoolId"
       ]
     },
     {
@@ -31718,8 +31762,8 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "FeederSchool_DocumentId",
-        "School_DocumentId"
+        "FeederSchool_SchoolId",
+        "School_SchoolId"
       ]
     },
     {
@@ -31818,8 +31862,17 @@
       ],
       "identity_projection_columns": [
         "GradeTypeDescriptor_DescriptorId",
-        "GradingPeriodGradingPeriod_DocumentId",
-        "StudentSectionAssociation_DocumentId"
+        "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriodGradingPeriod_GradingPeriodName",
+        "GradingPeriodGradingPeriod_SchoolId",
+        "GradingPeriodGradingPeriod_SchoolYear",
+        "StudentSectionAssociation_BeginDate",
+        "StudentSectionAssociation_LocalCourseCode",
+        "StudentSectionAssociation_SchoolId",
+        "StudentSectionAssociation_SchoolYear",
+        "StudentSectionAssociation_SectionIdentifier",
+        "StudentSectionAssociation_SessionName",
+        "StudentSectionAssociation_StudentUniqueId"
       ]
     },
     {
@@ -31834,8 +31887,17 @@
       ],
       "identity_projection_columns": [
         "GradeTypeDescriptor_DescriptorId",
-        "GradingPeriodGradingPeriod_DocumentId",
-        "StudentSectionAssociation_DocumentId"
+        "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriodGradingPeriod_GradingPeriodName",
+        "GradingPeriodGradingPeriod_SchoolId",
+        "GradingPeriodGradingPeriod_SchoolYear",
+        "StudentSectionAssociation_BeginDate",
+        "StudentSectionAssociation_LocalCourseCode",
+        "StudentSectionAssociation_SchoolId",
+        "StudentSectionAssociation_SchoolYear",
+        "StudentSectionAssociation_SectionIdentifier",
+        "StudentSectionAssociation_SessionName",
+        "StudentSectionAssociation_StudentUniqueId"
       ]
     },
     {
@@ -31905,8 +31967,8 @@
       "identity_projection_columns": [
         "GradingPeriodDescriptor_DescriptorId",
         "GradingPeriodName",
-        "School_DocumentId",
-        "SchoolYear_DocumentId"
+        "School_SchoolId",
+        "SchoolYear_SchoolYear"
       ]
     },
     {
@@ -31922,8 +31984,8 @@
       "identity_projection_columns": [
         "GradingPeriodDescriptor_DescriptorId",
         "GradingPeriodName",
-        "School_DocumentId",
-        "SchoolYear_DocumentId"
+        "School_SchoolId",
+        "SchoolYear_SchoolYear"
       ]
     },
     {
@@ -31937,9 +31999,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "GraduationPlanTypeDescriptor_DescriptorId",
-        "GraduationSchoolYear_DocumentId"
+        "GraduationSchoolYear_GraduationSchoolYear"
       ]
     },
     {
@@ -31953,9 +32015,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "GraduationPlanTypeDescriptor_DescriptorId",
-        "GraduationSchoolYear_DocumentId"
+        "GraduationSchoolYear_GraduationSchoolYear"
       ]
     },
     {
@@ -32041,7 +32103,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "InterventionIdentificationCode"
       ]
     },
@@ -32056,7 +32118,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "InterventionIdentificationCode"
       ]
     },
@@ -32167,7 +32229,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "InterventionPrescriptionIdentificationCode"
       ]
     },
@@ -32182,7 +32244,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "InterventionPrescriptionIdentificationCode"
       ]
     },
@@ -32293,7 +32355,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "InterventionStudyIdentificationCode"
       ]
     },
@@ -32308,7 +32370,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "InterventionStudyIdentificationCode"
       ]
     },
@@ -32484,8 +32546,8 @@
       ],
       "identity_projection_columns": [
         "Namespace",
-        "SourceLearningStandard_DocumentId",
-        "TargetLearningStandard_DocumentId"
+        "SourceLearningStandard_LearningStandardId",
+        "TargetLearningStandard_LearningStandardId"
       ]
     },
     {
@@ -32500,8 +32562,8 @@
       ],
       "identity_projection_columns": [
         "Namespace",
-        "SourceLearningStandard_DocumentId",
-        "TargetLearningStandard_DocumentId"
+        "SourceLearningStandard_LearningStandardId",
+        "TargetLearningStandard_LearningStandardId"
       ]
     },
     {
@@ -32540,7 +32602,7 @@
       ],
       "identity_projection_columns": [
         "AccountIdentifier",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "FiscalYear"
       ]
     },
@@ -32556,7 +32618,7 @@
       ],
       "identity_projection_columns": [
         "AccountIdentifier",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "FiscalYear"
       ]
     },
@@ -32584,7 +32646,9 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear"
       ]
     },
     {
@@ -32599,7 +32663,9 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear"
       ]
     },
     {
@@ -32614,7 +32680,9 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear"
       ]
     },
     {
@@ -32629,7 +32697,9 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear"
       ]
     },
     {
@@ -32644,8 +32714,10 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId",
-        "Staff_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -32660,8 +32732,10 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId",
-        "Staff_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -32842,7 +32916,9 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear"
       ]
     },
     {
@@ -32857,7 +32933,9 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear"
       ]
     },
     {
@@ -32872,8 +32950,10 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId",
-        "Staff_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -32888,8 +32968,10 @@
       ],
       "identity_projection_columns": [
         "AsOfDate",
-        "LocalAccount_DocumentId",
-        "Staff_DocumentId"
+        "LocalAccount_AccountIdentifier",
+        "LocalAccount_EducationOrganizationId",
+        "LocalAccount_FiscalYear",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -32904,7 +32986,7 @@
       ],
       "identity_projection_columns": [
         "ClassroomIdentificationCode",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -32919,7 +33001,7 @@
       ],
       "identity_projection_columns": [
         "ClassroomIdentificationCode",
-        "School_DocumentId"
+        "School_SchoolId"
       ]
     },
     {
@@ -32975,7 +33057,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "IdentificationCode"
       ]
     },
@@ -32990,7 +33073,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "IdentificationCode"
       ]
     },
@@ -33053,7 +33137,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "RequisitionNumber"
       ]
     },
@@ -33068,7 +33152,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "RequisitionNumber"
       ]
     },
@@ -33323,7 +33407,7 @@
       "identity_projection_columns": [
         "EventDate",
         "PostSecondaryEventCategoryDescriptor_DescriptorId",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -33339,7 +33423,7 @@
       "identity_projection_columns": [
         "EventDate",
         "PostSecondaryEventCategoryDescriptor_DescriptorId",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -33507,7 +33591,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "ProgramName",
         "ProgramTypeDescriptor_DescriptorId"
       ]
@@ -33523,7 +33607,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "ProgramName",
         "ProgramTypeDescriptor_DescriptorId"
       ]
@@ -33596,7 +33680,9 @@
         "ProgramEvaluationPeriodDescriptor_DescriptorId",
         "ProgramEvaluationTitle",
         "ProgramEvaluationTypeDescriptor_DescriptorId",
-        "ProgramProgram_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33613,7 +33699,9 @@
         "ProgramEvaluationPeriodDescriptor_DescriptorId",
         "ProgramEvaluationTitle",
         "ProgramEvaluationTypeDescriptor_DescriptorId",
-        "ProgramProgram_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33628,7 +33716,12 @@
       ],
       "identity_projection_columns": [
         "ProgramEvaluationElementTitle",
-        "ProgramEvaluation_DocumentId"
+        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+        "ProgramEvaluation_ProgramEvaluationTitle",
+        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+        "ProgramEvaluation_ProgramEducationOrganizationId",
+        "ProgramEvaluation_ProgramName",
+        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33643,7 +33736,12 @@
       ],
       "identity_projection_columns": [
         "ProgramEvaluationElementTitle",
-        "ProgramEvaluation_DocumentId"
+        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+        "ProgramEvaluation_ProgramEvaluationTitle",
+        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+        "ProgramEvaluation_ProgramEducationOrganizationId",
+        "ProgramEvaluation_ProgramName",
+        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33682,7 +33780,12 @@
       ],
       "identity_projection_columns": [
         "ProgramEvaluationObjectiveTitle",
-        "ProgramEvaluation_DocumentId"
+        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+        "ProgramEvaluation_ProgramEvaluationTitle",
+        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+        "ProgramEvaluation_ProgramEducationOrganizationId",
+        "ProgramEvaluation_ProgramName",
+        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33697,7 +33800,12 @@
       ],
       "identity_projection_columns": [
         "ProgramEvaluationObjectiveTitle",
-        "ProgramEvaluation_DocumentId"
+        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+        "ProgramEvaluation_ProgramEvaluationTitle",
+        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+        "ProgramEvaluation_ProgramEducationOrganizationId",
+        "ProgramEvaluation_ProgramName",
+        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
       ]
     },
     {
@@ -33789,9 +33897,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "GradingPeriodGradingPeriod_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriodGradingPeriod_GradingPeriodName",
+        "GradingPeriodGradingPeriod_SchoolId",
+        "GradingPeriodGradingPeriod_SchoolYear",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -33805,9 +33916,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "GradingPeriodGradingPeriod_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriodGradingPeriod_GradingPeriodName",
+        "GradingPeriodGradingPeriod_SchoolId",
+        "GradingPeriodGradingPeriod_SchoolYear",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -33858,8 +33972,8 @@
       ],
       "identity_projection_columns": [
         "RestraintEventIdentifier",
-        "School_DocumentId",
-        "Student_DocumentId"
+        "School_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -33874,8 +33988,8 @@
       ],
       "identity_projection_columns": [
         "RestraintEventIdentifier",
-        "School_DocumentId",
-        "Student_DocumentId"
+        "School_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -34107,7 +34221,11 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "CourseOffering_DocumentId",
+        "CourseOffering_LocalCourseCode",
+        "CourseOffering_SchoolReferenceSchoolId",
+        "CourseOffering_SessionReferenceSchoolId",
+        "CourseOffering_SchoolYear",
+        "CourseOffering_SessionName",
         "SectionIdentifier"
       ]
     },
@@ -34122,7 +34240,11 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "CourseOffering_DocumentId",
+        "CourseOffering_LocalCourseCode",
+        "CourseOffering_SchoolReferenceSchoolId",
+        "CourseOffering_SessionReferenceSchoolId",
+        "CourseOffering_SchoolYear",
+        "CourseOffering_SessionName",
         "SectionIdentifier"
       ]
     },
@@ -34137,8 +34259,15 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "CalendarDate_DocumentId",
-        "Section_DocumentId"
+        "CalendarDate_CalendarCode",
+        "CalendarDate_SchoolId",
+        "CalendarDate_SchoolYear",
+        "CalendarDate_Date",
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier"
       ]
     },
     {
@@ -34152,8 +34281,15 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "CalendarDate_DocumentId",
-        "Section_DocumentId"
+        "CalendarDate_CalendarCode",
+        "CalendarDate_SchoolId",
+        "CalendarDate_SchoolYear",
+        "CalendarDate_Date",
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier"
       ]
     },
     {
@@ -34227,8 +34363,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "School_DocumentId",
-        "SchoolYear_DocumentId",
+        "School_SchoolId",
+        "SchoolYear_SchoolYear",
         "SessionName"
       ]
     },
@@ -34243,8 +34379,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "School_DocumentId",
-        "SchoolYear_DocumentId",
+        "School_SchoolId",
+        "SchoolYear_SchoolYear",
         "SessionName"
       ]
     },
@@ -34355,7 +34491,7 @@
       "identity_projection_columns": [
         "AbsenceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34371,7 +34507,7 @@
       "identity_projection_columns": [
         "AbsenceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34422,8 +34558,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Cohort_DocumentId",
-        "Staff_DocumentId"
+        "Cohort_CohortIdentifier",
+        "Cohort_EducationOrganizationId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34438,8 +34575,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Cohort_DocumentId",
-        "Staff_DocumentId"
+        "Cohort_CohortIdentifier",
+        "Cohort_EducationOrganizationId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34465,8 +34603,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "DisciplineIncident_DocumentId",
-        "Staff_DocumentId"
+        "DisciplineIncident_IncidentIdentifier",
+        "DisciplineIncident_SchoolId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34480,8 +34619,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "DisciplineIncident_DocumentId",
-        "Staff_DocumentId"
+        "DisciplineIncident_IncidentIdentifier",
+        "DisciplineIncident_SchoolId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34508,9 +34648,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "StaffClassificationDescriptor_DescriptorId",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34525,9 +34665,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "StaffClassificationDescriptor_DescriptorId",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34542,8 +34682,8 @@
       ],
       "identity_projection_columns": [
         "ContactTitle",
-        "EducationOrganization_DocumentId",
-        "Staff_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34558,8 +34698,8 @@
       ],
       "identity_projection_columns": [
         "ContactTitle",
-        "EducationOrganization_DocumentId",
-        "Staff_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34597,10 +34737,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "EmploymentStatusDescriptor_DescriptorId",
         "HireDate",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34614,10 +34754,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "EmploymentStatusDescriptor_DescriptorId",
         "HireDate",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34705,7 +34845,7 @@
       "identity_projection_columns": [
         "BeginDate",
         "StaffLeaveEventCategoryDescriptor_DescriptorId",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34721,7 +34861,7 @@
       "identity_projection_columns": [
         "BeginDate",
         "StaffLeaveEventCategoryDescriptor_DescriptorId",
-        "Staff_DocumentId"
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34760,8 +34900,10 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "ProgramProgram_DocumentId",
-        "Staff_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34776,8 +34918,10 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "ProgramProgram_DocumentId",
-        "Staff_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34816,8 +34960,8 @@
       ],
       "identity_projection_columns": [
         "ProgramAssignmentDescriptor_DescriptorId",
-        "School_DocumentId",
-        "Staff_DocumentId"
+        "School_SchoolId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34832,8 +34976,8 @@
       ],
       "identity_projection_columns": [
         "ProgramAssignmentDescriptor_DescriptorId",
-        "School_DocumentId",
-        "Staff_DocumentId"
+        "School_SchoolId",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34872,8 +35016,12 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Section_DocumentId",
-        "Staff_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -34888,8 +35036,12 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Section_DocumentId",
-        "Staff_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Staff_StaffUniqueId"
       ]
     },
     {
@@ -35133,9 +35285,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "SchoolYear_DocumentId",
-        "Student_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
+        "SchoolYear_SchoolYear",
+        "Student_StudentUniqueId",
         "TermDescriptor_DescriptorId"
       ]
     },
@@ -35150,9 +35302,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "SchoolYear_DocumentId",
-        "Student_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
+        "SchoolYear_SchoolYear",
+        "Student_StudentUniqueId",
         "TermDescriptor_DescriptorId"
       ]
     },
@@ -35227,9 +35379,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "StudentAssessmentIdentifier",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35243,9 +35396,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_DocumentId",
+        "Assessment_AssessmentIdentifier",
+        "Assessment_Namespace",
         "StudentAssessmentIdentifier",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35272,8 +35426,11 @@
       ],
       "identity_projection_columns": [
         "EducationOrganizationAssociationTypeDescriptor_DescriptorId",
-        "EducationOrganization_DocumentId",
-        "StudentAssessment_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "StudentAssessment_AssessmentIdentifier",
+        "StudentAssessment_Namespace",
+        "StudentAssessment_StudentAssessmentIdentifier",
+        "StudentAssessment_StudentUniqueId"
       ]
     },
     {
@@ -35288,8 +35445,11 @@
       ],
       "identity_projection_columns": [
         "EducationOrganizationAssociationTypeDescriptor_DescriptorId",
-        "EducationOrganization_DocumentId",
-        "StudentAssessment_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "StudentAssessment_AssessmentIdentifier",
+        "StudentAssessment_Namespace",
+        "StudentAssessment_StudentAssessmentIdentifier",
+        "StudentAssessment_StudentUniqueId"
       ]
     },
     {
@@ -35327,8 +35487,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "AssessmentAdministration_DocumentId",
-        "StudentEducationOrganizationAssociation_DocumentId"
+        "AssessmentAdministration_AdministrationIdentifier",
+        "AssessmentAdministration_AssessmentIdentifier",
+        "AssessmentAdministration_Namespace",
+        "AssessmentAdministration_AssigningEducationOrganizationId",
+        "StudentEducationOrganizationAssociation_EducationOrganizationId",
+        "StudentEducationOrganizationAssociation_StudentUniqueId"
       ]
     },
     {
@@ -35342,8 +35506,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "AssessmentAdministration_DocumentId",
-        "StudentEducationOrganizationAssociation_DocumentId"
+        "AssessmentAdministration_AdministrationIdentifier",
+        "AssessmentAdministration_AssessmentIdentifier",
+        "AssessmentAdministration_Namespace",
+        "AssessmentAdministration_AssigningEducationOrganizationId",
+        "StudentEducationOrganizationAssociation_EducationOrganizationId",
+        "StudentEducationOrganizationAssociation_StudentUniqueId"
       ]
     },
     {
@@ -35381,8 +35549,15 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "AssessmentBatteryPart_DocumentId",
-        "StudentAssessmentRegistration_DocumentId"
+        "AssessmentBatteryPart_AssessmentBatteryPartName",
+        "AssessmentBatteryPart_AssessmentIdentifier",
+        "AssessmentBatteryPart_Namespace",
+        "StudentAssessmentRegistration_AdministrationIdentifier",
+        "StudentAssessmentRegistration_AssessmentIdentifier",
+        "StudentAssessmentRegistration_AssigningEducationOrganizationId",
+        "StudentAssessmentRegistration_Namespace",
+        "StudentAssessmentRegistration_EducationOrganizationId",
+        "StudentAssessmentRegistration_StudentUniqueId"
       ]
     },
     {
@@ -35396,8 +35571,15 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "AssessmentBatteryPart_DocumentId",
-        "StudentAssessmentRegistration_DocumentId"
+        "AssessmentBatteryPart_AssessmentBatteryPartName",
+        "AssessmentBatteryPart_AssessmentIdentifier",
+        "AssessmentBatteryPart_Namespace",
+        "StudentAssessmentRegistration_AdministrationIdentifier",
+        "StudentAssessmentRegistration_AssessmentIdentifier",
+        "StudentAssessmentRegistration_AssigningEducationOrganizationId",
+        "StudentAssessmentRegistration_Namespace",
+        "StudentAssessmentRegistration_EducationOrganizationId",
+        "StudentAssessmentRegistration_StudentUniqueId"
       ]
     },
     {
@@ -35472,9 +35654,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -35493,9 +35677,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35510,9 +35696,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35551,8 +35739,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Cohort_DocumentId",
-        "Student_DocumentId"
+        "Cohort_CohortIdentifier",
+        "Cohort_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35567,8 +35756,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Cohort_DocumentId",
-        "Student_DocumentId"
+        "Cohort_CohortIdentifier",
+        "Cohort_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35594,9 +35784,14 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "GradingPeriodGradingPeriod_DocumentId",
-        "ObjectiveCompetencyObjective_DocumentId",
-        "Student_DocumentId"
+        "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriodGradingPeriod_GradingPeriodName",
+        "GradingPeriodGradingPeriod_SchoolId",
+        "GradingPeriodGradingPeriod_SchoolYear",
+        "ObjectiveCompetencyObjective_EducationOrganizationId",
+        "ObjectiveCompetencyObjective_Objective",
+        "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35610,9 +35805,14 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "GradingPeriodGradingPeriod_DocumentId",
-        "ObjectiveCompetencyObjective_DocumentId",
-        "Student_DocumentId"
+        "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+        "GradingPeriodGradingPeriod_GradingPeriodName",
+        "GradingPeriodGradingPeriod_SchoolId",
+        "GradingPeriodGradingPeriod_SchoolYear",
+        "ObjectiveCompetencyObjective_EducationOrganizationId",
+        "ObjectiveCompetencyObjective_Objective",
+        "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35650,8 +35850,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Contact_DocumentId",
-        "Student_DocumentId"
+        "Contact_ContactUniqueId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35665,8 +35865,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Contact_DocumentId",
-        "Student_DocumentId"
+        "Contact_ContactUniqueId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35681,8 +35881,9 @@
       ],
       "identity_projection_columns": [
         "BehaviorDescriptor_DescriptorId",
-        "DisciplineIncident_DocumentId",
-        "Student_DocumentId"
+        "DisciplineIncident_IncidentIdentifier",
+        "DisciplineIncident_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35697,8 +35898,9 @@
       ],
       "identity_projection_columns": [
         "BehaviorDescriptor_DescriptorId",
-        "DisciplineIncident_DocumentId",
-        "Student_DocumentId"
+        "DisciplineIncident_IncidentIdentifier",
+        "DisciplineIncident_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35736,8 +35938,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "DisciplineIncident_DocumentId",
-        "Student_DocumentId"
+        "DisciplineIncident_IncidentIdentifier",
+        "DisciplineIncident_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35751,8 +35954,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "DisciplineIncident_DocumentId",
-        "Student_DocumentId"
+        "DisciplineIncident_IncidentIdentifier",
+        "DisciplineIncident_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35778,8 +35982,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35793,8 +35997,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35820,8 +36024,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -35835,8 +36039,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36079,9 +36283,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "ResponsibilityDescriptor_DescriptorId",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36096,9 +36300,9 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "ResponsibilityDescriptor_DescriptorId",
-        "Student_DocumentId"
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36112,8 +36316,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "GradebookEntry_DocumentId",
-        "Student_DocumentId"
+        "GradebookEntry_GradebookEntryIdentifier",
+        "GradebookEntry_Namespace",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36127,8 +36332,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "GradebookEntry_DocumentId",
-        "Student_DocumentId"
+        "GradebookEntry_GradebookEntryIdentifier",
+        "GradebookEntry_Namespace",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36142,8 +36348,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36157,8 +36363,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36221,9 +36427,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -36242,9 +36450,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36259,9 +36469,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36311,8 +36523,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Intervention_DocumentId",
-        "Student_DocumentId"
+        "Intervention_EducationOrganizationId",
+        "Intervention_InterventionIdentificationCode",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36326,8 +36539,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Intervention_DocumentId",
-        "Student_DocumentId"
+        "Intervention_EducationOrganizationId",
+        "Intervention_InterventionIdentificationCode",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36355,8 +36569,9 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "Intervention_DocumentId",
-        "Student_DocumentId"
+        "Intervention_EducationOrganizationId",
+        "Intervention_InterventionIdentificationCode",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36372,8 +36587,9 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "Intervention_DocumentId",
-        "Student_DocumentId"
+        "Intervention_EducationOrganizationId",
+        "Intervention_InterventionIdentificationCode",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36388,9 +36604,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -36409,9 +36627,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36426,9 +36646,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36479,9 +36701,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -36500,9 +36724,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36517,9 +36743,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36558,9 +36786,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -36579,9 +36809,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36596,9 +36828,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36661,9 +36895,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -36682,9 +36918,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36699,9 +36937,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36740,10 +36980,12 @@
       ],
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "EventDate",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36758,10 +37000,12 @@
       ],
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
-        "EducationOrganization_DocumentId",
+        "EducationOrganization_EducationOrganizationId",
         "EventDate",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36776,8 +37020,13 @@
       ],
       "identity_projection_columns": [
         "EvaluationDate",
-        "ProgramEvaluation_DocumentId",
-        "Student_DocumentId"
+        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+        "ProgramEvaluation_ProgramEvaluationTitle",
+        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+        "ProgramEvaluation_ProgramEducationOrganizationId",
+        "ProgramEvaluation_ProgramName",
+        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36792,8 +37041,13 @@
       ],
       "identity_projection_columns": [
         "EvaluationDate",
-        "ProgramEvaluation_DocumentId",
-        "Student_DocumentId"
+        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+        "ProgramEvaluation_ProgramEvaluationTitle",
+        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+        "ProgramEvaluation_ProgramEducationOrganizationId",
+        "ProgramEvaluation_ProgramName",
+        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36844,8 +37098,8 @@
       ],
       "identity_projection_columns": [
         "EntryDate",
-        "School_DocumentId",
-        "Student_DocumentId"
+        "School_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36860,8 +37114,8 @@
       ],
       "identity_projection_columns": [
         "EntryDate",
-        "School_DocumentId",
-        "Student_DocumentId"
+        "School_SchoolId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36901,9 +37155,11 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "School_DocumentId",
-        "Session_DocumentId",
-        "Student_DocumentId"
+        "School_SchoolId",
+        "Session_SchoolId",
+        "Session_SchoolYear",
+        "Session_SessionName",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36919,9 +37175,11 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "School_DocumentId",
-        "Session_DocumentId",
-        "Student_DocumentId"
+        "School_SchoolId",
+        "Session_SchoolId",
+        "Session_SchoolYear",
+        "Session_SessionName",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36936,9 +37194,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -36957,9 +37217,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -36974,9 +37236,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37015,9 +37279,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -37036,9 +37302,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37053,9 +37321,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37082,8 +37352,12 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Section_DocumentId",
-        "Student_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37098,8 +37372,12 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "Section_DocumentId",
-        "Student_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37127,8 +37405,12 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "Section_DocumentId",
-        "Student_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37144,8 +37426,12 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "Section_DocumentId",
-        "Student_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37172,9 +37458,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -37193,9 +37481,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37210,9 +37500,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37299,9 +37591,11 @@
       ],
       "identity_projection_columns": [
         "ConsentToEvaluationReceivedDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37316,9 +37610,11 @@
       ],
       "identity_projection_columns": [
         "ConsentToEvaluationReceivedDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37333,9 +37629,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -37354,9 +37652,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37371,9 +37671,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -37411,8 +37713,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Student_DocumentId",
-        "TransportationEducationOrganization_DocumentId"
+        "Student_StudentUniqueId",
+        "TransportationEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -37426,8 +37728,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Student_DocumentId",
-        "TransportationEducationOrganization_DocumentId"
+        "Student_StudentUniqueId",
+        "TransportationEducationOrganization_EducationOrganizationId"
       ]
     },
     {
@@ -37507,8 +37809,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Course_DocumentId",
-        "Survey_DocumentId"
+        "Course_CourseCode",
+        "Course_EducationOrganizationId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37522,8 +37826,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Course_DocumentId",
-        "Survey_DocumentId"
+        "Course_CourseCode",
+        "Course_EducationOrganizationId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37537,8 +37843,11 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Program_DocumentId",
-        "Survey_DocumentId"
+        "Program_EducationOrganizationId",
+        "Program_ProgramName",
+        "Program_ProgramTypeDescriptor_DescriptorId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37552,8 +37861,11 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Program_DocumentId",
-        "Survey_DocumentId"
+        "Program_EducationOrganizationId",
+        "Program_ProgramName",
+        "Program_ProgramTypeDescriptor_DescriptorId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37568,7 +37880,8 @@
       ],
       "identity_projection_columns": [
         "QuestionCode",
-        "Survey_DocumentId"
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37583,7 +37896,8 @@
       ],
       "identity_projection_columns": [
         "QuestionCode",
-        "Survey_DocumentId"
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37609,8 +37923,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyQuestion_DocumentId",
-        "SurveyResponse_DocumentId"
+        "SurveyQuestion_QuestionCode",
+        "SurveyQuestion_Namespace",
+        "SurveyQuestion_SurveyIdentifier",
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
@@ -37624,8 +37942,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyQuestion_DocumentId",
-        "SurveyResponse_DocumentId"
+        "SurveyQuestion_QuestionCode",
+        "SurveyQuestion_Namespace",
+        "SurveyQuestion_SurveyIdentifier",
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
@@ -37675,7 +37997,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Survey_DocumentId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier",
         "SurveyResponseIdentifier"
       ]
     },
@@ -37690,7 +38013,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Survey_DocumentId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier",
         "SurveyResponseIdentifier"
       ]
     },
@@ -37705,8 +38029,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "SurveyResponse_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
@@ -37720,8 +38046,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "SurveyResponse_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
@@ -37735,8 +38063,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Staff_DocumentId",
-        "SurveyResponse_DocumentId"
+        "Staff_StaffUniqueId",
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
@@ -37750,8 +38080,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Staff_DocumentId",
-        "SurveyResponse_DocumentId"
+        "Staff_StaffUniqueId",
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
     {
@@ -37777,7 +38109,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Survey_DocumentId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier",
         "SurveySectionTitle"
       ]
     },
@@ -37792,7 +38125,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Survey_DocumentId",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier",
         "SurveySectionTitle"
       ]
     },
@@ -37807,8 +38141,13 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Section_DocumentId",
-        "Survey_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37822,8 +38161,13 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Section_DocumentId",
-        "Survey_DocumentId"
+        "Section_LocalCourseCode",
+        "Section_SchoolId",
+        "Section_SchoolYear",
+        "Section_SessionName",
+        "Section_SectionIdentifier",
+        "Survey_Namespace",
+        "Survey_SurveyIdentifier"
       ]
     },
     {
@@ -37837,8 +38181,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyResponse_DocumentId",
-        "SurveySection_DocumentId"
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier",
+        "SurveySection_Namespace",
+        "SurveySection_SurveyIdentifier",
+        "SurveySection_SurveySectionTitle"
       ]
     },
     {
@@ -37852,8 +38200,12 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyResponse_DocumentId",
-        "SurveySection_DocumentId"
+        "SurveyResponse_Namespace",
+        "SurveyResponse_SurveyIdentifier",
+        "SurveyResponse_SurveyResponseIdentifier",
+        "SurveySection_Namespace",
+        "SurveySection_SurveyIdentifier",
+        "SurveySection_SurveySectionTitle"
       ]
     },
     {
@@ -37867,8 +38219,13 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "SurveySectionResponse_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "SurveySectionResponse_SurveyResponseReferenceNamespace",
+        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveyResponseIdentifier",
+        "SurveySectionResponse_SurveySectionReferenceNamespace",
+        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveySectionTitle"
       ]
     },
     {
@@ -37882,8 +38239,13 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "EducationOrganization_DocumentId",
-        "SurveySectionResponse_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "SurveySectionResponse_SurveyResponseReferenceNamespace",
+        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveyResponseIdentifier",
+        "SurveySectionResponse_SurveySectionReferenceNamespace",
+        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveySectionTitle"
       ]
     },
     {
@@ -37897,8 +38259,13 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Staff_DocumentId",
-        "SurveySectionResponse_DocumentId"
+        "Staff_StaffUniqueId",
+        "SurveySectionResponse_SurveyResponseReferenceNamespace",
+        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveyResponseIdentifier",
+        "SurveySectionResponse_SurveySectionReferenceNamespace",
+        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveySectionTitle"
       ]
     },
     {
@@ -37912,8 +38279,13 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Staff_DocumentId",
-        "SurveySectionResponse_DocumentId"
+        "Staff_StaffUniqueId",
+        "SurveySectionResponse_SurveyResponseReferenceNamespace",
+        "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveyResponseIdentifier",
+        "SurveySectionResponse_SurveySectionReferenceNamespace",
+        "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+        "SurveySectionResponse_SurveySectionTitle"
       ]
     },
     {
@@ -37955,7 +38327,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Bus_DocumentId",
+        "Bus_BusId",
         "BusRouteNumber"
       ]
     },
@@ -37970,7 +38342,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Bus_DocumentId",
+        "Bus_BusId",
         "BusRouteNumber"
       ]
     },
@@ -38202,9 +38574,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ],
       "target_table": {
         "schema": "edfi",
@@ -38223,9 +38597,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -38240,9 +38616,11 @@
       ],
       "identity_projection_columns": [
         "BeginDate",
-        "EducationOrganization_DocumentId",
-        "ProgramProgram_DocumentId",
-        "Student_DocumentId"
+        "EducationOrganization_EducationOrganizationId",
+        "ProgramProgram_EducationOrganizationId",
+        "ProgramProgram_ProgramName",
+        "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -38544,8 +38922,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "GraduationPlan_DocumentId",
-        "Student_DocumentId"
+        "GraduationPlan_EducationOrganizationId",
+        "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+        "GraduationPlan_GraduationSchoolYear",
+        "Student_StudentUniqueId"
       ]
     },
     {
@@ -38559,8 +38939,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "GraduationPlan_DocumentId",
-        "Student_DocumentId"
+        "GraduationPlan_EducationOrganizationId",
+        "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+        "GraduationPlan_GraduationSchoolYear",
+        "Student_StudentUniqueId"
       ]
     },
     {
