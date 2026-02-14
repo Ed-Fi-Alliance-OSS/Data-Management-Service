@@ -339,7 +339,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             );
             var referrerPresenceColumns = BuildPresenceColumnSet(bindingTable);
             var referencedPresenceColumns = BuildPresenceColumnSet(referencedTableModel);
-            HashSet<string> seenIdentityColumnPairs = new(StringComparer.Ordinal);
+            HashSet<(
+                DbColumnName ReferrerStorageColumn,
+                DbColumnName ReferencedStorageColumn
+            )> seenIdentityColumnPairs = [];
             List<DbIdentityPropagationColumnPair> identityColumnPairs = new(mapping.ReferenceJsonPaths.Count);
 
             foreach (var identityPathBinding in mapping.ReferenceJsonPaths)
@@ -643,10 +646,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         DbColumnName referrerStorageColumn,
         DbColumnName referencedStorageColumn,
         ICollection<DbIdentityPropagationColumnPair> pairs,
-        ISet<string> seenPairs
+        ISet<(DbColumnName ReferrerStorageColumn, DbColumnName ReferencedStorageColumn)> seenPairs
     )
     {
-        var key = $"{referrerStorageColumn.Value}\u001F{referencedStorageColumn.Value}";
+        var key = (referrerStorageColumn, referencedStorageColumn);
 
         if (!seenPairs.Add(key))
         {
