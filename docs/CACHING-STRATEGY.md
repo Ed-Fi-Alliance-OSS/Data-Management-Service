@@ -286,7 +286,7 @@ contexts) from the Configuration Service for multi-instance routing.
 
 - `src/dms/core/.../Configuration/ConfigurationServiceDmsInstanceProvider.cs`
 
-**Implementation:** `ConcurrentDictionary<string, IList<DmsInstance>>` (custom)
+**Implementation:** `ConcurrentDictionary<string, TenantCacheEntry>` (custom) where each entry tracks the cached list plus the last refresh timestamp
 
 **Cache Structure:**
 
@@ -310,6 +310,7 @@ contexts) from the Configuration Service for multi-instance routing.
 | Operation | Method                  | Description                  |
 | --------- | ----------------------- | ---------------------------- |
 | Load      | `LoadDmsInstances(t)`   | Fetches and caches instances |
+| Refresh   | `RefreshInstancesIfExpiredAsync(t)` | Reloads the cache when TTL expires |
 | Get All   | `GetAll(tenant)`        | Returns all for tenant       |
 | Get By ID | `GetById(id, tenant)`   | Returns specific instance    |
 | Check     | `IsLoaded(tenant)`      | Checks if tenant data cached |
@@ -317,12 +318,9 @@ contexts) from the Configuration Service for multi-instance routing.
 
 **Invalidation Strategy:**
 
-- **No invalidation for existing entries** - cached instances persist until restart
-- **Cache-miss fallback for new tenants** - `TenantValidator` triggers
-  `LoadDmsInstances()` when an unknown tenant is requested, allowing new
-  tenants to be added without restart
-- **Limitation:** Updates to existing tenant instances or deleted tenants
-  require application restart to take effect
+- **TTL-based refresh** - `ResolveDmsInstanceMiddleware` checks `RefreshInstancesIfExpiredAsync()` on every request and reloads the cached configuration when the configured TTL expires. The refresh logs `"DMS instance cache expired for tenant {Tenant} ..."` when a reload happens.
+- **Cache-miss fallback for new tenants** - `TenantValidator` triggers `LoadDmsInstances()` when an unknown tenant is requested, allowing new tenants to be added without restart.
+- **Limitation:** Updates to existing tenant instances or deleted tenants still require either a TTL expiration (or manual reload) or application restart to take effect if the TTL is disabled.
 
 ---
 
@@ -444,7 +442,7 @@ Default values: ClaimSets and AppContext = 10 min, Token = 25 min.
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
 | CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
 | NpgsqlDS     | ConcurDict   | Sing. | None   | N/A    | No       | Shutdown     |
-| DMS Instance | ConcurDict   | Sing. | None   | Yes    | No       | Restart      |
+| DMS Instance | ConcurDict   | Sing. | Configurable (CacheSettings.DmsInstanceCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
 
 ## Cache Invalidation Patterns
@@ -453,10 +451,16 @@ DMS uses several invalidation patterns:
 
 ### 1. TTL-Based Expiration
 
-Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata
+Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata, DMS Instance Cache
 
 Cache entries automatically expire after a configured time period. This is the
 simplest pattern and requires no manual intervention.
+
+The DMS instance cache tracks the last refresh timestamp and exposes
+`RefreshInstancesIfExpiredAsync()`. `ResolveDmsInstanceMiddleware` invokes it at the
+start of every request so that once `CacheSettings.DmsInstanceCacheExpirationSeconds`
+elapses the next request reloads the configuration and logs
+"DMS instance cache expired for tenant {Tenant} ...".
 
 ### 2. Version-Based (Reload ID) Invalidation
 
