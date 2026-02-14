@@ -137,3 +137,7 @@
 - Decisions: replace delimiter-signature pair de-dup in `AddIdentityColumnPair(...)` with typed key `HashSet<(DbColumnName ReferrerStorageColumn, DbColumnName ReferencedStorageColumn)>`; preserve first-seen ordering by keeping append flow unchanged
 - Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs; tasks.json; progress.txt
 - Notes: remaining open task is #13 Naming (`PropagateIdentity` trigger token)
+- Completed: tasks.json#13 Naming (DMS-945 / reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md)
+- Decisions: rename propagation fallback purpose token to `PropagateIdentity` in derivation (`TR_{Table}_PropagateIdentity`); align DDL expectations + trigger inventory tests to same durable token from data-model docs; no logic/ordering changes beyond naming
+- Files: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs; src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs; src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/RelationalModelDdlEmitterTests.cs; tasks.json; progress.txt
+- Notes: task list now fully complete for this story slice

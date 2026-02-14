@@ -126,7 +126,7 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "If any golden/manifest tests assert trigger names, update them to the stable `PropagateIdentity` token and confirm diffs are limited to the purpose token change."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Trigger Inventory",
