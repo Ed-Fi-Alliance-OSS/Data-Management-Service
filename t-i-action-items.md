@@ -3,26 +3,21 @@
 This is a recommended action list to address the gaps in `trigger-index-findings.md` and make the index/trigger
 inventory + DDL emission compatible with `reference/design/backend-redesign/design-docs/key-unification.md`.
 
-## A) Decisions to lock down (so implementation can be deterministic)
+## A) Locked decisions (chosen approach)
 
 1. **SQL Server propagation strategy**
-   - Recommended: **keep the current “always `ON UPDATE NO ACTION` on MSSQL + always trigger-based propagation fallback”**
-     strategy for v1 correctness/determinism, and update the design docs accordingly.
-   - Alternative (more work): “try `ON UPDATE CASCADE`, fallback only on rejection”, which requires either (a) a
-     reliable SQL Server cascade-path feasibility analysis over the FK graph, or (b) a provisioning-time retry plan.
+   - Use **“always `ON UPDATE NO ACTION` on MSSQL + always trigger-based propagation fallback”** for v1
+     correctness/determinism (align docs to match).
 
 2. **Query predicate strategy for unified aliases**
-   - Recommended: implement **predicate rewrite** (alias → canonical + presence gate) so the existing FK-supporting
-     indexes on canonical storage columns remain useful without introducing filtered/partial index modeling.
-   - Alternative: extend `DbIndexInfo` to model filtered/partial indexes (SQL-free predicate model) and emit them per
-     dialect.
+   - Implement **predicate rewrite** (binding alias → canonical + presence gate) so existing indexes on canonical
+     storage columns remain usable.
+   - Do **not** extend the index inventory model for filtered/partial indexes as part of this workstream.
 
 3. **Propagation-trigger granularity**
-   - Decide whether MSSQL fallback should be:
-     - one trigger **per referenced table** (containing N update statements for N referrers), or
-     - one trigger **per FK edge** (simpler intent modeling, more objects).
-   - Recommendation: one trigger per referenced table to reduce trigger count and improve manageability, but only if
-     the inventory model cleanly represents “one trigger updates many tables”.
+   - Use **one propagation trigger per referenced table** (fan-out to all referrers) to reduce trigger count.
+   - Update the trigger inventory contract so it can represent “one trigger updates many tables” without overloading
+     unrelated fields.
 
 ## B) Fix the trigger inventory contract (must happen before key unification lands)
 
