@@ -177,8 +177,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds the ordered set of root identity projection columns by resolving
-    /// <c>identityJsonPaths</c> to physical column names, using the same logic as
-    /// <see cref="RootIdentityConstraintPass"/>.
+    /// <c>identityJsonPaths</c> to physical column names. For identity-component references, this
+    /// projects locally stored identity-part columns (from
+    /// <see cref="DocumentReferenceBinding.IdentityBindings"/>) so trigger compare sets detect value
+    /// changes even when <c>..._DocumentId</c> remains stable.
     /// </summary>
     private static IReadOnlyList<DbColumnName> BuildRootIdentityProjectionColumns(
         RelationalResourceModel resourceModel,
@@ -205,7 +207,35 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         {
             if (referenceBindingsByIdentityPath.TryGetValue(identityPath.Canonical, out var binding))
             {
-                AddUniqueColumn(binding.FkColumn, uniqueColumns, seenColumns);
+                if (binding.Table != rootTable.Table)
+                {
+                    throw new InvalidOperationException(
+                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
+                            + "must bind to the root table when deriving trigger identity projections."
+                    );
+                }
+
+                if (!binding.IsIdentityComponent)
+                {
+                    throw new InvalidOperationException(
+                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
+                            + "mapped to a non-identity reference binding during trigger derivation."
+                    );
+                }
+
+                if (binding.IdentityBindings.Count == 0)
+                {
+                    throw new InvalidOperationException(
+                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
+                            + "mapped to a reference binding with no identity-part columns."
+                    );
+                }
+
+                foreach (var identityBinding in binding.IdentityBindings)
+                {
+                    AddUniqueColumn(identityBinding.Column, uniqueColumns, seenColumns);
+                }
+
                 continue;
             }
 

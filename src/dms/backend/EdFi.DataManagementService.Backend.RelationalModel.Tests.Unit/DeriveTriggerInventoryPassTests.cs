@@ -289,6 +289,67 @@ public class Given_IdentityPropagationFallback_On_Pgsql
 }
 
 /// <summary>
+/// Test fixture for root trigger identity projections when identity includes reference components.
+/// </summary>
+[TestFixture]
+public class Given_Root_Trigger_Identity_Projection_With_Identity_Component_References
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should include identity-component reference part columns on root stamping trigger.
+    /// </summary>
+    [Test]
+    public void It_should_include_identity_component_reference_part_columns_on_root_stamping_trigger()
+    {
+        var enrollmentStamp = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        enrollmentStamp
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "School_EducationOrganizationId", "Student_StudentUniqueId");
+    }
+
+    /// <summary>
+    /// It should include identity-component reference part columns on root referential trigger.
+    /// </summary>
+    [Test]
+    public void It_should_include_identity_component_reference_part_columns_on_root_referential_trigger()
+    {
+        var referentialIdentity = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
+        );
+
+        referentialIdentity
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "School_EducationOrganizationId", "Student_StudentUniqueId");
+    }
+}
+
+/// <summary>
 /// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with concrete
 /// reference targets (allowIdentityUpdates).
 /// </summary>
