@@ -70,6 +70,6 @@
       "Locate the query compilation component that emits SQL predicates for relational storage and add unit tests for predicate rewrite under key unification.",
       "Run the relevant unit-test project(s) for query compilation once identified (and keep `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` green)."
     ],
-    "completed": false
+    "completed": true
   }
 ]
