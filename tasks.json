@@ -108,7 +108,7 @@
       "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` with a fixture where the canonical storage column name does not follow the `\"{Alias}_Unified\"` pattern and assert validation still catches “FK targets alias”.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Trigger Inventory",
