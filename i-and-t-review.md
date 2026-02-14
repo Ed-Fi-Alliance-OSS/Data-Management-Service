@@ -1,208 +1,177 @@
-# Index + Trigger Inventory Review (Story 07 / DMS-945) — readiness for Key Unification
+# Index + Trigger Inventory Review (Story 07 bugfix) — Key Unification Readiness
 
-## Scope
+## Scope / what I reviewed
 
-- Design refs:
-  - `reference/design/backend-redesign/design-docs/key-unification.md`
+- Design docs:
   - `reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md`
-- Implementation focus:
-  - Index inventory: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs`
-  - Trigger inventory: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`
-  - Identifier shortening for inventories: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs`
-  - Trigger DDL identity-diff compare logic: `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs`
+  - `reference/design/backend-redesign/design-docs/key-unification.md`
+- Implementation (DDL emission excluded by request):
+  - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs` (inventory-only rewriting)
+  - Related storage-mapping logic for consistency comparisons:
+    - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs`
+- Unit tests:
+  - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs`
+  - `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs`
 
 ## Executive summary
 
-The bugfix work around story 07 is directionally strong and materially closer to the `key-unification.md` design than
-the previous heuristic-based approach:
+The bugfix work around index/trigger inventories is broadly aligned with the new key-unification contract:
 
-- The model now has first-class storage metadata (`DbColumnModel.Storage` with `ColumnStorage.Stored` /
-  `ColumnStorage.UnifiedAlias`), and the index/trigger inventories actively use it.
-- Index derivation fails fast if FK endpoints target unified aliases or synthetic presence columns (key-unification
-  invariants).
-- Trigger identity-projection derivation is now based on identity JSONPaths and expands identity-component references
-  to identity-part columns (so identity changes can be detected even when `..._DocumentId` remains stable).
-- SQL Server identity-propagation fallback payload is storage-aware (alias → canonical mapping) and de-duplicates
-  converged unified pairs deterministically.
-- Trigger DDL “identity changed” gating correctly uses null-safe value-diff semantics and expands unified aliases to the
-  presence-gated canonical expression (no `UPDATE(column)` / `UPDATE OF column` gating).
+- **FK-support index derivation** is effectively “storage-only”: the pass now *fails fast* when foreign keys reference
+  unified alias columns or synthetic presence columns.
+- **SQL Server identity propagation fallback** payload derivation correctly resolves identity endpoints to **canonical
+  stored columns**, and it **de-duplicates** unified members so the trigger updates storage once.
+- **Root identity projection columns** used by stamping/maintenance triggers correctly incorporate identity-component
+  reference part columns (not the reference `..._DocumentId`), which is required for `allowIdentityUpdates` scenarios.
 
-The main correctness risk I see in the current implementation is in **DDL emission for indexes** (it emits `CREATE
-INDEX` for PK/UK-implied inventory entries even though PK/UK constraints are also emitted), which will be invalid DDL if
-`RelationalModelDdlEmitter` is used beyond tests. There are also a couple of duplication/consistency issues that are
-worth cleaning up before key unification is fully wired into the default pass list.
+The main remaining opportunities are (1) reducing duplicated “storage resolution” helpers across passes, and (2) adding
+one or two targeted invariant checks/tests so key unification can evolve without regressing inventories.
 
-## Integration note (pass ordering)
+---
 
-Key unification is not currently in the default pass list (`RelationalModelSetPasses.CreateDefault()`), but the story 07
-work is already written to *consume* key-unification storage metadata:
+## Index inventory (`DeriveIndexInventoryPass`)
 
-- `DeriveIndexInventoryPass` assumes FK constraints target stored columns and will now fail fast if an FK targets a
-  unified alias.
-- `DeriveTriggerInventoryPass` assumes unified aliases exist and resolves propagation payloads to canonical storage
-  columns when they do.
-- `RelationalModelDdlEmitter` expands unified aliases to presence-gated canonical expressions for identity diff gating.
+### What looks correct / strong
 
-When key unification is wired into the default pipeline, it should follow the ordering in `key-unification.md` (run
-after `ReferenceBindingPass` and before constraint derivation + index/trigger inventory passes) so downstream consumers
-see the unified model.
+- **PK/UK index intent derivation** matches the story design:
+  - PK-implied index name matches the PK constraint name.
+  - UK-implied indexes reuse the unique constraint names.
+- **FK-support index policy** matches the story design:
+  - One candidate per FK (`fk.Columns` in key order).
+  - Suppression when the FK columns are a **leftmost prefix** of any already-derived index (PK, UK, prior IX).
+- **Key unification safety**: `ValidateForeignKeyColumns` blocks two key-unification footguns:
+  - FK columns that target `ColumnStorage.UnifiedAlias` (binding/alias) instead of the canonical stored column.
+  - FK columns that target synthetic optional-path presence flags (storage-only `bool?`/`bit?` columns).
+- **Good test coverage** for key-unification-related invariants and “converged” storage keysets:
+  - `Given_Key_Unification_Storage_Columns_For_FK_Indexes` verifies two FK endpoints that converge to the same storage
+    column list produce only one FK-support index.
+  - Alias FK columns and synthetic presence FK columns fail fast (with fixture passes).
+  - Stored columns that merely *look* like unification columns by suffix (`_Unified`, `_Present`) are allowed.
 
-## Design alignment checks (key-unification.md)
+### Risks / correctness gaps (key unification integration)
 
-### Identity change detection (triggers)
+1. **FK target side isn’t validated here**
+   - This pass validates `foreignKey.Columns` against the *local* table model, but does not validate
+     `foreignKey.TargetColumns` against the referenced table model.
+   - Under the key-unification design, FKs must reference **storage columns on both sides**. If a future regression
+     were to populate `TargetColumns` with binding/alias columns, this pass wouldn’t catch it.
+   - Recommendation: add a set-level “FK invariant validator” (or extend this pass using set context) that asserts
+     both `Columns` and `TargetColumns` resolve to `ColumnStorage.Stored` columns.
 
-Design requirement: identity-change gating must be value-diff based and must treat unified members as the *presence-gated
-canonical expression*, not “updated column” detection.
+2. **Presence-gate validation is asymmetric**
+   - `BuildSyntheticPresenceFlagSet` validates presence columns *only when they look like synthetic flags*.
+   - If a unified alias mistakenly points at a scalar presence column that is **boolean stored but has a non-null
+     `SourceJsonPath`**, it is neither recognized as synthetic nor rejected as invalid, so the metadata error can slip
+     through this pass.
+   - Recommendation: when a unified alias uses a scalar presence gate, validate the full synthetic-flag contract
+     (`ScalarKind.Boolean`, nullable, stored, and `SourceJsonPath == null`).
 
-- ✅ `DbTriggerInfo.IdentityProjectionColumns` is documented as a null-safe value-diff compare set (contract level):
-  `src/dms/backend/EdFi.DataManagementService.Backend.External/DerivedRelationalModelSetContracts.cs`
-- ✅ DDL expansion for unified aliases uses canonical + optional presence gate:
-  `RelationalModelDdlEmitter.BuildIdentityValueExpression(...)` → `BuildUnifiedAliasExpression(...)`.
+### Duplication / simplification opportunities
 
-### Propagation fallback (SQL Server)
+- The “presence column set” logic is implemented in multiple places with slightly different rules:
+  - `DeriveIndexInventoryPass.BuildSyntheticPresenceFlagSet` (boolean + nullable + stored + source-null).
+  - `ReferenceConstraintPass.BuildPresenceColumnSet` (scalar-only heuristic).
+  - `DeriveTriggerInventoryPass.BuildPresenceGateColumnSet` (collects all presence columns, including reference-site).
+- Recommendation: extract a shared helper (e.g., `UnifiedAliasMetadata`) that:
+  - validates alias → canonical existence,
+  - classifies presence columns (reference-site vs synthetic),
+  - exposes `ResolveToStorageColumn()` and `IsSyntheticPresenceFlag()` consistently.
 
-Design requirement: propagation fallback must update **canonical/storage columns only**, never unified aliases.
+---
 
-- ✅ `DeriveTriggerInventoryPass.CollectPropagationFallbackActions(...)` resolves both referrer and referenced columns
-  through `ResolveStorageColumn(...)` and only emits stored columns into `DbIdentityPropagationColumnPair`.
+## Trigger inventory (`DeriveTriggerInventoryPass`)
 
-### FK / index inventory interaction
+### What looks correct / strong
 
-Design requirement: composite FKs must target canonical/storage columns (not binding/alias columns), and FK-supporting
-indexes must be derived from the final FK columns.
+1. **DocumentStamping triggers**
+   - Emits one stamping trigger per schema-derived table (root + child + extension) for non-descriptor resources.
+   - Correctly sets `KeyColumns` to the table’s document id key-part:
+     - root table: `DocumentId`
+     - child/ext: `{RootBaseName}_DocumentId` (detected via `IsDocumentIdColumn`)
+   - Root stamping triggers carry `IdentityProjectionColumns`; child/ext stamping triggers do not.
 
-- ✅ `DeriveIndexInventoryPass.ValidateForeignKeyColumns(...)` fails fast if FK columns reference a `UnifiedAlias` or a
-  synthetic presence column.
+2. **ReferentialIdentityMaintenance + AbstractIdentityMaintenance triggers**
+   - Root-only maintenance triggers and subclass abstract maintenance triggers match the story design intent.
+   - Identity projection columns are resolved from `identityJsonPaths` and are **ordered by `identityJsonPaths`**
+     (tests cover interleaving).
 
-## Findings: index inventory
+3. **Identity projection columns correctly include identity-component reference parts**
+   - `BuildRootIdentityProjectionColumns` expands identity-component reference paths into the local stored identity-part
+     columns (`DocumentReferenceBinding.IdentityBindings`), instead of using the stable `..._DocumentId`.
+   - This is critical: if `allowIdentityUpdates` causes referenced identity parts to change, the referrer’s `..._DocumentId`
+     can remain stable while identity parts change; triggers must still detect and stamp/recompute.
 
-### What looks correct
+4. **MSSQL IdentityPropagationFallback triggers are storage-correct under key unification**
+   - `CollectPropagationFallbackActions` maps:
+     - referrer binding column (possibly `UnifiedAlias`) → **canonical stored column**
+     - referenced binding column (possibly `UnifiedAlias`) → **canonical stored column**
+   - `AddIdentityColumnPair` de-duplicates unified members so a unification class only produces one update mapping.
+   - Deterministic ordering is enforced when emitting trigger payload (`BuildIdentityColumnPairSignature` ordering).
+   - Tests explicitly verify:
+     - unified bindings collapse to one canonical pair, and
+     - emitted pair columns are `ColumnStorage.Stored` columns (never aliases).
 
-- `DeriveIndexInventoryPass` derives:
-  - a PK-implied index (name mirrors PK constraint name),
-  - one UK-implied index per `TableConstraint.Unique`, and
-  - one FK-support index per `TableConstraint.ForeignKey`, suppressed when covered by an existing leftmost prefix
-    (`IsLeftmostPrefixCovered(...)`).
-- FK-support index derivation is storage-aware by validation: FK endpoints must be stored columns (not unified aliases),
-  which matches the key unification design’s constraint targeting rule.
+### Risks / correctness gaps (key unification integration)
 
-### Issues / suggestions
+1. **Dead/unused data in this pass**
+   - `resourcesByKey` stores `ResourceEntry(index, model)`, but the `index` is never used in this file.
+   - Recommendation: store `ConcreteResourceModel` directly, or keep `ResourceEntry` but remove the unused index
+     construction for this pass to reduce noise and allocations.
 
-1) **`RelationalModelDdlEmitter` likely emits invalid index DDL if used**
+2. **Implicit coupling to earlier passes for presence-column validity**
+   - `BuildPresenceGateColumnSet` does not validate that `UnifiedAlias.PresenceColumn` actually exists, is stored, etc.
+   - In the default pipeline, that metadata is effectively validated elsewhere (e.g., index-pass synthetic presence
+     validation), but this creates cross-pass coupling that is easy to break in tests or partial pipelines.
+   - Recommendation: either:
+     - validate presence columns in `DeriveTriggerInventoryPass` (cheap table-local lookup), or
+     - centralize validation in a shared helper used by all consumers.
 
-`RelationalModelDdlEmitter.AppendCreateTable(...)` emits PK + UNIQUE constraints *and then* `AppendIndexes(...)` emits
-`CREATE INDEX` for all inventory entries, including `DbIndexKind.PrimaryKey` and `DbIndexKind.UniqueConstraint`.
+3. **Storage-resolution logic is duplicated**
+   - This pass’s `ResolveStorageColumn` is conceptually the same as `ReferenceConstraintPass.ResolveStorageColumn`, with
+     slightly different presence-column semantics.
+   - Recommendation: consolidate into one shared storage resolver with explicit parameters for:
+     - “treat scalar presence columns as invalid” (FK derivation),
+     - “treat any presence column as invalid” (propagation identity columns).
 
-If this emitter is intended to become “real” DDL (not just a test shim), it should almost certainly:
+---
 
-- emit `CREATE INDEX` only for `DbIndexKind.ForeignKeySupport` and `DbIndexKind.Explicit`, **or**
-- stop emitting PK/UK as table constraints and treat them as indexes only (but that would ripple into FK legality and
-  constraint naming expectations).
+## Test suite notes (inventory-focused)
 
-2) **Presence-flag identification could be tightened**
+### What’s strong
 
-`DeriveIndexInventoryPass.BuildPresenceColumnSet(...)` classifies “synthetic presence columns” using `ColumnKind.Scalar`
-only. That’s probably fine with the current `KeyUnificationPass` behavior, but for future-proofing it may be worth
-requiring something stronger (e.g., scalar kind boolean/bit and `SourceJsonPath == null`) so a mis-modeled presence gate
-can’t accidentally block valid FK columns (or let invalid ones slip by).
+- Index derivation:
+  - FK leftmost-prefix suppression.
+  - Key-unification invariants: alias/presence misuse fails fast; custom canonical names are handled (no suffix heuristics).
+  - Converged-endpoint behavior is deterministic and collision-free.
+- Trigger derivation:
+  - Root vs child stamping behavior and key columns.
+  - Identity projection ordering and inclusion of identity-component reference parts.
+  - Dialect behavior for propagation fallback (MSSQL only).
+  - Key-unification collapse and “stored-only” propagation column pairs.
 
-3) **Minor duplication**
+### Suggested additional regressions (small, high value)
 
-`DeriveIndexInventoryPass` builds a `columnsByName` dictionary and then calls `BuildPresenceColumnSet(...)`, which builds
-another dictionary. Not a correctness issue, but it’s easy to simplify by threading `columnsByName` through.
+- **FK target-side invariant**: a fixture where `foreignKey.TargetColumns` contains a `UnifiedAlias` should fail fast
+  (either in the constraint pass or via a new invariant pass). This locks in the key-unification “FKs are storage-only”
+  rule on both sides.
+- **Synthetic presence flag validation**: a fixture where a unified alias points at a scalar presence column that is
+  boolean/stored but has a non-null `SourceJsonPath` should fail fast (to prevent accidental “presence” columns that
+  are actually API-bound fields).
 
-## Findings: trigger inventory
+---
 
-### What looks correct
+## Bottom line
 
-1) **Root identity projection columns**
+The current index/trigger inventory work is largely ready for the key-unification design:
 
-`DeriveTriggerInventoryPass.BuildRootIdentityProjectionColumns(...)`:
+- Index derivation enforces “FKs are storage-only” and behaves well when multiple FK endpoints converge on the same
+  storage key set.
+- Trigger derivation correctly uses binding columns for identity compare sets and storage columns for propagation
+  updates, and it collapses unified identity parts deterministically.
 
-- iterates `identityJsonPaths` in-order (good determinism),
-- maps scalar identity paths to root table columns by `SourceJsonPath`,
-- for identity-component references, it expands to the locally stored identity-part columns
-  (`DocumentReferenceBinding.IdentityBindings[*].Column`) so that cascaded/propagated identity-part updates are detected
-  even when `..._DocumentId` is unchanged.
+The main improvements I’d make before/while integrating the updated key-unification design are:
 
-This matches the `key-unification.md` intent that identity changes can arrive via canonical-column updates without any
-direct writes to per-site alias columns.
-
-2) **SQL Server propagation fallback payload is storage-aware**
-
-`CollectPropagationFallbackActions(...)` now resolves unified aliases to canonical stored columns on both sides and
-dedupes identity pairs via a typed `(DbColumnName, DbColumnName)` key (`AddIdentityColumnPair(...)`). This is exactly the
-kind of “collapse after storage mapping” behavior needed when multiple identity endpoints converge onto one canonical
-column.
-
-3) **Deterministic ordering**
-
-- Propagation triggers are emitted one-per-referenced-table in deterministic order (`EmitPropagationFallbackTriggers`).
-- Referrer actions are ordered deterministically, and identity pair ordering is stable.
-
-### Issues / suggestions
-
-1) **Duplicated “presence column set” helpers with inconsistent semantics**
-
-There are two `BuildPresenceColumnSet(...)` implementations:
-
-- `DeriveIndexInventoryPass.BuildPresenceColumnSet(...)` tries to capture **synthetic presence flags only** (it filters by
-  presence-column kind).
-- `DeriveTriggerInventoryPass.BuildPresenceColumnSet(...)` captures **all** presence columns referenced by unified aliases
-  (including reference `..._DocumentId` presence gates).
-
-Both are defensible, but the names/comments imply the same thing and the error messages in
-`DeriveTriggerInventoryPass.ResolveStorageColumn(...)` call them “synthetic presence columns” even though reference
-presence columns can be included.
-
-Recommendation:
-
-- Rename one/both helpers to make the intent explicit (e.g., `BuildSyntheticPresenceFlagSet` vs
-  `BuildAliasPresenceGateSet`), or centralize in a single helper that can return both sets.
-
-2) **Silent “continue” when a mapping has no derived binding**
-
-In `CollectPropagationFallbackActions(...)`, if a `DocumentReferenceMapping` has no corresponding
-`DocumentReferenceBinding` (`bindingByReferencePath.TryGetValue(...)`), the code silently skips it.
-
-If this is truly expected (e.g., because some mappings don’t result in stored references), it should be documented. If
-it’s not expected, consider failing fast: silently missing a propagation action is the sort of error that is painful to
-diagnose later.
-
-3) **Shared table-scope resolution logic is still duplicated**
-
-`DeriveTriggerInventoryPass.ResolveReferenceBindingTable(...)` is essentially the same “deepest matching scope” selection
-problem as `ReferenceBindingPass.ResolveOwningTableBuilder(...)` (both call
-`ReferenceObjectPathScopeResolver.ResolveDeepestMatchingScope(...)` with different wrappers).
-
-Not a correctness bug today, but it’s easy for the two call sites to drift as key unification expands scope-related
-edge cases. Consolidating the wrapper logic would reduce risk.
-
-## Findings: trigger DDL emission (identity-diff gating)
-
-### What looks correct
-
-`RelationalModelDdlEmitter` now:
-
-- emits null-safe value-diff predicates for identity comparisons (`IS DISTINCT FROM` on Pgsql; explicit null-safe
-  inequality on Mssql), and
-- expands any `UnifiedAlias` identity-projection column to the canonical + presence-gated expression
-  (matching `key-unification.md`’s normative guidance).
-
-### Issues / suggestions
-
-The DDL emitter’s trigger statements are still clearly “skeleton” output (e.g., missing event lists / timing), and it
-also treats triggers with empty `IdentityProjectionColumns` as “noop”. That may be intentional for now, but if/when this
-becomes the real DDL path, it will need to:
-
-- emit valid trigger syntax (timing + events), and
-- separate “identity-changed gating” from “does work at all” (stamping triggers on child tables still need to bump
-  Content stamps even when they have no identity projection columns).
-
-## Priority recommendations (before wiring key unification into defaults)
-
-1) Fix/clarify index DDL emission behavior for PK/UK-implied indexes (`RelationalModelDdlEmitter.AppendIndexes(...)`).
-2) Normalize the “presence column set” helpers (naming + semantics + error messages) to avoid confusion once presence
-   flags are added broadly by key unification.
-3) Decide whether “missing binding for mapping” should be a hard error in propagation fallback derivation.
-4) Consider consolidating table-scope resolution wrapper logic used by reference binding vs propagation derivation.
+1. Add a set-level invariant (or targeted tests) that asserts FK **target columns** are storage-only too.
+2. Consolidate storage/presence resolution + validation into a shared helper to reduce drift between passes.
