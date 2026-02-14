@@ -163,17 +163,54 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 
         foreach (var column in table.Columns)
         {
-            if (
-                column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn }
-                && columnsByName.TryGetValue(presenceColumn, out var presenceColumnModel)
-                && presenceColumnModel.Kind == ColumnKind.Scalar
-            )
+            if (column.Storage is not ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn })
+            {
+                continue;
+            }
+
+            if (!columnsByName.TryGetValue(presenceColumn, out var presenceColumnModel))
+            {
+                throw new InvalidOperationException(
+                    $"Unified alias column '{column.ColumnName.Value}' on table '{table.Table}' references "
+                        + $"unknown presence-gate column '{presenceColumn.Value}'."
+                );
+            }
+
+            if (IsSyntheticPresenceFlag(presenceColumnModel))
             {
                 syntheticPresenceFlags.Add(presenceColumn);
+                continue;
+            }
+
+            if (IsInvalidSyntheticPresenceFlagCandidate(presenceColumnModel))
+            {
+                throw new InvalidOperationException(
+                    $"Unified alias column '{column.ColumnName.Value}' on table '{table.Table}' references "
+                        + $"invalid synthetic presence column '{presenceColumn.Value}'. Synthetic presence flags "
+                        + "must be nullable stored scalar booleans with null source path."
+                );
             }
         }
 
         return syntheticPresenceFlags;
+    }
+
+    private static bool IsSyntheticPresenceFlag(DbColumnModel column)
+    {
+        return column
+            is {
+                Kind: ColumnKind.Scalar,
+                ScalarType: { Kind: ScalarKind.Boolean },
+                IsNullable: true,
+                SourceJsonPath: null,
+                Storage: ColumnStorage.Stored,
+            };
+    }
+
+    private static bool IsInvalidSyntheticPresenceFlagCandidate(DbColumnModel column)
+    {
+        return column is { Kind: ColumnKind.Scalar, IsNullable: true, SourceJsonPath: null }
+            && column is not { ScalarType: { Kind: ScalarKind.Boolean }, Storage: ColumnStorage.Stored };
     }
 
     /// <summary>

@@ -198,7 +198,7 @@
       "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` with a synthetic table that includes a `UnifiedAlias` whose `PresenceColumn` is not a boolean, and assert the classification/validation behavior matches the acceptance criteria.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Refactor",
