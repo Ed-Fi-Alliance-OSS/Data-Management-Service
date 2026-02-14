@@ -149,13 +149,6 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             );
             var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn, mapping, resource);
 
-            EnsureTargetUnique(
-                targetInfo,
-                identityColumns.TargetColumns,
-                context.ResourcesByKey,
-                context.Mutations
-            );
-
             var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
             var tableAccumulator = mutation.GetTableAccumulator(bindingTable, resource);
 
@@ -185,17 +178,62 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 }
             }
 
-            var localColumns = new List<DbColumnName>(1 + identityColumns.LocalColumns.Count)
-            {
-                binding.FkColumn,
-            };
-            localColumns.AddRange(identityColumns.LocalColumns);
+            var mappedIdentityColumns = MapReferenceIdentityColumnsToStorage(
+                identityColumns,
+                bindingTable,
+                targetInfo.TableModel,
+                mapping,
+                resource
+            );
 
-            var targetColumns = new List<DbColumnName>(1 + identityColumns.TargetColumns.Count)
-            {
+            EnsureTargetUnique(
+                targetInfo,
+                mappedIdentityColumns.TargetColumns,
+                context.ResourcesByKey,
+                context.Mutations
+            );
+
+            var localColumnsByName = bindingTable.Columns.ToDictionary(
+                column => column.ColumnName,
+                column => column
+            );
+            var localPresenceColumns = BuildPresenceColumnSet(bindingTable);
+            var localReferenceFkColumn = ResolveStorageColumn(
+                binding.FkColumn,
+                localColumnsByName,
+                localPresenceColumns,
+                bindingTable.Table,
+                resource,
+                mapping,
+                "reference fk column"
+            );
+
+            var targetColumnsByName = targetInfo.TableModel.Columns.ToDictionary(
+                column => column.ColumnName,
+                column => column
+            );
+            var targetPresenceColumns = BuildPresenceColumnSet(targetInfo.TableModel);
+            var targetDocumentIdColumn = ResolveStorageColumn(
                 RelationalNameConventions.DocumentIdColumnName,
+                targetColumnsByName,
+                targetPresenceColumns,
+                targetInfo.Table,
+                targetInfo.Resource,
+                mapping,
+                "target document id column"
+            );
+
+            var localColumns = new List<DbColumnName>(1 + mappedIdentityColumns.LocalColumns.Count)
+            {
+                localReferenceFkColumn,
             };
-            targetColumns.AddRange(identityColumns.TargetColumns);
+            localColumns.AddRange(mappedIdentityColumns.LocalColumns);
+
+            var targetColumns = new List<DbColumnName>(1 + mappedIdentityColumns.TargetColumns.Count)
+            {
+                targetDocumentIdColumn,
+            };
+            targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
 
             var onUpdate =
                 context.SetContext.Dialect == SqlDialect.Mssql ? ReferentialAction.NoAction
@@ -234,6 +272,88 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 mutation.MarkTableMutated(bindingTable);
             }
         }
+    }
+
+    /// <summary>
+    /// Maps local and target identity columns to canonical storage columns and de-duplicates pairs after
+    /// storage mapping while preserving first-seen identity-path order.
+    /// </summary>
+    private static ReferenceIdentityColumnSet MapReferenceIdentityColumnsToStorage(
+        ReferenceIdentityColumnSet identityColumns,
+        DbTableModel localTable,
+        DbTableModel targetTable,
+        DocumentReferenceMapping mapping,
+        QualifiedResourceName resource
+    )
+    {
+        if (identityColumns.LocalColumns.Count != identityColumns.TargetColumns.Count)
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + "produced mismatched local and target identity-column counts."
+            );
+        }
+
+        var localColumnsByName = localTable.Columns.ToDictionary(
+            column => column.ColumnName,
+            column => column
+        );
+        var targetColumnsByName = targetTable.Columns.ToDictionary(
+            column => column.ColumnName,
+            column => column
+        );
+        var localPresenceColumns = BuildPresenceColumnSet(localTable);
+        var targetPresenceColumns = BuildPresenceColumnSet(targetTable);
+        Dictionary<DbColumnName, DbColumnName> targetByLocalStorageColumn = new();
+        HashSet<(DbColumnName LocalStorageColumn, DbColumnName TargetStorageColumn)> seenPairs = [];
+        List<DbColumnName> localStorageColumns = [];
+        List<DbColumnName> targetStorageColumns = [];
+
+        for (var index = 0; index < identityColumns.LocalColumns.Count; index++)
+        {
+            var localStorageColumn = ResolveStorageColumn(
+                identityColumns.LocalColumns[index],
+                localColumnsByName,
+                localPresenceColumns,
+                localTable.Table,
+                resource,
+                mapping,
+                "local identity column"
+            );
+            var targetStorageColumn = ResolveStorageColumn(
+                identityColumns.TargetColumns[index],
+                targetColumnsByName,
+                targetPresenceColumns,
+                targetTable.Table,
+                mapping.TargetResource,
+                mapping,
+                "target identity column"
+            );
+
+            if (
+                targetByLocalStorageColumn.TryGetValue(
+                    localStorageColumn,
+                    out var existingTargetStorageColumn
+                ) && !existingTargetStorageColumn.Equals(targetStorageColumn)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"mapped storage column '{localStorageColumn.Value}' to multiple target "
+                        + $"storage columns ('{existingTargetStorageColumn.Value}', '{targetStorageColumn.Value}')."
+                );
+            }
+
+            targetByLocalStorageColumn[localStorageColumn] = targetStorageColumn;
+
+            if (seenPairs.Add((localStorageColumn, targetStorageColumn)))
+            {
+                localStorageColumns.Add(localStorageColumn);
+                targetStorageColumns.Add(targetStorageColumn);
+            }
+        }
+
+        return new ReferenceIdentityColumnSet(localStorageColumns.ToArray(), targetStorageColumns.ToArray());
     }
 
     /// <summary>
@@ -528,6 +648,103 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// Resolves a derived column to its canonical storage column and validates that synthetic presence columns
+    /// are never used for FK derivation.
+    /// </summary>
+    private static DbColumnName ResolveStorageColumn(
+        DbColumnName column,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
+        IReadOnlySet<DbColumnName> presenceColumns,
+        DbTableName table,
+        QualifiedResourceName tableResource,
+        DocumentReferenceMapping mapping,
+        string columnRole
+    )
+    {
+        if (!columnsByName.TryGetValue(column, out var columnModel))
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
+                    + $"could not resolve {columnRole} '{column.Value}' on table '{table}'."
+            );
+        }
+
+        if (presenceColumns.Contains(columnModel.ColumnName))
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
+                    + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' to a "
+                    + "synthetic presence column, which is not valid for foreign keys."
+            );
+        }
+
+        switch (columnModel.Storage)
+        {
+            case ColumnStorage.Stored:
+                return columnModel.ColumnName;
+            case ColumnStorage.UnifiedAlias unifiedAlias:
+                if (!columnsByName.TryGetValue(unifiedAlias.CanonicalColumn, out var canonicalColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
+                            + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
+                            + $"to missing canonical storage column '{unifiedAlias.CanonicalColumn.Value}'."
+                    );
+                }
+
+                if (presenceColumns.Contains(unifiedAlias.CanonicalColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
+                            + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
+                            + $"to synthetic presence column '{unifiedAlias.CanonicalColumn.Value}', which "
+                            + "is not valid for foreign keys."
+                    );
+                }
+
+                if (canonicalColumn.Storage is not ColumnStorage.Stored)
+                {
+                    throw new InvalidOperationException(
+                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
+                            + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
+                            + $"to canonical column '{unifiedAlias.CanonicalColumn.Value}' that is not stored."
+                    );
+                }
+
+                return canonicalColumn.ColumnName;
+            default:
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
+                        + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
+                        + $"to unsupported storage metadata '{columnModel.Storage.GetType().Name}'."
+                );
+        }
+    }
+
+    /// <summary>
+    /// Builds the set of synthetic presence columns referenced by unified aliases on a table.
+    /// </summary>
+    private static IReadOnlySet<DbColumnName> BuildPresenceColumnSet(DbTableModel table)
+    {
+        var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
+        HashSet<DbColumnName> presenceColumns = [];
+
+        foreach (var column in table.Columns)
+        {
+            if (
+                column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn }
+                && columnsByName.TryGetValue(presenceColumn, out var presenceColumnModel)
+                && presenceColumnModel.Kind == ColumnKind.Scalar
+            )
+            {
+                presenceColumns.Add(presenceColumn);
+            }
+        }
+
+        return presenceColumns;
+    }
+
+    /// <summary>
     /// Ensures that a concrete target resource root has a unique constraint on its document id and identity
     /// columns so referencing composite foreign keys are valid.
     /// </summary>
@@ -604,6 +821,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             var abstractInfo = new TargetIdentityInfo(
                 targetResource,
                 abstractTable.TableModel.Table,
+                abstractTable.TableModel,
                 identityPaths,
                 columnNames,
                 AllowIdentityUpdates: false,
@@ -639,6 +857,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         var info = new TargetIdentityInfo(
             targetResource,
             entry.Model.RelationalModel.Root.Table,
+            entry.Model.RelationalModel.Root,
             builderContext.IdentityJsonPaths,
             identityColumns,
             builderContext.AllowIdentityUpdates,
@@ -815,6 +1034,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
     private sealed record TargetIdentityInfo(
         QualifiedResourceName Resource,
         DbTableName Table,
+        DbTableModel TableModel,
         IReadOnlyList<JsonPathExpression> IdentityJsonPaths,
         IReadOnlyList<DbColumnName> IdentityColumns,
         bool AllowIdentityUpdates,

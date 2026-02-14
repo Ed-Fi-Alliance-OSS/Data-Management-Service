@@ -99,7 +99,7 @@
       "Add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` (or an equivalent constraints-focused fixture) to assert composite reference FKs use canonical storage columns when member bindings are `UnifiedAlias`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Index Inventory",
