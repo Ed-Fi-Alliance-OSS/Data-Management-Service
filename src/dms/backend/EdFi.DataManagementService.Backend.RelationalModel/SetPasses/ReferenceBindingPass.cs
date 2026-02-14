@@ -103,11 +103,7 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         var tableScopes = tableBuilders
-            .Select(entry => new TableScopeEntry(
-                entry.Key,
-                entry.Value.Definition.JsonScope.Segments,
-                entry.Value
-            ))
+            .Select(entry => new TableScopeEntry(entry.Value.Definition.JsonScope, entry.Value))
             .ToArray();
 
         var identityPaths = new HashSet<string>(
@@ -316,63 +312,25 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
         QualifiedResourceName resource
     )
     {
-        var bestMatches = new List<TableScopeEntry>();
-        var bestSegmentCount = -1;
-
-        foreach (var scope in tableScopes)
-        {
-            if (!IsPrefixOf(scope.Segments, referenceObjectPath.Segments))
-            {
-                continue;
-            }
-
-            var segmentCount = scope.Segments.Count;
-            if (segmentCount > bestSegmentCount)
-            {
-                bestSegmentCount = segmentCount;
-                bestMatches.Clear();
-                bestMatches.Add(scope);
-            }
-            else if (segmentCount == bestSegmentCount)
-            {
-                bestMatches.Add(scope);
-            }
-        }
-
-        if (bestMatches.Count == 0)
-        {
-            throw new InvalidOperationException(
+        var bestMatch = ReferenceObjectPathScopeResolver.ResolveDeepestMatchingScope(
+            referenceObjectPath,
+            tableScopes,
+            static scope => scope.Scope,
+            _ => new InvalidOperationException(
                 $"Reference object path '{referenceObjectPath.Canonical}' on resource "
                     + $"'{FormatResource(resource)}' did not match any table scope."
-            );
-        }
-
-        var candidateScopes = bestMatches
-            .Select(entry => entry.Canonical)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(scope => scope, StringComparer.Ordinal)
-            .ToArray();
-
-        if (candidateScopes.Length > 1)
-        {
-            throw new InvalidOperationException(
+            ),
+            candidateScopes => new InvalidOperationException(
                 $"Reference object path '{referenceObjectPath.Canonical}' on resource "
                     + $"'{FormatResource(resource)}' matched multiple table scopes with the same depth: "
                     + $"{string.Join(", ", candidateScopes.Select(scope => $"'{scope}'"))}."
-            );
-        }
-
-        var bestMatch = bestMatches[0];
-        if (
-            referenceObjectPath.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" })
-            && !bestMatch.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" })
-        )
-        {
-            throw new InvalidOperationException(
-                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
-            );
-        }
+            ),
+            () =>
+                new InvalidOperationException(
+                    $"Reference object path '{referenceObjectPath.Canonical}' on resource "
+                        + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
+                )
+        );
 
         return bestMatch.Builder;
     }
@@ -460,9 +418,5 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
     /// <summary>
     /// Captures a table scope and its accumulator for prefix matching against reference object paths.
     /// </summary>
-    private sealed record TableScopeEntry(
-        string Canonical,
-        IReadOnlyList<JsonPathSegment> Segments,
-        TableColumnAccumulator Builder
-    );
+    private sealed record TableScopeEntry(JsonPathExpression Scope, TableColumnAccumulator Builder);
 }
