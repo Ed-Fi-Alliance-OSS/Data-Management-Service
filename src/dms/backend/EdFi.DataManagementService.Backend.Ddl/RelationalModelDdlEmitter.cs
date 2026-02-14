@@ -162,7 +162,7 @@ public sealed class RelationalModelDdlEmitter
         foreach (var trigger in triggers)
         {
             builder.Append("CREATE TRIGGER ");
-            builder.Append(Quote(trigger.Name));
+            builder.Append(FormatTriggerName(trigger));
             builder.Append(" ON ");
             builder.Append(Quote(trigger.TriggerTable));
             builder.Append(' ');
@@ -395,5 +395,22 @@ public sealed class RelationalModelDdlEmitter
     private string Quote(DbTriggerName trigger)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, trigger);
+    }
+
+    /// <summary>
+    /// Formats a trigger identifier for dialect-specific trigger namespaces.
+    /// </summary>
+    private string FormatTriggerName(DbTriggerInfo trigger)
+    {
+        return _dialectRules.Dialect switch
+        {
+            SqlDialect.Mssql => $"{Quote(trigger.TriggerTable.Schema)}.{Quote(trigger.Name)}",
+            SqlDialect.Pgsql => Quote(trigger.Name),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_dialectRules.Dialect),
+                _dialectRules.Dialect,
+                "Unsupported SQL dialect."
+            ),
+        };
     }
 }
