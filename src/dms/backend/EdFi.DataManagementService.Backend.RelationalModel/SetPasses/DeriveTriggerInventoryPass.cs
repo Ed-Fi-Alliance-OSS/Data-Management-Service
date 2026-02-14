@@ -315,6 +315,16 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 referencedTableModel,
                 mapping.TargetResource
             );
+            var referrerColumnsByName = bindingTable.Columns.ToDictionary(
+                column => column.ColumnName,
+                column => column
+            );
+            var referencedColumnsByName = referencedTableModel.Columns.ToDictionary(
+                column => column.ColumnName,
+                column => column
+            );
+            var referrerPresenceColumns = BuildPresenceColumnSet(bindingTable);
+            var referencedPresenceColumns = BuildPresenceColumnSet(referencedTableModel);
             HashSet<string> seenIdentityColumnPairs = new(StringComparer.Ordinal);
             List<DbIdentityPropagationColumnPair> identityColumnPairs = new(mapping.ReferenceJsonPaths.Count);
 
@@ -329,7 +339,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 {
                     throw new InvalidOperationException(
                         $"Reference identity path '{identityPathBinding.ReferenceJsonPath.Canonical}' on "
-                            + $"resource '{FormatResource(resource)}' did not map to a stored referrer "
+                            + $"resource '{FormatResource(resource)}' did not map to a referrer "
                             + $"identity column during trigger derivation."
                     );
                 }
@@ -348,9 +358,28 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
 
-                AddIdentityColumnPair(
+                var referrerStorageColumn = ResolveStorageColumn(
                     referrerIdentityColumn,
+                    referrerColumnsByName,
+                    referrerPresenceColumns,
+                    bindingTable.Table,
+                    resource,
+                    mapping,
+                    "referrer identity column"
+                );
+                var referencedStorageColumn = ResolveStorageColumn(
                     referencedIdentityColumn,
+                    referencedColumnsByName,
+                    referencedPresenceColumns,
+                    referencedTableModel.Table,
+                    mapping.TargetResource,
+                    mapping,
+                    "referenced identity column"
+                );
+
+                AddIdentityColumnPair(
+                    referrerStorageColumn,
+                    referencedStorageColumn,
                     identityColumnPairs,
                     seenIdentityColumnPairs
                 );
@@ -526,6 +555,95 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         }
 
         return bestMatch;
+    }
+
+    /// <summary>
+    /// Resolves a column to its canonical stored column using storage metadata.
+    /// </summary>
+    private static DbColumnName ResolveStorageColumn(
+        DbColumnName column,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
+        IReadOnlySet<DbColumnName> presenceColumns,
+        DbTableName table,
+        QualifiedResourceName resource,
+        DocumentReferenceMapping mapping,
+        string role
+    )
+    {
+        if (!columnsByName.TryGetValue(column, out var columnModel))
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + $"resolved {role} '{column.Value}' that does not exist on table '{table}'."
+            );
+        }
+
+        if (presenceColumns.Contains(column))
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + $"resolved {role} '{column.Value}' to a synthetic presence column on table '{table}'."
+            );
+        }
+
+        switch (columnModel.Storage)
+        {
+            case ColumnStorage.Stored:
+                return column;
+            case ColumnStorage.UnifiedAlias unifiedAlias:
+                if (!columnsByName.TryGetValue(unifiedAlias.CanonicalColumn, out var canonicalColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                            + $"resolved {role} '{column.Value}' to missing canonical storage column "
+                            + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
+                    );
+                }
+
+                if (presenceColumns.Contains(unifiedAlias.CanonicalColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                            + $"resolved {role} '{column.Value}' to synthetic presence column "
+                            + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
+                    );
+                }
+
+                if (canonicalColumn.Storage is not ColumnStorage.Stored)
+                {
+                    throw new InvalidOperationException(
+                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                            + $"resolved {role} '{column.Value}' to non-stored canonical column "
+                            + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
+                    );
+                }
+
+                return unifiedAlias.CanonicalColumn;
+            default:
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"resolved {role} '{column.Value}' to unsupported storage metadata "
+                        + $"'{columnModel.Storage.GetType().Name}' on table '{table}'."
+                );
+        }
+    }
+
+    /// <summary>
+    /// Builds the set of synthetic presence columns referenced by unified aliases on a table.
+    /// </summary>
+    private static IReadOnlySet<DbColumnName> BuildPresenceColumnSet(DbTableModel table)
+    {
+        HashSet<DbColumnName> presenceColumns = [];
+
+        foreach (var column in table.Columns)
+        {
+            if (column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn })
+            {
+                presenceColumns.Add(presenceColumn);
+            }
+        }
+
+        return presenceColumns;
     }
 
     /// <summary>
