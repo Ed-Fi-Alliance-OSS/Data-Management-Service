@@ -110,14 +110,21 @@ DDL generator requirements (derived from ApiSchema):
   - the per-site identity-part binding columns (aliases when unified).
   - Rationale: a composite FK does not enforce anything if *any* referencing column is `NULL`.
 - Enforce a composite FK anchored on canonical/storage identity-part columns:
-  - concrete target: `{schema}.{TargetResource}(DocumentId, <CanonicalIdentityParts...>)` using `ON UPDATE CASCADE` only
-    when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), or
-  - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using `ON UPDATE CASCADE`
-    (identity tables are trigger-maintained).
+  - PostgreSQL:
+    - concrete target: `{schema}.{TargetResource}(DocumentId, <CanonicalIdentityParts...>)` using `ON UPDATE CASCADE`
+      only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`).
+    - abstract target: `{schema}.{AbstractResource}Identity(DocumentId, <CanonicalIdentityParts...>)` using
+      `ON UPDATE CASCADE`.
+  - SQL Server:
+    - concrete and abstract targets: emit `ON UPDATE NO ACTION`.
+    - eligible propagation targets (abstract or concrete `allowIdentityUpdates=true`) are maintained by
+      `DbTriggerKind.IdentityPropagationFallback` triggers (one trigger per referenced table, fan-out referrer actions,
+      canonical/storage-column updates only).
 
-When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true`), the database cascades
-updated identity values into all direct referrers’ **canonical/storage columns**. Any per-site binding aliases
-recompute automatically while preserving optional-reference presence semantics.
+When a referenced document’s identity changes (allowed only when `allowIdentityUpdates=true` for concrete targets), the
+database propagates updated identity values into all direct referrers’ **canonical/storage columns** (PostgreSQL FK
+cascades; SQL Server fallback triggers). Any per-site binding aliases recompute automatically while preserving
+optional-reference presence semantics.
 
 #### Descriptor references (`..._DescriptorId`)
 
@@ -137,7 +144,9 @@ The pieces fit together like this:
 3. **Persist `..._DocumentId` plus abstract identity columns**:
    - The referencing row stores both the resolved `DocumentId` and the abstract identity column values provided in the payload.
 4. **Database enforces membership + propagation via `{AbstractResource}Identity`**
-   - The composite FK targets `{schema}.{AbstractResource}Identity` with `ON UPDATE CASCADE`, so:
+   - The composite FK targets `{schema}.{AbstractResource}Identity`; PostgreSQL uses `ON UPDATE CASCADE`, SQL Server uses
+     `ON UPDATE NO ACTION` plus `DbTriggerKind.IdentityPropagationFallback` trigger fan-out on the referenced identity
+     table. This ensures:
      - the reference is guaranteed to target a valid member of the hierarchy, and
      - the stored abstract identity columns are kept correct automatically.
 5. **Read-time reference identity projection is local**
@@ -208,29 +217,36 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      missing inputs.
    - `dms.Descriptor` upsert if the resource is a descriptor.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
-   - Composite FKs use `ON UPDATE CASCADE` only for targets with `allowIdentityUpdates=true` (or trigger-based fallback
-     where required) to propagate identity changes into canonical/storage columns (binding aliases recompute).
-   - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity projection changes).
+   - Composite FK propagation is dialect-specific: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges; SQL Server
+     uses `ON UPDATE NO ACTION` and trigger-based propagation fallback for eligible edges. Both paths update
+     canonical/storage columns (binding aliases recompute).
+   - Generated triggers maintain `dms.ReferentialIdentity` (row-local recompute on identity-projection value-diff
+     changes). `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
    - Generated triggers stamp `dms.Document` representation/identity versions for `_etag/_lastModifiedDate/ChangeVersion` and emit `dms.DocumentChangeEvent` (see [update-tracking.md](update-tracking.md)).
 
 ### Identity propagation and derived maintenance (DB-driven)
 
-This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key fields alongside every document reference and enforces composite FKs with `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`).
+This redesign keeps relationships keyed by stable `..._DocumentId`, but also stores referenced identity natural-key
+fields alongside every document reference. Composite-FK update behavior is dialect-specific:
+- PostgreSQL: `ON UPDATE CASCADE` for abstract targets and concrete targets with `allowIdentityUpdates=true`
+  (`ON UPDATE NO ACTION` otherwise).
+- SQL Server: `ON UPDATE NO ACTION` for all reference composite FKs; eligible propagation uses
+  `DbTriggerKind.IdentityPropagationFallback` triggers.
 
 Key effects:
 - **Indirect representation changes are materialized as row updates**: when a referenced identity changes, the database
-  cascades updated identity values into all direct referrers’ canonical/storage columns; per-site/per-path binding
+  propagates updated identity values into all direct referrers’ canonical/storage columns; per-site/per-path binding
   aliases recompute and preserve presence semantics.
 - **Transitive identity effects converge without application traversal**: cascades propagate through chains of references, and row-local triggers recompute derived referential ids where needed.
 
 Engine considerations:
 - PostgreSQL supports “cycles or multiple cascade paths” for FK cascades.
-- SQL Server may reject FK graphs with “cycles or multiple cascade paths” at DDL time. Under key unification, canonical
-  identity-part columns can be shared across multiple composite FKs on the same referrer table (“multi-edge cascades”),
-  increasing the likelihood of rejected `ON UPDATE CASCADE` edges. When SQL Server rejects an otherwise-eligible edge:
-  - emit the FK with `ON UPDATE NO ACTION`, and
-  - emit deterministic, set-based trigger-based propagation fallback that updates **canonical/storage columns** (never
-    binding aliases).
+- SQL Server uses `ON UPDATE NO ACTION` for all reference composite FKs.
+- For eligible SQL Server propagation edges (abstract targets or concrete `allowIdentityUpdates=true` targets), derive
+  deterministic, set-based `DbTriggerKind.IdentityPropagationFallback` triggers that:
+  - fire on the referenced table (`DbTriggerInfo.TriggerTable`),
+  - fan out to all impacted referrer tables (root and non-root reference sites), and
+  - update **canonical/storage columns** only (never binding aliases).
 
 ### Insert vs update detection
 
@@ -251,12 +267,12 @@ Operational guidance:
 ### Cascade scenarios (tables-per-resource)
 
 Tables-per-resource storage removes the need for **relational** cascade rewrites when upstream natural keys change,
-because relationships are stored as stable `DocumentId` FKs. Cascades still exist for **canonical/storage identity-part
-columns** (which may drive per-site/per-path binding aliases) and for **derived artifacts** (referential ids and stamps),
-and are handled in the database:
+because relationships are stored as stable `DocumentId` FKs. Identity propagation still exists for
+**canonical/storage identity-part columns** (FK cascades on PostgreSQL; fallback triggers on SQL Server) and for
+**derived artifacts** (referential ids and stamps), and is handled in the database:
 
 - **Identity/URI change on a document itself** (e.g., `StudentUniqueId` update)
-  - Cascades update canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
+  - Propagation updates canonical/storage identity columns in all direct referrers (identity-component and non-identity references).
   - Referrers’ `dms.Document.ContentVersion` stamps update because their served representation changes (the embedded reference identity changed).
   - For identity-component referrers, triggers also update `dms.Document.IdentityVersion` and `dms.ReferentialIdentity` for the referrer (and this may cascade further).
 

@@ -29,7 +29,8 @@ PostgreSQL “mid-cascade” issues that occur when enforcing equality across tw
 - **Preserve per-path presence semantics** for equality-constrained non-reference fields:
   - absent optional paths MUST reconstitute as absent (`NULL` at the binding column), and
   - predicates against a per-path column MUST continue to imply that the path was present.
-- **Remain compatible with identity propagation** via composite FKs and `ON UPDATE CASCADE` where enabled.
+- **Remain compatible with identity propagation** via composite FKs and dialect-specific propagation mechanics
+  (PostgreSQL `ON UPDATE CASCADE`; SQL Server `ON UPDATE NO ACTION` + trigger-based fallback).
 - **Support both PostgreSQL and SQL Server** with deterministic DDL generation.
 
 ## Non-Goals
@@ -1569,10 +1570,13 @@ For a reference site, the composite FK uses canonical storage columns for unifie
   - `<TargetIdentityColumns...>` (derived by mapping each target identity binding column through
     `DbColumnModel.Storage`)
 
-Referential actions (no semantic change from the baseline redesign):
+Referential actions:
 
-- `ON UPDATE` remains governed by `allowIdentityUpdates` (and SQL Server feasibility): emit `CASCADE` only when
-  allowed/accepted; otherwise `NO ACTION` with trigger-based propagation fallback as already specified.
+- `ON UPDATE` is dialect-specific:
+  - PostgreSQL: for concrete targets, use `CASCADE` only when `allowIdentityUpdates=true`; otherwise `NO ACTION`. For
+    abstract targets, use `CASCADE`.
+  - SQL Server: always emit `ON UPDATE NO ACTION` for reference composite FKs. Identity propagation for eligible edges
+    is provided by `DbTriggerKind.IdentityPropagationFallback` trigger inventory.
 - `ON DELETE` behavior is unchanged by key unification (baseline: `NO ACTION`).
 
 ### Descriptor foreign keys (`dms.Descriptor`) (normative)
@@ -1652,24 +1656,21 @@ Normative guidance:
   paths that reach the same referrer table whose composite FKs share unified canonical columns, and MUST validate the
   identity update succeeds (no transient FK violations and no mid-cascade check failures).
 
-#### SQL Server (DDL may be rejected; mitigation is trigger-based propagation fallback)
+#### SQL Server (always `ON UPDATE NO ACTION` + trigger-based propagation fallback)
 
-SQL Server may reject FK graphs that contain “cycles or multiple cascade paths”. This is a **DDL feasibility**
-constraint, not an application policy decision. Under key unification, this can occur in the same places as in the
-baseline design, and may become more common as unified canonical identity columns are shared across composite FKs.
+SQL Server reference composite FKs are emitted with `ON UPDATE NO ACTION` for deterministic behavior and to avoid
+engine cascade-path limitations. Identity propagation is represented explicitly as
+`DbTriggerKind.IdentityPropagationFallback` trigger inventory.
 
 Normative rules:
 
-1. The DDL generator MUST attempt to use declarative `ON UPDATE CASCADE` for reference composite FKs only when:
-   - the referenced target allows identity updates (`allowIdentityUpdates=true`), and
-   - SQL Server accepts the resulting FK graph (no multiple-cascade-path/cycle rejection).
-2. When SQL Server rejects `ON UPDATE CASCADE` for an otherwise-eligible edge due to cascade-path restrictions, the DDL
-   generator MUST:
-   - emit that FK with `ON UPDATE NO ACTION`, and
-   - emit a deterministic, set-based trigger-based propagation fallback for that edge as
-     `DbTriggerKind.IdentityPropagationFallback` (see `transactions-and-concurrency.md` and `07-index-and-trigger-inventory.md`).
-3. Trigger-based propagation fallback MUST update the referencing table’s **canonical storage columns** for unified
-   identity parts (never alias columns), because aliases are computed/read-only.
+1. The DDL generator MUST emit `ON UPDATE NO ACTION` for every SQL Server reference composite FK (concrete and
+   abstract targets).
+2. For eligible propagation targets (abstract targets or concrete targets with `allowIdentityUpdates=true`), trigger
+   inventory MUST emit one deterministic, set-based `DbTriggerKind.IdentityPropagationFallback` trigger per referenced
+   table (`DbTriggerInfo.TriggerTable`) with referrer fan-out actions.
+3. Each propagation referrer action MUST update the referrer table’s **canonical/storage** identity-part columns
+   (never alias/binding columns), because aliases are computed/read-only.
 
 Required correctness properties for trigger-based propagation fallback:
 
@@ -1756,7 +1757,8 @@ Rationale:
 
 - The composite FK must not reference read-only alias columns.
 - The composite FK and its required referenced-key UNIQUE must agree on the same physical key shape to avoid
-  mismatches and to keep identity propagation (`ON UPDATE CASCADE`) anchored on the canonical writable columns.
+  mismatches and to keep identity propagation (FK cascades on PostgreSQL; fallback triggers on SQL Server) anchored on
+  the canonical writable columns.
 
 #### Index inventory (constraints imply indexes)
 
@@ -1806,9 +1808,8 @@ For a binding column `A` with `Storage = UnifiedAlias(C, P)`:
 `<op>` is any value comparison operator used by the query layer (e.g., `=`, `<`, `>`, `LIKE`, `IN`), and the rewrite
 assumes `@p` is non-null (the API does not surface null-valued query parameters).
 
-If predicate rewriting is not implemented and performance requires it, the DDL/index inventory MAY introduce
-additional indexes for unified binding columns. Prefer filtered/partial indexes keyed by `C` and gated by
-`P IS NOT NULL` to avoid indexing absent rows.
+If predicate rewriting is not implemented and performance requires it, optimize query planning first. This workstream
+does not add filtered/partial query-index modeling for unified aliases; inventory remains PK/UK/FK-support focused.
 
 ### Triggers (stamping + identity maintenance) under unified aliases (normative)
 
@@ -1833,6 +1834,9 @@ This makes identity change detection robust to:
 
 - FK-cascade updates (or SQL Server trigger-based propagation fallbacks) that update canonical storage columns, and
 - presence changes that gate an alias between `NULL` and a canonical value.
+
+In derived trigger inventory contracts, this compare set is carried by `DbTriggerInfo.IdentityProjectionColumns` and is
+interpreted strictly as a null-safe value-diff input set, never as `UPDATE(column)` gating.
 
 #### `DbTriggerKind.DocumentStamping` (stamps `dms.Document`)
 
@@ -1885,9 +1889,10 @@ Recommended set-level pass order (relative to the current default implementation
 8. `ReferenceConstraintPass`
 9. `ArrayUniquenessConstraintPass`
 10. `ApplyConstraintDialectHashingPass`
-11. *(When implemented in E01)* `IndexAndTriggerInventoryPass` (DMS-945)
-12. `ApplyDialectIdentifierShorteningPass`
-13. `CanonicalizeOrderingPass`
+11. *(When implemented in E01)* `DeriveIndexInventoryPass` (DMS-945)
+12. *(When implemented in E01)* `DeriveTriggerInventoryPass` (DMS-945)
+13. `ApplyDialectIdentifierShorteningPass`
+14. `CanonicalizeOrderingPass`
 
 Notes:
 
@@ -1899,9 +1904,9 @@ Notes:
 - `KeyUnificationPass` MUST run **before** any constraint derivation pass that needs to target canonical storage
   columns (notably reference composite FKs), and before any pass that builds SourceJsonPath-based lookups that must see
   the post-unification table/column inventory.
-- If E01 derives index/trigger inventories (DMS-945), that pass SHOULD run **after**
-  `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names reflect the final
-  hashed constraint identifiers.
+- If E01 derives index/trigger inventories (DMS-945), `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass`
+  SHOULD run **after** `ApplyConstraintDialectHashingPass` so PK/UK-implied index names that mirror constraint names
+  reflect the final hashed constraint identifiers.
 
 ### Required postconditions for downstream passes
 
@@ -1918,8 +1923,8 @@ These postconditions allow subsequent passes to be purely consumer-oriented:
 
 - Constraint derivation passes use `SourceJsonPath` for endpoint resolution and `ColumnStorage` for storage/FK
   targeting.
-- Index/trigger inventory derivation (when present) can treat canonical columns as the physical “writable” identity
-  columns while still emitting query/reconstitution-facing metadata in terms of member path columns.
+- `DeriveIndexInventoryPass` and `DeriveTriggerInventoryPass` can treat canonical columns as the physical “writable”
+  identity columns while still emitting query/reconstitution-facing metadata in terms of member path columns.
 - Dialect identifier shortening can rename columns and update all `UnifiedAlias` and `KeyUnificationClass` references
   in one place.
 - `KeyUnificationPass` is not required to establish the final `DbTableModel.Columns` ordering; it may append canonical
@@ -2165,10 +2170,12 @@ semantics, or cascade correctness.
   canonicals.
 - FK-supporting referenced-key UNIQUE constraints are defined over canonical storage columns (after mapping + de-dup).
 - FK-supporting index derivation uses the final FK column list after canonical mapping and de-duplication.
-- SQL Server cascade feasibility:
-  - `ON UPDATE CASCADE` is used only when accepted by SQL Server’s cascade-path rules,
-  - rejected edges use `ON UPDATE NO ACTION` plus trigger-based propagation fallback that updates canonical storage
-    columns (never aliases).
+- SQL Server propagation strategy:
+  - every reference composite FK uses `ON UPDATE NO ACTION`,
+  - eligible propagation targets (abstract or `allowIdentityUpdates=true`) emit deterministic
+    `DbTriggerKind.IdentityPropagationFallback` inventory as one trigger per referenced table with referrer fan-out
+    actions,
+  - trigger actions update canonical/storage columns only (never aliases).
 
 ### Write planning + flattening
 

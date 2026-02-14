@@ -61,7 +61,7 @@
       "Run: `rg -n \"ON UPDATE CASCADE|fallback|PropagateIdentity|IdentityProjectionColumns\" reference/design/backend-redesign/design-docs/key-unification.md reference/design/backend-redesign/design-docs/transactions-and-concurrency.md reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md` and confirm wording matches the locked decisions.",
       "Manual review: confirm docs no longer imply “try cascade then fallback” on MSSQL for this implementation."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Query Planning",
