@@ -21,7 +21,7 @@ For each project schema `{schema}` (e.g., `edfi`) and each resource root table `
   - a stable technical id (`DocumentUuid` and optionally `DocumentId`),
   - the natural key fields for `R`:
     - scalar identity columns from `{schema}.{R}`, plus
-    - referenced identity fields for any identity elements sourced from `{resource}Reference` objects (from **local propagated identity columns**),
+    - referenced identity fields for any identity elements sourced from `{resource}Reference` objects (from local per-site identity-part binding columns; aliases when unified; see [key-unification.md](key-unification.md)),
   - scalar fields from `{schema}.{R}`,
   - `LastModifiedDate` and `ChangeVersion` from `dms.Document` stamps.
 
@@ -34,7 +34,7 @@ With stored stamps:
 - `LastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
 
-No dependency aggregation is required for these views in the baseline redesign because indirect impacts are materialized as real updates on referrers (FK cascades update propagated identity columns, which triggers normal stamping).
+No dependency aggregation is required for these views in the baseline redesign because indirect impacts are materialized as real updates on referrers (FK cascades update canonical reference identity storage columns, triggering normal stamping). Under key unification, per-site identity columns may be generated aliases; see [key-unification.md](key-unification.md).
 
 ## Example (PostgreSQL): `edfi.StudentSchoolAssociation`
 
@@ -69,7 +69,7 @@ JOIN dms.Document d
 ### References, descriptors, and polymorphism (sketch)
 
 - **Non-descriptor references** (`..._DocumentId`):
-  - project identity fields from the referencing table’s propagated identity columns.
+  - project identity fields from the referencing table’s per-site identity-part binding columns (aliases when unified; see [key-unification.md](key-unification.md)).
   - this applies to both concrete and abstract references.
 - **Descriptor references** (`..._DescriptorId`):
   - join `dms.Descriptor` and project `Uri` (unless a separate descriptor-URI denormalization is introduced).
@@ -91,4 +91,3 @@ The intended incremental pattern is:
 If view performance is insufficient at scale, consider:
 - pre-materialized projections (e.g., `dms.DocumentCache`), or
 - narrow denormalized “ETL surfaces” for specific consumers.
-

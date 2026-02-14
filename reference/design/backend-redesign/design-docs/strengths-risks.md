@@ -8,6 +8,7 @@ This document captures strengths and risks for `overview.md`.
 
 - Overview: [overview.md](overview.md)
 - Data model: [data-model.md](data-model.md)
+- Key unification deep dive: [key-unification.md](key-unification.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
@@ -29,12 +30,18 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### `ReferentialId` retention (uniform natural-identity index)
 
 - Keeps a single generic resolution path for all identities (`ReferentialId → DocumentId`) without per-resource identity resolution SQL.
-- Works alongside propagated reference-identity columns: the database stores stable `DocumentId` FKs, while `ReferentialId` provides uniform resolution and upsert detection.
+- Works alongside per-site binding identity columns (which may be generated/persisted aliases under key unification): the database stores stable `DocumentId` FKs, while `ReferentialId` provides uniform resolution and upsert detection.
 
 ### Full natural-key propagation for document references
 
-- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as FK-cascade updates to referrers’ stored reference identity columns.
-- Improves query compilation for reference-identity query parameters by enabling local predicates on propagated identity columns (no referenced-table subqueries).
+- Eliminates a separate reverse-lookup dependency table by materializing indirect impacts as FK-cascade updates to referrers’ canonical stored identity-part columns (with per-site binding columns available for query compilation and reconstitution).
+- Improves query compilation for reference-identity query parameters by enabling local predicates on per-site binding identity columns (no referenced-table subqueries).
+
+### Key unification for equality-constrained identity parts (single source of truth)
+
+- Stores each equality-constrained unification class in a single canonical physical column (writable; participates in composite FKs and cascades).
+- Preserves per-site / per-path binding columns as generated/computed, persisted aliases (presence-gated where needed), keeping query compilation and reconstitution stable.
+- Prevents DB-level drift: only the canonical column is written; aliases deterministically project the canonical value and cannot diverge.
 
 ### Stored update tracking (stamps + journal)
 
@@ -57,7 +64,7 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 ### Identity update fan-out (Highest Operational Risk)
 
 Identity updates can synchronously fan out to many rows because:
-- identity values are propagated into all direct referrers via `ON UPDATE CASCADE` (or trigger-based propagation where required) when `allowIdentityUpdates=true`, and
+- identity values are propagated into all direct referrers via `ON UPDATE CASCADE` (or trigger-based propagation where required) on canonical storage columns when `allowIdentityUpdates=true`, and
 - stamping + identity-maintenance triggers execute as part of the same transaction.
 
 Failure modes:
@@ -74,26 +81,35 @@ Mitigations / guidance:
 
 SQL Server may reject FK graphs with “cycles or multiple cascade paths”. The design depends on update propagation, so the DDL generator must:
 - use `ON UPDATE CASCADE` where permitted for targets with `allowIdentityUpdates=true`, and
-- fall back to trigger-based propagation for restricted edges (deterministic, set-based), without changing correctness semantics.
+- fall back to trigger-based propagation for restricted edges (deterministic, set-based) that updates canonical storage columns (aliases recompute), without changing correctness semantics.
 
 Risks:
 - extra trigger complexity,
 - higher likelihood of engine-specific behavior and performance differences.
+- key unification can increase the chance of “multiple cascade paths”: shared canonical columns can participate in multiple composite FKs, creating multi-edge cascades.
 
 Mitigations:
 - Include cascade feasibility checks (and trigger fallback emission) in DDL generation verification.
 - Benchmark representative “hub” resources on both engines.
 
+### Key unification complexity (Generated aliases + synthetic presence flags)
+
+Key unification introduces generated/computed, persisted alias columns (often presence-gated) plus canonical storage columns and sometimes synthetic `..._Present` presence flags for optional non-reference paths. This adds complexity and new failure modes:
+- DDL: more generated columns + CHECK constraints (e.g., presence `NullOrTrue`) with engine-specific syntax.
+- Indexing: deciding whether to index canonical storage columns vs per-site binding aliases, and ensuring predicates respect presence gating.
+- Write planning: writers must compute canonical values and presence flags deterministically, never write alias columns, and fail fast on conflicting “both present, different values”.
+- Diagnostics: equality constraints must be reported as `applied`/`redundant`/`ignored` deterministically, and descriptor-FK de-duplication + unification conflicts must be surfaced for debugging.
+
 ### Schema width and index pressure (Storage + Write Amplification Risk)
 
-Persisting propagated identity columns for every document reference site increases:
+Persisting per-site binding identity columns for every document reference site (plus canonical + optional synthetic presence columns under key unification) increases:
 - table width (more columns),
 - composite FK count,
 - supporting index count (per FK), and
 - update work during cascades.
 
 Mitigations:
-- Keep propagated columns narrow (identity-only; avoid non-identity denormalization).
+- Keep binding columns narrow (identity-only; avoid non-identity denormalization).
 - Prefer targeted indexes (supporting FK indexes only; avoid speculative query indexes).
 - Benchmark hot resources with many references and deep collections.
 
@@ -130,7 +146,7 @@ The redesign moves read complexity from “fetch 1 JSON blob” to “hydrate ro
 - application allocation pressure (many row objects, JSON assembly work).
 
 This baseline reduces some previous read overhead by:
-- reconstituting reference identity fields from local propagated columns (no referenced-table joins), and
+- reconstituting reference identity fields from local binding columns (no referenced-table joins), and
 - serving `_etag/_lastModifiedDate/ChangeVersion` from stored stamps (no dependency-token expansion).
 
 Guidance:

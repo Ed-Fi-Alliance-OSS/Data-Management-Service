@@ -52,7 +52,7 @@ Each persisted document also maintains an **identity projection stamp**:
 - `IdentityVersion`
 - `IdentityLastModifiedAt`
 
-These are updated only when the document’s own identity/URI projection changes (including via cascaded updates to identity-component propagated identity columns). Identity stamps are not required to serve `_etag/_lastModifiedDate/ChangeVersion`, but are useful for diagnostics and future features.
+These are updated only when the document’s own identity/URI projection changes (including via cascaded updates to identity-component reference identity storage columns; see [key-unification.md](key-unification.md)). Identity stamps are not required to serve `_etag/_lastModifiedDate/ChangeVersion`, but are useful for diagnostics and future features.
 
 ### Global sequence
 
@@ -68,13 +68,13 @@ See [data-model.md](data-model.md) for the sequence DDL.
 
 A document’s served representation changes when any of the following occur:
 - the document’s own persisted scalar/collection content changes (root/child/extension tables), or
-- any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored propagated identity columns.
+- any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
 ### What counts as an identity projection change?
 
 A document’s identity/URI projection changes when any identity component changes, including:
 - scalar identity columns on the root table, and
-- propagated identity columns for identity-component references (because those values participate in the document’s identity projection).
+- reference identity values stored alongside identity-component references (because those values participate in the document’s identity projection; canonical under key unification; see [key-unification.md](key-unification.md)).
 
 ### Stamp updates
 
@@ -104,7 +104,7 @@ A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/mon
 
 Notes:
 - Multiple updates to the same `DocumentId` in one transaction may allocate multiple sequence values; the only required property is that the final committed stamps are monotonic and correct.
-- FK-cascade updates to propagated identity columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE).
+- FK-cascade updates to reference identity storage columns MUST cause stamping (the database update itself triggers the same table triggers as a direct UPDATE; under key unification, per-site binding aliases recompute automatically).
 - For watermark-only compatibility, allocating stamps must be **per-document**, not “one stamp for the whole statement”:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).

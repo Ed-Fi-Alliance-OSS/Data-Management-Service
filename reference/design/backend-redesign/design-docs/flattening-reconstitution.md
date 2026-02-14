@@ -105,7 +105,7 @@ Semantics:
   - `$.arr[*]` targets a child-table base name.
   - Reference paths support two forms:
     - reference object path (e.g., `$.schoolReference`) renames the reference bundle base name
-    - reference identity path inside the reference object (e.g., `$.schoolReference.schoolId`) renames that propagated identity column base name
+    - reference identity path inside the reference object (e.g., `$.schoolReference.schoolId`) renames that reference-identity binding column base name
 
 ### 3.3 Strict rules for `nameOverrides`
 
@@ -127,8 +127,8 @@ To keep the mapping deterministic, portable, and validatable, `nameOverrides` mu
      - For compatibility, override values may be segment-only (`AddressPeriod`) or fully-qualified (`StudentAddressAddressPeriod`); if fully-qualified, deterministically strip already-implied root/ancestor prefixes to derive the effective segment/base name.
    - Otherwise, it overrides the **column base name** at that JSONPath (before suffixes like `_DocumentId` / `_DescriptorId`).
      - For **document references**, two forms are supported:
-       - reference object path (e.g., `$.schoolReference`) renames the reference bundle (FK `..._DocumentId`, propagated bindings, and any naming tokens derived from that base name)
-       - reference identity path (e.g., `$.schoolReference.schoolId`) renames the propagated identity column base name for that identity component
+       - reference object path (e.g., `$.schoolReference`) renames the reference bundle (FK `..._DocumentId`, reference-identity binding columns, and any naming tokens derived from that base name)
+       - reference identity path (e.g., `$.schoolReference.schoolId`) renames the reference-identity binding column base name for that identity component
      - Any other key inside a reference object (e.g., `$.schoolReference.link`) is invalid.
 
 4. **Overrides cannot create collisions**:
@@ -144,11 +144,12 @@ For a given `EffectiveSchemaHash` that DMS serves, DMS builds (or loads from an 
 - Root table name + full column list (scalars + FK columns)
 - Child tables for each array path (and nested arrays)
 - Column types/nullability/constraints
-- Document-reference binding plan: JSON reference paths → FK columns + stored reference identity columns → referenced resource
+- Document-reference binding plan: JSON reference paths → FK columns + reference-identity binding columns → referenced resource
 - Descriptor edge source plan: descriptor JSON paths → FK columns (descriptor `DocumentId`, resolved via `dms.ReferentialIdentity`) and expected descriptor resource type
 - JSON reconstitution plan: table+column → JSON property path writer instructions
-- Reference reconstitution plan (local columns): reference-object writers populated from stored reference identity columns (per `DocumentReferenceBinding`)
+- Reference reconstitution plan (local columns): reference-object writers populated from reference-identity binding columns (per `DocumentReferenceBinding`)
 - Abstract identity tables for polymorphic reference targets (from `abstractResources`)
+- Key unification metadata: per-column `DbColumnModel.Storage` and per-table `DbTableModel.KeyUnificationClasses` (see `key-unification.md`)
 
 This is not code generation; it is compiled (or deserialized) metadata cached by `(DmsInstanceId, EffectiveSchemaHash, ProjectName, ResourceName)`.
 
@@ -217,7 +218,7 @@ Note: C# types referenced below are defined in [7.3 Relational resource model](#
      - create a `..._DocumentId` FK column at the table scope that owns that path and will represent the entire reference object as a single `..._DocumentId` foreign key
      - derive scalar columns for the reference object’s **identity fields** (one per referenced identity component) using the `{ReferenceBaseName}_{IdentityFieldBaseName}` naming rule
      - suppress scalar-column derivation for the reference object’s `link` internals (if present); link values are not persisted
-     - record a `DocumentReferenceBinding` (used for write-time FK + identity column population and for query compilation of reference-identity fields)
+     - record a `DocumentReferenceBinding` (used for write-time FK population and for query compilation/reconstitution of reference-identity fields; identity-part binding columns may be `UnifiedAlias`)
        - compute and persist `DocumentReferenceBinding.IsIdentityComponent` as `true` when any `identityJsonPaths` element is sourced from this reference object (i.e., when any `referenceJsonPaths[*].referenceJsonPath` is present in `identityJsonPaths`)
    - For each descriptor path:
      - create a `..._DescriptorId` FK column at the table scope that owns that path
@@ -484,7 +485,7 @@ Within a single transaction:
    - extension scope/collection rows keyed to the same composite keys as the base scope they extend (document id + ordinals)
    - use the same baseline “replace” strategy as core collections (delete existing, insert current)
 5. No derived reverse-edge maintenance is required:
-   - referential-id impacts propagate into stored reference identity columns via composite FKs; use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and
+   - referential-id impacts propagate through composite reference FKs anchored on canonical storage columns (binding/path columns may be generated aliases); use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and
    - row-local triggers maintain `dms.ReferentialIdentity` and update-tracking stamps in the same transaction.
 
 Bulk insert options (non-codegen):
@@ -670,13 +671,16 @@ Reconstitution walks the derived table/tree model:
 
 To reconstitute reference objects, DMS must output the referenced resource’s identity values (natural keys), not the referenced `DocumentId`.
 
-In this redesign, identity fields inside reference objects are stored as local columns alongside the FK:
+In this redesign, identity fields inside reference objects are represented as local **binding columns** alongside the FK:
 
-- `..._DocumentId`, plus
-- `{ReferenceBaseName}_{IdentityFieldBaseName}` columns,
-  kept consistent via composite FKs (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
+- `..._DocumentId` (the referenced `DocumentId`; also the reference-site presence gate), plus
+- `{ReferenceBaseName}_{IdentityFieldBaseName}` binding columns used for query binding and reference reconstitution.
 
-Therefore reference expansion during JSON writing is a pure “read local columns and emit the reference object” operation. No batched reference identity projection queries (joins to referenced tables or `{AbstractResource}_View`) are required to populate reference identity fields.
+Under key unification, these binding columns may be persisted generated `UnifiedAlias` columns of a canonical stored identity column. As a result:
+- composite reference FKs and cascades target canonical storage columns (binding columns are read-only when unified), and
+- reference expansion during JSON writing reads the binding columns so optional reference sites remain absent when absent.
+
+Composite FKs keep the values consistent (`ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true`; otherwise `ON UPDATE NO ACTION`).
 
 For polymorphic/abstract targets, referrers store the abstract identity fields (e.g., `EducationOrganizationId`) and enforce membership via a composite FK to `{schema}.{AbstractResource}Identity`.
 
@@ -685,7 +689,7 @@ For polymorphic/abstract targets, referrers store the abstract identity fields (
 Use `Utf8JsonWriter` to avoid building large intermediate `JsonNode` graphs:
 - write scalars from root/child rows using the compiled column→jsonPath writers
 - write arrays in `Ordinal` order
-- write references from stored reference identity columns (per `DocumentReferenceBinding`)
+- write references from reference-identity binding columns (per `DocumentReferenceBinding`)
 - write descriptor strings by looking up `dms.Descriptor.Uri`
 - write `_ext` blocks from extension tables (only when at least one extension value is present at that scope)
 - inject `id` from `dms.Document.DocumentUuid`
@@ -902,7 +906,7 @@ The shape model is the output of the “derive from ApiSchema” step. It is:
 /// </param>
 /// <param name="DocumentReferenceBindings">
 /// The set of document-reference bindings derived from documentPathsMapping.referenceJsonPaths.
-/// Each binding declares: which JSON reference object it came from, which table stores the FK and propagated identity columns, and how to populate/reconstitute the reference object from local columns.
+/// Each binding declares: which JSON reference object it came from, which table stores the FK and reference-identity binding columns (which may be stored or <c>UnifiedAlias</c>), and how to populate/reconstitute the reference object from local columns.
 /// </param>
 /// <param name="DescriptorEdgeSources">
 /// The set of descriptor-reference sources derived from documentPathsMapping (descriptor paths).
@@ -941,6 +945,7 @@ public sealed record RelationalResourceModel(
 /// - scalar columns (typed)
 /// - document reference FK columns (..._DocumentId)
 /// - descriptor FK columns (..._DescriptorId)
+/// - key-unification canonical storage columns and synthetic presence-flag columns (when present)
 /// Column order is significant: plan compilation uses it to define parameter ordering and row buffers.
 /// </param>
 /// <param name="Constraints">
@@ -948,12 +953,25 @@ public sealed record RelationalResourceModel(
 /// - unique constraints (identityJsonPaths, arrayUniquenessConstraints)
 /// - foreign keys (resource refs, descriptor refs, parent-child joins)
 /// </param>
+/// <param name="KeyUnificationClasses">
+/// Per-table key-unification inventory used to compute canonical storage values during flattening and to map binding columns to storage columns.
+/// Empty when no applied equality constraints exist for this table.
+/// </param>
 public sealed record DbTableModel(
     DbTableName Table,
     JsonPathExpression JsonScope,                 // "$" for root, "$.addresses[*]" for child, etc.
     TableKey Key,
     IReadOnlyList<DbColumnModel> Columns,
-    IReadOnlyList<TableConstraint> Constraints
+    IReadOnlyList<TableConstraint> Constraints,
+    IReadOnlyList<KeyUnificationClass> KeyUnificationClasses
+);
+
+/// <summary>
+/// A per-table inventory entry describing how equality-constrained member endpoints unify into a single canonical storage column.
+/// </summary>
+public sealed record KeyUnificationClass(
+    DbColumnName CanonicalColumn,
+    IReadOnlyList<DbColumnName> MemberPathColumns
 );
 
 /// <summary>
@@ -967,6 +985,16 @@ public sealed record TableKey(IReadOnlyList<DbKeyColumn> Columns);
 /// A single key column. The ColumnKind describes its semantic meaning.
 /// </summary>
 public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
+
+/// <summary>
+/// Storage/writable semantics for a column.
+/// Under key unification, API-bound binding columns can be stored (writable) or generated <c>UnifiedAlias</c> columns (read-only).
+/// </summary>
+public abstract record ColumnStorage
+{
+    public sealed record Stored : ColumnStorage;
+    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName? PresenceColumn) : ColumnStorage;
+}
 
 /// <summary>
 /// A table column description used for both DDL and runtime binding.
@@ -985,13 +1013,17 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 /// For Kind=DescriptorFk: the descriptor resource type (used to compute/validate descriptor referential identity).
 /// Null for scalar/ordinal/parent-key columns.
 /// </param>
+/// <param name="Storage">
+/// Storage/writable semantics for this column. See: key-unification.md.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,            // null for derived columns (ParentKey/Ordinal)
-    QualifiedResourceName? TargetResource          // for DocumentFk / DescriptorFk
+    QualifiedResourceName? TargetResource,         // for DocumentFk / DescriptorFk
+    ColumnStorage Storage
 );
 
 /// <summary>
@@ -1025,9 +1057,9 @@ public abstract record TableConstraint
 /// <param name="IdentityBindings">
 /// The ordered identity field bindings derived from ApiSchema documentPathsMapping.referenceJsonPaths.
 /// These bindings are used for:
-/// - write-time column population of stored reference identity fields
 /// - query compilation for reference-identity query fields (local predicates)
-/// - read-time reference reconstitution from local columns
+/// - read-time reference reconstitution from local binding columns
+/// - write planning and FK derivation: binding columns may be stored or <c>UnifiedAlias</c>; writes and composite FKs target storage columns via <c>DbColumnModel.Storage</c>
 /// </param>
 /// <param name="IsIdentityComponent">
 /// True when this reference contributes to the parent document's identity (the referenced identity values are part of the parent's <c>identityJsonPaths</c>).
@@ -1045,7 +1077,7 @@ public sealed record DocumentReferenceBinding(
 /// Maps one identity field inside the reference object to a physical column on the referencing table.
 /// </summary>
 /// <param name="ReferenceJsonPath">Absolute path to the identity field inside the reference object in the referencing document.</param>
-/// <param name="Column">Physical column holding the identity value (e.g. <c>Student_StudentUniqueId</c>).</param>
+/// <param name="Column">Binding column holding the identity value (may be <c>UnifiedAlias</c> under key unification).</param>
 public sealed record ReferenceIdentityBinding(
     JsonPathExpression ReferenceJsonPath,
     DbColumnName Column
@@ -1056,7 +1088,9 @@ public sealed record ReferenceIdentityBinding(
 /// </summary>
 /// <param name="DescriptorValuePath">Absolute path to the descriptor URI string in the JSON document.</param>
 /// <param name="Table">The table where the FK column is stored (root or child).</param>
-/// <param name="FkColumn">The FK column holding the descriptor DocumentId (BIGINT).</param>
+/// <param name="FkColumn">
+/// Binding column holding the descriptor DocumentId (BIGINT). Under key unification this may be a generated <c>UnifiedAlias</c>; writes and descriptor FK constraints target the storage column via <c>DbColumnModel.Storage</c>.
+/// </param>
 /// <param name="DescriptorResource">
 /// The descriptor resource type expected at this path (e.g. ("EdFi","GradeLevelDescriptor")).
 /// This is used for:
@@ -1124,12 +1158,17 @@ public sealed record ResourceWritePlan(
 /// <param name="UpdateSql">Optional update SQL (for root tables).</param>
 /// <param name="DeleteByParentSql">Delete SQL that removes all child rows for a parent key (replace semantics).</param>
 /// <param name="ColumnBindings">The ordered list of columns and their write-time value sources.</param>
+/// <param name="KeyUnificationPlans">
+/// Per-table inventory used to populate canonical storage columns and synthetic presence flags during row materialization.
+/// Empty when <c>DbTableModel.KeyUnificationClasses</c> is empty.
+/// </param>
 public sealed record TableWritePlan(
     DbTableModel TableModel,
     string InsertSql,
     string? UpdateSql,
     string? DeleteByParentSql,
-    IReadOnlyList<WriteColumnBinding> ColumnBindings
+    IReadOnlyList<WriteColumnBinding> ColumnBindings,
+    IReadOnlyList<KeyUnificationWritePlan> KeyUnificationPlans
 );
 
 /// <summary>
@@ -1149,6 +1188,11 @@ public abstract record WriteValueSource
     /// The root DocumentId for the resource being written.
     /// </summary>
     public sealed record DocumentId() : WriteValueSource;
+
+    /// <summary>
+    /// The column value is produced by a table-local precompute step (e.g., key-unification canonical coalescing).
+    /// </summary>
+    public sealed record Precomputed() : WriteValueSource;
 
     /// <summary>
     /// One component of the parent table key, by index in the parent key.
@@ -1188,6 +1232,26 @@ public abstract record WriteValueSource
 }
 
 /// <summary>
+/// A per-table plan for computing a key-unification class’s canonical storage value (and any synthetic presence flags) during row materialization.
+/// </summary>
+public sealed record KeyUnificationWritePlan(
+    DbColumnName CanonicalColumn,
+    int CanonicalBindingIndex,
+    IReadOnlyList<KeyUnificationMemberWritePlan> MembersInOrder
+);
+
+public sealed record KeyUnificationMemberWritePlan(
+    DbColumnName MemberPathColumn,
+    JsonPathExpression RelativePath,
+    ColumnKind Kind,
+    RelationalScalarType? ScalarType,
+    QualifiedResourceName? DescriptorResource,
+    DbColumnName? PresenceColumn,
+    int? PresenceBindingIndex,
+    bool PresenceIsSynthetic
+);
+
+/// <summary>
 /// Compiled read/reconstitution plan for a single resource type.
 /// </summary>
 public sealed record ResourceReadPlan(
@@ -1209,9 +1273,18 @@ public sealed record TableReadPlan(
 );
 ```
 
+#### Key unification (required)
+
+When `DbTableModel.KeyUnificationClasses` is non-empty:
+
+- `TableWritePlan.ColumnBindings` (and emitted `INSERT`/`UPDATE` column lists) MUST include only stored/writable columns. Any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` MUST be excluded.
+- Canonical storage columns and synthetic `..._Present` presence-flag columns MUST be bound as `WriteValueSource.Precomputed`.
+- `TableWritePlan.KeyUnificationPlans` MUST be emitted for every `KeyUnificationClass` to compute canonical values and synthetic presence flags during row materialization.
+- Fail fast: the plan compiler MUST reject any plan that attempts to write a `UnifiedAlias` column, or that leaves a `Precomputed` binding without exactly one corresponding `KeyUnificationWritePlan`.
+
 ### 7.5 Reference reconstitution (local columns)
 
-Reference objects are reconstituted from stored reference identity columns on the referencing tables.
+Reference objects are reconstituted from reference-identity binding columns on the referencing tables. Under key unification, these binding columns may be stored or generated `UnifiedAlias` columns; reconstitution reads binding columns to preserve per-site presence semantics.
 
 The plan compiler uses `RelationalResourceModel.DocumentReferenceBindings` to:
 - identify the JSON reference object location, and
@@ -1610,7 +1683,7 @@ Notes:
 - `_referenceResolver.ResolveAsync(...)` resolves document and descriptor references to `DocumentId` via `dms.ReferentialIdentity` (`ReferentialId → DocumentId`) for all identities (self-contained, reference-bearing, and polymorphic/abstract via alias rows), and may validate descriptor existence/type via `dms.Descriptor`.
 - `_writer.ExecuteAsync(...)` uses `TableWritePlan.DeleteByParentSql` + `IBulkInserter` to avoid N+1 inserts.
 
-Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` gets used):
+Flattening inner loop sketch (how `TableWritePlan.ColumnBindings` and `TableWritePlan.KeyUnificationPlans` get used):
 
 ```csharp
 private static RowBuffer MaterializeRow(
@@ -1630,12 +1703,13 @@ private static RowBuffer MaterializeRow(
         values[i] = tablePlan.ColumnBindings[i].Source switch
         {
             WriteValueSource.DocumentId => documentId,
+            WriteValueSource.Precomputed => null,
             WriteValueSource.ParentKeyPart(var index) => parentKeyParts[index],
             WriteValueSource.Ordinal => ordinal,
             WriteValueSource.Scalar(var relPath, var type) => JsonValueReader.Read(scopeNode, relPath, type),
 
             WriteValueSource.DescriptorReference(var edgeSource, var relPath)
-                => ResolveDescriptorId(scopeNode, edgeSource, relPath, resolved),
+                => ResolveDescriptorId(scopeNode, edgeSource.DescriptorResource, relPath, resolved),
 
             WriteValueSource.DocumentReference(var binding)
                 => ResolveReferencedDocumentId(binding, ordinalPath, documentReferences),
@@ -1644,18 +1718,101 @@ private static RowBuffer MaterializeRow(
         };
     }
 
+    if (tablePlan.KeyUnificationPlans.Count > 0)
+    {
+        ApplyKeyUnificationPlans(tablePlan, scopeNode, values, resolved);
+    }
+
     return new(values);
 }
 
-private static long ResolveDescriptorId(
+private static long? ResolveDescriptorId(
     JsonNode scopeNode,
-    DescriptorEdgeSource edgeSource,
+    QualifiedResourceName descriptorResource,
     JsonPathExpression relPath,
     ResolvedReferenceSet resolved)
 {
-    var normalizedUri = JsonValueReader.ReadString(scopeNode, relPath).ToLowerInvariant();
-    var id = resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, edgeSource.DescriptorResource)];
-    return id;
+    var uri = JsonValueReader.ReadString(scopeNode, relPath);
+    if (uri is null)
+    {
+        return null;
+    }
+
+    var normalizedUri = uri.ToLowerInvariant();
+    return resolved.DescriptorIdByKey[new DescriptorKey(normalizedUri, descriptorResource)];
+}
+
+private static void ApplyKeyUnificationPlans(
+    TableWritePlan tablePlan,
+    JsonNode scopeNode,
+    object?[] values,
+    ResolvedReferenceSet resolved)
+{
+    // See key-unification.md ("Flattener algorithm" + "Canonical value coalescing") for the normative rules.
+    foreach (var plan in tablePlan.KeyUnificationPlans)
+    {
+        object? canonicalValue = null;
+        var hasPresentCandidate = false;
+
+        foreach (var member in plan.MembersInOrder)
+        {
+            var memberValue = member.Kind switch
+            {
+                ColumnKind.Scalar => JsonValueReader.Read(scopeNode, member.RelativePath, member.ScalarType!),
+                ColumnKind.DescriptorFk => ResolveDescriptorId(scopeNode, member.DescriptorResource!, member.RelativePath, resolved),
+                _ => throw new InvalidOperationException("Invalid unification member kind")
+            };
+
+            // Note: selected JSON null MUST be treated as absent for key-unification coalescing.
+            var isPresent = memberValue is not null;
+
+            // Synthetic presence flags are deterministically populated: absent -> NULL, present -> TRUE; FALSE is never written.
+            if (member.PresenceIsSynthetic && member.PresenceBindingIndex is not null)
+            {
+                values[member.PresenceBindingIndex.Value] = isPresent ? true : null;
+            }
+
+            if (!isPresent)
+            {
+                continue;
+            }
+
+            if (!hasPresentCandidate)
+            {
+                canonicalValue = memberValue;
+                hasPresentCandidate = true;
+                continue;
+            }
+
+            // Conflict detection: if two present members disagree (after conversion/resolution), fail closed.
+            if (!Equals(canonicalValue, memberValue))
+            {
+                throw new InvalidOperationException("Key unification conflict detected");
+            }
+        }
+
+        values[plan.CanonicalBindingIndex] = canonicalValue;
+
+        // Guardrails: presence-gated members imply canonical must be non-null when the presence gate is present.
+        foreach (var member in plan.MembersInOrder)
+        {
+            if (member.PresenceBindingIndex is null)
+            {
+                continue;
+            }
+
+            if (values[member.PresenceBindingIndex.Value] is not null && values[plan.CanonicalBindingIndex] is null)
+            {
+                throw new InvalidOperationException("Presence-gated member present but canonical is null");
+            }
+        }
+
+        // Guardrail: canonical nullability.
+        if (!tablePlan.ColumnBindings[plan.CanonicalBindingIndex].Column.IsNullable && values[plan.CanonicalBindingIndex] is null)
+        {
+            throw new InvalidOperationException("Canonical column is required but was not populated");
+        }
+    }
 }
 
 private static long? ResolveReferencedDocumentId(
