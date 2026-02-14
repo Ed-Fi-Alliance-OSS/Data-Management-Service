@@ -161,6 +161,6 @@
       "Add/extend DDL-emission tests (or golden SQL outputs) for triggers to include a unified alias with a presence gate and assert the emitted compare expression is presence-gated and null-safe.",
       "Run the relevant DDL-related unit test project(s) and keep `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` green."
     ],
-    "completed": false
+    "completed": true
   }
 ]
