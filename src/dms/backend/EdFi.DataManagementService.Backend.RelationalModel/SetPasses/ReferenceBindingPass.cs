@@ -132,7 +132,14 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
             var originalReferenceBaseName = RelationalNameConventions.ToPascalCase(mapping.MappingKey);
             var referenceBaseName = ResolveReferenceBaseName(mapping, builderContext);
-            var tableBuilder = ResolveOwningTableBuilder(mapping.ReferenceObjectPath, tableScopes, resource);
+            var tableBuilder = ReferenceObjectPathScopeResolver
+                .ResolveOwningTableScope(
+                    mapping.ReferenceObjectPath,
+                    tableScopes,
+                    static scope => scope.Scope,
+                    resource
+                )
+                .Builder;
             var isNullable = !mapping.IsRequired;
             var referenceIdentityFieldBaseNameCounts = BuildReferenceIdentityFieldBaseNameCounts(
                 mapping.ReferenceObjectPath,
@@ -300,39 +307,6 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
             DocumentReferenceBindings = documentReferenceBindings.ToArray(),
             DescriptorEdgeSources = descriptorEdgeSources.ToArray(),
         };
-    }
-
-    /// <summary>
-    /// Resolves the table accumulator that owns the reference object path by selecting the deepest matching
-    /// table scope prefix.
-    /// </summary>
-    private static TableColumnAccumulator ResolveOwningTableBuilder(
-        JsonPathExpression referenceObjectPath,
-        IReadOnlyList<TableScopeEntry> tableScopes,
-        QualifiedResourceName resource
-    )
-    {
-        var bestMatch = ReferenceObjectPathScopeResolver.ResolveDeepestMatchingScope(
-            referenceObjectPath,
-            tableScopes,
-            static scope => scope.Scope,
-            _ => new InvalidOperationException(
-                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' did not match any table scope."
-            ),
-            candidateScopes => new InvalidOperationException(
-                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' matched multiple table scopes with the same depth: "
-                    + $"{string.Join(", ", candidateScopes.Select(scope => $"'{scope}'"))}."
-            ),
-            () =>
-                new InvalidOperationException(
-                    $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                        + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
-                )
-        );
-
-        return bestMatch.Builder;
     }
 
     /// <summary>
