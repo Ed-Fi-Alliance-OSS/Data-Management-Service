@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Threading;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
@@ -20,13 +22,18 @@ public class ConfigurationServiceDmsInstanceProvider(
     ConfigurationServiceApiClient configurationServiceApiClient,
     IConfigurationServiceTokenHandler configurationServiceTokenHandler,
     ConfigurationServiceContext configurationServiceContext,
-    ILogger<ConfigurationServiceDmsInstanceProvider> logger
+    ILogger<ConfigurationServiceDmsInstanceProvider> logger,
+    CacheSettings? cacheSettings = null
 ) : IDmsInstanceProvider
 {
     private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
-    private readonly ConcurrentDictionary<string, IList<DmsInstance>> _instancesByTenant = new(
+    private readonly CacheSettings _cacheSettings = cacheSettings ?? new CacheSettings();
+    private readonly ConcurrentDictionary<string, TenantCacheEntry> _instancesByTenant = new(
+        StringComparer.OrdinalIgnoreCase
+    );
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _tenantLocks = new(
         StringComparer.OrdinalIgnoreCase
     );
 
@@ -39,90 +46,80 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
     public async Task<IList<DmsInstance>> LoadDmsInstances(string? tenant = null)
     {
-        logger.LogInformation(
-            "Requesting authentication token from Configuration Service at {BaseUrl}",
-            configurationServiceApiClient.Client.BaseAddress
-        );
+        string tenantKey = GetTenantKey(tenant);
+        SemaphoreSlim tenantLock = GetTenantLock(tenantKey);
 
+        await tenantLock.WaitAsync();
         try
         {
-            // Get token for the Configuration Service API
-            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
-            );
+            return await LoadInstancesFromConfigurationService(tenant, tenantKey, SanitizeTenant(tenant));
+        }
+        finally
+        {
+            tenantLock.Release();
+        }
+    }
 
-            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+    /// <inheritdoc />
+    public async Task RefreshInstancesIfExpiredAsync(string? tenant = null)
+    {
+        if (
+            !_cacheSettings.DmsInstanceCacheRefreshEnabled
+            || _cacheSettings.DmsInstanceCacheExpirationSeconds <= 0
+        )
+        {
+            return;
+        }
 
-            // Set tenant header for multi-tenant environments
-            SetTenantHeader(tenant);
+        string tenantKey = GetTenantKey(tenant);
+        if (!_instancesByTenant.TryGetValue(tenantKey, out TenantCacheEntry? cachedEntry))
+        {
+            return;
+        }
 
-            logger.LogInformation("Fetching DMS instances from Configuration Service");
+        TimeSpan expiration = TimeSpan.FromSeconds(_cacheSettings.DmsInstanceCacheExpirationSeconds);
+        if (DateTimeOffset.UtcNow - cachedEntry.LastRefreshed < expiration)
+        {
+            return;
+        }
 
-            IList<DmsInstance> instances = await FetchDmsInstances();
-
-            logger.LogInformation("Successfully fetched {InstanceCount} DMS instances", instances.Count);
-
-            // Store instances by tenant
-            _instancesByTenant[GetTenantKey(tenant)] = instances;
-
-            foreach (DmsInstance instance in instances)
+        SemaphoreSlim tenantLock = GetTenantLock(tenantKey);
+        await tenantLock.WaitAsync();
+        try
+        {
+            if (
+                _instancesByTenant.TryGetValue(tenantKey, out TenantCacheEntry? refreshedEntry)
+                && DateTimeOffset.UtcNow - refreshedEntry.LastRefreshed < expiration
+            )
             {
-                logger.LogDebug(
-                    "Loaded DMS instance: ID={InstanceId}, Name='{InstanceName}', Type='{InstanceType}'",
-                    instance.Id,
-                    instance.InstanceName,
-                    instance.InstanceType
-                );
+                return;
             }
 
+            string sanitizedTenant = SanitizeTenant(tenant);
             logger.LogInformation(
-                "DMS instance cache updated successfully for tenant {Tenant}",
-                tenant ?? "(default)"
+                "DMS instance cache expired for tenant {Tenant} after {TtlSeconds}s, refreshing configuration from Configuration Service",
+                sanitizedTenant,
+                _cacheSettings.DmsInstanceCacheExpirationSeconds
             );
 
-            return instances;
+            await LoadInstancesFromConfigurationService(tenant, tenantKey, sanitizedTenant);
         }
-        catch (HttpRequestException ex)
+        finally
         {
-            logger.LogError(
-                ex,
-                "Failed to load DMS instances from Configuration Service. Ensure the Configuration Service is running and accessible at {BaseUrl}",
-                configurationServiceApiClient.Client.BaseAddress
-            );
-            throw new InvalidOperationException(
-                $"Unable to connect to Configuration Service at {configurationServiceApiClient.Client.BaseAddress}. "
-                    + "Verify that the service is running and the ConfigurationServiceSettings are configured correctly. "
-                    + $"Error: {ex.Message}",
-                ex
-            );
-        }
-        catch (JsonException ex)
-        {
-            logger.LogError(
-                ex,
-                "Failed to deserialize DMS instances response from Configuration Service. The API response format may have changed."
-            );
-            throw new InvalidOperationException(
-                "Configuration Service returned an invalid response format for DMS instances. "
-                    + "This may indicate an API version mismatch or corrupted data.",
-                ex
-            );
+            tenantLock.Release();
         }
     }
 
     /// <inheritdoc />
     public IReadOnlyList<DmsInstance> GetAll(string? tenant = null) =>
-        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
-            ? instances.ToList().AsReadOnly()
+        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var entry)
+            ? entry.Instances.ToList().AsReadOnly()
             : new List<DmsInstance>().AsReadOnly();
 
     /// <inheritdoc />
     public DmsInstance? GetById(long id, string? tenant = null) =>
-        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var instances)
-            ? instances.FirstOrDefault(instance => instance.Id == id)
+        _instancesByTenant.TryGetValue(GetTenantKey(tenant), out var entry)
+            ? entry.Instances.FirstOrDefault(instance => instance.Id == id)
             : null;
 
     /// <summary>
@@ -131,7 +128,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
 
     /// <inheritdoc />
-    public bool TenantExists(string tenant) => _instancesByTenant.ContainsKey(tenant);
+    public bool TenantExists(string tenant) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
 
     /// <inheritdoc />
     public IReadOnlyList<string> GetLoadedTenantKeys() => _instancesByTenant.Keys.ToList().AsReadOnly();
@@ -194,6 +191,92 @@ public class ConfigurationServiceDmsInstanceProvider(
             );
             throw new InvalidOperationException(
                 "Configuration Service returned an invalid response format for tenants. "
+                    + "This may indicate an API mismatch or corrupted data.",
+                ex
+            );
+        }
+    }
+
+    private async Task<IList<DmsInstance>> LoadInstancesFromConfigurationService(
+        string? tenant,
+        string tenantKey,
+        string sanitizedTenant
+    )
+    {
+        logger.LogInformation(
+            "Requesting authentication token from Configuration Service at {BaseUrl} for tenant {Tenant}",
+            configurationServiceApiClient.Client.BaseAddress,
+            sanitizedTenant
+        );
+
+        try
+        {
+            // Get token for the Configuration Service API
+            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
+                configurationServiceContext.clientId,
+                configurationServiceContext.clientSecret,
+                configurationServiceContext.scope
+            );
+
+            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+
+            // Set tenant header for multi-tenant environments
+            SetTenantHeader(tenant);
+
+            logger.LogInformation("Fetching DMS instances from Configuration Service");
+
+            IList<DmsInstance> instances = await FetchDmsInstances();
+
+            logger.LogInformation(
+                "Successfully fetched {InstanceCount} DMS instances for tenant {Tenant}",
+                instances.Count,
+                sanitizedTenant
+            );
+
+            _instancesByTenant[tenantKey] = new TenantCacheEntry(instances, DateTimeOffset.UtcNow);
+
+            foreach (DmsInstance instance in instances)
+            {
+                logger.LogDebug(
+                    "Loaded DMS instance: ID={InstanceId}, Name='{InstanceName}', Type='{InstanceType}'",
+                    instance.Id,
+                    instance.InstanceName,
+                    instance.InstanceType
+                );
+            }
+
+            logger.LogInformation(
+                "DMS instance cache updated successfully for tenant {Tenant}",
+                sanitizedTenant
+            );
+
+            return instances;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to load DMS instances from Configuration Service for tenant {Tenant}. Ensure the Configuration Service is running and accessible at {BaseUrl}",
+                sanitizedTenant,
+                configurationServiceApiClient.Client.BaseAddress
+            );
+            throw new InvalidOperationException(
+                $"Unable to connect to Configuration Service at {configurationServiceApiClient.Client.BaseAddress} for tenant {sanitizedTenant}. "
+                    + "Verify that the service is running and the ConfigurationServiceSettings are configured correctly. "
+                    + $"Error: {ex.Message}",
+                ex
+            );
+        }
+        catch (JsonException ex)
+        {
+            logger.LogError(
+                ex,
+                "Failed to deserialize DMS instances response from Configuration Service for tenant {Tenant}. The API response format may have changed.",
+                sanitizedTenant
+            );
+            throw new InvalidOperationException(
+                "Configuration Service returned an invalid response format for DMS instances. "
                     + "This may indicate an API version mismatch or corrupted data.",
                 ex
             );
@@ -236,7 +319,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         if (tenantResponses == null)
         {
             logger.LogWarning("Deserialization returned null - treating as empty tenant list");
-            return [];
+            return Array.Empty<string>();
         }
 
         return tenantResponses.Select(t => t.Name).ToList();
@@ -279,7 +362,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         if (dmsInstanceResponses == null)
         {
             logger.LogWarning("Deserialization returned null - treating as empty instance list");
-            return [];
+            return Array.Empty<DmsInstance>();
         }
 
         return dmsInstanceResponses
@@ -309,6 +392,12 @@ public class ConfigurationServiceDmsInstanceProvider(
         }
     }
 
+    private static string SanitizeTenant(string? tenant) =>
+        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+
+    private SemaphoreSlim GetTenantLock(string tenantKey) =>
+        _tenantLocks.GetOrAdd(tenantKey, _ => new SemaphoreSlim(1, 1));
+
     /// <summary>
     /// Response model matching the Configuration Service API structure
     /// </summary>
@@ -318,7 +407,8 @@ public class ConfigurationServiceDmsInstanceProvider(
         public string InstanceType { get; init; } = string.Empty;
         public string InstanceName { get; init; } = string.Empty;
         public string? ConnectionString { get; init; } = null;
-        public IList<DmsInstanceRouteContextItem> DmsInstanceRouteContexts { get; init; } = [];
+        public IList<DmsInstanceRouteContextItem> DmsInstanceRouteContexts { get; init; } =
+            Array.Empty<DmsInstanceRouteContextItem>();
     }
 
     /// <summary>
@@ -340,4 +430,6 @@ public class ConfigurationServiceDmsInstanceProvider(
         public long Id { get; init; } = 0;
         public string Name { get; init; } = string.Empty;
     }
+
+    private sealed record TenantCacheEntry(IList<DmsInstance> Instances, DateTimeOffset LastRefreshed);
 }
