@@ -612,6 +612,106 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
 }
 
 /// <summary>
+/// Test fixture for IdentityPropagationFallback payload mapping with key unification on MSSQL.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Key_Unification
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+    private DbTableModel _enrollmentTable = default!;
+    private DbTableModel _schoolTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivationWithKeyUnification()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+        _enrollmentTable = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel.Root;
+        _schoolTable = result
+            .ConcreteResourcesInNameOrder.Single(model => model.ResourceKey.Resource.ResourceName == "School")
+            .RelationalModel.Root;
+    }
+
+    /// <summary>
+    /// It should collapse unified identity bindings to a single canonical storage pair.
+    /// </summary>
+    [Test]
+    public void It_should_collapse_unified_identity_bindings_to_a_single_canonical_storage_pair()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
+        );
+        var action = schoolPropagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+
+        var localCanonicalColumn = ResolveCanonicalColumn(_enrollmentTable, "School_EducationOrganizationId");
+        ResolveCanonicalColumn(_enrollmentTable, "School_SchoolId").Should().Be(localCanonicalColumn);
+
+        var targetCanonicalColumn = ResolveCanonicalColumn(_schoolTable, "EducationOrganizationId");
+        ResolveCanonicalColumn(_schoolTable, "SchoolId").Should().Be(targetCanonicalColumn);
+
+        action
+            .IdentityColumnPairs.Select(pair =>
+                (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value)
+            )
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be((localCanonicalColumn.Value, targetCanonicalColumn.Value));
+    }
+
+    /// <summary>
+    /// It should emit only stored columns in propagation identity pairs.
+    /// </summary>
+    [Test]
+    public void It_should_emit_only_stored_columns_in_propagation_identity_pairs()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback && t.Name.Value == "TR_School_Propagation"
+        );
+        var action = schoolPropagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+
+        foreach (var pair in action.IdentityColumnPairs)
+        {
+            _enrollmentTable
+                .Columns.Single(column => column.ColumnName.Equals(pair.ReferrerStorageColumn))
+                .Storage.Should()
+                .BeOfType<ColumnStorage.Stored>();
+            _schoolTable
+                .Columns.Single(column => column.ColumnName.Equals(pair.ReferencedStorageColumn))
+                .Storage.Should()
+                .BeOfType<ColumnStorage.Stored>();
+        }
+    }
+
+    /// <summary>
+    /// Resolves canonical storage column for a unified alias.
+    /// </summary>
+    private static DbColumnName ResolveCanonicalColumn(DbTableModel table, string aliasColumnName)
+    {
+        var alias = table.Columns.Single(column => column.ColumnName.Value == aliasColumnName);
+        return alias.Storage.Should().BeOfType<ColumnStorage.UnifiedAlias>().Subject.CanonicalColumn;
+    }
+}
+
+/// <summary>
 /// Test fixture for three-level nested collection trigger derivation.
 /// </summary>
 [TestFixture]
@@ -849,6 +949,28 @@ internal static class TriggerInventoryTestSchemaBuilder
             new DescriptorResourceMappingPass(),
             new ExtensionTableDerivationPass(),
             new ReferenceBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveIndexInventoryPass(),
+            new DeriveTriggerInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build the standard pass list through trigger derivation with key unification.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughTriggerDerivationWithKeyUnification()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
             new AbstractIdentityTableAndUnionViewDerivationPass(),
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
