@@ -2178,7 +2178,10 @@
               "kind": "Int64"
             },
             "is_nullable": false,
-            "source_path": null
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "EducationOrganizationId",
@@ -2187,7 +2190,10 @@
               "kind": "Int32"
             },
             "is_nullable": false,
-            "source_path": "$.educationOrganizationId"
+            "source_path": "$.educationOrganizationId",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "Discriminator",
@@ -2197,9 +2203,13 @@
               "max_length": 256
             },
             "is_nullable": false,
-            "source_path": null
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
           }
         ],
+        "key_unification_classes": [],
         "constraints": [
           {
             "kind": "Unique",
@@ -2258,7 +2268,10 @@
               "kind": "Int64"
             },
             "is_nullable": false,
-            "source_path": null
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "BeginDate",
@@ -2267,7 +2280,10 @@
               "kind": "Date"
             },
             "is_nullable": false,
-            "source_path": "$.beginDate"
+            "source_path": "$.beginDate",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "EducationOrganizationReferenceEducationOrganizationId",
@@ -2276,7 +2292,10 @@
               "kind": "Int32"
             },
             "is_nullable": false,
-            "source_path": "$.educationOrganizationReference.educationOrganizationId"
+            "source_path": "$.educationOrganizationReference.educationOrganizationId",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "ProgramReferenceEducationOrganizationId",
@@ -2285,7 +2304,10 @@
               "kind": "Int32"
             },
             "is_nullable": false,
-            "source_path": "$.programReference.educationOrganizationId"
+            "source_path": "$.programReference.educationOrganizationId",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "ProgramReferenceProgramName",
@@ -2295,7 +2317,10 @@
               "max_length": 60
             },
             "is_nullable": false,
-            "source_path": "$.programReference.programName"
+            "source_path": "$.programReference.programName",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "ProgramReferenceProgramTypeDescriptor",
@@ -2304,7 +2329,10 @@
               "kind": "Int64"
             },
             "is_nullable": false,
-            "source_path": "$.programReference.programTypeDescriptor"
+            "source_path": "$.programReference.programTypeDescriptor",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "StudentReferenceStudentUniqueId",
@@ -2314,7 +2342,10 @@
               "max_length": 32
             },
             "is_nullable": false,
-            "source_path": "$.studentReference.studentUniqueId"
+            "source_path": "$.studentReference.studentUniqueId",
+            "storage": {
+              "kind": "Stored"
+            }
           },
           {
             "name": "Discriminator",
@@ -2324,9 +2355,13 @@
               "max_length": 256
             },
             "is_nullable": false,
-            "source_path": null
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
           }
         ],
+        "key_unification_classes": [],
         "constraints": [
           {
             "kind": "Unique",
@@ -38268,7 +38303,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AdministrationIdentifier",
@@ -38278,7 +38316,10 @@
                 "max_length": 255
               },
               "is_nullable": false,
-              "source_path": "$.administrationIdentifier"
+              "source_path": "$.administrationIdentifier",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Assessment_AssessmentIdentifier",
@@ -38288,7 +38329,10 @@
                 "max_length": 60
               },
               "is_nullable": false,
-              "source_path": "$.assessmentReference.assessmentIdentifier"
+              "source_path": "$.assessmentReference.assessmentIdentifier",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Assessment_Namespace",
@@ -38298,7 +38342,10 @@
                 "max_length": 255
               },
               "is_nullable": false,
-              "source_path": "$.assessmentReference.namespace"
+              "source_path": "$.assessmentReference.namespace",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssigningEducationOrganization_EducationOrganizationId",
@@ -38307,7 +38354,10 @@
                 "kind": "Int32"
               },
               "is_nullable": false,
-              "source_path": "$.assigningEducationOrganizationReference.educationOrganizationId"
+              "source_path": "$.assigningEducationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Assessment_DocumentId",
@@ -38316,7 +38366,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": "$.assessmentReference"
+              "source_path": "$.assessmentReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssigningEducationOrganization_DocumentId",
@@ -38325,9 +38378,13 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": "$.assigningEducationOrganizationReference"
+              "source_path": "$.assigningEducationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -38444,7 +38501,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Ordinal",
@@ -38453,7 +38513,10 @@
                 "kind": "Int32"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssessmentBatteryPart_AssessmentBatteryPartName",
@@ -38463,7 +38526,10 @@
                 "max_length": 65
               },
               "is_nullable": true,
-              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName"
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentBatteryPartName",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssessmentBatteryPart_AssessmentIdentifier",
@@ -38473,7 +38539,10 @@
                 "max_length": 60
               },
               "is_nullable": true,
-              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier"
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.assessmentIdentifier",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssessmentBatteryPart_Namespace",
@@ -38483,7 +38552,10 @@
                 "max_length": 255
               },
               "is_nullable": true,
-              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace"
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference.namespace",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssessmentBatteryPart_DocumentId",
@@ -38492,9 +38564,13 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference"
+              "source_path": "$.assessmentBatteryParts[*].assessmentBatteryPartReference",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "ForeignKey",
@@ -38568,7 +38644,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Ordinal",
@@ -38577,7 +38656,10 @@
                 "kind": "Int32"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssessmentAdministrationBeginDate",
@@ -38586,7 +38668,10 @@
                 "kind": "Date"
               },
               "is_nullable": false,
-              "source_path": "$.periods[*].beginDate"
+              "source_path": "$.periods[*].beginDate",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AssessmentAdministrationEndDate",
@@ -38595,9 +38680,13 @@
                 "kind": "Date"
               },
               "is_nullable": true,
-              "source_path": "$.periods[*].endDate"
+              "source_path": "$.periods[*].endDate",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -38726,7 +38815,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EnrollmentTypeDescriptor_DescriptorId",
@@ -38735,7 +38827,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.enrollmentTypeDescriptor"
+              "source_path": "$.enrollmentTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EntryGradeLevelDescriptor_DescriptorId",
@@ -38744,7 +38839,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": "$.entryGradeLevelDescriptor"
+              "source_path": "$.entryGradeLevelDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EntryGradeLevelReasonDescriptor_DescriptorId",
@@ -38753,7 +38851,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.entryGradeLevelReasonDescriptor"
+              "source_path": "$.entryGradeLevelReasonDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EntryTypeDescriptor_DescriptorId",
@@ -38762,7 +38863,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.entryTypeDescriptor"
+              "source_path": "$.entryTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "ExitWithdrawTypeDescriptor_DescriptorId",
@@ -38771,7 +38875,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.exitWithdrawTypeDescriptor"
+              "source_path": "$.exitWithdrawTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
@@ -38780,7 +38887,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
+              "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "NextYearGradeLevelDescriptor_DescriptorId",
@@ -38789,7 +38899,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.nextYearGradeLevelDescriptor"
+              "source_path": "$.nextYearGradeLevelDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "ResidencyStatusDescriptor_DescriptorId",
@@ -38798,7 +38911,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.residencyStatusDescriptor"
+              "source_path": "$.residencyStatusDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "SchoolChoiceBasisDescriptor_DescriptorId",
@@ -38807,7 +38923,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.schoolChoiceBasisDescriptor"
+              "source_path": "$.schoolChoiceBasisDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Calendar_CalendarCode",
@@ -38817,7 +38936,10 @@
                 "max_length": 60
               },
               "is_nullable": true,
-              "source_path": "$.calendarReference.calendarCode"
+              "source_path": "$.calendarReference.calendarCode",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Calendar_SchoolId",
@@ -38826,7 +38948,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.calendarReference.schoolId"
+              "source_path": "$.calendarReference.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Calendar_SchoolYear",
@@ -38835,7 +38960,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.calendarReference.schoolYear"
+              "source_path": "$.calendarReference.schoolYear",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "ClassOfSchoolYear_ClassOfSchoolYear",
@@ -38844,7 +38972,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.classOfSchoolYearTypeReference.schoolYear"
+              "source_path": "$.classOfSchoolYearTypeReference.schoolYear",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EmployedWhileEnrolled",
@@ -38853,7 +38984,10 @@
                 "kind": "Boolean"
               },
               "is_nullable": true,
-              "source_path": "$.employedWhileEnrolled"
+              "source_path": "$.employedWhileEnrolled",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EntryDate",
@@ -38862,7 +38996,10 @@
                 "kind": "Date"
               },
               "is_nullable": false,
-              "source_path": "$.entryDate"
+              "source_path": "$.entryDate",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "ExitWithdrawDate",
@@ -38871,7 +39008,10 @@
                 "kind": "Date"
               },
               "is_nullable": true,
-              "source_path": "$.exitWithdrawDate"
+              "source_path": "$.exitWithdrawDate",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "FullTimeEquivalency",
@@ -38882,7 +39022,10 @@
                 "scale": 4
               },
               "is_nullable": true,
-              "source_path": "$.fullTimeEquivalency"
+              "source_path": "$.fullTimeEquivalency",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "GraduationPlan_EducationOrganizationId",
@@ -38891,7 +39034,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.graduationPlanReference.educationOrganizationId"
+              "source_path": "$.graduationPlanReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "GraduationPlan_GraduationSchoolYear",
@@ -38900,7 +39046,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.graduationPlanReference.graduationSchoolYear"
+              "source_path": "$.graduationPlanReference.graduationSchoolYear",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "NextYearSchool_SchoolId",
@@ -38909,7 +39058,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.nextYearSchoolReference.schoolId"
+              "source_path": "$.nextYearSchoolReference.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "PrimarySchool",
@@ -38918,7 +39070,10 @@
                 "kind": "Boolean"
               },
               "is_nullable": true,
-              "source_path": "$.primarySchool"
+              "source_path": "$.primarySchool",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "RepeatGradeIndicator",
@@ -38927,7 +39082,10 @@
                 "kind": "Boolean"
               },
               "is_nullable": true,
-              "source_path": "$.repeatGradeIndicator"
+              "source_path": "$.repeatGradeIndicator",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "SchoolChoice",
@@ -38936,7 +39094,10 @@
                 "kind": "Boolean"
               },
               "is_nullable": true,
-              "source_path": "$.schoolChoice"
+              "source_path": "$.schoolChoice",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "SchoolChoiceTransfer",
@@ -38945,7 +39106,10 @@
                 "kind": "Boolean"
               },
               "is_nullable": true,
-              "source_path": "$.schoolChoiceTransfer"
+              "source_path": "$.schoolChoiceTransfer",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "SchoolYear_SchoolYear",
@@ -38954,7 +39118,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.schoolYearTypeReference.schoolYear"
+              "source_path": "$.schoolYearTypeReference.schoolYear",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "School_SchoolId",
@@ -38963,7 +39130,10 @@
                 "kind": "Int32"
               },
               "is_nullable": false,
-              "source_path": "$.schoolReference.schoolId"
+              "source_path": "$.schoolReference.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Student_StudentUniqueId",
@@ -38973,7 +39143,10 @@
                 "max_length": 32
               },
               "is_nullable": false,
-              "source_path": "$.studentReference.studentUniqueId"
+              "source_path": "$.studentReference.studentUniqueId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "TermCompletionIndicator",
@@ -38982,7 +39155,10 @@
                 "kind": "Boolean"
               },
               "is_nullable": true,
-              "source_path": "$.termCompletionIndicator"
+              "source_path": "$.termCompletionIndicator",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Calendar_DocumentId",
@@ -38991,7 +39167,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.calendarReference"
+              "source_path": "$.calendarReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "ClassOfSchoolYear_DocumentId",
@@ -39000,7 +39179,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.classOfSchoolYearTypeReference"
+              "source_path": "$.classOfSchoolYearTypeReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "GraduationPlan_DocumentId",
@@ -39009,7 +39191,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.graduationPlanReference"
+              "source_path": "$.graduationPlanReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "NextYearSchool_DocumentId",
@@ -39018,7 +39203,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.nextYearSchoolReference"
+              "source_path": "$.nextYearSchoolReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "SchoolYear_DocumentId",
@@ -39027,7 +39215,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.schoolYearTypeReference"
+              "source_path": "$.schoolYearTypeReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "School_DocumentId",
@@ -39036,7 +39227,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": "$.schoolReference"
+              "source_path": "$.schoolReference",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Student_DocumentId",
@@ -39045,9 +39239,13 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": "$.studentReference"
+              "source_path": "$.studentReference",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "Unique",
@@ -39442,7 +39640,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "MembershipTypeDescriptor_DescriptorId",
@@ -39451,9 +39652,13 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$._ext.sample.membershipTypeDescriptor"
+              "source_path": "$._ext.sample.membershipTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "ForeignKey",
@@ -39511,7 +39716,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Ordinal",
@@ -39520,7 +39728,10 @@
                 "kind": "Int32"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
@@ -39529,7 +39740,10 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor"
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AlternativeGraduationPlan_EducationOrganizationId",
@@ -39538,7 +39752,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId"
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AlternativeGraduationPlan_GraduationSchoolYear",
@@ -39547,7 +39764,10 @@
                 "kind": "Int32"
               },
               "is_nullable": true,
-              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear"
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationSchoolYear",
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "AlternativeGraduationPlan_DocumentId",
@@ -39556,9 +39776,13 @@
                 "kind": "Int64"
               },
               "is_nullable": true,
-              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference"
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "ForeignKey",
@@ -39648,7 +39872,10 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "Ordinal",
@@ -39657,7 +39884,10 @@
                 "kind": "Int32"
               },
               "is_nullable": false,
-              "source_path": null
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
             },
             {
               "name": "EducationPlanDescriptor_DescriptorId",
@@ -39666,9 +39896,13 @@
                 "kind": "Int64"
               },
               "is_nullable": false,
-              "source_path": "$.educationPlans[*].educationPlanDescriptor"
+              "source_path": "$.educationPlans[*].educationPlanDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
             }
           ],
+          "key_unification_classes": [],
           "constraints": [
             {
               "kind": "Unique",

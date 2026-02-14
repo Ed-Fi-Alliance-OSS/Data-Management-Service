@@ -148,6 +148,14 @@ public static class RelationalModelManifestEmitter
         }
         writer.WriteEndArray();
 
+        writer.WritePropertyName("key_unification_classes");
+        writer.WriteStartArray();
+        foreach (var keyUnificationClass in table.KeyUnificationClasses)
+        {
+            WriteKeyUnificationClass(writer, keyUnificationClass);
+        }
+        writer.WriteEndArray();
+
         writer.WritePropertyName("constraints");
         writer.WriteStartArray();
         foreach (var constraint in table.Constraints)
@@ -194,6 +202,64 @@ public static class RelationalModelManifestEmitter
         {
             writer.WriteNullValue();
         }
+        writer.WritePropertyName("storage");
+        WriteColumnStorage(writer, column.Storage);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// Writes key-unification class metadata.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="keyUnificationClass">The key-unification class to write.</param>
+    private static void WriteKeyUnificationClass(
+        Utf8JsonWriter writer,
+        KeyUnificationClass keyUnificationClass
+    )
+    {
+        writer.WriteStartObject();
+        writer.WriteString("canonical_column", keyUnificationClass.CanonicalColumn.Value);
+        writer.WritePropertyName("member_path_columns");
+        WriteColumnNameList(writer, keyUnificationClass.MemberPathColumns);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// Writes column storage metadata.
+    /// </summary>
+    /// <param name="writer">The JSON writer to write to.</param>
+    /// <param name="storage">The storage metadata to write.</param>
+    private static void WriteColumnStorage(Utf8JsonWriter writer, ColumnStorage storage)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+
+        writer.WriteStartObject();
+
+        switch (storage)
+        {
+            case ColumnStorage.Stored:
+                writer.WriteString("kind", nameof(ColumnStorage.Stored));
+                break;
+            case ColumnStorage.UnifiedAlias unifiedAlias:
+                writer.WriteString("kind", nameof(ColumnStorage.UnifiedAlias));
+                writer.WriteString("canonical_column", unifiedAlias.CanonicalColumn.Value);
+                if (unifiedAlias.PresenceColumn is { } presenceColumn)
+                {
+                    writer.WriteString("presence_column", presenceColumn.Value);
+                }
+                else
+                {
+                    writer.WriteNull("presence_column");
+                }
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(storage),
+                    storage,
+                    "Unknown column storage type."
+                );
+        }
+
         writer.WriteEndObject();
     }
 
