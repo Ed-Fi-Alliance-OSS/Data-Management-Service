@@ -152,7 +152,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                             DbTriggerKind.AbstractIdentityMaintenance,
                             [RelationalNameConventions.DocumentIdColumnName],
                             identityProjectionColumns,
-                            abstractTable.TableModel.Table
+                            MaintenanceTargetTable: abstractTable.TableModel.Table
                         )
                     );
                 }
@@ -257,11 +257,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 continue;
             }
 
-            DbTableName? targetTable;
+            DbTableModel? referencedTableModel;
 
             if (abstractTablesByResource.TryGetValue(mapping.TargetResource, out var abstractTableInfo))
             {
-                targetTable = abstractTableInfo.TableModel.Table;
+                referencedTableModel = abstractTableInfo.TableModel;
             }
             else if (
                 resourceContextsByResource.TryGetValue(mapping.TargetResource, out var targetResourceContext)
@@ -283,7 +283,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     continue;
                 }
 
-                targetTable = targetEntry.RelationalModel.Root.Table;
+                referencedTableModel = targetEntry.RelationalModel.Root;
             }
             else
             {
@@ -291,7 +291,51 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             }
 
             var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn);
-            var propagatedColumns = binding.IdentityBindings.Select(ib => ib.Column).ToArray();
+            var referrerIdentityColumnsByReferencePath = binding.IdentityBindings.ToDictionary(
+                identityBinding => identityBinding.ReferenceJsonPath.Canonical,
+                identityBinding => identityBinding.Column,
+                StringComparer.Ordinal
+            );
+            var referencedColumnsByIdentityPath = BuildColumnNameLookupBySourceJsonPath(
+                referencedTableModel,
+                mapping.TargetResource
+            );
+            List<DbIdentityPropagationColumnPair> identityColumnPairs = new(mapping.ReferenceJsonPaths.Count);
+
+            foreach (var identityPathBinding in mapping.ReferenceJsonPaths)
+            {
+                if (
+                    !referrerIdentityColumnsByReferencePath.TryGetValue(
+                        identityPathBinding.ReferenceJsonPath.Canonical,
+                        out var referrerIdentityColumn
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Reference identity path '{identityPathBinding.ReferenceJsonPath.Canonical}' on "
+                            + $"resource '{FormatResource(resource)}' did not map to a stored referrer "
+                            + $"identity column during trigger derivation."
+                    );
+                }
+
+                if (
+                    !referencedColumnsByIdentityPath.TryGetValue(
+                        identityPathBinding.IdentityJsonPath.Canonical,
+                        out var referencedIdentityColumn
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Target identity path '{identityPathBinding.IdentityJsonPath.Canonical}' on "
+                            + $"resource '{FormatResource(mapping.TargetResource)}' did not map to a "
+                            + $"referenced table column during trigger derivation."
+                    );
+                }
+
+                identityColumnPairs.Add(
+                    new DbIdentityPropagationColumnPair(referrerIdentityColumn, referencedIdentityColumn)
+                );
+            }
 
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
@@ -300,9 +344,16 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     ),
                     rootTable.Table,
                     DbTriggerKind.IdentityPropagationFallback,
-                    [binding.FkColumn],
-                    propagatedColumns,
-                    targetTable
+                    [],
+                    [],
+                    PropagationFallback: new DbIdentityPropagationFallbackInfo([
+                        new DbIdentityPropagationReferrerAction(
+                            rootTable.Table,
+                            binding.FkColumn,
+                            RelationalNameConventions.DocumentIdColumnName,
+                            identityColumnPairs.ToArray()
+                        ),
+                    ])
                 )
             );
         }

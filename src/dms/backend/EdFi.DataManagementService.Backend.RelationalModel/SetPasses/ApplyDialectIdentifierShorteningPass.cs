@@ -695,26 +695,31 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     )
     {
         var updatedName = new DbTriggerName(dialectRules.ShortenIdentifier(trigger.Name.Value));
-        var updatedTable = ShortenTable(trigger.Table, dialectRules);
+        var updatedTriggerTable = ShortenTable(trigger.TriggerTable, dialectRules);
         var updatedColumns = ShortenColumns(trigger.KeyColumns, dialectRules, out var columnsChanged);
         var updatedIdentityColumns = ShortenColumns(
             trigger.IdentityProjectionColumns,
             dialectRules,
             out var identityColumnsChanged
         );
-        var updatedTargetTable = trigger.TargetTable is { } target
+        var updatedMaintenanceTargetTable = trigger.MaintenanceTargetTable is { } target
             ? ShortenTable(target, dialectRules)
-            : trigger.TargetTable;
-        var targetTableChanged =
-            updatedTargetTable is not null
-            && trigger.TargetTable is not null
-            && !updatedTargetTable.Value.Equals(trigger.TargetTable.Value);
+            : trigger.MaintenanceTargetTable;
+        var maintenanceTargetChanged =
+            updatedMaintenanceTargetTable is not null
+            && trigger.MaintenanceTargetTable is not null
+            && !updatedMaintenanceTargetTable.Value.Equals(trigger.MaintenanceTargetTable.Value);
+        var propagationChanged = false;
+        var updatedPropagationFallback = trigger.PropagationFallback is { } fallback
+            ? ApplyToPropagationFallback(fallback, dialectRules, out propagationChanged)
+            : trigger.PropagationFallback;
 
         changed =
             columnsChanged
             || identityColumnsChanged
-            || targetTableChanged
-            || !updatedTable.Equals(trigger.Table)
+            || maintenanceTargetChanged
+            || propagationChanged
+            || !updatedTriggerTable.Equals(trigger.TriggerTable)
             || !updatedName.Equals(trigger.Name);
 
         if (!changed)
@@ -725,11 +730,99 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return trigger with
         {
             Name = updatedName,
-            Table = updatedTable,
+            TriggerTable = updatedTriggerTable,
             KeyColumns = updatedColumns,
             IdentityProjectionColumns = updatedIdentityColumns,
-            TargetTable = updatedTargetTable,
+            MaintenanceTargetTable = updatedMaintenanceTargetTable,
+            PropagationFallback = updatedPropagationFallback,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to identity-propagation fallback payload and reports whether it changed.
+    /// </summary>
+    private static DbIdentityPropagationFallbackInfo ApplyToPropagationFallback(
+        DbIdentityPropagationFallbackInfo fallback,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (fallback.ReferrerActions.Count == 0)
+        {
+            return fallback;
+        }
+
+        var updatedActions = new DbIdentityPropagationReferrerAction[fallback.ReferrerActions.Count];
+
+        for (var actionIndex = 0; actionIndex < fallback.ReferrerActions.Count; actionIndex++)
+        {
+            var action = fallback.ReferrerActions[actionIndex];
+            var updatedReferrerTable = ShortenTable(action.ReferrerTable, dialectRules);
+            var updatedReferrerDocumentIdColumn = ShortenColumn(
+                action.ReferrerDocumentIdColumn,
+                dialectRules
+            );
+            var updatedReferencedDocumentIdColumn = ShortenColumn(
+                action.ReferencedDocumentIdColumn,
+                dialectRules
+            );
+            var pairCount = action.IdentityColumnPairs.Count;
+            var updatedPairs = new DbIdentityPropagationColumnPair[pairCount];
+            var pairsChanged = false;
+
+            for (var pairIndex = 0; pairIndex < pairCount; pairIndex++)
+            {
+                var pair = action.IdentityColumnPairs[pairIndex];
+                var updatedReferrerStorageColumn = ShortenColumn(pair.ReferrerStorageColumn, dialectRules);
+                var updatedReferencedStorageColumn = ShortenColumn(
+                    pair.ReferencedStorageColumn,
+                    dialectRules
+                );
+                var pairChanged =
+                    !updatedReferrerStorageColumn.Equals(pair.ReferrerStorageColumn)
+                    || !updatedReferencedStorageColumn.Equals(pair.ReferencedStorageColumn);
+
+                if (pairChanged)
+                {
+                    pairsChanged = true;
+                    updatedPairs[pairIndex] = new DbIdentityPropagationColumnPair(
+                        updatedReferrerStorageColumn,
+                        updatedReferencedStorageColumn
+                    );
+                }
+                else
+                {
+                    updatedPairs[pairIndex] = pair;
+                }
+            }
+
+            var actionChanged =
+                !updatedReferrerTable.Equals(action.ReferrerTable)
+                || !updatedReferrerDocumentIdColumn.Equals(action.ReferrerDocumentIdColumn)
+                || !updatedReferencedDocumentIdColumn.Equals(action.ReferencedDocumentIdColumn)
+                || pairsChanged;
+
+            if (actionChanged)
+            {
+                changed = true;
+
+                updatedActions[actionIndex] = action with
+                {
+                    ReferrerTable = updatedReferrerTable,
+                    ReferrerDocumentIdColumn = updatedReferrerDocumentIdColumn,
+                    ReferencedDocumentIdColumn = updatedReferencedDocumentIdColumn,
+                    IdentityColumnPairs = updatedPairs,
+                };
+            }
+            else
+            {
+                updatedActions[actionIndex] = action;
+            }
+        }
+
+        return changed ? fallback with { ReferrerActions = updatedActions } : fallback;
     }
 
     /// <summary>
@@ -796,8 +889,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             .ToArray();
 
         var canonicalTriggers = context
-            .TriggerInventory.OrderBy(trigger => trigger.Table.Schema.Value, StringComparer.Ordinal)
-            .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
+            .TriggerInventory.OrderBy(trigger => trigger.TriggerTable.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(trigger => trigger.TriggerTable.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
         var registeredTables = new HashSet<DbTableName>();
@@ -966,9 +1059,13 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         foreach (var trigger in canonicalTriggers)
         {
             detector.RegisterTrigger(
-                trigger.Table,
+                trigger.TriggerTable,
                 trigger.Name,
-                BuildOrigin($"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}", null, null)
+                BuildOrigin(
+                    $"trigger {trigger.Name.Value} on {FormatTable(trigger.TriggerTable)}",
+                    null,
+                    null
+                )
             );
         }
 
