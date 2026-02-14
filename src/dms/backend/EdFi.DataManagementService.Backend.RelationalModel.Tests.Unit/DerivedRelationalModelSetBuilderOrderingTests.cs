@@ -99,7 +99,7 @@ public class Given_Unordered_Derived_Collections
     {
         var orderedTriggers = _derivedModelSet
             .TriggersInCreateOrder.Select(trigger =>
-                $"{trigger.Table.Schema.Value}.{trigger.Table.Name}:{trigger.Name.Value}"
+                $"{trigger.TriggerTable.Schema.Value}.{trigger.TriggerTable.Name}:{trigger.Name.Value}"
             )
             .ToArray();
 

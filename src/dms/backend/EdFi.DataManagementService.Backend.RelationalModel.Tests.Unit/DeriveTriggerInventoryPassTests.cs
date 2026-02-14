@@ -45,7 +45,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_DocumentStamping_trigger_for_root_table()
     {
         var schoolStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         schoolStamp.Should().NotBeNull();
@@ -60,7 +60,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_include_identity_projection_columns_on_root_table_stamping_trigger()
     {
         var schoolStamp = _triggers.Single(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         schoolStamp.IdentityProjectionColumns.Should().NotBeEmpty();
@@ -77,7 +77,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_DocumentStamping_trigger_for_child_table()
     {
         var childStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.Should().NotBeNull();
@@ -91,7 +91,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_use_root_document_ID_as_KeyColumns_on_child_table_stamping_trigger()
     {
         var childStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.KeyColumns.Should().ContainSingle();
@@ -105,7 +105,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_have_empty_identity_projection_columns_on_child_table_stamping_trigger()
     {
         var childStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.IdentityProjectionColumns.Should().BeEmpty();
@@ -118,7 +118,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_ReferentialIdentityMaintenance_trigger_on_root_table()
     {
         var refIdentity = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
         );
 
         refIdentity.Should().NotBeNull();
@@ -134,14 +134,14 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_AbstractIdentityMaintenance_trigger_for_subclass_resource()
     {
         var abstractMaintenance = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.AbstractIdentityMaintenance
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.AbstractIdentityMaintenance
         );
 
         abstractMaintenance.Should().NotBeNull();
         abstractMaintenance!.Name.Value.Should().Be("TR_School_AbstractIdentity");
         abstractMaintenance.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
-        abstractMaintenance.TargetTable.Should().NotBeNull();
-        abstractMaintenance.TargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
+        abstractMaintenance.MaintenanceTargetTable.Should().NotBeNull();
+        abstractMaintenance.MaintenanceTargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
     }
 }
 
@@ -188,7 +188,7 @@ public class Given_Extension_Table_Triggers
     public void It_should_create_DocumentStamping_trigger_on_extension_table()
     {
         var extensionStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         extensionStamp.Should().NotBeNull();
@@ -201,7 +201,7 @@ public class Given_Extension_Table_Triggers
     public void It_should_use_DocumentId_as_KeyColumns_on_extension_table_stamping_trigger()
     {
         var extensionStamp = _triggers.Single(t =>
-            t.Table.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         extensionStamp.KeyColumns.Should().ContainSingle();
@@ -329,7 +329,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
         );
 
         schoolPropagation.Should().NotBeNull();
-        schoolPropagation!.Table.Name.Should().Be("Enrollment");
+        schoolPropagation!.TriggerTable.Name.Should().Be("Enrollment");
     }
 
     /// <summary>
@@ -347,51 +347,62 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     }
 
     /// <summary>
-    /// It should use FK column as key column.
+    /// It should carry referrer action payload with FK document-id column.
     /// </summary>
     [Test]
-    public void It_should_use_FK_column_as_key_column()
+    public void It_should_carry_referrer_action_payload_with_FK_document_id_column()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
             && t.Name.Value == "TR_Enrollment_Propagation_School"
         );
 
-        schoolPropagation.KeyColumns.Should().ContainSingle();
-        schoolPropagation.KeyColumns[0].Value.Should().Be("School_DocumentId");
+        schoolPropagation.KeyColumns.Should().BeEmpty();
+        schoolPropagation.IdentityProjectionColumns.Should().BeEmpty();
+        schoolPropagation.PropagationFallback.Should().NotBeNull();
+
+        var action = schoolPropagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+        action.ReferrerTable.Name.Should().Be("Enrollment");
+        action.ReferrerDocumentIdColumn.Value.Should().Be("School_DocumentId");
+        action.ReferencedDocumentIdColumn.Value.Should().Be("DocumentId");
     }
 
     /// <summary>
-    /// It should include propagated identity columns.
+    /// It should include ordered storage column pairs in propagation payload.
     /// </summary>
     [Test]
-    public void It_should_include_propagated_identity_columns()
+    public void It_should_include_ordered_storage_column_pairs_in_propagation_payload()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
             && t.Name.Value == "TR_Enrollment_Propagation_School"
         );
 
-        schoolPropagation
-            .IdentityProjectionColumns.Select(c => c.Value)
+        var identityColumnPairs = schoolPropagation
+            .PropagationFallback!.ReferrerActions.Single()
+            .IdentityColumnPairs;
+
+        identityColumnPairs
+            .Select(pair => (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value))
             .Should()
-            .Contain("School_EducationOrganizationId")
-            .And.Contain("School_SchoolId");
+            .ContainInOrder(
+                ("School_SchoolId", "SchoolId"),
+                ("School_EducationOrganizationId", "EducationOrganizationId")
+            );
     }
 
     /// <summary>
-    /// It should set target table to referenced resource root.
+    /// It should not use maintenance target for propagation fallback.
     /// </summary>
     [Test]
-    public void It_should_set_target_table_to_referenced_resource_root()
+    public void It_should_not_set_maintenance_target_for_propagation_fallback()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
             && t.Name.Value == "TR_Enrollment_Propagation_School"
         );
 
-        schoolPropagation.TargetTable.Should().NotBeNull();
-        schoolPropagation.TargetTable!.Value.Name.Should().Be("School");
+        schoolPropagation.MaintenanceTargetTable.Should().BeNull();
     }
 }
 
@@ -436,37 +447,50 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
         );
 
         propagation.Should().NotBeNull();
-        propagation!.Table.Name.Should().Be("Enrollment");
+        propagation!.TriggerTable.Name.Should().Be("Enrollment");
     }
 
     /// <summary>
-    /// It should target the abstract identity table.
+    /// It should include abstract target identity storage column in propagation payload.
     /// </summary>
     [Test]
-    public void It_should_target_the_abstract_identity_table()
+    public void It_should_include_abstract_target_identity_storage_column_in_propagation_payload()
     {
         var propagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
             && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
         );
 
-        propagation.TargetTable.Should().NotBeNull();
-        propagation.TargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
+        var action = propagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+        action.ReferencedDocumentIdColumn.Value.Should().Be("DocumentId");
+        action
+            .IdentityColumnPairs.Select(pair =>
+                (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value)
+            )
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(("EducationOrganization_EducationOrganizationId", "EducationOrganizationId"));
     }
 
     /// <summary>
-    /// It should use FK column as key column for abstract reference.
+    /// It should use abstract reference FK as the referrer document-id column.
     /// </summary>
     [Test]
-    public void It_should_use_FK_column_as_key_column_for_abstract_reference()
+    public void It_should_use_abstract_reference_FK_as_the_referrer_document_ID_column()
     {
         var propagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
             && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
         );
 
-        propagation.KeyColumns.Should().ContainSingle();
-        propagation.KeyColumns[0].Value.Should().Be("EducationOrganization_DocumentId");
+        propagation.KeyColumns.Should().BeEmpty();
+        propagation.IdentityProjectionColumns.Should().BeEmpty();
+        propagation.MaintenanceTargetTable.Should().BeNull();
+        propagation
+            .PropagationFallback!.ReferrerActions.Single()
+            .ReferrerDocumentIdColumn.Value.Should()
+            .Be("EducationOrganization_DocumentId");
     }
 }
 
@@ -505,7 +529,7 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_create_DocumentStamping_trigger_for_grandchild_table()
     {
         var grandchildStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         grandchildStamp.Should().NotBeNull();
@@ -519,7 +543,7 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_use_root_document_ID_as_KeyColumns_on_grandchild_table()
     {
         var grandchildStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         grandchildStamp.KeyColumns.Should().ContainSingle();
@@ -533,7 +557,7 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_have_empty_identity_projection_columns_on_grandchild_table()
     {
         var grandchildStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         grandchildStamp.IdentityProjectionColumns.Should().BeEmpty();
@@ -557,10 +581,10 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_use_same_root_document_ID_column_across_all_child_levels()
     {
         var childStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
         var grandchildStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
@@ -603,10 +627,10 @@ public class Given_Multiple_Sibling_Collections
     public void It_should_create_DocumentStamping_trigger_for_each_sibling_collection()
     {
         var addressStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
         var telephoneStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         addressStamp.Should().NotBeNull();
@@ -620,10 +644,10 @@ public class Given_Multiple_Sibling_Collections
     public void It_should_produce_distinct_trigger_names_for_sibling_tables()
     {
         var addressStamp = _triggers.Single(t =>
-            t.Table.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
         var telephoneStamp = _triggers.Single(t =>
-            t.Table.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         addressStamp.Name.Value.Should().Be("TR_StudentAddress_Stamp");
@@ -683,8 +707,10 @@ public class Given_Deterministic_Trigger_Ordering
     [Test]
     public void It_should_produce_identical_trigger_sequence_on_repeated_builds()
     {
-        var firstSequence = _triggersFirst.Select(t => (t.Table.Name, t.Name.Value, t.Kind)).ToList();
-        var secondSequence = _triggersSecond.Select(t => (t.Table.Name, t.Name.Value, t.Kind)).ToList();
+        var firstSequence = _triggersFirst.Select(t => (t.TriggerTable.Name, t.Name.Value, t.Kind)).ToList();
+        var secondSequence = _triggersSecond
+            .Select(t => (t.TriggerTable.Name, t.Name.Value, t.Kind))
+            .ToList();
 
         firstSequence.Should().Equal(secondSequence);
     }

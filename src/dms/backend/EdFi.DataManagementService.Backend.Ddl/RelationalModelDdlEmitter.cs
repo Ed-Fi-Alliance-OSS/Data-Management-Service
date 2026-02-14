@@ -164,7 +164,7 @@ public sealed class RelationalModelDdlEmitter
             builder.Append("CREATE TRIGGER ");
             builder.Append(Quote(trigger.Name));
             builder.Append(" ON ");
-            builder.Append(Quote(trigger.Table));
+            builder.Append(Quote(trigger.TriggerTable));
             builder.Append(' ');
             builder.AppendLine(BuildTriggerBody());
             builder.AppendLine();

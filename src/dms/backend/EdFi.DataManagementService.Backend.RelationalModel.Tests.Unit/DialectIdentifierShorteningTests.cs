@@ -163,8 +163,8 @@ public class Given_Pgsql_Identifier_Shortening
 
         var trigger = _scenario.Result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
-        trigger.Table.Schema.Value.Should().Be(expectedSchema);
-        trigger.Table.Name.Should().Be(expectedTable);
+        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
+        trigger.TriggerTable.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
     }
 
@@ -375,8 +375,8 @@ public class Given_Mssql_Identifier_Shortening
 
         var trigger = _scenario.Result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
-        trigger.Table.Schema.Value.Should().Be(expectedSchema);
-        trigger.Table.Name.Should().Be(expectedTable);
+        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
+        trigger.TriggerTable.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
     }
 
@@ -745,8 +745,8 @@ internal static class IdentifierShorteningAssertions
 
         var trigger = result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
-        trigger.Table.Schema.Value.Should().Be(expectedSchema);
-        trigger.Table.Name.Should().Be(expectedTable);
+        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
+        trigger.TriggerTable.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
 
         var abstractTable = result.AbstractIdentityTablesInNameOrder.Single();

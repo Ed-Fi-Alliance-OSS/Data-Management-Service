@@ -283,17 +283,23 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             writer.WriteStartObject();
             writer.WriteString("name", trigger.Name.Value);
             writer.WritePropertyName("table");
-            WriteTableReference(writer, trigger.Table);
+            WriteTableReference(writer, trigger.TriggerTable);
             writer.WriteString("kind", trigger.Kind.ToString());
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, trigger.KeyColumns);
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            if (trigger.TargetTable is { } targetTable)
+            if (trigger.MaintenanceTargetTable is { } maintenanceTargetTable)
             {
                 writer.WritePropertyName("target_table");
-                WriteTableReference(writer, targetTable);
+                WriteTableReference(writer, maintenanceTargetTable);
+            }
+
+            if (trigger.PropagationFallback is { } propagationFallback)
+            {
+                writer.WritePropertyName("propagation_fallback");
+                WritePropagationFallback(writer, propagationFallback);
             }
 
             writer.WriteEndObject();
@@ -563,6 +569,47 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             writer.WriteStringValue(column.Value);
         }
         writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Write identity-propagation fallback payload.
+    /// </summary>
+    private static void WritePropagationFallback(
+        Utf8JsonWriter writer,
+        DbIdentityPropagationFallbackInfo propagationFallback
+    )
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("referrer_actions");
+        writer.WriteStartArray();
+
+        foreach (var referrerAction in propagationFallback.ReferrerActions)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("referrer_table");
+            WriteTableReference(writer, referrerAction.ReferrerTable);
+            writer.WriteString("referrer_document_id_column", referrerAction.ReferrerDocumentIdColumn.Value);
+            writer.WriteString(
+                "referenced_document_id_column",
+                referrerAction.ReferencedDocumentIdColumn.Value
+            );
+            writer.WritePropertyName("identity_column_pairs");
+            writer.WriteStartArray();
+
+            foreach (var columnPair in referrerAction.IdentityColumnPairs)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("referrer_storage_column", columnPair.ReferrerStorageColumn.Value);
+                writer.WriteString("referenced_storage_column", columnPair.ReferencedStorageColumn.Value);
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
     }
 
     /// <summary>

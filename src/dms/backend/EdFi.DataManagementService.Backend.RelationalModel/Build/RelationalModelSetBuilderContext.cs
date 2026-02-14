@@ -487,8 +487,8 @@ public sealed class RelationalModelSetBuilderContext
             .ToArray();
 
         var canonicalTriggers = TriggerInventory
-            .OrderBy(trigger => trigger.Table.Schema.Value, StringComparer.Ordinal)
-            .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
+            .OrderBy(trigger => trigger.TriggerTable.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(trigger => trigger.TriggerTable.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
 
@@ -692,12 +692,12 @@ public sealed class RelationalModelSetBuilderContext
     /// </summary>
     private NamedObjectKey BuildTriggerUniquenessKey(DbTriggerInfo trigger)
     {
-        var schema = trigger.Table.Schema.Value;
+        var schema = trigger.TriggerTable.Schema.Value;
         var name = trigger.Name.Value;
 
         return Dialect switch
         {
-            SqlDialect.Pgsql => NamedObjectKey.ForTable(schema, trigger.Table.Name, name),
+            SqlDialect.Pgsql => NamedObjectKey.ForTable(schema, trigger.TriggerTable.Name, name),
             SqlDialect.Mssql => NamedObjectKey.ForSchema(schema, name),
             _ => NamedObjectKey.ForSchema(schema, name),
         };
