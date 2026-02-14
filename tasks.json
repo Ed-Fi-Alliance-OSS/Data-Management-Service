@@ -162,5 +162,60 @@
       "Run the relevant DDL-related unit test project(s) and keep `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` green."
     ],
     "completed": true
+  },
+  {
+    "category": "Key Unification",
+    "description": "Wire key unification into the default derived-model pipeline by inserting `KeyUnificationPass` into `RelationalModelSetPasses.CreateDefault()` after `ReferenceBindingPass` and before any downstream consumers (abstract identity derivation, constraints, index inventory, trigger inventory, identifier shortening, ordering). Acceptance: (1) `DerivedRelationalModelSetBuilder` using `RelationalModelSetPasses.CreateDefault()` produces unified models when `equalityConstraints` apply (member columns become `UnifiedAlias`, canonical columns exist, and `DbTableModel.KeyUnificationClasses` is populated); (2) downstream passes operate on the unified model without requiring test-only pass lists; (3) ordering follows `reference/design/backend-redesign/design-docs/key-unification.md` recommendations; (4) output remains deterministic across repeated builds.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs` and any pass-ordering tests that assert the default pass list.",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Trigger Inventory",
+    "description": "Make propagation-fallback derivation fail fast when a `DocumentReferenceMapping` cannot be matched to a derived `DocumentReferenceBinding` by `ReferenceObjectPath`. Replace the current silent skip in `DeriveTriggerInventoryPass.CollectPropagationFallbackActions(...)` with an `InvalidOperationException` that includes resource name + mapping key + reference object path. Acceptance: (1) any mapping/binding mismatch becomes a hard error (no silent loss of propagation actions); (2) exception text is actionable and points at the exact unmapped reference path; (3) unit test covers a synthetic mismatch and asserts the exception is thrown.",
+    "steps-to-verify": [
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` that constructs a derived model where `builderContext.DocumentReferenceMappings` contains a mapping whose `ReferenceObjectPath` is missing from `resourceModel.DocumentReferenceBindings`, and assert `DerivedRelationalModelSetBuilder.Build(...)` throws.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Disambiguate presence-gate column classification used by index and trigger derivation. Rename and/or centralize the two `BuildPresenceColumnSet(...)` helpers so the intent is explicit (e.g., one helper for synthetic optional-path presence flags and one helper for all `UnifiedAlias.PresenceColumn` gates). Update error messages in `DeriveTriggerInventoryPass.ResolveStorageColumn(...)` so they do not label reference `..._DocumentId` gates as \"synthetic\" when the presence set includes non-synthetic gates. Acceptance: (1) no two helpers with the same name but different semantics; (2) synthetic presence flags vs general presence gates are clearly separated; (3) validation/error text accurately describes the rejected column; (4) all existing unit tests remain green.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` to use the clarified helpers and update exception messages accordingly.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Index Inventory",
+    "description": "Tighten synthetic presence-flag detection in `DeriveIndexInventoryPass` so only the key-unification-generated `..._Present` flags are treated as \"synthetic presence columns\" for FK validation (and therefore cannot be referenced by FK constraints). Use metadata (at minimum: `ColumnKind.Scalar`, boolean scalar type, `SourceJsonPath == null`, nullable, and `Storage == Stored`) rather than loose kind checks. Acceptance: (1) only synthetic presence flags created by key unification are classified as synthetic presence columns; (2) FK validation never false-positives on legitimate stored columns; (3) if a `UnifiedAlias.PresenceColumn` points at a non-flag column, either it is excluded from the synthetic-flag set or a clear invariant error is thrown; (4) unit test covers the edge case.",
+    "steps-to-verify": [
+      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` with a synthetic table that includes a `UnifiedAlias` whose `PresenceColumn` is not a boolean, and assert the classification/validation behavior matches the acceptance criteria.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Remove redundant per-table dictionary allocations in `DeriveIndexInventoryPass` by threading a single `columnsByName` lookup into presence-flag detection and FK validation. Keep behavior identical. Acceptance: (1) no functional changes in derived index inventory; (2) no extra `ToDictionary(...)` per table beyond what is needed; (3) all existing unit tests remain green.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs` to avoid rebuilding the same `columnsByName` dictionary for presence detection.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Consolidate the table-scope resolution wrapper logic used by reference binding and propagation-fallback derivation. Replace the bespoke wrappers in `ReferenceBindingPass.ResolveOwningTableBuilder(...)` and `DeriveTriggerInventoryPass.ResolveReferenceBindingTable(...)` with a shared helper that selects the deepest matching scope and produces consistent exception messages (including candidate scopes). Acceptance: (1) both passes call the same helper; (2) there is a single place that builds scope-mismatch exceptions; (3) no duplicated wrapper implementations remain; (4) behavior is unchanged for existing fixtures (same selected table, same thrown conditions).",
+    "steps-to-verify": [
+      "Refactor the shared logic into a helper (e.g., near `ReferenceObjectPathScopeResolver`) and update both `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` to use it.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]
