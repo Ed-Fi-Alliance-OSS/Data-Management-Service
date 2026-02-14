@@ -782,6 +782,48 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Key_Unification
 }
 
 /// <summary>
+/// Test fixture for propagation fallback mapping/binding mismatch handling.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_With_Unmapped_Reference_Mapping
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivationWithUnmappedReferenceMapping()
+        );
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when a mapping path has no derived reference binding.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_reference_mapping_path_has_no_derived_binding()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Reference mapping 'UnmappedReferenceMapping'");
+        exception.Message.Should().Contain("resource '");
+        exception.Message.Should().Contain("Enrollment");
+        exception.Message.Should().Contain("reference object path '$.unmappedReference'");
+    }
+}
+
+/// <summary>
 /// Test fixture for three-level nested collection trigger derivation.
 /// </summary>
 [TestFixture]
@@ -1004,6 +1046,48 @@ public class Given_Deterministic_Trigger_Ordering
 }
 
 /// <summary>
+/// Test pass that injects a synthetic unmapped reference mapping to validate fail-fast behavior.
+/// </summary>
+file sealed class UnmappedReferenceMappingFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
+
+            if (builderContext.DocumentReferenceMappings.Count == 0)
+            {
+                continue;
+            }
+
+            var firstMapping = builderContext.DocumentReferenceMappings[0];
+
+            builderContext.DocumentReferenceMappings =
+            [
+                .. builderContext.DocumentReferenceMappings,
+                firstMapping with
+                {
+                    MappingKey = "UnmappedReferenceMapping",
+                    ReferenceObjectPath = JsonPathExpressionCompiler.Compile("$.unmappedReference"),
+                },
+            ];
+
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Test fixture requires at least one resource with document reference mappings."
+        );
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
@@ -1025,6 +1109,28 @@ internal static class TriggerInventoryTestSchemaBuilder
             new ArrayUniquenessConstraintPass(),
             new ApplyConstraintDialectHashingPass(),
             new DeriveIndexInventoryPass(),
+            new DeriveTriggerInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build pass list through trigger derivation with an injected unmapped reference mapping.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughTriggerDerivationWithUnmappedReferenceMapping()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveIndexInventoryPass(),
+            new UnmappedReferenceMappingFixturePass(),
             new DeriveTriggerInventoryPass(),
         ];
     }

@@ -302,7 +302,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         {
             if (!bindingByReferencePath.TryGetValue(mapping.ReferenceObjectPath.Canonical, out var binding))
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"uses reference object path '{mapping.ReferenceObjectPath.Canonical}' that "
+                        + "did not map to a derived document reference binding."
+                );
             }
 
             if (
