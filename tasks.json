@@ -90,7 +90,7 @@
       "Add a unit fixture/schema with an optional non-reference scalar/descriptor endpoint that is unified and assert: a synthetic `..._Present` column is created and used as the `UnifiedAlias.PresenceColumn` gate.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Constraints",
