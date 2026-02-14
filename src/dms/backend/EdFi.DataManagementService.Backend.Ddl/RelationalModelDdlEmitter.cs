@@ -49,7 +49,8 @@ public sealed class RelationalModelDdlEmitter
         AppendSchemas(builder, modelSet.ProjectSchemasInEndpointOrder);
         AppendTables(builder, modelSet.ConcreteResourcesInNameOrder);
         AppendIndexes(builder, modelSet.IndexesInCreateOrder);
-        AppendTriggers(builder, modelSet.TriggersInCreateOrder);
+        var tablesByName = BuildTableLookup(modelSet);
+        AppendTriggers(builder, modelSet.TriggersInCreateOrder, tablesByName);
 
         return builder.ToString();
     }
@@ -155,9 +156,38 @@ public sealed class RelationalModelDdlEmitter
     }
 
     /// <summary>
+    /// Builds a lookup by table name for all concrete and abstract identity table models.
+    /// </summary>
+    private static IReadOnlyDictionary<DbTableName, DbTableModel> BuildTableLookup(
+        DerivedRelationalModelSet modelSet
+    )
+    {
+        Dictionary<DbTableName, DbTableModel> tablesByName = new();
+
+        foreach (var resource in modelSet.ConcreteResourcesInNameOrder)
+        {
+            foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
+            {
+                tablesByName.TryAdd(table.Table, table);
+            }
+        }
+
+        foreach (var abstractIdentityTable in modelSet.AbstractIdentityTablesInNameOrder)
+        {
+            tablesByName.TryAdd(abstractIdentityTable.TableModel.Table, abstractIdentityTable.TableModel);
+        }
+
+        return tablesByName;
+    }
+
+    /// <summary>
     /// Appends <c>CREATE TRIGGER</c> statements for each trigger in create-order.
     /// </summary>
-    private void AppendTriggers(StringBuilder builder, IReadOnlyList<DbTriggerInfo> triggers)
+    private void AppendTriggers(
+        StringBuilder builder,
+        IReadOnlyList<DbTriggerInfo> triggers,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
     {
         foreach (var trigger in triggers)
         {
@@ -166,7 +196,7 @@ public sealed class RelationalModelDdlEmitter
             builder.Append(" ON ");
             builder.Append(Quote(trigger.TriggerTable));
             builder.Append(' ');
-            builder.AppendLine(BuildTriggerBody());
+            builder.AppendLine(BuildTriggerBody(trigger, tablesByName));
             builder.AppendLine();
         }
     }
@@ -174,20 +204,263 @@ public sealed class RelationalModelDdlEmitter
     /// <summary>
     /// Builds a dialect-specific trigger body statement.
     /// </summary>
-    private string BuildTriggerBody()
+    private string BuildTriggerBody(
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
     {
-        var body = _dialectRules.Dialect switch
+        return _dialectRules.Dialect switch
         {
-            SqlDialect.Pgsql => $"EXECUTE FUNCTION {Quote("noop")}();",
-            SqlDialect.Mssql => "AS BEGIN END;",
+            SqlDialect.Pgsql => BuildPgsqlTriggerBody(trigger, tablesByName),
+            SqlDialect.Mssql => BuildMssqlTriggerBody(trigger, tablesByName),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(_dialectRules.Dialect),
                 _dialectRules.Dialect,
                 "Unsupported SQL dialect."
             ),
         };
+    }
 
-        return body;
+    /// <summary>
+    /// Builds a PostgreSQL trigger body statement.
+    /// </summary>
+    private string BuildPgsqlTriggerBody(
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
+    {
+        if (!TriggerNeedsIdentityDiffCompare(trigger))
+        {
+            return $"EXECUTE FUNCTION {Quote("noop")}();";
+        }
+
+        var triggerTable = ResolveTriggerTable(trigger, tablesByName);
+        var identityDiffPredicate = BuildIdentityDiffPredicate(
+            trigger,
+            triggerTable,
+            oldRowAlias: "OLD",
+            newRowAlias: "NEW"
+        );
+
+        return $"WHEN ({identityDiffPredicate}) EXECUTE FUNCTION {Quote("noop")}();";
+    }
+
+    /// <summary>
+    /// Builds a SQL Server trigger body statement.
+    /// </summary>
+    private string BuildMssqlTriggerBody(
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
+    {
+        if (!TriggerNeedsIdentityDiffCompare(trigger))
+        {
+            return """
+AS
+BEGIN
+    SET NOCOUNT ON;
+END;
+""";
+        }
+
+        if (trigger.KeyColumns.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Trigger '{trigger.Name.Value}' on '{trigger.TriggerTable}' requires key columns for identity diff comparison."
+            );
+        }
+
+        var triggerTable = ResolveTriggerTable(trigger, tablesByName);
+        var keyJoinPredicate = BuildKeyJoinPredicate(trigger.KeyColumns, "i", "d");
+        var identityDiffPredicate = BuildIdentityDiffPredicate(
+            trigger,
+            triggerTable,
+            oldRowAlias: "d",
+            newRowAlias: "i"
+        );
+        var firstKeyColumn = trigger.KeyColumns[0];
+
+        return $$"""
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1
+        FROM inserted i
+        FULL OUTER JOIN deleted d
+            ON {{keyJoinPredicate}}
+        WHERE {{QualifyColumn("i", firstKeyColumn)}} IS NULL
+            OR {{QualifyColumn("d", firstKeyColumn)}} IS NULL
+            OR {{identityDiffPredicate}}
+    )
+    BEGIN
+    END
+END;
+""";
+    }
+
+    /// <summary>
+    /// Resolves the trigger table model required for storage-aware identity expressions.
+    /// </summary>
+    private static DbTableModel ResolveTriggerTable(
+        DbTriggerInfo trigger,
+        IReadOnlyDictionary<DbTableName, DbTableModel> tablesByName
+    )
+    {
+        if (tablesByName.TryGetValue(trigger.TriggerTable, out var triggerTable))
+        {
+            return triggerTable;
+        }
+
+        throw new InvalidOperationException(
+            $"Trigger '{trigger.Name.Value}' referenced table '{trigger.TriggerTable}' that was not found in the model set."
+        );
+    }
+
+    /// <summary>
+    /// Determines whether a trigger kind requires identity value-diff comparison logic.
+    /// </summary>
+    private static bool TriggerNeedsIdentityDiffCompare(DbTriggerInfo trigger)
+    {
+        return trigger.Kind is not DbTriggerKind.IdentityPropagationFallback
+            && trigger.IdentityProjectionColumns.Count > 0;
+    }
+
+    /// <summary>
+    /// Builds an identity value-diff predicate by expanding each identity projection column through storage metadata.
+    /// </summary>
+    private string BuildIdentityDiffPredicate(
+        DbTriggerInfo trigger,
+        DbTableModel triggerTable,
+        string oldRowAlias,
+        string newRowAlias
+    )
+    {
+        return string.Join(
+            " OR ",
+            trigger.IdentityProjectionColumns.Select(identityColumn =>
+            {
+                var oldValueExpression = BuildIdentityValueExpression(
+                    trigger,
+                    triggerTable,
+                    identityColumn,
+                    oldRowAlias
+                );
+                var newValueExpression = BuildIdentityValueExpression(
+                    trigger,
+                    triggerTable,
+                    identityColumn,
+                    newRowAlias
+                );
+
+                return BuildNullSafeDifferencePredicate(oldValueExpression, newValueExpression);
+            })
+        );
+    }
+
+    /// <summary>
+    /// Builds the storage-aware SQL value expression for an identity projection column.
+    /// </summary>
+    private string BuildIdentityValueExpression(
+        DbTriggerInfo trigger,
+        DbTableModel triggerTable,
+        DbColumnName identityColumn,
+        string rowAlias
+    )
+    {
+        var column = triggerTable.Columns.FirstOrDefault(c => c.ColumnName == identityColumn);
+
+        if (column is null)
+        {
+            throw new InvalidOperationException(
+                $"Trigger '{trigger.Name.Value}' on '{trigger.TriggerTable}' referenced identity projection column "
+                    + $"'{identityColumn.Value}' that was not found on the trigger table."
+            );
+        }
+
+        return column.Storage switch
+        {
+            ColumnStorage.Stored => QualifyColumn(rowAlias, identityColumn),
+            ColumnStorage.UnifiedAlias unifiedAlias => BuildUnifiedAliasExpression(rowAlias, unifiedAlias),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(column.Storage),
+                column.Storage,
+                "Unsupported column storage."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Builds the value expression for a unified alias column, including optional presence gating.
+    /// </summary>
+    private string BuildUnifiedAliasExpression(string rowAlias, ColumnStorage.UnifiedAlias unifiedAlias)
+    {
+        var canonicalExpression = QualifyColumn(rowAlias, unifiedAlias.CanonicalColumn);
+
+        if (unifiedAlias.PresenceColumn is not { } presenceColumn)
+        {
+            return canonicalExpression;
+        }
+
+        return $"CASE WHEN {QualifyColumn(rowAlias, presenceColumn)} IS NULL THEN NULL ELSE {canonicalExpression} END";
+    }
+
+    /// <summary>
+    /// Builds a null-safe value-diff predicate for a pair of SQL expressions.
+    /// </summary>
+    private string BuildNullSafeDifferencePredicate(string oldValueExpression, string newValueExpression)
+    {
+        return _dialectRules.Dialect switch
+        {
+            SqlDialect.Pgsql => $"(({oldValueExpression}) IS DISTINCT FROM ({newValueExpression}))",
+            SqlDialect.Mssql => $"(({oldValueExpression} <> {newValueExpression}) "
+                + $"OR ({oldValueExpression} IS NULL AND {newValueExpression} IS NOT NULL) "
+                + $"OR ({oldValueExpression} IS NOT NULL AND {newValueExpression} IS NULL))",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_dialectRules.Dialect),
+                _dialectRules.Dialect,
+                "Unsupported SQL dialect."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Builds a null-safe join predicate for trigger key columns.
+    /// </summary>
+    private string BuildKeyJoinPredicate(
+        IReadOnlyList<DbColumnName> keyColumns,
+        string leftRowAlias,
+        string rightRowAlias
+    )
+    {
+        return string.Join(
+            " AND ",
+            keyColumns.Select(keyColumn =>
+                BuildNullSafeEqualityPredicate(
+                    QualifyColumn(leftRowAlias, keyColumn),
+                    QualifyColumn(rightRowAlias, keyColumn)
+                )
+            )
+        );
+    }
+
+    /// <summary>
+    /// Builds a null-safe equality predicate for a pair of SQL expressions.
+    /// </summary>
+    private static string BuildNullSafeEqualityPredicate(
+        string leftValueExpression,
+        string rightValueExpression
+    )
+    {
+        return $"(({leftValueExpression} = {rightValueExpression}) OR ({leftValueExpression} IS NULL AND {rightValueExpression} IS NULL))";
+    }
+
+    /// <summary>
+    /// Formats a row-alias-qualified and quoted column reference.
+    /// </summary>
+    private string QualifyColumn(string rowAlias, DbColumnName column)
+    {
+        return $"{rowAlias}.{Quote(column)}";
     }
 
     /// <summary>
