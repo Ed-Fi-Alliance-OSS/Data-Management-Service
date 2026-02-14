@@ -77,7 +77,7 @@ public class Given_Pgsql_Ddl_Emitter_With_Trigger_Inventory
         _sql.Should().Contain("CREATE TRIGGER \"TR_School_AbstractIdentity\" ON \"edfi\".\"School\" WHEN (");
         _sql.Should()
             .Contain(
-                "CREATE TRIGGER \"TR_EducationOrganizationIdentity_Propagation\" ON \"edfi\".\"EducationOrganizationIdentity\" EXECUTE FUNCTION \"noop\"();"
+                "CREATE TRIGGER \"TR_EducationOrganizationIdentity_PropagateIdentity\" ON \"edfi\".\"EducationOrganizationIdentity\" EXECUTE FUNCTION \"noop\"();"
             );
     }
 
@@ -122,7 +122,7 @@ public class Given_Mssql_Ddl_Emitter_With_Trigger_Inventory
         _sql.Should().Contain("CREATE TRIGGER [edfi].[TR_School_AbstractIdentity] ON [edfi].[School] AS");
         _sql.Should()
             .Contain(
-                "CREATE TRIGGER [edfi].[TR_EducationOrganizationIdentity_Propagation] ON [edfi].[EducationOrganizationIdentity] AS"
+                "CREATE TRIGGER [edfi].[TR_EducationOrganizationIdentity_PropagateIdentity] ON [edfi].[EducationOrganizationIdentity] AS"
             );
     }
 
@@ -336,7 +336,7 @@ internal static class TriggerFixture
                     MaintenanceTargetTable: maintenanceTargetTable
                 ),
                 new DbTriggerInfo(
-                    new DbTriggerName("TR_EducationOrganizationIdentity_Propagation"),
+                    new DbTriggerName("TR_EducationOrganizationIdentity_PropagateIdentity"),
                     propagationTriggerTable,
                     DbTriggerKind.IdentityPropagationFallback,
                     [],

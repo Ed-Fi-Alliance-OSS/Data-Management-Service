@@ -19,7 +19,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private const string StampToken = "Stamp";
     private const string ReferentialIdentityToken = "ReferentialIdentity";
     private const string AbstractIdentityToken = "AbstractIdentity";
-    private const string PropagationFallbackPrefix = "Propagation";
+    private const string PropagationFallbackPrefix = "PropagateIdentity";
 
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.TriggerInventory"/> with
