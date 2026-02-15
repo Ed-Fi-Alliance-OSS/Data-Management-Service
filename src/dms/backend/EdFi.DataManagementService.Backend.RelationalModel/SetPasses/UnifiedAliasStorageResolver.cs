@@ -75,6 +75,15 @@ internal static class UnifiedAliasStorageResolver
 
             if (IsReferenceSitePresenceGate(presenceColumnModel))
             {
+                if (presenceColumnModel.Storage is not ColumnStorage.Stored)
+                {
+                    throw new InvalidOperationException(
+                        $"Unified alias column '{column.ColumnName.Value}' on table '{table.Table}' references "
+                            + $"invalid reference presence-gate column '{presenceColumn.Value}'. Reference "
+                            + "presence-gate columns must be stored."
+                    );
+                }
+
                 referenceSitePresenceColumns.Add(presenceColumn);
                 continue;
             }

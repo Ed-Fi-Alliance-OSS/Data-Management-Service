@@ -261,6 +261,6 @@
       "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` that constructs a derived model with an invalid/missing `UnifiedAlias.PresenceColumn` and asserts `DeriveTriggerInventoryPass` throws a clear exception even when run in isolation.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

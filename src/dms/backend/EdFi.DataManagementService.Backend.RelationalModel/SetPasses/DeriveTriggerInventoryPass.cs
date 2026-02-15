@@ -72,6 +72,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             }
 
             var resourceModel = concreteModel.RelationalModel;
+            ValidateUnifiedAliasPresenceGates(resourceModel);
             var rootTable = resourceModel.Root;
             var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
@@ -182,6 +183,25 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         if (context.Dialect == SqlDialect.Mssql)
         {
             EmitPropagationFallbackTriggers(context, propagationFallbackActionsByTriggerTable);
+        }
+    }
+
+    /// <summary>
+    /// Validates unified-alias presence-gate metadata for all tables in a resource model.
+    /// This keeps trigger derivation independent from index-pass validation ordering.
+    /// </summary>
+    private static void ValidateUnifiedAliasPresenceGates(RelationalResourceModel resourceModel)
+    {
+        foreach (var table in resourceModel.TablesInDependencyOrder)
+        {
+            _ = UnifiedAliasStorageResolver.BuildTableMetadata(
+                table,
+                new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                    ThrowIfPresenceColumnMissing: true,
+                    ThrowIfInvalidStrictSyntheticCandidate: true,
+                    UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
+                )
+            );
         }
     }
 
