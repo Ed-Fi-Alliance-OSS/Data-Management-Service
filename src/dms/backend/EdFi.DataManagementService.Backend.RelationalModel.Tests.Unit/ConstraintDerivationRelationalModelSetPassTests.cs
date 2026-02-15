@@ -679,6 +679,134 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
 }
 
 /// <summary>
+/// Test fixture for foreign-key storage invariant validation.
+/// </summary>
+[TestFixture]
+public class Given_Foreign_Key_Storage_Invariant_Validation
+{
+    private Action _action = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new InjectTargetForeignKeyAliasPass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+        ]);
+
+        _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when target foreign-key columns include unified aliases.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_target_foreign_key_columns_include_unified_aliases()
+    {
+        var exception = _action.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("FK_Enrollment_School_Ref");
+        exception.Message.Should().Contain("edfi.Enrollment");
+        exception.Message.Should().Contain("edfi.School");
+        exception.Message.Should().Contain("invalid target column(s)");
+        exception.Message.Should().Contain("EducationOrganizationId");
+    }
+
+    /// <summary>
+    /// Test pass that rewrites one target FK endpoint column to a unified-alias column.
+    /// </summary>
+    private sealed class InjectTargetForeignKeyAliasPass : IRelationalModelSetPass
+    {
+        /// <summary>
+        /// Execute.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var resource = new QualifiedResourceName("Ed-Fi", "Enrollment");
+            var resourceIndex = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+                model.ResourceKey.Resource == resource
+            );
+
+            if (resourceIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+                );
+            }
+
+            var concrete = context.ConcreteResourcesInNameOrder[resourceIndex];
+            var root = concrete.RelationalModel.Root;
+            var constraints = root.Constraints.ToArray();
+            var fkIndex = Array.FindIndex(
+                constraints,
+                constraint =>
+                    constraint is TableConstraint.ForeignKey foreignKey
+                    && string.Equals(foreignKey.TargetTable.Name, "School", StringComparison.Ordinal)
+                    && foreignKey.Columns.Count > 0
+                    && string.Equals(
+                        foreignKey.Columns[0].Value,
+                        "School_DocumentId",
+                        StringComparison.Ordinal
+                    )
+            );
+
+            if (fkIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"School reference foreign key was not found on table '{root.Table}'."
+                );
+            }
+
+            var schoolForeignKey = (TableConstraint.ForeignKey)constraints[fkIndex];
+
+            if (schoolForeignKey.TargetColumns.Count < 2)
+            {
+                throw new InvalidOperationException(
+                    $"Foreign key '{schoolForeignKey.Name}' does not contain identity target columns."
+                );
+            }
+
+            var targetColumns = schoolForeignKey.TargetColumns.ToArray();
+            targetColumns[1] = new DbColumnName("EducationOrganizationId");
+
+            constraints[fkIndex] = schoolForeignKey with { TargetColumns = targetColumns };
+
+            var updatedRoot = root with { Constraints = constraints };
+            var updatedTables = concrete.RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            );
+            var updatedModel = concrete.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables.ToArray(),
+            };
+
+            context.ConcreteResourcesInNameOrder[resourceIndex] = concrete with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+}
+
+/// <summary>
 /// Test fixture for shuffled reference identity bindings.
 /// </summary>
 [TestFixture]
