@@ -279,7 +279,7 @@
       "Run: `rg -n 'DbTriggerInfo\\(|DbTriggerKind\\b|IdentityProjectionColumns|PropagationFallback|TriggerTable\\b' reference/design/backend-redesign/design-docs/compiled-mapping-set.md`",
       "Manual review: confirm the contract snippet and surrounding notes match the current `DerivedRelationalModelSetContracts.cs` types."
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Docs",
