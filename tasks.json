@@ -217,5 +217,50 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Constraints",
+    "description": "Add a set-level foreign-key invariant validator that asserts composite FK endpoints are storage-only on both sides under key unification. Validate that every `TableConstraint.ForeignKey.Columns` and `TableConstraint.ForeignKey.TargetColumns` resolves to `DbColumnModel.Storage == Stored` (never `UnifiedAlias`) and never points at synthetic optional-path presence flags. Acceptance: (1) violations fail fast with an exception that includes FK name, referencing table, referenced table, and the offending column(s); (2) both local and target sides are validated (no regression where `TargetColumns` contains aliases); (3) unit test includes a fixture where `foreignKey.TargetColumns` contains a `UnifiedAlias` and asserts the invariant trips; (4) the default derived-model pipeline runs this validator after FK derivation and before index/trigger inventory passes.",
+    "steps-to-verify": [
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` (or a new focused test file) that injects a `UnifiedAlias` into `foreignKey.TargetColumns` and asserts the build fails with a useful error message.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Harden validation of `UnifiedAlias.PresenceColumn` when the presence gate is a scalar (synthetic optional-path `..._Present` flags). Enforce the full synthetic-flag contract: `ColumnKind.Scalar`, boolean scalar type, nullable, `Storage == Stored`, and `SourceJsonPath == null`. Fail fast if a unified alias points at a boolean/stored column that is API-bound (`SourceJsonPath != null`) or otherwise violates the synthetic-flag contract. Acceptance: (1) invalid scalar presence gates throw an invariant error that names the alias column, presence column, and why it is invalid; (2) synthetic-presence detection used by FK validation cannot silently accept non-flag columns; (3) unit test covers the exact `i-and-t-review.md` edge case (boolean/stored presence column with non-null `SourceJsonPath`) and asserts it fails.",
+    "steps-to-verify": [
+      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` (or a key-unification-focused test) with a `UnifiedAlias` that uses a scalar presence column which is boolean/stored but has `SourceJsonPath != null`, and assert the build fails fast.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactor",
+    "description": "Consolidate storage-resolution + presence-gate classification for unified aliases into a shared helper used across passes. Extract a helper (e.g., `UnifiedAliasMetadata` / `ColumnStorageResolver`) used by `DeriveIndexInventoryPass`, `DeriveTriggerInventoryPass`, and `ReferenceConstraintPass` to: (a) resolve binding/path columns to canonical storage columns, (b) validate alias → canonical existence, (c) classify presence gates as reference-site (`..._DocumentId`) vs synthetic scalar flags, and (d) produce consistent exception messages. Acceptance: (1) duplicated `ResolveStorageColumn(...)`/`BuildPresence*` implementations in these passes are removed or become thin wrappers; (2) caller intent is explicit via parameters (e.g., whether scalar presence gates are allowed in the context); (3) no behavior changes in derived inventories beyond stricter, clearer validation; (4) all existing unit tests remain green.",
+    "steps-to-verify": [
+      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` to use the shared helper for storage resolution and presence classification.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Trigger Inventory",
+    "description": "Remove dead/unused data from `DeriveTriggerInventoryPass`: `resourcesByKey` currently stores `ResourceEntry(index, model)` but the `index` is unused. Simplify to store only what is needed. Acceptance: (1) no behavior change in derived trigger inventory; (2) code no longer allocates/threads unused fields; (3) unit tests remain green.",
+    "steps-to-verify": [
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` to remove the unused index from the `resourcesByKey` map and run the trigger-inventory tests.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Trigger Inventory",
+    "description": "Remove cross-pass coupling by validating presence-gate columns in `DeriveTriggerInventoryPass` (or via the shared unified-alias helper). `BuildPresenceGateColumnSet` should verify that any `UnifiedAlias.PresenceColumn` exists on the owning table and is a valid stored presence gate (reference `..._DocumentId` or synthetic scalar `..._Present`). Acceptance: (1) missing/invalid presence gates fail fast during trigger inventory derivation, even when the index inventory pass is not executed; (2) exception text names the owning table + alias column + presence column; (3) unit test runs a partial pass pipeline that invokes `DeriveTriggerInventoryPass` without `DeriveIndexInventoryPass` and asserts the presence-gate invariant still trips.",
+    "steps-to-verify": [
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` that constructs a derived model with an invalid/missing `UnifiedAlias.PresenceColumn` and asserts `DeriveTriggerInventoryPass` throws a clear exception even when run in isolation.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

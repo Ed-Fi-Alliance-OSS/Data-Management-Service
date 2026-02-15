@@ -48,8 +48,14 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     private static void DeriveIndexesForTable(DbTableModel table, List<DbIndexInfo> inventory)
     {
         List<DbIndexInfo> tableIndexes = [];
-        var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
-        var syntheticPresenceFlags = BuildSyntheticPresenceFlagSet(table, columnsByName);
+        var tableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+            table,
+            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                ThrowIfPresenceColumnMissing: true,
+                ThrowIfInvalidStrictSyntheticCandidate: true,
+                UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
+            )
+        );
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
         var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
@@ -84,7 +90,12 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
         foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
         {
-            ValidateForeignKeyColumns(table, fk, columnsByName, syntheticPresenceFlags);
+            ValidateForeignKeyColumns(
+                table,
+                fk,
+                tableMetadata.ColumnsByName,
+                tableMetadata.SyntheticScalarPresenceColumns
+            );
 
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
             {
@@ -151,68 +162,6 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
                 );
             }
         }
-    }
-
-    /// <summary>
-    /// Builds the set of synthetic optional-path presence flags referenced by unified aliases on a table.
-    /// </summary>
-    private static IReadOnlySet<DbColumnName> BuildSyntheticPresenceFlagSet(
-        DbTableModel table,
-        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName
-    )
-    {
-        HashSet<DbColumnName> syntheticPresenceFlags = [];
-
-        foreach (var column in table.Columns)
-        {
-            if (column.Storage is not ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn })
-            {
-                continue;
-            }
-
-            if (!columnsByName.TryGetValue(presenceColumn, out var presenceColumnModel))
-            {
-                throw new InvalidOperationException(
-                    $"Unified alias column '{column.ColumnName.Value}' on table '{table.Table}' references "
-                        + $"unknown presence-gate column '{presenceColumn.Value}'."
-                );
-            }
-
-            if (IsSyntheticPresenceFlag(presenceColumnModel))
-            {
-                syntheticPresenceFlags.Add(presenceColumn);
-                continue;
-            }
-
-            if (IsInvalidSyntheticPresenceFlagCandidate(presenceColumnModel))
-            {
-                throw new InvalidOperationException(
-                    $"Unified alias column '{column.ColumnName.Value}' on table '{table.Table}' references "
-                        + $"invalid synthetic presence column '{presenceColumn.Value}'. Synthetic presence flags "
-                        + "must be nullable stored scalar booleans with null source path."
-                );
-            }
-        }
-
-        return syntheticPresenceFlags;
-    }
-
-    private static bool IsSyntheticPresenceFlag(DbColumnModel column)
-    {
-        return column
-            is {
-                Kind: ColumnKind.Scalar,
-                ScalarType: { Kind: ScalarKind.Boolean },
-                IsNullable: true,
-                SourceJsonPath: null,
-                Storage: ColumnStorage.Stored,
-            };
-    }
-
-    private static bool IsInvalidSyntheticPresenceFlagCandidate(DbColumnModel column)
-    {
-        return column is { Kind: ColumnKind.Scalar, IsNullable: true, SourceJsonPath: null }
-            && column is not { ScalarType: { Kind: ScalarKind.Boolean }, Storage: ColumnStorage.Stored };
     }
 
     /// <summary>
