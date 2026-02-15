@@ -201,11 +201,30 @@ public enum DbTriggerKind
 
 public readonly record struct DbTriggerName(string Value);
 
+public sealed record DbIdentityPropagationColumnPair(
+    DbColumnName ReferrerStorageColumn,
+    DbColumnName ReferencedStorageColumn
+);
+
+public sealed record DbIdentityPropagationReferrerAction(
+    DbTableName ReferrerTable,
+    DbColumnName ReferrerDocumentIdColumn,
+    DbColumnName ReferencedDocumentIdColumn,
+    IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs
+);
+
+public sealed record DbIdentityPropagationFallbackInfo(
+    IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
+);
+
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
-    DbTableName Table,
+    DbTableName TriggerTable,
     DbTriggerKind Kind,
-    IReadOnlyList<DbColumnName> KeyColumns
+    IReadOnlyList<DbColumnName> KeyColumns,
+    IReadOnlyList<DbColumnName> IdentityProjectionColumns,
+    DbTableName? MaintenanceTargetTable = null,
+    DbIdentityPropagationFallbackInfo? PropagationFallback = null
 );
 
 public sealed record DerivedRelationalModelSet(
@@ -224,6 +243,7 @@ Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
+ - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). Core `dms.*` indexes/triggers are owned by core DDL emission.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
