@@ -36,7 +36,7 @@ internal class ApiSchemaProvider(
     private Guid _reloadId = Guid.NewGuid();
 
     // Lock object to ensure thread-safe access during schema loading
-    private readonly object _loadLock = new();
+    private readonly Lock _loadLock = new();
 
     // Validation state
     private bool _isSchemaValid = true;

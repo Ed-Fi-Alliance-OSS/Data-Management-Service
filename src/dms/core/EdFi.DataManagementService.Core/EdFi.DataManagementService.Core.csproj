@@ -7,12 +7,8 @@
         <ImplicitUsings>enable</ImplicitUsings>
     </PropertyGroup>
     <ItemGroup>
-        <Content
-            Include="EdFi.DataManagementService.Core.nuspec"
-            CopyToPublishDirectory="Always"
-            CopyToOutputDirectory="Never"
-        />
-        <PackageReference Include="Be.Vlaanderen.Basisregisters.Generators.Guid.Deterministic" />
+        <Content Include="EdFi.DataManagementService.Core.nuspec" CopyToPublishDirectory="Always" CopyToOutputDirectory="Never" />
+        <PackageReference Include="DeterministicGuids" />
         <PackageReference Include="FastGuid" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.CodeStyle">
