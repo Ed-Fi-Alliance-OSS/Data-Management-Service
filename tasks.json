@@ -262,5 +262,32 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Docs",
+    "description": "Align non-key-unification design docs to the locked SQL Server cascade/propagation strategy: SQL Server reference composite FKs always use `ON UPDATE NO ACTION`, and eligible identity propagation is represented via `DbTriggerKind.IdentityPropagationFallback` triggers (no “try `CASCADE` then fallback on rejection”). Update: `reference/design/backend-redesign/design-docs/overview.md`, `reference/design/backend-redesign/design-docs/summary.md`, `reference/design/backend-redesign/design-docs/strengths-risks.md`, and `reference/design/backend-redesign/design-docs/data-model.md`. Acceptance: (1) each doc explicitly states MSSQL uses `ON UPDATE NO ACTION` for all reference composite FKs; (2) each doc describes propagation fallback triggers as the required MSSQL propagation mechanism for eligible edges; (3) any remaining discussion of “multiple cascade paths” is framed as the reason cascades are disabled on MSSQL (not as a per-edge “try cascade” strategy); (4) wording is consistent with `ReferenceConstraintPass` and the trigger inventory contract.",
+    "steps-to-verify": [
+      "Run: `rg -n 'ON UPDATE CASCADE|ON UPDATE NO ACTION|multiple cascade paths|trigger-based propagation|IdentityPropagationFallback' reference/design/backend-redesign/design-docs/overview.md reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/strengths-risks.md reference/design/backend-redesign/design-docs/data-model.md`",
+      "Manual review: confirm the four docs no longer imply MSSQL uses `ON UPDATE CASCADE` for any reference composite FK."
+    ],
+    "completed": true
+  },
+  {
+    "category": "Docs",
+    "description": "Update `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` to match the implemented trigger inventory contract. Replace the outdated `DbTriggerInfo` snippet (`Table` + `KeyColumns` only) with the current shape: `TriggerTable`, `IdentityProjectionColumns`, `MaintenanceTargetTable`, and `PropagationFallback` payload types. Acceptance: (1) the `DbTriggerInfo` snippet matches `src/dms/backend/EdFi.DataManagementService.Backend.External/DerivedRelationalModelSetContracts.cs`; (2) the snippet includes propagation payload types (`DbIdentityPropagationFallbackInfo` / referrer actions / column pairs); (3) docs state `IdentityProjectionColumns` are null-safe value-diff compare inputs (not `UPDATE(column)` gates); (4) no remaining references to the obsolete `DbTriggerInfo.Table` field in this doc.",
+    "steps-to-verify": [
+      "Run: `rg -n 'DbTriggerInfo\\(|DbTriggerKind\\b|IdentityProjectionColumns|PropagationFallback|TriggerTable\\b' reference/design/backend-redesign/design-docs/compiled-mapping-set.md`",
+      "Manual review: confirm the contract snippet and surrounding notes match the current `DerivedRelationalModelSetContracts.cs` types."
+    ],
+    "completed": false
+  },
+  {
+    "category": "Docs",
+    "description": "Update `reference/design/backend-redesign/epics/01-relational-model/05-relational-model-manifest.md` acceptance criteria to reflect the expanded trigger inventory contract. The manifest story should no longer describe triggers as “names + key columns” only; it must reflect the current trigger fields required for determinism and DDL intent (trigger table, identity projection compare columns, maintenance target where applicable, and propagation fallback payload). Acceptance: (1) acceptance criteria for trigger inventory lists the current required fields; (2) story text does not reference obsolete trigger contract shapes; (3) story remains consistent with `src/dms/backend/EdFi.DataManagementService.Backend.External/DerivedRelationalModelSetContracts.cs`.",
+    "steps-to-verify": [
+      "Run: `rg -n 'trigger|DbTriggerInfo|KeyColumns|IdentityProjectionColumns|PropagationFallback|TriggerTable' reference/design/backend-redesign/epics/01-relational-model/05-relational-model-manifest.md`",
+      "Manual review: confirm the updated acceptance text matches the implemented trigger inventory contract."
+    ],
+    "completed": false
   }
 ]

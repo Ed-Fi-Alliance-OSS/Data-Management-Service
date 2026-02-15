@@ -554,8 +554,12 @@ Typical structure:
     - `FOREIGN KEY (..._DocumentId, <StorageIdentityParts...>) REFERENCES <TargetRefKey>(DocumentId, <TargetStorageIdentityParts...>)`
       - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
       - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
-      - `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true`
-      - `ON UPDATE NO ACTION` when `allowIdentityUpdates=false`
+      - PostgreSQL:
+        - concrete targets: `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise)
+        - abstract targets: `ON UPDATE CASCADE`
+      - SQL Server:
+        - all reference composite FKs use `ON UPDATE NO ACTION` (concrete + abstract targets)
+        - eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`) are maintained by deterministic `DbTriggerKind.IdentityPropagationFallback` trigger fan-out on the referenced table, updating canonical/storage columns only
   - Add an all-or-none CHECK constraint per reference site:
     - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
     - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
@@ -582,7 +586,7 @@ Some Ed-Fi references target **abstract resources** (polymorphic references), no
 - `EducationOrganization` (e.g., `educationOrganizationReference`)
 - `GeneralStudentProgramAssociation` (e.g., `generalStudentProgramAssociationReference`)
 
-Abstract resources have **no physical root table**, but composite FKs (and any identity-update cascades) require a concrete FK target with the required identity columns.
+Abstract resources have **no physical root table**, but composite FKs (and any identity-update propagation) require a concrete FK target with the required identity columns.
 
 This redesign provisions an **identity table per abstract resource**:
 
@@ -594,7 +598,9 @@ This redesign provisions an **identity table per abstract resource**:
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)` with `ON UPDATE CASCADE` (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
+    - PostgreSQL: `ON UPDATE CASCADE`.
+    - SQL Server: `ON UPDATE NO ACTION` and identity propagation via `DbTriggerKind.IdentityPropagationFallback` trigger fan-out (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
 
 Required: `{schema}.{AbstractResource}_View` union view
 
@@ -606,7 +612,7 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 
 Usage:
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
-- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via cascades).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades, SQL Server propagation-fallback triggers).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement:
