@@ -32,7 +32,7 @@ The manifest is a *semantic* representation (not engine introspection) and must 
   - constraints (PK/UK/FK/CHECK where applicable),
   - indexes (including FK-supporting indexes),
   - views (abstract union views),
-  - triggers (derived trigger intent inventory: names + key columns).
+  - triggers (derived trigger intent inventory including `Name`, `TriggerTable`, `Kind`, non-propagation `KeyColumns`, non-propagation `IdentityProjectionColumns`, optional `MaintenanceTargetTable`, and optional `PropagationFallback.ReferrerActions` with `ReferrerTable` + document-id columns + ordered identity storage-column pairs).
 - Output is byte-for-byte stable for the same inputs (stable ordering + `\n` line endings).
 - Small fixture snapshot tests compare the manifest exactly.
 
