@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
+using DeterministicGuids;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 
 /// <summary>
 /// Parity tests that verify the PostgreSQL dms.uuidv5() helper function produces
-/// byte-for-byte identical output to the .NET Core Deterministic.Create() implementation
+/// byte-for-byte identical output to the DeterministicGuid.Create() implementation
 /// used by ReferentialIdCalculator.
 /// </summary>
 public abstract class Uuidv5ParityTestBase
@@ -51,7 +51,7 @@ public abstract class Uuidv5ParityTestBase
 
     public static Guid ComputeCore(Guid namespaceUuid, string name)
     {
-        return Deterministic.Create(namespaceUuid, name);
+        return DeterministicGuid.Create(namespaceUuid, name);
     }
 
     public static async Task<Guid> ComputePostgres(Guid namespaceUuid, string name)
@@ -141,7 +141,7 @@ public class Given_Multi_Part_Identity_String : Uuidv5ParityTestBase
 public class Given_Empty_Name
 {
     /// <summary>
-    /// The Basisregisters Deterministic.Create() library rejects empty strings,
+    /// The DeterministicGuid.Create() library rejects empty strings,
     /// so empty name is not a valid parity scenario. This test documents that
     /// the PG function still produces a deterministic result for empty input,
     /// which is acceptable since Core will never call it with empty input.
@@ -149,7 +149,7 @@ public class Given_Empty_Name
     [Test]
     public void It_should_throw_in_core()
     {
-        var act = () => Deterministic.Create(Uuidv5ParityTestBase.EdFiNamespace, string.Empty);
+        var act = () => DeterministicGuid.Create(Uuidv5ParityTestBase.EdFiNamespace, string.Empty);
         act.Should().Throw<ArgumentNullException>();
     }
 

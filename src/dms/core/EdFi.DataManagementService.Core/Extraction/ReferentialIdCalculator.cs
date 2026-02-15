@@ -3,7 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
+using DeterministicGuids;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Core.Extraction;
@@ -49,7 +49,7 @@ internal static class ReferentialIdCalculator
     )
     {
         return new(
-            Deterministic.Create(
+            DeterministicGuid.Create(
                 EdFiUuidv5Namespace,
                 $"{ResourceInfoString(resourceInfo)}{DocumentIdentityString(documentIdentity)}"
             )
