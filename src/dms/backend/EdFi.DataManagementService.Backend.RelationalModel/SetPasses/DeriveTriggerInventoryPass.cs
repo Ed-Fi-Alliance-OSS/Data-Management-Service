@@ -31,9 +31,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var resourcesByKey = context
-            .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
-            .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
+        var resourcesByKey = context.ConcreteResourcesInNameOrder.ToDictionary(model =>
+            model.ResourceKey.Resource
+        );
         Dictionary<
             DbTableName,
             List<DbIdentityPropagationReferrerAction>
@@ -57,14 +57,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 resourceContext.ResourceName
             );
 
-            if (!resourcesByKey.TryGetValue(resource, out var entry))
+            if (!resourcesByKey.TryGetValue(resource, out var concreteModel))
             {
                 throw new InvalidOperationException(
                     $"Concrete resource '{FormatResource(resource)}' was not found for trigger derivation."
                 );
             }
-
-            var concreteModel = entry.Model;
 
             if (concreteModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
             {
@@ -306,7 +304,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         RelationalModelSetBuilderContext context,
         RelationalModelBuilderContext builderContext,
         RelationalResourceModel resourceModel,
-        IReadOnlyDictionary<QualifiedResourceName, ResourceEntry> resourcesByKey,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourcesByKey,
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
         QualifiedResourceName resource,
@@ -510,7 +508,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private static bool TryResolvePropagationTargetTable(
         RelationalModelSetBuilderContext context,
         QualifiedResourceName targetResource,
-        IReadOnlyDictionary<QualifiedResourceName, ResourceEntry> resourcesByKey,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> resourcesByKey,
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
         out DbTableModel referencedTableModel
@@ -536,7 +534,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             return false;
         }
 
-        if (!resourcesByKey.TryGetValue(targetResource, out var targetEntry))
+        if (!resourcesByKey.TryGetValue(targetResource, out var targetModel))
         {
             throw new InvalidOperationException(
                 $"Reference target resource '{FormatResource(targetResource)}' was not found "
@@ -544,7 +542,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             );
         }
 
-        referencedTableModel = targetEntry.Model.RelationalModel.Root;
+        referencedTableModel = targetModel.RelationalModel.Root;
         return true;
     }
 
