@@ -1,293 +1,76 @@
 [
   {
-    "category": "Contracts",
-    "description": "Redesign the trigger inventory contract to be unambiguous and key-unification-ready. Replace the overloaded `DbTriggerInfo.Table`/`TargetTable` semantics with an explicit `TriggerTable` (table the trigger is created on / fires on). Add a propagation-specific payload for `DbTriggerKind.IdentityPropagationFallback` that supports the chosen strategy: one trigger per referenced table, fan-out to many referrers. Acceptance: (1) `DbTriggerInfo` (or derived trigger records) can represent propagation intent without reusing `KeyColumns`/`IdentityProjectionColumns`; (2) propagation intent includes explicit referrer table + referencing `..._DocumentId` + referenced `DocumentId` + ordered identity column pairs `(referrer_storage_column, referenced_storage_column)`; (3) XML docs state `IdentityProjectionColumns` are a null-safe value-diff compare set (not `UPDATE(column)` gating); (4) all consumers compile (derivation, shortening, DDL emitter, golden manifest writer/tests).",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Trigger Inventory",
-    "description": "Fix root identity-projection column derivation so stamping + referential-identity maintenance can detect identity changes correctly (and later work under unified aliases). Update `DeriveTriggerInventoryPass` so root `IdentityProjectionColumns` includes: (a) root scalar identity columns bound to `identityJsonPaths`, and (b) for every `DocumentReferenceBinding` with `IsIdentityComponent == true`, the locally stored reference identity-part columns (`IdentityBindings[*].Column`) instead of (or in addition to) the stable `..._DocumentId`. Acceptance: (1) root `DocumentStamping` triggers and `ReferentialIdentityMaintenance` triggers include propagated identity-part columns for identity-component references; (2) column set is deterministic and de-duplicated; (3) behavior is documented as value-diff based (not “updated column” based).",
-    "steps-to-verify": [
-      "Update/add unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` asserting identity projection includes propagated identity columns for identity-component references.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Propagation Fallback",
-    "description": "Rework MSSQL identity-propagation fallback derivation to match the locked decisions and key-unification requirements. Emit propagation fallback triggers on MSSQL only, as **one trigger per referenced table** (root or abstract identity table) that updates all referrers. Triggers must be modeled as firing on the referenced table and updating referrer tables’ **storage** columns (canonical under key unification; never alias/binding columns). Coverage must include reference sites on root, child/collection, and `_ext` tables (not root-only). Acceptance: (1) triggers are created on the referenced table (`TriggerTable`), not the referrer; (2) the propagation payload includes every eligible incoming edge where the referenced target is abstract or allows identity updates; (3) propagated columns are storage-mapped via `DbColumnModel.Storage` and de-duplicated deterministically; (4) no propagation triggers are emitted on PostgreSQL; (5) unit tests cover concrete + abstract targets and non-root referrers.",
-    "steps-to-verify": [
-      "Update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` to assert propagation triggers fire on the referenced table and contain referrer actions (and remove assertions that lock in the current inversion).",
-      "Add/extend a fixture with a non-root reference binding (child or extension) and assert it appears in the propagation trigger’s fan-out list on MSSQL.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Identifier Shortening",
-    "description": "Update dialect identifier shortening + uniqueness validation for the new trigger contract shape. Ensure `ApplyDialectIdentifierShorteningPass` shortens all newly introduced trigger fields (trigger table, referrer table, FK columns, and column pairs) deterministically. Ensure `RelationalModelSetBuilderContext` ordering and uniqueness checks use `TriggerTable` (not the old `Table` field) and still respect dialect scoping rules (Pgsql table-scoped trigger-name uniqueness; MSSQL schema-scoped). Acceptance: (1) shortening applies to every trigger identifier field; (2) determinism tests still pass; (3) name-collision detection remains correct for both dialects.",
-    "steps-to-verify": [
-      "Update/extend `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DialectIdentifierShorteningTests.cs` to validate shortening covers the new trigger fields (including propagation payload fields).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "DDL Emission",
-    "description": "Update `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs` to consume the redesigned trigger inventory contract. `CREATE TRIGGER ... ON ...` must use the explicit `TriggerTable`. Propagation triggers may continue to emit a placeholder body for now, but the emitted SQL must reference the correct owning table and produce deterministic trigger statements for both dialects. Acceptance: DDL emission compiles, emits triggers on the correct tables for all trigger kinds, and remains deterministic across runs.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj` (covers DDL identifier quoting and related invariants).",
-      "If DDL golden outputs exist for triggers, update them to reflect `TriggerTable` semantics and verify diffs are only the intended structural changes."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Index Inventory",
-    "description": "Confirm index derivation remains compatible with key unification without adding filtered/partial index modeling. Ensure FK-support index derivation continues to operate over the final FK column lists (which must be storage columns after key unification mapping) and add an invariant check that no FK constraint references a unified alias/binding column. Acceptance: (1) no changes add filtered/partial index representations to `DbIndexInfo`; (2) a fail-fast invariant prevents FKs over `UnifiedAlias` columns once key unification lands; (3) unit tests cover a key-unification scenario where multiple binding endpoints map to one storage column and FK/index derivation remains deterministic and collision-free.",
-    "steps-to-verify": [
-      "Add a unit fixture (post key-unification implementation) that unifies at least one identity-part column and assert FK constraints are emitted only over storage columns and `DeriveIndexInventoryPass` derives FK-support indexes using those storage columns.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs",
-    "description": "Align design docs and story text to the locked decisions and the updated contract. Update: `reference/design/backend-redesign/design-docs/key-unification.md`, `reference/design/backend-redesign/design-docs/transactions-and-concurrency.md`, and `reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md` to reflect: MSSQL always uses `ON UPDATE NO ACTION` + trigger-based propagation fallback; propagation triggers are one-per-referenced-table and fire on the referenced table; propagation updates canonical/storage columns only; `IdentityProjectionColumns` are value-diff compare sets; and pass naming matches implementation (`DeriveIndexInventoryPass` + `DeriveTriggerInventoryPass`). Acceptance: docs describe the same strategy implemented in code and do not reference filtered/partial index inventory modeling for this workstream.",
-    "steps-to-verify": [
-      "Run: `rg -n \"ON UPDATE CASCADE|fallback|PropagateIdentity|IdentityProjectionColumns\" reference/design/backend-redesign/design-docs/key-unification.md reference/design/backend-redesign/design-docs/transactions-and-concurrency.md reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md` and confirm wording matches the locked decisions.",
-      "Manual review: confirm docs no longer imply “try cascade then fallback” on MSSQL for this implementation."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Query Planning",
-    "description": "Implement the locked decision for unified-alias predicate rewrite so canonical storage indexes stay effective. When a query predicate binds to a unified alias column, rewrite it to an equivalent predicate on the canonical storage column plus presence gating (`PresenceColumn IS NOT NULL`) when applicable. Acceptance: (1) semantics are preserved for optional references/paths (filtering on a per-path alias still implies the path was present); (2) rewritten SQL targets the canonical column so FK-supporting indexes can be used; (3) tests cover both reference-site presence gating (via `..._DocumentId`) and synthetic presence gating (via `..._Present`) once key unification is implemented.",
-    "steps-to-verify": [
-      "Locate the query compilation component that emits SQL predicates for relational storage and add unit tests for predicate rewrite under key unification.",
-      "Run the relevant unit-test project(s) for query compilation once identified (and keep `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` green)."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Key Unification",
-    "description": "Introduce first-class storage metadata in the derived relational model per `reference/design/backend-redesign/design-docs/key-unification.md`. Add `DbColumnModel.Storage` (e.g., `Stored` vs `UnifiedAlias(CanonicalColumn, PresenceColumn?)`) and `DbTableModel.KeyUnificationClasses` so callers can map binding/path columns → canonical storage columns without naming heuristics. Acceptance: (1) every `DbColumnModel` is explicitly `Stored` or `UnifiedAlias`, defaulting to `Stored` for all existing (non-key-unified) schemas; (2) `UnifiedAlias` always points at an existing stored canonical column on the same table and optionally records a presence gate; (3) `KeyUnificationClasses` is empty when no applied classes exist and deterministic when present (stable ordering); (4) manifest emission includes the new metadata deterministically (no missing fields, stable ordering).",
-    "steps-to-verify": [
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
-      "Add/update unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` that validate the default behavior: when no unification applies, all columns are `Stored` and `KeyUnificationClasses` is empty.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Key Unification",
-    "description": "Implement `KeyUnificationPass` to apply ApiSchema `equalityConstraints` within a table row scope by creating one canonical stored column per unification class and converting member path columns into persisted generated/computed `UnifiedAlias` columns (presence-gated when optional). Introduce synthetic `..._Present` flags for optional non-reference unified endpoints as described in `key-unification.md`. Acceptance: (1) unified endpoints keep distinct per-path binding columns and `SourceJsonPath` mappings (endpoint resolution/query/reconstitution continue to bind by path); (2) canonical columns are storage-only (`SourceJsonPath = null`) and are the only writable source of truth for the class; (3) reference-site aliases evaluate to `NULL` when the reference site is absent (`..._DocumentId IS NULL`); (4) optional non-reference aliases evaluate to `NULL` when their synthetic presence flag is `NULL`; (5) derived model remains deterministic across input ordering; (6) no consumers need to infer canonical columns via suffix rules like `\"{Alias}_Unified\"`.",
-    "steps-to-verify": [
-      "Add a unit fixture/schema with at least one equality constraint that unifies values across two reference sites on the same row and assert: one canonical column is created, both member columns become `UnifiedAlias`, and both are gated by their respective `..._DocumentId` presence columns.",
-      "Add a unit fixture/schema with an optional non-reference scalar/descriptor endpoint that is unified and assert: a synthetic `..._Present` column is created and used as the `UnifiedAlias.PresenceColumn` gate.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
     "category": "Constraints",
-    "description": "Update foreign-key derivation to target canonical storage columns under key unification. For composite reference FKs (and any other identity-part FKs), map both local and referenced identity columns through `DbColumnModel.Storage` and de-duplicate *after* storage mapping so unified members collapse deterministically. Preserve all-or-none constraints over per-site binding/alias columns (presence-gated semantics must not change). Acceptance: (1) no `TableConstraint.ForeignKey` references `UnifiedAlias` columns or synthetic `..._Present` columns; (2) when multiple binding endpoints unify, FK local/target column lists contain the canonical storage column exactly once in the correct key order; (3) FK column ordering continues to follow the identity-path ordering rules; (4) existing (pre-unification) schemas are unchanged.",
+    "description": "Introduce synthetic presence hardening via `TableConstraint.NullOrTrue`. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` defines `TableConstraint.NullOrTrue(string Name, DbColumnName Column)`; constraint naming/identity/dialect hashing/shortening all support it; manifest JSON serialization supports it; and `RelationalModelDdlEmitter` has minimal Pgsql/Mssql emission support (enough to keep unit tests green).",
     "steps-to-verify": [
-      "Add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` (or an equivalent constraints-focused fixture) to assert composite reference FKs use canonical storage columns when member bindings are `UnifiedAlias`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Index Inventory",
-    "description": "Replace suffix-based key-unification guardrails in `DeriveIndexInventoryPass.ValidateForeignKeyColumns(...)` with storage-metadata validation. Instead of inferring aliases via `_Unified` / `_Present` naming, validate FK columns by resolving each referenced column to its `DbColumnModel.Storage` and failing fast if it is an alias/presence column. Acceptance: (1) validation rejects FK columns that resolve to `UnifiedAlias` even when the canonical storage column name is not `\"{Alias}_Unified\"`; (2) validation rejects synthetic optional-path presence flags based on metadata, not name suffix; (3) no false positives for legitimate stored columns that happen to end with `_Unified`/`_Present`; (4) FK-support index derivation remains deterministic and unchanged for stored columns.",
-    "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` with a fixture where the canonical storage column name does not follow the `\"{Alias}_Unified\"` pattern and assert validation still catches “FK targets alias”.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Trigger Inventory",
-    "description": "Make `DbIdentityPropagationFallback` payload truly “storage” under key unification. Update `DeriveTriggerInventoryPass.CollectPropagationFallbackActions(...)` so `DbIdentityPropagationColumnPair(ReferrerStorageColumn, ReferencedStorageColumn)` is produced by mapping binding/path columns → canonical storage columns via `DbColumnModel.Storage` on both the referrer and referenced tables, then de-duplicating after storage mapping. Acceptance: (1) propagation payload never references `UnifiedAlias` columns; (2) column-pair de-duplication occurs after storage mapping so unified members collapse deterministically; (3) ordering of triggers/referrer actions/column pairs remains deterministic; (4) unit tests include a case where multiple binding endpoints map to the same canonical storage column and the payload contains a single canonical pair.",
-    "steps-to-verify": [
-      "Update/add unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` to assert that propagation column pairs use canonical storage columns when the binding columns are `UnifiedAlias`.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Naming",
-    "description": "Align propagation fallback trigger naming with `reference/design/backend-redesign/design-docs/data-model.md` purpose tokens by using `PropagateIdentity` (not `Propagation`) in `DeriveTriggerInventoryPass` trigger names. Acceptance: (1) identity propagation fallback triggers are named `TR_{TableName}_PropagateIdentity`; (2) identifier shortening and collision detection tests remain green; (3) docs and implementation no longer drift on the durable purpose token.",
-    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "If any golden/manifest tests assert trigger names, update them to the stable `PropagateIdentity` token and confirm diffs are limited to the purpose token change."
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": true
-  },
-  {
-    "category": "Trigger Inventory",
-    "description": "Make root `IdentityProjectionColumns` ordering for identity-component references explicit and deterministic. Avoid adding all reference identity-part columns as a block based on the first matching identity path; instead, derive projection columns by iterating `identityJsonPaths` and mapping each identity path to its exact local column(s) in order (or fail fast with validation if schema ordering is inconsistent). Acceptance: (1) `IdentityProjectionColumns` ordering matches `identityJsonPaths` order (including reference identity parts) and is stable; (2) no duplicates; (3) unit tests lock ordering for a fixture containing at least one identity-component reference with multiple identity parts.",
-    "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` to assert the exact ordering of `IdentityProjectionColumns` for a resource with identity-component references.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Deduplicate the “deepest matching JSON-scope prefix” selection logic used by reference binding and trigger derivation. Centralize the prefix-match selection + `_ext` scope validation currently duplicated between `ReferenceBindingPass.ResolveOwningTableBuilder(...)` and `DeriveTriggerInventoryPass.ResolveReferenceBindingTable(...)`. Acceptance: (1) both call a shared helper with identical semantics; (2) existing fixtures behave the same; (3) no duplicated prefix-match implementation remains in the two passes.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Spot-check extension scenarios (paths including `._ext`) in existing fixtures to confirm the same error conditions are raised when an extension scope is required but missing."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Replace delimiter-based identity-column-pair de-duplication in `DeriveTriggerInventoryPass.AddIdentityColumnPair(...)` with a strongly typed key (e.g., `HashSet<(DbColumnName Referrer, DbColumnName Referenced)>`) to avoid delimiter edge cases and improve clarity. Acceptance: (1) de-duplication behavior is unchanged and preserves first-seen ordering; (2) no string-concatenated signatures are required for pair identity; (3) trigger inventory determinism tests remain green.",
-    "steps-to-verify": [
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Trigger DDL",
-    "description": "When implementing trigger SQL bodies, ensure identity-change detection is null-safe value-diff and key-unification-aware. For unified endpoints, compare the presence-gated canonical expression (not `UPDATE(column)` gates and not direct alias-column comparisons) so identity recomputation semantics match `reference/design/backend-redesign/design-docs/key-unification.md`. Acceptance: (1) generated SQL gates identity recomputation using null-safe old/new value comparisons over `IdentityProjectionColumns`; (2) for `UnifiedAlias(PresenceColumn != null)`, comparisons use the presence-gated canonical expression on both old/new values; (3) unit tests (or golden SQL outputs) cover at least one presence-gated unified alias and would fail if alias columns or `UPDATE(column)` gating were used.",
-    "steps-to-verify": [
-      "Add/extend DDL-emission tests (or golden SQL outputs) for triggers to include a unified alias with a presence gate and assert the emitted compare expression is presence-gated and null-safe.",
-      "Run the relevant DDL-related unit test project(s) and keep `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln` green."
-    ],
-    "completed": true
+    "completed": false
   },
   {
     "category": "Key Unification",
-    "description": "Wire key unification into the default derived-model pipeline by inserting `KeyUnificationPass` into `RelationalModelSetPasses.CreateDefault()` after `ReferenceBindingPass` and before any downstream consumers (abstract identity derivation, constraints, index inventory, trigger inventory, identifier shortening, ordering). Acceptance: (1) `DerivedRelationalModelSetBuilder` using `RelationalModelSetPasses.CreateDefault()` produces unified models when `equalityConstraints` apply (member columns become `UnifiedAlias`, canonical columns exist, and `DbTableModel.KeyUnificationClasses` is populated); (2) downstream passes operate on the unified model without requiring test-only pass lists; (3) ordering follows `reference/design/backend-redesign/design-docs/key-unification.md` recommendations; (4) output remains deterministic across repeated builds.",
+    "description": "Align `KeyUnificationPass` to the design: strict endpoint resolution by exact `DbColumnModel.SourceJsonPath.Canonical` only (delete `FindReferenceRelativeAliasCandidates` and `TryResolveAmbiguousReferenceEndpoint` heuristics), fail fast on unresolved/ambiguous endpoints and unsupported endpoint kinds, derive canonical stored columns + `ColumnStorage.UnifiedAlias` members with correct presence gating, and emit one `TableConstraint.NullOrTrue` per synthetic `..._Present` column. Acceptance: same-table applied constraints produce exactly one canonical stored column (`SourceJsonPath=null`) per class; unified members retain binding column names + `SourceJsonPath` and become aliases; reference-site aliases gate by `..._DocumentId`; optional non-reference aliases gate by synthetic presence flags; `DbTableModel.KeyUnificationClasses` ordering is deterministic and stable across runs.",
     "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs` and any pass-ordering tests that assert the default pass list.",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Add/extend minimal unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` for strict endpoint resolution, synthetic presence + NullOrTrue, and cross-table ignored constraints.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Trigger Inventory",
-    "description": "Make propagation-fallback derivation fail fast when a `DocumentReferenceMapping` cannot be matched to a derived `DocumentReferenceBinding` by `ReferenceObjectPath`. Replace the current silent skip in `DeriveTriggerInventoryPass.CollectPropagationFallbackActions(...)` with an `InvalidOperationException` that includes resource name + mapping key + reference object path. Acceptance: (1) any mapping/binding mismatch becomes a hard error (no silent loss of propagation actions); (2) exception text is actionable and points at the exact unmapped reference path; (3) unit test covers a synthetic mismatch and asserts the exception is thrown.",
+    "category": "Descriptor FKs",
+    "description": "Refactor descriptor FK constraint emission into a post-unification pass. Acceptance: remove early descriptor FK constraint creation in `ReferenceBindingPass` and `ExtensionTableDerivationPass`; add a new set-level pass (after `KeyUnificationPass`) that maps descriptor binding columns to storage columns (canonical when unified), emits exactly one FK to `dms.Descriptor(DocumentId)` per `(table, storage_column)` pair, and de-duplicates multiple binding columns mapping to the same storage column; descriptor FK constraint names are derived from `(table, storage_column)` so they are stable under dedup.",
     "steps-to-verify": [
-      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` that constructs a derived model where `builderContext.DocumentReferenceMappings` contains a mapping whose `ReferenceObjectPath` is missing from `resourceModel.DocumentReferenceBindings`, and assert `DerivedRelationalModelSetBuilder.Build(...)` throws.",
+      "Add a minimal synthetic-schema unit test where two descriptor binding columns unify to one canonical storage column and assert only one descriptor FK constraint is emitted.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Refactor",
-    "description": "Disambiguate presence-gate column classification used by index and trigger derivation. Rename and/or centralize the two `BuildPresenceColumnSet(...)` helpers so the intent is explicit (e.g., one helper for synthetic optional-path presence flags and one helper for all `UnifiedAlias.PresenceColumn` gates). Update error messages in `DeriveTriggerInventoryPass.ResolveStorageColumn(...)` so they do not label reference `..._DocumentId` gates as \"synthetic\" when the presence set includes non-synthetic gates. Acceptance: (1) no two helpers with the same name but different semantics; (2) synthetic presence flags vs general presence gates are clearly separated; (3) validation/error text accurately describes the rejected column; (4) all existing unit tests remain green.",
+    "category": "Reference Constraints",
+    "description": "Update reference constraint derivation to target storage columns under unification. Acceptance: in `ReferenceConstraintPass`, map both local and target identity-part columns through `DbColumnModel.Storage` (use `UnifiedAliasStorageResolver`) and de-duplicate repeated canonical storage columns after mapping while preserving identityJsonPaths order; ensure FK-supporting referenced-key UNIQUE constraints use the mapped (and deduped) target storage columns; all-or-none constraints remain on binding/path columns + `..._DocumentId` (no storage mapping).",
     "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` to use the clarified helpers and update exception messages accordingly.",
+      "Add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` that exercise identity-part unification causing duplicate storage columns and assert FK/UK dedup with stable ordering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Index Inventory",
-    "description": "Tighten synthetic presence-flag detection in `DeriveIndexInventoryPass` so only the key-unification-generated `..._Present` flags are treated as \"synthetic presence columns\" for FK validation (and therefore cannot be referenced by FK constraints). Use metadata (at minimum: `ColumnKind.Scalar`, boolean scalar type, `SourceJsonPath == null`, nullable, and `Storage == Stored`) rather than loose kind checks. Acceptance: (1) only synthetic presence flags created by key unification are classified as synthetic presence columns; (2) FK validation never false-positives on legitimate stored columns; (3) if a `UnifiedAlias.PresenceColumn` points at a non-flag column, either it is excluded from the synthetic-flag set or a clear invariant error is thrown; (4) unit test covers the edge case.",
+    "category": "Dialect & Ordering",
+    "description": "Fix dialect shortening + deterministic ordering for key unification metadata. Acceptance: `ApplyDialectIdentifierShorteningPass` rewrites `ColumnStorage.UnifiedAlias` pointers (canonical/presence), `DbTableModel.KeyUnificationClasses` references, and `TableConstraint.NullOrTrue.Column`; canonical ordering guarantees the alias-dependency invariant (for every `UnifiedAlias`, its canonical and presence columns—including reference-site `..._DocumentId`—appear earlier) and places canonical + synthetic presence columns before dependent aliases.",
     "steps-to-verify": [
-      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` with a synthetic table that includes a `UnifiedAlias` whose `PresenceColumn` is not a boolean, and assert the classification/validation behavior matches the acceptance criteria.",
+      "Add unit tests for identifier shortening rewriting and for column-order dependency invariants.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Refactor",
-    "description": "Remove redundant per-table dictionary allocations in `DeriveIndexInventoryPass` by threading a single `columnsByName` lookup into presence-flag detection and FK validation. Keep behavior identical. Acceptance: (1) no functional changes in derived index inventory; (2) no extra `ToDictionary(...)` per table beyond what is needed; (3) all existing unit tests remain green.",
+    "category": "Manifests",
+    "description": "Emit key-unification diagnostics in manifest JSON without adding them to in-memory contracts. Acceptance: `RelationalModelManifestEmitter` emits `key_unification_equality_constraints` in the design-doc shape and always present (empty arrays when none): `applied`/`redundant`/`ignored` + `ignored_by_reason`; endpoint paths are canonicalized to undirected `(minPath,maxPath)` ordering while preserving duplicate ApiSchema entries; ignored.reason supports only `cross_table`; applied entries include resolved endpoint binding columns and the final `canonical_column`. Also emit per-table `descriptor_fk_deduplications` always present (empty when none) with deterministic ordering and including `constraint_name` for each dedup group.",
     "steps-to-verify": [
-      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs` to avoid rebuilding the same `columnsByName` dictionary for presence detection.",
+      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelManifestEmitterTests.cs` to assert new properties exist and are empty when appropriate.",
+      "Add a focused minimal-schema test that produces applied/redundant/cross_table cases and asserts the emitted report shape and ordering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
+    "completed": false
   },
   {
-    "category": "Refactor",
-    "description": "Consolidate the table-scope resolution wrapper logic used by reference binding and propagation-fallback derivation. Replace the bespoke wrappers in `ReferenceBindingPass.ResolveOwningTableBuilder(...)` and `DeriveTriggerInventoryPass.ResolveReferenceBindingTable(...)` with a shared helper that selects the deepest matching scope and produces consistent exception messages (including candidate scopes). Acceptance: (1) both passes call the same helper; (2) there is a single place that builds scope-mismatch exceptions; (3) no duplicated wrapper implementations remain; (4) behavior is unchanged for existing fixtures (same selected table, same thrown conditions).",
+    "category": "Goldens",
+    "description": "Update authoritative DS 5.2 fixtures/goldens to validate end-to-end behavior. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelAuthoritativeGoldenTests.cs` switches to set-level `DerivedRelationalModelSetBuilder` for `Fixtures/authoritative/ds-5.2/expected/authoritative-relational-model.manifest.json` so reference binding + key unification + diagnostics execute; `DerivedRelationalModelSetAuthoritativeGoldenTests.cs` includes `Ed-Fi.StudentAssessmentRegistration` and `Ed-Fi.ProgramEvaluationElement` in `resource_details` for key-unification coverage; goldens pass without `UPDATE_GOLDENS`, and no `RelationalMappingVersion` bump is introduced (fixtures may remain on existing version strings such as `1.0.0`).",
     "steps-to-verify": [
-      "Refactor the shared logic into a helper (e.g., near `ReferenceObjectPathScopeResolver`) and update both `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` to use it.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+      "Regenerate goldens once: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Verify clean diff: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": true
-  },
-  {
-    "category": "Constraints",
-    "description": "Add a set-level foreign-key invariant validator that asserts composite FK endpoints are storage-only on both sides under key unification. Validate that every `TableConstraint.ForeignKey.Columns` and `TableConstraint.ForeignKey.TargetColumns` resolves to `DbColumnModel.Storage == Stored` (never `UnifiedAlias`) and never points at synthetic optional-path presence flags. Acceptance: (1) violations fail fast with an exception that includes FK name, referencing table, referenced table, and the offending column(s); (2) both local and target sides are validated (no regression where `TargetColumns` contains aliases); (3) unit test includes a fixture where `foreignKey.TargetColumns` contains a `UnifiedAlias` and asserts the invariant trips; (4) the default derived-model pipeline runs this validator after FK derivation and before index/trigger inventory passes.",
-    "steps-to-verify": [
-      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` (or a new focused test file) that injects a `UnifiedAlias` into `foreignKey.TargetColumns` and asserts the build fails with a useful error message.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Key Unification",
-    "description": "Harden validation of `UnifiedAlias.PresenceColumn` when the presence gate is a scalar (synthetic optional-path `..._Present` flags). Enforce the full synthetic-flag contract: `ColumnKind.Scalar`, boolean scalar type, nullable, `Storage == Stored`, and `SourceJsonPath == null`. Fail fast if a unified alias points at a boolean/stored column that is API-bound (`SourceJsonPath != null`) or otherwise violates the synthetic-flag contract. Acceptance: (1) invalid scalar presence gates throw an invariant error that names the alias column, presence column, and why it is invalid; (2) synthetic-presence detection used by FK validation cannot silently accept non-flag columns; (3) unit test covers the exact `i-and-t-review.md` edge case (boolean/stored presence column with non-null `SourceJsonPath`) and asserts it fails.",
-    "steps-to-verify": [
-      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveIndexInventoryPassTests.cs` (or a key-unification-focused test) with a `UnifiedAlias` that uses a scalar presence column which is boolean/stored but has `SourceJsonPath != null`, and assert the build fails fast.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Refactor",
-    "description": "Consolidate storage-resolution + presence-gate classification for unified aliases into a shared helper used across passes. Extract a helper (e.g., `UnifiedAliasMetadata` / `ColumnStorageResolver`) used by `DeriveIndexInventoryPass`, `DeriveTriggerInventoryPass`, and `ReferenceConstraintPass` to: (a) resolve binding/path columns to canonical storage columns, (b) validate alias → canonical existence, (c) classify presence gates as reference-site (`..._DocumentId`) vs synthetic scalar flags, and (d) produce consistent exception messages. Acceptance: (1) duplicated `ResolveStorageColumn(...)`/`BuildPresence*` implementations in these passes are removed or become thin wrappers; (2) caller intent is explicit via parameters (e.g., whether scalar presence gates are allowed in the context); (3) no behavior changes in derived inventories beyond stricter, clearer validation; (4) all existing unit tests remain green.",
-    "steps-to-verify": [
-      "Refactor `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs`, `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs`, and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` to use the shared helper for storage resolution and presence classification.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Trigger Inventory",
-    "description": "Remove dead/unused data from `DeriveTriggerInventoryPass`: `resourcesByKey` currently stores `ResourceEntry(index, model)` but the `index` is unused. Simplify to store only what is needed. Acceptance: (1) no behavior change in derived trigger inventory; (2) code no longer allocates/threads unused fields; (3) unit tests remain green.",
-    "steps-to-verify": [
-      "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` to remove the unused index from the `resourcesByKey` map and run the trigger-inventory tests.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
-  },
-  {
-    "category": "Trigger Inventory",
-    "description": "Remove cross-pass coupling by validating presence-gate columns in `DeriveTriggerInventoryPass` (or via the shared unified-alias helper). `BuildPresenceGateColumnSet` should verify that any `UnifiedAlias.PresenceColumn` exists on the owning table and is a valid stored presence gate (reference `..._DocumentId` or synthetic scalar `..._Present`). Acceptance: (1) missing/invalid presence gates fail fast during trigger inventory derivation, even when the index inventory pass is not executed; (2) exception text names the owning table + alias column + presence column; (3) unit test runs a partial pass pipeline that invokes `DeriveTriggerInventoryPass` without `DeriveIndexInventoryPass` and asserts the presence-gate invariant still trips.",
-    "steps-to-verify": [
-      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DeriveTriggerInventoryPassTests.cs` that constructs a derived model with an invalid/missing `UnifiedAlias.PresenceColumn` and asserts `DeriveTriggerInventoryPass` throws a clear exception even when run in isolation.",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
-    ],
-    "completed": true
+    "completed": false
   },
   {
     "category": "Docs",
-    "description": "Align non-key-unification design docs to the locked SQL Server cascade/propagation strategy: SQL Server reference composite FKs always use `ON UPDATE NO ACTION`, and eligible identity propagation is represented via `DbTriggerKind.IdentityPropagationFallback` triggers (no “try `CASCADE` then fallback on rejection”). Update: `reference/design/backend-redesign/design-docs/overview.md`, `reference/design/backend-redesign/design-docs/summary.md`, `reference/design/backend-redesign/design-docs/strengths-risks.md`, and `reference/design/backend-redesign/design-docs/data-model.md`. Acceptance: (1) each doc explicitly states MSSQL uses `ON UPDATE NO ACTION` for all reference composite FKs; (2) each doc describes propagation fallback triggers as the required MSSQL propagation mechanism for eligible edges; (3) any remaining discussion of “multiple cascade paths” is framed as the reason cascades are disabled on MSSQL (not as a per-edge “try cascade” strategy); (4) wording is consistent with `ReferenceConstraintPass` and the trigger inventory contract.",
+    "description": "Update mapping-pack/proto surfaces in design docs only (no new in-repo .proto project). Acceptance: `reference/design/backend-redesign/design-docs/mpack-format-v1.md` updates `TableConstraint` to cover `AllOrNoneNullability`, `NullOrTrue`, and FK referential actions (on_delete/on_update) while keeping existing key-unification payload additions (`DbColumnModel.storage`, `DbTableModel.key_unification_classes`, write-plan precomputed + key-unification plans); docs reflect that this repo is not bumping `RelationalMappingVersion` yet.",
     "steps-to-verify": [
-      "Run: `rg -n 'ON UPDATE CASCADE|ON UPDATE NO ACTION|multiple cascade paths|trigger-based propagation|IdentityPropagationFallback' reference/design/backend-redesign/design-docs/overview.md reference/design/backend-redesign/design-docs/summary.md reference/design/backend-redesign/design-docs/strengths-risks.md reference/design/backend-redesign/design-docs/data-model.md`",
-      "Manual review: confirm the four docs no longer imply MSSQL uses `ON UPDATE CASCADE` for any reference composite FK."
+      "Review doc diff: `git diff -- reference/design/backend-redesign/design-docs/mpack-format-v1.md`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": true
-  },
-  {
-    "category": "Docs",
-    "description": "Update `reference/design/backend-redesign/design-docs/compiled-mapping-set.md` to match the implemented trigger inventory contract. Replace the outdated `DbTriggerInfo` snippet (`Table` + `KeyColumns` only) with the current shape: `TriggerTable`, `IdentityProjectionColumns`, `MaintenanceTargetTable`, and `PropagationFallback` payload types. Acceptance: (1) the `DbTriggerInfo` snippet matches `src/dms/backend/EdFi.DataManagementService.Backend.External/DerivedRelationalModelSetContracts.cs`; (2) the snippet includes propagation payload types (`DbIdentityPropagationFallbackInfo` / referrer actions / column pairs); (3) docs state `IdentityProjectionColumns` are null-safe value-diff compare inputs (not `UPDATE(column)` gates); (4) no remaining references to the obsolete `DbTriggerInfo.Table` field in this doc.",
-    "steps-to-verify": [
-      "Run: `rg -n 'DbTriggerInfo\\(|DbTriggerKind\\b|IdentityProjectionColumns|PropagationFallback|TriggerTable\\b' reference/design/backend-redesign/design-docs/compiled-mapping-set.md`",
-      "Manual review: confirm the contract snippet and surrounding notes match the current `DerivedRelationalModelSetContracts.cs` types."
-    ],
-    "completed": true
-  },
-  {
-    "category": "Docs",
-    "description": "Update `reference/design/backend-redesign/epics/01-relational-model/05-relational-model-manifest.md` acceptance criteria to reflect the expanded trigger inventory contract. The manifest story should no longer describe triggers as “names + key columns” only; it must reflect the current trigger fields required for determinism and DDL intent (trigger table, identity projection compare columns, maintenance target where applicable, and propagation fallback payload). Acceptance: (1) acceptance criteria for trigger inventory lists the current required fields; (2) story text does not reference obsolete trigger contract shapes; (3) story remains consistent with `src/dms/backend/EdFi.DataManagementService.Backend.External/DerivedRelationalModelSetContracts.cs`.",
-    "steps-to-verify": [
-      "Run: `rg -n 'trigger|DbTriggerInfo|KeyColumns|IdentityProjectionColumns|PropagationFallback|TriggerTable' reference/design/backend-redesign/epics/01-relational-model/05-relational-model-manifest.md`",
-      "Manual review: confirm the updated acceptance text matches the implemented trigger inventory contract."
-    ],
-    "completed": true
+    "completed": false
   }
 ]
