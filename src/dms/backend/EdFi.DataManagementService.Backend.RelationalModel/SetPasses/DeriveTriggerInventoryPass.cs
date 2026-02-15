@@ -351,16 +351,24 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 referencedTableModel,
                 mapping.TargetResource
             );
-            var referrerColumnsByName = bindingTable.Columns.ToDictionary(
-                column => column.ColumnName,
-                column => column
+            var referrerTableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+                bindingTable,
+                new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                    ThrowIfPresenceColumnMissing: false,
+                    ThrowIfInvalidStrictSyntheticCandidate: false,
+                    UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
+                )
             );
-            var referencedColumnsByName = referencedTableModel.Columns.ToDictionary(
-                column => column.ColumnName,
-                column => column
+            var referencedTableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+                referencedTableModel,
+                new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                    ThrowIfPresenceColumnMissing: false,
+                    ThrowIfInvalidStrictSyntheticCandidate: false,
+                    UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
+                )
             );
-            var referrerPresenceGateColumns = BuildPresenceGateColumnSet(bindingTable);
-            var referencedPresenceGateColumns = BuildPresenceGateColumnSet(referencedTableModel);
+            var referrerMappingContext = BuildReferenceMappingContext(mapping, resource);
+            var referencedMappingContext = BuildReferenceMappingContext(mapping, mapping.TargetResource);
             HashSet<(
                 DbColumnName ReferrerStorageColumn,
                 DbColumnName ReferencedStorageColumn
@@ -397,23 +405,21 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
 
-                var referrerStorageColumn = ResolveStorageColumn(
+                var referrerStorageColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                     referrerIdentityColumn,
-                    referrerColumnsByName,
-                    referrerPresenceGateColumns,
-                    bindingTable.Table,
-                    resource,
-                    mapping,
-                    "referrer identity column"
+                    referrerTableMetadata,
+                    UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectAllPresenceGates,
+                    referrerMappingContext,
+                    "referrer identity column",
+                    "trigger identity propagation"
                 );
-                var referencedStorageColumn = ResolveStorageColumn(
+                var referencedStorageColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                     referencedIdentityColumn,
-                    referencedColumnsByName,
-                    referencedPresenceGateColumns,
-                    referencedTableModel.Table,
-                    mapping.TargetResource,
-                    mapping,
-                    "referenced identity column"
+                    referencedTableMetadata,
+                    UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectAllPresenceGates,
+                    referencedMappingContext,
+                    "referenced identity column",
+                    "trigger identity propagation"
                 );
 
                 AddIdentityColumnPair(
@@ -523,93 +529,14 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves a column to its canonical stored column using storage metadata.
+    /// Builds a consistent reference-mapping context prefix for invariant errors.
     /// </summary>
-    private static DbColumnName ResolveStorageColumn(
-        DbColumnName column,
-        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
-        IReadOnlySet<DbColumnName> presenceGateColumns,
-        DbTableName table,
-        QualifiedResourceName resource,
+    private static string BuildReferenceMappingContext(
         DocumentReferenceMapping mapping,
-        string role
+        QualifiedResourceName resource
     )
     {
-        if (!columnsByName.TryGetValue(column, out var columnModel))
-        {
-            throw new InvalidOperationException(
-                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                    + $"resolved {role} '{column.Value}' that does not exist on table '{table}'."
-            );
-        }
-
-        if (presenceGateColumns.Contains(column))
-        {
-            throw new InvalidOperationException(
-                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                    + $"resolved {role} '{column.Value}' to a presence-gate column on table '{table}'."
-            );
-        }
-
-        switch (columnModel.Storage)
-        {
-            case ColumnStorage.Stored:
-                return column;
-            case ColumnStorage.UnifiedAlias unifiedAlias:
-                if (!columnsByName.TryGetValue(unifiedAlias.CanonicalColumn, out var canonicalColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                            + $"resolved {role} '{column.Value}' to missing canonical storage column "
-                            + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
-                    );
-                }
-
-                if (presenceGateColumns.Contains(unifiedAlias.CanonicalColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                            + $"resolved {role} '{column.Value}' to presence-gate column "
-                            + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
-                    );
-                }
-
-                if (canonicalColumn.Storage is not ColumnStorage.Stored)
-                {
-                    throw new InvalidOperationException(
-                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                            + $"resolved {role} '{column.Value}' to non-stored canonical column "
-                            + $"'{unifiedAlias.CanonicalColumn.Value}' on table '{table}'."
-                    );
-                }
-
-                return unifiedAlias.CanonicalColumn;
-            default:
-                throw new InvalidOperationException(
-                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
-                        + $"resolved {role} '{column.Value}' to unsupported storage metadata "
-                        + $"'{columnModel.Storage.GetType().Name}' on table '{table}'."
-                );
-        }
-    }
-
-    /// <summary>
-    /// Builds the set of presence-gate columns referenced by unified aliases on a table.
-    /// This includes synthetic optional-path flags and reference-site document-id gates.
-    /// </summary>
-    private static IReadOnlySet<DbColumnName> BuildPresenceGateColumnSet(DbTableModel table)
-    {
-        HashSet<DbColumnName> presenceGateColumns = [];
-
-        foreach (var column in table.Columns)
-        {
-            if (column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn })
-            {
-                presenceGateColumns.Add(presenceColumn);
-            }
-        }
-
-        return presenceGateColumns;
+        return $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}'";
     }
 
     /// <summary>

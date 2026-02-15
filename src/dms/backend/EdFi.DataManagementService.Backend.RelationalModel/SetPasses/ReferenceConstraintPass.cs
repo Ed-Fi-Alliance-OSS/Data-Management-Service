@@ -193,34 +193,38 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 context.Mutations
             );
 
-            var localColumnsByName = bindingTable.Columns.ToDictionary(
-                column => column.ColumnName,
-                column => column
+            var localTableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+                bindingTable,
+                new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                    ThrowIfPresenceColumnMissing: false,
+                    ThrowIfInvalidStrictSyntheticCandidate: false,
+                    UnifiedAliasStorageResolver.ScalarPresenceGateClassification.AnyScalarPresenceGate
+                )
             );
-            var localPresenceColumns = BuildPresenceColumnSet(bindingTable);
-            var localReferenceFkColumn = ResolveStorageColumn(
+            var localReferenceFkColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                 binding.FkColumn,
-                localColumnsByName,
-                localPresenceColumns,
-                bindingTable.Table,
-                resource,
-                mapping,
-                "reference fk column"
+                localTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                BuildReferenceMappingContext(mapping, resource),
+                "reference fk column",
+                "foreign keys"
             );
 
-            var targetColumnsByName = targetInfo.TableModel.Columns.ToDictionary(
-                column => column.ColumnName,
-                column => column
+            var targetTableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+                targetInfo.TableModel,
+                new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                    ThrowIfPresenceColumnMissing: false,
+                    ThrowIfInvalidStrictSyntheticCandidate: false,
+                    UnifiedAliasStorageResolver.ScalarPresenceGateClassification.AnyScalarPresenceGate
+                )
             );
-            var targetPresenceColumns = BuildPresenceColumnSet(targetInfo.TableModel);
-            var targetDocumentIdColumn = ResolveStorageColumn(
+            var targetDocumentIdColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                 RelationalNameConventions.DocumentIdColumnName,
-                targetColumnsByName,
-                targetPresenceColumns,
-                targetInfo.Table,
-                targetInfo.Resource,
-                mapping,
-                "target document id column"
+                targetTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                BuildReferenceMappingContext(mapping, targetInfo.Resource),
+                "target document id column",
+                "foreign keys"
             );
 
             var localColumns = new List<DbColumnName>(1 + mappedIdentityColumns.LocalColumns.Count)
@@ -294,16 +298,24 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             );
         }
 
-        var localColumnsByName = localTable.Columns.ToDictionary(
-            column => column.ColumnName,
-            column => column
+        var localTableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+            localTable,
+            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                ThrowIfPresenceColumnMissing: false,
+                ThrowIfInvalidStrictSyntheticCandidate: false,
+                UnifiedAliasStorageResolver.ScalarPresenceGateClassification.AnyScalarPresenceGate
+            )
         );
-        var targetColumnsByName = targetTable.Columns.ToDictionary(
-            column => column.ColumnName,
-            column => column
+        var targetTableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
+            targetTable,
+            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
+                ThrowIfPresenceColumnMissing: false,
+                ThrowIfInvalidStrictSyntheticCandidate: false,
+                UnifiedAliasStorageResolver.ScalarPresenceGateClassification.AnyScalarPresenceGate
+            )
         );
-        var localPresenceColumns = BuildPresenceColumnSet(localTable);
-        var targetPresenceColumns = BuildPresenceColumnSet(targetTable);
+        var localMappingContext = BuildReferenceMappingContext(mapping, resource);
+        var targetMappingContext = BuildReferenceMappingContext(mapping, mapping.TargetResource);
         Dictionary<DbColumnName, DbColumnName> targetByLocalStorageColumn = new();
         HashSet<(DbColumnName LocalStorageColumn, DbColumnName TargetStorageColumn)> seenPairs = [];
         List<DbColumnName> localStorageColumns = [];
@@ -311,23 +323,21 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
 
         for (var index = 0; index < identityColumns.LocalColumns.Count; index++)
         {
-            var localStorageColumn = ResolveStorageColumn(
+            var localStorageColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                 identityColumns.LocalColumns[index],
-                localColumnsByName,
-                localPresenceColumns,
-                localTable.Table,
-                resource,
-                mapping,
-                "local identity column"
+                localTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                localMappingContext,
+                "local identity column",
+                "foreign keys"
             );
-            var targetStorageColumn = ResolveStorageColumn(
+            var targetStorageColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                 identityColumns.TargetColumns[index],
-                targetColumnsByName,
-                targetPresenceColumns,
-                targetTable.Table,
-                mapping.TargetResource,
-                mapping,
-                "target identity column"
+                targetTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                targetMappingContext,
+                "target identity column",
+                "foreign keys"
             );
 
             if (
@@ -648,100 +658,14 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves a derived column to its canonical storage column and validates that synthetic presence columns
-    /// are never used for FK derivation.
+    /// Builds a consistent reference-mapping context prefix for invariant errors.
     /// </summary>
-    private static DbColumnName ResolveStorageColumn(
-        DbColumnName column,
-        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
-        IReadOnlySet<DbColumnName> presenceColumns,
-        DbTableName table,
-        QualifiedResourceName tableResource,
+    private static string BuildReferenceMappingContext(
         DocumentReferenceMapping mapping,
-        string columnRole
+        QualifiedResourceName resource
     )
     {
-        if (!columnsByName.TryGetValue(column, out var columnModel))
-        {
-            throw new InvalidOperationException(
-                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
-                    + $"could not resolve {columnRole} '{column.Value}' on table '{table}'."
-            );
-        }
-
-        if (presenceColumns.Contains(columnModel.ColumnName))
-        {
-            throw new InvalidOperationException(
-                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
-                    + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' to a "
-                    + "synthetic presence column, which is not valid for foreign keys."
-            );
-        }
-
-        switch (columnModel.Storage)
-        {
-            case ColumnStorage.Stored:
-                return columnModel.ColumnName;
-            case ColumnStorage.UnifiedAlias unifiedAlias:
-                if (!columnsByName.TryGetValue(unifiedAlias.CanonicalColumn, out var canonicalColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
-                            + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
-                            + $"to missing canonical storage column '{unifiedAlias.CanonicalColumn.Value}'."
-                    );
-                }
-
-                if (presenceColumns.Contains(unifiedAlias.CanonicalColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
-                            + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
-                            + $"to synthetic presence column '{unifiedAlias.CanonicalColumn.Value}', which "
-                            + "is not valid for foreign keys."
-                    );
-                }
-
-                if (canonicalColumn.Storage is not ColumnStorage.Stored)
-                {
-                    throw new InvalidOperationException(
-                        $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
-                            + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
-                            + $"to canonical column '{unifiedAlias.CanonicalColumn.Value}' that is not stored."
-                    );
-                }
-
-                return canonicalColumn.ColumnName;
-            default:
-                throw new InvalidOperationException(
-                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(tableResource)}' "
-                        + $"resolved {columnRole} '{columnModel.ColumnName.Value}' on table '{table}' "
-                        + $"to unsupported storage metadata '{columnModel.Storage.GetType().Name}'."
-                );
-        }
-    }
-
-    /// <summary>
-    /// Builds the set of synthetic presence columns referenced by unified aliases on a table.
-    /// </summary>
-    private static IReadOnlySet<DbColumnName> BuildPresenceColumnSet(DbTableModel table)
-    {
-        var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
-        HashSet<DbColumnName> presenceColumns = [];
-
-        foreach (var column in table.Columns)
-        {
-            if (
-                column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: { } presenceColumn }
-                && columnsByName.TryGetValue(presenceColumn, out var presenceColumnModel)
-                && presenceColumnModel.Kind == ColumnKind.Scalar
-            )
-            {
-                presenceColumns.Add(presenceColumn);
-            }
-        }
-
-        return presenceColumns;
+        return $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}'";
     }
 
     /// <summary>
