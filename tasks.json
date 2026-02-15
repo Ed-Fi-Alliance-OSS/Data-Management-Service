@@ -288,6 +288,6 @@
       "Run: `rg -n 'trigger|DbTriggerInfo|KeyColumns|IdentityProjectionColumns|PropagationFallback|TriggerTable' reference/design/backend-redesign/epics/01-relational-model/05-relational-model-manifest.md`",
       "Manual review: confirm the updated acceptance text matches the implemented trigger inventory contract."
     ],
-    "completed": false
+    "completed": true
   }
 ]
