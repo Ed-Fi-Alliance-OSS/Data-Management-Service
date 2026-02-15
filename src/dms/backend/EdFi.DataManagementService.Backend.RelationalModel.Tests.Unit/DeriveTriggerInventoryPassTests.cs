@@ -824,6 +824,49 @@ public class Given_IdentityPropagationFallback_With_Unmapped_Reference_Mapping
 }
 
 /// <summary>
+/// Test fixture for presence-gate validation in trigger derivation without index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Trigger_Derivation_With_Invalid_Presence_Gate_Without_Index_Derivation
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivationWithKeyUnificationAndInvalidPresenceGateWithoutIndexDerivation()
+        );
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast on an invalid unified-alias presence gate without relying on index derivation.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_on_invalid_presence_gate_without_index_derivation()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Unified alias column");
+        exception.Message.Should().Contain("table");
+        exception.Message.Should().Contain("MissingPresenceGate");
+        exception.Message.Should().Contain("presence-gate column");
+    }
+}
+
+/// <summary>
 /// Test fixture for three-level nested collection trigger derivation.
 /// </summary>
 [TestFixture]
@@ -1088,6 +1131,88 @@ file sealed class UnmappedReferenceMappingFixturePass : IRelationalModelSetPass
 }
 
 /// <summary>
+/// Test pass that rewrites one unified-alias presence gate to a missing column.
+/// </summary>
+file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelSetPass
+{
+    private static readonly DbColumnName InvalidPresenceGateColumn = new("MissingPresenceGate");
+
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        for (
+            var resourceIndex = 0;
+            resourceIndex < context.ConcreteResourcesInNameOrder.Count;
+            resourceIndex++
+        )
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[resourceIndex];
+
+            if (concreteResource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
+                continue;
+            }
+
+            var relationalModel = concreteResource.RelationalModel;
+
+            foreach (var table in relationalModel.TablesInDependencyOrder)
+            {
+                var aliasColumn = table.Columns.FirstOrDefault(column =>
+                    column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: not null }
+                );
+
+                if (aliasColumn is null || aliasColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias)
+                {
+                    continue;
+                }
+
+                var rewrittenAliasColumn = aliasColumn with
+                {
+                    Storage = new ColumnStorage.UnifiedAlias(
+                        unifiedAlias.CanonicalColumn,
+                        InvalidPresenceGateColumn
+                    ),
+                };
+                var rewrittenColumns = table
+                    .Columns.Select(column =>
+                        column.ColumnName.Equals(aliasColumn.ColumnName) ? rewrittenAliasColumn : column
+                    )
+                    .ToArray();
+                var rewrittenTable = table with { Columns = rewrittenColumns };
+                var rewrittenTables = relationalModel
+                    .TablesInDependencyOrder.Select(existingTable =>
+                        existingTable.Table.Equals(table.Table) ? rewrittenTable : existingTable
+                    )
+                    .ToArray();
+                var rewrittenRoot = relationalModel.Root.Table.Equals(table.Table)
+                    ? rewrittenTable
+                    : relationalModel.Root;
+                var rewrittenModel = relationalModel with
+                {
+                    Root = rewrittenRoot,
+                    TablesInDependencyOrder = rewrittenTables,
+                };
+
+                context.ConcreteResourcesInNameOrder[resourceIndex] = concreteResource with
+                {
+                    RelationalModel = rewrittenModel,
+                };
+
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Test fixture requires at least one unified alias with a presence gate."
+        );
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
@@ -1153,6 +1278,29 @@ internal static class TriggerInventoryTestSchemaBuilder
             new ArrayUniquenessConstraintPass(),
             new ApplyConstraintDialectHashingPass(),
             new DeriveIndexInventoryPass(),
+            new DeriveTriggerInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build pass list through trigger derivation with key unification and invalid presence-gate fixture,
+    /// without index derivation.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughTriggerDerivationWithKeyUnificationAndInvalidPresenceGateWithoutIndexDerivation()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new InvalidUnifiedAliasPresenceGateFixturePass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
             new DeriveTriggerInventoryPass(),
         ];
     }
