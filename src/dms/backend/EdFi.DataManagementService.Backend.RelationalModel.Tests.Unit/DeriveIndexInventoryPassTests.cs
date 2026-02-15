@@ -664,7 +664,52 @@ public class Given_Key_Unification_Invalid_Synthetic_Presence_Columns
     {
         _exception.Should().BeOfType<InvalidOperationException>();
         _exception!.Message.Should().Contain("invalid synthetic presence column");
+        _exception.Message.Should().Contain("School_SchoolId");
         _exception.Message.Should().Contain("SchoolPathGate");
+    }
+}
+
+/// <summary>
+/// Test fixture for API-bound synthetic presence-column metadata.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_API_Bound_Synthetic_Presence_Columns
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationApiBoundSyntheticPresenceForeignKeyFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a unified alias points to a synthetic presence candidate with a source path.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_synthetic_presence_column_has_non_null_source_path()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("invalid synthetic presence column");
+        _exception.Message.Should().Contain("School_SchoolId");
+        _exception.Message.Should().Contain("SchoolPathGate");
+        _exception.Message.Should().Contain("$.schoolReference.schoolPathGate");
     }
 }
 
@@ -821,6 +866,31 @@ file sealed class KeyUnificationInvalidSyntheticPresenceForeignKeyFixturePass : 
 }
 
 /// <summary>
+/// Test pass that injects a key-unification-like resource model with an API-bound synthetic presence candidate.
+/// </summary>
+file sealed class KeyUnificationApiBoundSyntheticPresenceForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: false,
+            localCanonicalStorageColumnName: "SchoolStorageCanonical",
+            targetCanonicalStorageColumnName: "SchoolStorageCanonical",
+            aliasPresenceColumnName: "SchoolPathGate",
+            usePresenceColumnInForeignKey: true,
+            aliasPresenceSourceJsonPath: "$.schoolReference.schoolPathGate"
+        );
+    }
+}
+
+/// <summary>
 /// Test pass that injects a key-unification-like resource model using stored suffix-named FK columns.
 /// </summary>
 file sealed class KeyUnificationStoredSuffixForeignKeyFixturePass : IRelationalModelSetPass
@@ -858,7 +928,8 @@ file static class KeyUnificationIndexInventoryFixtureBuilder
         string targetCanonicalStorageColumnName = "SchoolId_Unified",
         string? aliasPresenceColumnName = null,
         bool usePresenceColumnInForeignKey = false,
-        ScalarKind aliasPresenceScalarKind = ScalarKind.Boolean
+        ScalarKind aliasPresenceScalarKind = ScalarKind.Boolean,
+        string? aliasPresenceSourceJsonPath = null
     )
     {
         var resourceKey = context.EffectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder[0];
@@ -978,7 +1049,9 @@ file static class KeyUnificationIndexInventoryFixtureBuilder
                     ColumnKind.Scalar,
                     new RelationalScalarType(aliasPresenceScalarKind),
                     IsNullable: true,
-                    SourceJsonPath: null,
+                    SourceJsonPath: aliasPresenceSourceJsonPath is null
+                        ? null
+                        : JsonPathExpressionCompiler.Compile(aliasPresenceSourceJsonPath),
                     TargetResource: null
                 )
             );

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
@@ -96,13 +97,13 @@ internal static class UnifiedAliasStorageResolver
 
             if (
                 options.ThrowIfInvalidStrictSyntheticCandidate
-                && IsInvalidStrictSyntheticPresenceCandidate(presenceColumnModel)
+                && TryGetStrictSyntheticPresenceViolation(presenceColumnModel, out var strictViolationReason)
             )
             {
                 throw new InvalidOperationException(
                     $"Unified alias column '{column.ColumnName.Value}' on table '{table.Table}' references "
                         + $"invalid synthetic presence column '{presenceColumn.Value}'. Synthetic presence flags "
-                        + "must be nullable stored scalar booleans with null source path."
+                        + $"must be nullable stored scalar booleans with null source path ({strictViolationReason})."
                 );
             }
         }
@@ -212,20 +213,46 @@ internal static class UnifiedAliasStorageResolver
 
     private static bool IsStrictSyntheticPresenceFlag(DbColumnModel column)
     {
-        return column
-            is {
-                Kind: ColumnKind.Scalar,
-                ScalarType: { Kind: ScalarKind.Boolean },
-                IsNullable: true,
-                SourceJsonPath: null,
-                Storage: ColumnStorage.Stored,
-            };
+        return !TryGetStrictSyntheticPresenceViolation(column, out _);
     }
 
-    private static bool IsInvalidStrictSyntheticPresenceCandidate(DbColumnModel column)
+    private static bool TryGetStrictSyntheticPresenceViolation(
+        DbColumnModel column,
+        [NotNullWhen(true)] out string? reason
+    )
     {
-        return column is { Kind: ColumnKind.Scalar, IsNullable: true, SourceJsonPath: null }
-            && column is not { ScalarType: { Kind: ScalarKind.Boolean }, Storage: ColumnStorage.Stored };
+        if (column.Kind != ColumnKind.Scalar)
+        {
+            reason = $"kind '{column.Kind}' is not scalar";
+            return true;
+        }
+
+        if (column.ScalarType?.Kind != ScalarKind.Boolean)
+        {
+            reason = $"scalar type '{column.ScalarType?.Kind}' is not boolean";
+            return true;
+        }
+
+        if (!column.IsNullable)
+        {
+            reason = "column is not nullable";
+            return true;
+        }
+
+        if (column.Storage is not ColumnStorage.Stored)
+        {
+            reason = $"storage '{column.Storage.GetType().Name}' is not stored";
+            return true;
+        }
+
+        if (column.SourceJsonPath is not null)
+        {
+            reason = $"source path '{column.SourceJsonPath.Value.Canonical}' is not null";
+            return true;
+        }
+
+        reason = null;
+        return false;
     }
 
     private static bool IsRejectedPresenceGate(
