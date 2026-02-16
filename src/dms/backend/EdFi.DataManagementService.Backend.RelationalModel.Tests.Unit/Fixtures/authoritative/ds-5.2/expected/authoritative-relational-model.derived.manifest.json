@@ -2319,36 +2319,6 @@
                 }
               },
               {
-                "name": "Assessment_AssessmentIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": "$.assessmentReference.assessmentIdentifier",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "AssessmentIdentifier_Unified",
-                  "presence_column": "Assessment_DocumentId"
-                }
-              },
-              {
-                "name": "Assessment_Namespace",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": false,
-                "source_path": "$.assessmentReference.namespace",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "Namespace_Unified",
-                  "presence_column": "Assessment_DocumentId"
-                }
-              },
-              {
                 "name": "MaximumScore",
                 "kind": "Scalar",
                 "type": {
@@ -2388,21 +2358,6 @@
                 }
               },
               {
-                "name": "ObjectiveAssessment_AssessmentIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": true,
-                "source_path": "$.objectiveAssessmentReference.assessmentIdentifier",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "AssessmentIdentifier_Unified",
-                  "presence_column": "ObjectiveAssessment_DocumentId"
-                }
-              },
-              {
                 "name": "ObjectiveAssessment_IdentificationCode",
                 "kind": "Scalar",
                 "type": {
@@ -2413,21 +2368,6 @@
                 "source_path": "$.objectiveAssessmentReference.identificationCode",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "ObjectiveAssessment_Namespace",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": true,
-                "source_path": "$.objectiveAssessmentReference.namespace",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "Namespace_Unified",
-                  "presence_column": "ObjectiveAssessment_DocumentId"
                 }
               },
               {
@@ -2456,6 +2396,36 @@
                 }
               },
               {
+                "name": "Assessment_AssessmentIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.assessmentReference.assessmentIdentifier",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "AssessmentIdentifier_Unified",
+                  "presence_column": "Assessment_DocumentId"
+                }
+              },
+              {
+                "name": "Assessment_Namespace",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": "$.assessmentReference.namespace",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "Assessment_DocumentId"
+                }
+              },
+              {
                 "name": "ObjectiveAssessment_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -2465,6 +2435,36 @@
                 "source_path": "$.objectiveAssessmentReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "ObjectiveAssessment_AssessmentIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": true,
+                "source_path": "$.objectiveAssessmentReference.assessmentIdentifier",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "AssessmentIdentifier_Unified",
+                  "presence_column": "ObjectiveAssessment_DocumentId"
+                }
+              },
+              {
+                "name": "ObjectiveAssessment_Namespace",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": true,
+                "source_path": "$.objectiveAssessmentReference.namespace",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "ObjectiveAssessment_DocumentId"
                 }
               }
             ],
@@ -6280,20 +6280,6 @@
                 }
               },
               {
-                "name": "BalanceSheetBalanceSheetDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.balanceSheetDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "BalanceSheetBalanceSheetDimension_DocumentId"
-                }
-              },
-              {
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -6301,6 +6287,18 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "FiscalYear_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": null,
                 "storage": {
                   "kind": "Stored"
                 }
@@ -6320,18 +6318,6 @@
                 }
               },
               {
-                "name": "FiscalYear_Unified",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": null,
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
                 "name": "FunctionFunctionDimension_Code",
                 "kind": "Scalar",
                 "type": {
@@ -6342,20 +6328,6 @@
                 "source_path": "$.functionDimensionReference.code",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "FunctionFunctionDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.functionDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "FunctionFunctionDimension_DocumentId"
                 }
               },
               {
@@ -6372,20 +6344,6 @@
                 }
               },
               {
-                "name": "FundFundDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.fundDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "FundFundDimension_DocumentId"
-                }
-              },
-              {
                 "name": "ObjectObjectDimension_Code",
                 "kind": "Scalar",
                 "type": {
@@ -6396,20 +6354,6 @@
                 "source_path": "$.objectDimensionReference.code",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "ObjectObjectDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.objectDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "ObjectObjectDimension_DocumentId"
                 }
               },
               {
@@ -6426,20 +6370,6 @@
                 }
               },
               {
-                "name": "OperationalUnitOperationalUnitDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.operationalUnitDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "OperationalUnitOperationalUnitDimension_DocumentId"
-                }
-              },
-              {
                 "name": "ProgramProgramDimension_Code",
                 "kind": "Scalar",
                 "type": {
@@ -6450,20 +6380,6 @@
                 "source_path": "$.programDimensionReference.code",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "ProgramProgramDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.programDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "ProgramProgramDimension_DocumentId"
                 }
               },
               {
@@ -6480,20 +6396,6 @@
                 }
               },
               {
-                "name": "ProjectProjectDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.projectDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "ProjectProjectDimension_DocumentId"
-                }
-              },
-              {
                 "name": "SourceSourceDimension_Code",
                 "kind": "Scalar",
                 "type": {
@@ -6507,20 +6409,6 @@
                 }
               },
               {
-                "name": "SourceSourceDimension_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.sourceDimensionReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "SourceSourceDimension_DocumentId"
-                }
-              },
-              {
                 "name": "BalanceSheetBalanceSheetDimension_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -6530,6 +6418,20 @@
                 "source_path": "$.balanceSheetDimensionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "BalanceSheetBalanceSheetDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.balanceSheetDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "BalanceSheetBalanceSheetDimension_DocumentId"
                 }
               },
               {
@@ -6557,6 +6459,20 @@
                 }
               },
               {
+                "name": "FunctionFunctionDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.functionDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "FunctionFunctionDimension_DocumentId"
+                }
+              },
+              {
                 "name": "FundFundDimension_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -6566,6 +6482,20 @@
                 "source_path": "$.fundDimensionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "FundFundDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.fundDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "FundFundDimension_DocumentId"
                 }
               },
               {
@@ -6581,6 +6511,20 @@
                 }
               },
               {
+                "name": "ObjectObjectDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.objectDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "ObjectObjectDimension_DocumentId"
+                }
+              },
+              {
                 "name": "OperationalUnitOperationalUnitDimension_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -6590,6 +6534,20 @@
                 "source_path": "$.operationalUnitDimensionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "OperationalUnitOperationalUnitDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.operationalUnitDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "OperationalUnitOperationalUnitDimension_DocumentId"
                 }
               },
               {
@@ -6605,6 +6563,20 @@
                 }
               },
               {
+                "name": "ProgramProgramDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.programDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "ProgramProgramDimension_DocumentId"
+                }
+              },
+              {
                 "name": "ProjectProjectDimension_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -6617,6 +6589,20 @@
                 }
               },
               {
+                "name": "ProjectProjectDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.projectDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "ProjectProjectDimension_DocumentId"
+                }
+              },
+              {
                 "name": "SourceSourceDimension_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -6626,6 +6612,20 @@
                 "source_path": "$.sourceDimensionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "SourceSourceDimension_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.sourceDimensionReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "SourceSourceDimension_DocumentId"
                 }
               }
             ],
@@ -14018,34 +14018,6 @@
                 }
               },
               {
-                "name": "School_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.schoolReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "School_DocumentId"
-                }
-              },
-              {
-                "name": "Session_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.sessionReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "Session_DocumentId"
-                }
-              },
-              {
                 "name": "Session_SchoolYear",
                 "kind": "Scalar",
                 "type": {
@@ -14095,6 +14067,20 @@
                 }
               },
               {
+                "name": "School_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.schoolReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "School_DocumentId"
+                }
+              },
+              {
                 "name": "Session_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -14104,6 +14090,20 @@
                 "source_path": "$.sessionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Session_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.sessionReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Session_DocumentId"
                 }
               }
             ],
@@ -26540,34 +26540,6 @@
                 }
               },
               {
-                "name": "GradingPeriod_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.gradingPeriodReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "GradingPeriod_DocumentId"
-                }
-              },
-              {
-                "name": "GradingPeriod_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.gradingPeriodReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "GradingPeriod_DocumentId"
-                }
-              },
-              {
                 "name": "MaxPoints",
                 "kind": "Scalar",
                 "type": {
@@ -26629,34 +26601,6 @@
                 "source_path": "$.sectionReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "Section_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.sectionReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "Section_DocumentId"
-                }
-              },
-              {
-                "name": "Section_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.sectionReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "Section_DocumentId"
                 }
               },
               {
@@ -26724,6 +26668,34 @@
                 }
               },
               {
+                "name": "GradingPeriod_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.gradingPeriodReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "GradingPeriod_DocumentId"
+                }
+              },
+              {
+                "name": "GradingPeriod_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.gradingPeriodReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "GradingPeriod_DocumentId"
+                }
+              },
+              {
                 "name": "Section_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -26733,6 +26705,34 @@
                 "source_path": "$.sectionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Section_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.sectionReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Section_DocumentId"
+                }
+              },
+              {
+                "name": "Section_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.sectionReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "Section_DocumentId"
                 }
               }
             ],
@@ -27183,34 +27183,6 @@
                 }
               },
               {
-                "name": "GradingPeriodGradingPeriod_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.gradingPeriodReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "GradingPeriodGradingPeriod_DocumentId"
-                }
-              },
-              {
-                "name": "GradingPeriodGradingPeriod_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.gradingPeriodReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "GradingPeriodGradingPeriod_DocumentId"
-                }
-              },
-              {
                 "name": "LetterGradeEarned",
                 "kind": "Scalar",
                 "type": {
@@ -27287,34 +27259,6 @@
                 }
               },
               {
-                "name": "StudentSectionAssociation_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentSectionAssociationReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "StudentSectionAssociation_DocumentId"
-                }
-              },
-              {
-                "name": "StudentSectionAssociation_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.studentSectionAssociationReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "StudentSectionAssociation_DocumentId"
-                }
-              },
-              {
                 "name": "StudentSectionAssociation_SectionIdentifier",
                 "kind": "Scalar",
                 "type": {
@@ -27366,6 +27310,34 @@
                 }
               },
               {
+                "name": "GradingPeriodGradingPeriod_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.gradingPeriodReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "GradingPeriodGradingPeriod_DocumentId"
+                }
+              },
+              {
+                "name": "GradingPeriodGradingPeriod_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.gradingPeriodReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "GradingPeriodGradingPeriod_DocumentId"
+                }
+              },
+              {
                 "name": "StudentSectionAssociation_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -27375,6 +27347,34 @@
                 "source_path": "$.studentSectionAssociationReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "StudentSectionAssociation_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentSectionAssociationReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "StudentSectionAssociation_DocumentId"
+                }
+              },
+              {
+                "name": "StudentSectionAssociation_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.studentSectionAssociationReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "StudentSectionAssociation_DocumentId"
                 }
               }
             ],
@@ -34728,20 +34728,6 @@
                 }
               },
               {
-                "name": "ChartOfAccountChartOfAccount_FiscalYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.chartOfAccountReference.fiscalYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "FiscalYear_Unified",
-                  "presence_column": "ChartOfAccountChartOfAccount_DocumentId"
-                }
-              },
-              {
                 "name": "EducationOrganization_EducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -34749,6 +34735,18 @@
                 },
                 "is_nullable": false,
                 "source_path": "$.educationOrganizationReference.educationOrganizationId",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "FiscalYear_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": null,
                 "storage": {
                   "kind": "Stored"
                 }
@@ -34768,18 +34766,6 @@
                 }
               },
               {
-                "name": "FiscalYear_Unified",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": null,
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
                 "name": "ChartOfAccountChartOfAccount_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -34789,6 +34775,20 @@
                 "source_path": "$.chartOfAccountReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "ChartOfAccountChartOfAccount_FiscalYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.chartOfAccountReference.fiscalYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "FiscalYear_Unified",
+                  "presence_column": "ChartOfAccountChartOfAccount_DocumentId"
                 }
               },
               {
@@ -39007,36 +39007,6 @@
                 }
               },
               {
-                "name": "Assessment_AssessmentIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": "$.assessmentReference.assessmentIdentifier",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "AssessmentIdentifier_Unified",
-                  "presence_column": "Assessment_DocumentId"
-                }
-              },
-              {
-                "name": "Assessment_Namespace",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": false,
-                "source_path": "$.assessmentReference.namespace",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "Namespace_Unified",
-                  "presence_column": "Assessment_DocumentId"
-                }
-              },
-              {
                 "name": "Description",
                 "kind": "Scalar",
                 "type": {
@@ -39103,21 +39073,6 @@
                 }
               },
               {
-                "name": "ParentObjectiveAssessment_AssessmentIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": true,
-                "source_path": "$.parentObjectiveAssessmentReference.assessmentIdentifier",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "AssessmentIdentifier_Unified",
-                  "presence_column": "ParentObjectiveAssessment_DocumentId"
-                }
-              },
-              {
                 "name": "ParentObjectiveAssessment_IdentificationCode",
                 "kind": "Scalar",
                 "type": {
@@ -39128,21 +39083,6 @@
                 "source_path": "$.parentObjectiveAssessmentReference.identificationCode",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "ParentObjectiveAssessment_Namespace",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": true,
-                "source_path": "$.parentObjectiveAssessmentReference.namespace",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "Namespace_Unified",
-                  "presence_column": "ParentObjectiveAssessment_DocumentId"
                 }
               },
               {
@@ -39172,6 +39112,36 @@
                 }
               },
               {
+                "name": "Assessment_AssessmentIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.assessmentReference.assessmentIdentifier",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "AssessmentIdentifier_Unified",
+                  "presence_column": "Assessment_DocumentId"
+                }
+              },
+              {
+                "name": "Assessment_Namespace",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": "$.assessmentReference.namespace",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "Assessment_DocumentId"
+                }
+              },
+              {
                 "name": "ParentObjectiveAssessment_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -39181,6 +39151,36 @@
                 "source_path": "$.parentObjectiveAssessmentReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "ParentObjectiveAssessment_AssessmentIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": true,
+                "source_path": "$.parentObjectiveAssessmentReference.assessmentIdentifier",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "AssessmentIdentifier_Unified",
+                  "presence_column": "ParentObjectiveAssessment_DocumentId"
+                }
+              },
+              {
+                "name": "ParentObjectiveAssessment_Namespace",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": true,
+                "source_path": "$.parentObjectiveAssessmentReference.namespace",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "ParentObjectiveAssessment_DocumentId"
                 }
               }
             ],
@@ -45002,48 +45002,6 @@
                 }
               },
               {
-                "name": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
-                "kind": "DescriptorFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
-                  "presence_column": "ProgramEvaluationObjective_DocumentId"
-                }
-              },
-              {
-                "name": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
-                "kind": "DescriptorFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
-                  "presence_column": "ProgramEvaluationObjective_DocumentId"
-                }
-              },
-              {
-                "name": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
-                "kind": "DescriptorFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
-                  "presence_column": "ProgramEvaluationObjective_DocumentId"
-                }
-              },
-              {
                 "name": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
                 "kind": "DescriptorFk",
                 "type": {
@@ -45065,48 +45023,6 @@
                 "source_path": null,
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-                "kind": "DescriptorFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
-                  "presence_column": "ProgramEvaluation_DocumentId"
-                }
-              },
-              {
-                "name": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-                "kind": "DescriptorFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
-                  "presence_column": "ProgramEvaluation_DocumentId"
-                }
-              },
-              {
-                "name": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
-                "kind": "DescriptorFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference.programTypeDescriptor",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
-                  "presence_column": "ProgramEvaluation_DocumentId"
                 }
               },
               {
@@ -45200,6 +45116,99 @@
                 }
               },
               {
+                "name": "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 50
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ProgramEvaluationTitle_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 50
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ProgramName_Unified",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": null,
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ProgramEvaluationObjective_DocumentId",
+                "kind": "DocumentFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                  "presence_column": "ProgramEvaluationObjective_DocumentId"
+                }
+              },
+              {
+                "name": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                  "presence_column": "ProgramEvaluationObjective_DocumentId"
+                }
+              },
+              {
+                "name": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
+                  "presence_column": "ProgramEvaluationObjective_DocumentId"
+                }
+              },
+              {
                 "name": "ProgramEvaluationObjective_ProgramEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -45211,19 +45220,6 @@
                   "kind": "UnifiedAlias",
                   "canonical_column": "ProgramEducationOrganizationId_Unified",
                   "presence_column": "ProgramEvaluationObjective_DocumentId"
-                }
-              },
-              {
-                "name": "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 50
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle",
-                "storage": {
-                  "kind": "Stored"
                 }
               },
               {
@@ -45257,16 +45253,57 @@
                 }
               },
               {
-                "name": "ProgramEvaluationTitle_Unified",
-                "kind": "Scalar",
+                "name": "ProgramEvaluation_DocumentId",
+                "kind": "DocumentFk",
                 "type": {
-                  "kind": "String",
-                  "max_length": 50
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
-                "source_path": null,
+                "source_path": "$.programEvaluationReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                  "presence_column": "ProgramEvaluation_DocumentId"
+                }
+              },
+              {
+                "name": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                  "presence_column": "ProgramEvaluation_DocumentId"
+                }
+              },
+              {
+                "name": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+                "kind": "DescriptorFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.programEvaluationReference.programTypeDescriptor",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
+                  "presence_column": "ProgramEvaluation_DocumentId"
                 }
               },
               {
@@ -45311,43 +45348,6 @@
                   "kind": "UnifiedAlias",
                   "canonical_column": "ProgramName_Unified",
                   "presence_column": "ProgramEvaluation_DocumentId"
-                }
-              },
-              {
-                "name": "ProgramName_Unified",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": null,
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "ProgramEvaluationObjective_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": true,
-                "source_path": "$.programEvaluationObjectiveReference",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "ProgramEvaluation_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.programEvaluationReference",
-                "storage": {
-                  "kind": "Stored"
                 }
               }
             ],
@@ -49010,20 +49010,6 @@
                 }
               },
               {
-                "name": "DisciplineIncident_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.disciplineIncidentReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "DisciplineIncident_DocumentId"
-                }
-              },
-              {
                 "name": "EventDate",
                 "kind": "Scalar",
                 "type": {
@@ -49061,20 +49047,6 @@
                 }
               },
               {
-                "name": "School_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.schoolReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "School_DocumentId"
-                }
-              },
-              {
                 "name": "Student_StudentUniqueId",
                 "kind": "Scalar",
                 "type": {
@@ -49100,6 +49072,20 @@
                 }
               },
               {
+                "name": "DisciplineIncident_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.disciplineIncidentReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "DisciplineIncident_DocumentId"
+                }
+              },
+              {
                 "name": "School_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -49109,6 +49095,20 @@
                 "source_path": "$.schoolReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "School_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.schoolReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "School_DocumentId"
                 }
               },
               {
@@ -51991,34 +51991,6 @@
                 }
               },
               {
-                "name": "CalendarDate_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.calendarDateReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "CalendarDate_DocumentId"
-                }
-              },
-              {
-                "name": "CalendarDate_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.calendarDateReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "CalendarDate_DocumentId"
-                }
-              },
-              {
                 "name": "EventDate",
                 "kind": "Scalar",
                 "type": {
@@ -52065,34 +52037,6 @@
                 "source_path": "$.sectionReference.localCourseCode",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "Section_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.sectionReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "Section_DocumentId"
-                }
-              },
-              {
-                "name": "Section_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.sectionReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "Section_DocumentId"
                 }
               },
               {
@@ -52147,6 +52091,34 @@
                 }
               },
               {
+                "name": "CalendarDate_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.calendarDateReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "CalendarDate_DocumentId"
+                }
+              },
+              {
+                "name": "CalendarDate_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.calendarDateReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "CalendarDate_DocumentId"
+                }
+              },
+              {
                 "name": "Section_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -52156,6 +52128,34 @@
                 "source_path": "$.sectionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Section_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.sectionReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Section_DocumentId"
+                }
+              },
+              {
+                "name": "Section_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.sectionReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "Section_DocumentId"
                 }
               },
               {
@@ -52555,34 +52555,6 @@
                 }
               },
               {
-                "name": "LocationLocation_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.locationReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "LocationLocation_DocumentId"
-                }
-              },
-              {
-                "name": "LocationSchool_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.locationSchoolReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "LocationSchool_DocumentId"
-                }
-              },
-              {
                 "name": "OfficialAttendancePeriod",
                 "kind": "Scalar",
                 "type": {
@@ -52669,6 +52641,20 @@
                 }
               },
               {
+                "name": "LocationLocation_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.locationReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "LocationLocation_DocumentId"
+                }
+              },
+              {
                 "name": "LocationSchool_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -52678,6 +52664,20 @@
                 "source_path": "$.locationSchoolReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "LocationSchool_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.locationSchoolReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "LocationSchool_DocumentId"
                 }
               }
             ],
@@ -55389,21 +55389,6 @@
                 }
               },
               {
-                "name": "EmploymentStaffEducationOrganizationEmploymentAssoci_3d5ca61d33",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 32
-                },
-                "is_nullable": true,
-                "source_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.staffUniqueId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "StaffUniqueId_Unified",
-                  "presence_column": "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b"
-                }
-              },
-              {
                 "name": "EmploymentStaffEducationOrganizationEmploymentAssoci_af1202f2de",
                 "kind": "Scalar",
                 "type": {
@@ -55480,21 +55465,6 @@
                 }
               },
               {
-                "name": "Staff_StaffUniqueId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 32
-                },
-                "is_nullable": false,
-                "source_path": "$.staffReference.staffUniqueId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "StaffUniqueId_Unified",
-                  "presence_column": "Staff_DocumentId"
-                }
-              },
-              {
                 "name": "Credential_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -55531,6 +55501,21 @@
                 }
               },
               {
+                "name": "EmploymentStaffEducationOrganizationEmploymentAssoci_3d5ca61d33",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 32
+                },
+                "is_nullable": true,
+                "source_path": "$.employmentStaffEducationOrganizationEmploymentAssociationReference.staffUniqueId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "StaffUniqueId_Unified",
+                  "presence_column": "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b"
+                }
+              },
+              {
                 "name": "Staff_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -55540,6 +55525,21 @@
                 "source_path": "$.staffReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Staff_StaffUniqueId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 32
+                },
+                "is_nullable": false,
+                "source_path": "$.staffReference.staffUniqueId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "StaffUniqueId_Unified",
+                  "presence_column": "Staff_DocumentId"
                 }
               }
             ],
@@ -57597,34 +57597,6 @@
                 }
               },
               {
-                "name": "Calendar_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.calendarReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "Calendar_DocumentId"
-                }
-              },
-              {
-                "name": "Calendar_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.calendarReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "Calendar_DocumentId"
-                }
-              },
-              {
                 "name": "SchoolId_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -57637,20 +57609,6 @@
                 }
               },
               {
-                "name": "SchoolYear_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.schoolYearTypeReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "SchoolYear_DocumentId"
-                }
-              },
-              {
                 "name": "SchoolYear_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -57660,20 +57618,6 @@
                 "source_path": null,
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "School_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.schoolReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "School_DocumentId"
                 }
               },
               {
@@ -57702,6 +57646,34 @@
                 }
               },
               {
+                "name": "Calendar_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.calendarReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Calendar_DocumentId"
+                }
+              },
+              {
+                "name": "Calendar_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.calendarReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "Calendar_DocumentId"
+                }
+              },
+              {
                 "name": "SchoolYear_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -57714,6 +57686,20 @@
                 }
               },
               {
+                "name": "SchoolYear_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.schoolYearTypeReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "SchoolYear_DocumentId"
+                }
+              },
+              {
                 "name": "School_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -57723,6 +57709,20 @@
                 "source_path": "$.schoolReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "School_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.schoolReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "School_DocumentId"
                 }
               },
               {
@@ -65945,36 +65945,6 @@
                 }
               },
               {
-                "name": "AssessmentBatteryPart_AssessmentIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "AssessmentIdentifier_Unified",
-                  "presence_column": "AssessmentBatteryPart_DocumentId"
-                }
-              },
-              {
-                "name": "AssessmentBatteryPart_Namespace",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": false,
-                "source_path": "$.assessmentBatteryPartReference.namespace",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "Namespace_Unified",
-                  "presence_column": "AssessmentBatteryPart_DocumentId"
-                }
-              },
-              {
                 "name": "AssessmentIdentifier_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -66014,21 +65984,6 @@
                 }
               },
               {
-                "name": "StudentAssessmentRegistration_AssessmentIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": "$.studentAssessmentRegistrationReference.assessmentIdentifier",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "AssessmentIdentifier_Unified",
-                  "presence_column": "StudentAssessmentRegistration_DocumentId"
-                }
-              },
-              {
                 "name": "StudentAssessmentRegistration_AssigningEducationOrganizationId",
                 "kind": "Scalar",
                 "type": {
@@ -66050,21 +66005,6 @@
                 "source_path": "$.studentAssessmentRegistrationReference.educationOrganizationId",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "StudentAssessmentRegistration_Namespace",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": false,
-                "source_path": "$.studentAssessmentRegistrationReference.namespace",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "Namespace_Unified",
-                  "presence_column": "StudentAssessmentRegistration_DocumentId"
                 }
               },
               {
@@ -66093,6 +66033,36 @@
                 }
               },
               {
+                "name": "AssessmentBatteryPart_AssessmentIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.assessmentBatteryPartReference.assessmentIdentifier",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "AssessmentIdentifier_Unified",
+                  "presence_column": "AssessmentBatteryPart_DocumentId"
+                }
+              },
+              {
+                "name": "AssessmentBatteryPart_Namespace",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": "$.assessmentBatteryPartReference.namespace",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "AssessmentBatteryPart_DocumentId"
+                }
+              },
+              {
                 "name": "StudentAssessmentRegistration_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -66102,6 +66072,36 @@
                 "source_path": "$.studentAssessmentRegistrationReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "StudentAssessmentRegistration_AssessmentIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.studentAssessmentRegistrationReference.assessmentIdentifier",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "AssessmentIdentifier_Unified",
+                  "presence_column": "StudentAssessmentRegistration_DocumentId"
+                }
+              },
+              {
+                "name": "StudentAssessmentRegistration_Namespace",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": "$.studentAssessmentRegistrationReference.namespace",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "Namespace_Unified",
+                  "presence_column": "StudentAssessmentRegistration_DocumentId"
                 }
               }
             ],
@@ -66494,21 +66494,6 @@
                 }
               },
               {
-                "name": "StudentEducationOrganizationAssociation_StudentUniqueId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 32
-                },
-                "is_nullable": false,
-                "source_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "StudentUniqueId_Unified",
-                  "presence_column": "StudentEducationOrganizationAssociation_DocumentId"
-                }
-              },
-              {
                 "name": "StudentSchoolAssociation_EntryDate",
                 "kind": "Scalar",
                 "type": {
@@ -66530,21 +66515,6 @@
                 "source_path": "$.studentSchoolAssociationReference.schoolId",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "StudentSchoolAssociation_StudentUniqueId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 32
-                },
-                "is_nullable": false,
-                "source_path": "$.studentSchoolAssociationReference.studentUniqueId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "StudentUniqueId_Unified",
-                  "presence_column": "StudentSchoolAssociation_DocumentId"
                 }
               },
               {
@@ -66621,6 +66591,21 @@
                 }
               },
               {
+                "name": "StudentEducationOrganizationAssociation_StudentUniqueId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 32
+                },
+                "is_nullable": false,
+                "source_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "StudentUniqueId_Unified",
+                  "presence_column": "StudentEducationOrganizationAssociation_DocumentId"
+                }
+              },
+              {
                 "name": "StudentSchoolAssociation_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -66630,6 +66615,21 @@
                 "source_path": "$.studentSchoolAssociationReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "StudentSchoolAssociation_StudentUniqueId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 32
+                },
+                "is_nullable": false,
+                "source_path": "$.studentSchoolAssociationReference.studentUniqueId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "StudentUniqueId_Unified",
+                  "presence_column": "StudentSchoolAssociation_DocumentId"
                 }
               },
               {
@@ -83835,34 +83835,6 @@
                 }
               },
               {
-                "name": "Calendar_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.calendarReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "Calendar_DocumentId"
-                }
-              },
-              {
-                "name": "Calendar_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.calendarReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "Calendar_DocumentId"
-                }
-              },
-              {
                 "name": "ClassOfSchoolYear_ClassOfSchoolYear",
                 "kind": "Scalar",
                 "type": {
@@ -84021,20 +83993,6 @@
                 }
               },
               {
-                "name": "SchoolYear_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.schoolYearTypeReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "SchoolYear_DocumentId"
-                }
-              },
-              {
                 "name": "SchoolYear_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -84044,20 +84002,6 @@
                 "source_path": null,
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "School_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.schoolReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "School_DocumentId"
                 }
               },
               {
@@ -84095,6 +84039,34 @@
                 "source_path": "$.calendarReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Calendar_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.calendarReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Calendar_DocumentId"
+                }
+              },
+              {
+                "name": "Calendar_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.calendarReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "Calendar_DocumentId"
                 }
               },
               {
@@ -84146,6 +84118,20 @@
                 }
               },
               {
+                "name": "SchoolYear_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.schoolYearTypeReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "SchoolYear_DocumentId"
+                }
+              },
+              {
                 "name": "School_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -84155,6 +84141,20 @@
                 "source_path": "$.schoolReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "School_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.schoolReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "School_DocumentId"
                 }
               },
               {
@@ -85108,34 +85108,6 @@
                 }
               },
               {
-                "name": "School_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.schoolReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "School_DocumentId"
-                }
-              },
-              {
-                "name": "Session_SchoolId",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.sessionReference.schoolId",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolId_Unified",
-                  "presence_column": "Session_DocumentId"
-                }
-              },
-              {
                 "name": "Session_SchoolYear",
                 "kind": "Scalar",
                 "type": {
@@ -85186,6 +85158,20 @@
                 }
               },
               {
+                "name": "School_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.schoolReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "School_DocumentId"
+                }
+              },
+              {
                 "name": "Session_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -85195,6 +85181,20 @@
                 "source_path": "$.sessionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Session_SchoolId",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.sessionReference.schoolId",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolId_Unified",
+                  "presence_column": "Session_DocumentId"
                 }
               },
               {
@@ -93051,6 +93051,44 @@
                 }
               },
               {
+                "name": "SurveyQuestion_QuestionCode",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.surveyQuestionReference.questionCode",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveyResponse_SurveyResponseIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.surveyResponseReference.surveyResponseIdentifier",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveyQuestion_DocumentId",
+                "kind": "DocumentFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.surveyQuestionReference",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SurveyQuestion_Namespace",
                 "kind": "Scalar",
                 "type": {
@@ -93066,19 +93104,6 @@
                 }
               },
               {
-                "name": "SurveyQuestion_QuestionCode",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": "$.surveyQuestionReference.questionCode",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
                 "name": "SurveyQuestion_SurveyIdentifier",
                 "kind": "Scalar",
                 "type": {
@@ -93091,6 +93116,18 @@
                   "kind": "UnifiedAlias",
                   "canonical_column": "SurveyIdentifier_Unified",
                   "presence_column": "SurveyQuestion_DocumentId"
+                }
+              },
+              {
+                "name": "SurveyResponse_DocumentId",
+                "kind": "DocumentFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.surveyResponseReference",
+                "storage": {
+                  "kind": "Stored"
                 }
               },
               {
@@ -93121,43 +93158,6 @@
                   "kind": "UnifiedAlias",
                   "canonical_column": "SurveyIdentifier_Unified",
                   "presence_column": "SurveyResponse_DocumentId"
-                }
-              },
-              {
-                "name": "SurveyResponse_SurveyResponseIdentifier",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 60
-                },
-                "is_nullable": false,
-                "source_path": "$.surveyResponseReference.surveyResponseIdentifier",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "SurveyQuestion_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.surveyQuestionReference",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "SurveyResponse_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.surveyResponseReference",
-                "storage": {
-                  "kind": "Stored"
                 }
               }
             ],
@@ -93618,6 +93618,31 @@
                 }
               },
               {
+                "name": "SurveySection_SurveySectionTitle",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": true,
+                "source_path": "$.surveySectionReference.surveySectionTitle",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveySection_DocumentId",
+                "kind": "DocumentFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": true,
+                "source_path": "$.surveySectionReference",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SurveySection_Namespace",
                 "kind": "Scalar",
                 "type": {
@@ -93648,14 +93673,13 @@
                 }
               },
               {
-                "name": "SurveySection_SurveySectionTitle",
-                "kind": "Scalar",
+                "name": "Survey_DocumentId",
+                "kind": "DocumentFk",
                 "type": {
-                  "kind": "String",
-                  "max_length": 255
+                  "kind": "Int64"
                 },
-                "is_nullable": true,
-                "source_path": "$.surveySectionReference.surveySectionTitle",
+                "is_nullable": false,
+                "source_path": "$.surveyReference",
                 "storage": {
                   "kind": "Stored"
                 }
@@ -93688,30 +93712,6 @@
                   "kind": "UnifiedAlias",
                   "canonical_column": "SurveyIdentifier_Unified",
                   "presence_column": "Survey_DocumentId"
-                }
-              },
-              {
-                "name": "SurveySection_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": true,
-                "source_path": "$.surveySectionReference",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "Survey_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.surveyReference",
-                "storage": {
-                  "kind": "Stored"
                 }
               }
             ],
@@ -95776,6 +95776,44 @@
                 }
               },
               {
+                "name": "SurveyResponse_SurveyResponseIdentifier",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 60
+                },
+                "is_nullable": false,
+                "source_path": "$.surveyResponseReference.surveyResponseIdentifier",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveySection_SurveySectionTitle",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "String",
+                  "max_length": 255
+                },
+                "is_nullable": false,
+                "source_path": "$.surveySectionReference.surveySectionTitle",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
+                "name": "SurveyResponse_DocumentId",
+                "kind": "DocumentFk",
+                "type": {
+                  "kind": "Int64"
+                },
+                "is_nullable": false,
+                "source_path": "$.surveyResponseReference",
+                "storage": {
+                  "kind": "Stored"
+                }
+              },
+              {
                 "name": "SurveyResponse_Namespace",
                 "kind": "Scalar",
                 "type": {
@@ -95806,14 +95844,13 @@
                 }
               },
               {
-                "name": "SurveyResponse_SurveyResponseIdentifier",
-                "kind": "Scalar",
+                "name": "SurveySection_DocumentId",
+                "kind": "DocumentFk",
                 "type": {
-                  "kind": "String",
-                  "max_length": 60
+                  "kind": "Int64"
                 },
                 "is_nullable": false,
-                "source_path": "$.surveyResponseReference.surveyResponseIdentifier",
+                "source_path": "$.surveySectionReference",
                 "storage": {
                   "kind": "Stored"
                 }
@@ -95846,43 +95883,6 @@
                   "kind": "UnifiedAlias",
                   "canonical_column": "SurveyIdentifier_Unified",
                   "presence_column": "SurveySection_DocumentId"
-                }
-              },
-              {
-                "name": "SurveySection_SurveySectionTitle",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "String",
-                  "max_length": 255
-                },
-                "is_nullable": false,
-                "source_path": "$.surveySectionReference.surveySectionTitle",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "SurveyResponse_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.surveyResponseReference",
-                "storage": {
-                  "kind": "Stored"
-                }
-              },
-              {
-                "name": "SurveySection_DocumentId",
-                "kind": "DocumentFk",
-                "type": {
-                  "kind": "Int64"
-                },
-                "is_nullable": false,
-                "source_path": "$.surveySectionReference",
-                "storage": {
-                  "kind": "Stored"
                 }
               }
             ],
@@ -96251,20 +96251,6 @@
                 }
               },
               {
-                "name": "SchoolYear_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": false,
-                "source_path": "$.schoolYearTypeReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "SchoolYear_DocumentId"
-                }
-              },
-              {
                 "name": "SchoolYear_Unified",
                 "kind": "Scalar",
                 "type": {
@@ -96286,20 +96272,6 @@
                 "source_path": "$.sessionReference.schoolId",
                 "storage": {
                   "kind": "Stored"
-                }
-              },
-              {
-                "name": "Session_SchoolYear",
-                "kind": "Scalar",
-                "type": {
-                  "kind": "Int32"
-                },
-                "is_nullable": true,
-                "source_path": "$.sessionReference.schoolYear",
-                "storage": {
-                  "kind": "UnifiedAlias",
-                  "canonical_column": "SchoolYear_Unified",
-                  "presence_column": "Session_DocumentId"
                 }
               },
               {
@@ -96366,6 +96338,20 @@
                 }
               },
               {
+                "name": "SchoolYear_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": false,
+                "source_path": "$.schoolYearTypeReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "SchoolYear_DocumentId"
+                }
+              },
+              {
                 "name": "Session_DocumentId",
                 "kind": "DocumentFk",
                 "type": {
@@ -96375,6 +96361,20 @@
                 "source_path": "$.sessionReference",
                 "storage": {
                   "kind": "Stored"
+                }
+              },
+              {
+                "name": "Session_SchoolYear",
+                "kind": "Scalar",
+                "type": {
+                  "kind": "Int32"
+                },
+                "is_nullable": true,
+                "source_path": "$.sessionReference.schoolYear",
+                "storage": {
+                  "kind": "UnifiedAlias",
+                  "canonical_column": "SchoolYear_Unified",
+                  "presence_column": "Session_DocumentId"
                 }
               }
             ],

@@ -52,7 +52,7 @@
       "Add unit tests for column-order dependency invariants (canonical/presence precede aliases) and for deterministic constraint ordering including `NullOrTrue`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Manifests",
