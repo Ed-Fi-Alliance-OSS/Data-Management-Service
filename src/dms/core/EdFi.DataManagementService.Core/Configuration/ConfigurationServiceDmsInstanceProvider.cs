@@ -366,9 +366,6 @@ public class ConfigurationServiceDmsInstanceProvider(
         }
     }
 
-    private static string SanitizeTenant(string? tenant) =>
-        LoggingSanitizer.SanitizeForLogging(tenant ?? DefaultTenant);
-
     private SemaphoreSlim GetTenantLock(string tenantKey) =>
         _tenantLocks.GetOrAdd(tenantKey, _ => new SemaphoreSlim(1, 1));
 
