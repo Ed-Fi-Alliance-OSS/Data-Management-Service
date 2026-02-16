@@ -25,6 +25,7 @@ ALTER TABLE [edfi].[SchoolAddress] ADD CONSTRAINT [FK_SchoolAddress_School] FORE
 
 ALTER TABLE [edfi].[SchoolAddressPhoneNumber] ADD CONSTRAINT [FK_SchoolAddressPhoneNumber_SchoolAddress] FOREIGN KEY ([DocumentId], [AddressOrdinal]) REFERENCES [edfi].[SchoolAddress] ([DocumentId], [AddressOrdinal]) ON DELETE CASCADE;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -46,6 +47,7 @@ BEGIN
     END
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddress_Stamp]
 ON [edfi].[SchoolAddress]
 AFTER INSERT, UPDATE
@@ -58,6 +60,7 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddressPhoneNumber_Stamp]
 ON [edfi].[SchoolAddressPhoneNumber]
 AFTER INSERT, UPDATE
@@ -70,6 +73,7 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE

@@ -33,6 +33,7 @@ ALTER TABLE [sample].[SchoolExtension] ADD CONSTRAINT [FK_SchoolExtension_School
 
 ALTER TABLE [sample].[SchoolAddressExtension] ADD CONSTRAINT [FK_SchoolAddressExtension_SchoolAddress] FOREIGN KEY ([DocumentId], [AddressOrdinal]) REFERENCES [edfi].[SchoolAddress] ([DocumentId], [AddressOrdinal]) ON DELETE CASCADE;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -54,6 +55,7 @@ BEGIN
     END
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddress_Stamp]
 ON [edfi].[SchoolAddress]
 AFTER INSERT, UPDATE
@@ -66,6 +68,7 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
 END;
 
+GO
 CREATE OR ALTER TRIGGER [sample].[TR_SchoolAddressExtension_Stamp]
 ON [sample].[SchoolAddressExtension]
 AFTER INSERT, UPDATE
@@ -78,6 +81,7 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
 END;
 
+GO
 CREATE OR ALTER TRIGGER [sample].[TR_SchoolExtension_Stamp]
 ON [sample].[SchoolExtension]
 AFTER INSERT, UPDATE
@@ -90,6 +94,7 @@ BEGIN
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE

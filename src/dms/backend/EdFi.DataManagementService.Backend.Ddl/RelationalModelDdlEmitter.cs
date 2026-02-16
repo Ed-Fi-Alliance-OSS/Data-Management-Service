@@ -271,6 +271,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// </summary>
     private void AppendMssqlTrigger(StringBuilder builder, DbTriggerInfo trigger)
     {
+        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
+        builder.AppendLine("GO");
         builder.Append("CREATE OR ALTER TRIGGER ");
         builder.Append(Quote(trigger.Table.Schema));
         builder.Append('.');
@@ -929,18 +931,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append("FROM ");
         builder.Append(targetTable);
         builder.AppendLine(" t");
+        // Join target to the OLD FK value (from deleted) so we find the row that needs updating.
         builder.Append(indent);
-        builder.Append("INNER JOIN inserted i ON t.");
+        builder.Append("INNER JOIN deleted d ON t.");
         builder.Append(Quote(fkColumn));
-        builder.Append(" = i.");
+        builder.Append(" = d.");
         builder.AppendLine(Quote(fkColumn));
         // Correlate old/new rows of the trigger's owning table by DocumentId (the universal PK),
         // not by the FK column — the FK column is what changes, so it cannot be the join key.
         var documentIdCol = Quote(new DbColumnName("DocumentId"));
         builder.Append(indent);
-        builder.Append("INNER JOIN deleted d ON d.");
+        builder.Append("INNER JOIN inserted i ON i.");
         builder.Append(documentIdCol);
-        builder.Append(" = i.");
+        builder.Append(" = d.");
         builder.AppendLine(documentIdCol);
 
         builder.Append(indent);
@@ -1161,6 +1164,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// </summary>
     private void AppendCreateView(StringBuilder builder, AbstractUnionViewInfo viewInfo)
     {
+        // MSSQL: CREATE OR ALTER VIEW must be the first statement in a T-SQL batch.
+        if (_dialectRules.Dialect == SqlDialect.Mssql)
+        {
+            builder.AppendLine("GO");
+        }
+
         // Determine view creation pattern based on dialect
         var createKeyword = _dialectRules.Dialect switch
         {
@@ -1273,7 +1282,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     private static string ResolvePrimaryKeyConstraintName(DbTableModel table)
     {
         return string.IsNullOrWhiteSpace(table.Key.ConstraintName)
-            ? $"PK_{table.Table.Name}"
+            ? $"PK_{table.Table.Schema.Value}_{table.Table.Name}"
             : table.Key.ConstraintName;
     }
 
@@ -1327,9 +1336,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
     /// <summary>
     /// The UUIDv5 namespace used for referential identity computation.
-    /// Matches <c>ReferentialIdCalculator.EdFiUuidv5Namespace</c>.
+    /// Must match <c>ReferentialIdCalculator.EdFiUuidv5Namespace</c> in
+    /// <c>EdFi.DataManagementService.Core</c>. A guard test in the unit test project
+    /// asserts this value to prevent silent divergence.
     /// </summary>
-    private const string Uuidv5Namespace = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
+    internal const string Uuidv5Namespace = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
 
     /// <summary>
     /// Formats the qualified <c>dms.ChangeVersionSequence</c> name for the current dialect.

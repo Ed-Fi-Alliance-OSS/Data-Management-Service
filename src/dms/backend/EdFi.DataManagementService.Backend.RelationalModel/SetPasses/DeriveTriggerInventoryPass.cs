@@ -14,6 +14,17 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// Derives the trigger inventory for all schema-derived tables (concrete resources with
 /// <see cref="ResourceStorageKind.RelationalTables"/> storage). Descriptor resources are skipped.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>MSSQL trigger ordering:</b> Multiple AFTER triggers may be emitted for the same table
+/// (e.g., DocumentStamping, AbstractIdentityMaintenance, ReferentialIdentityMaintenance). SQL Server
+/// does not guarantee a deterministic firing order for multiple AFTER triggers unless
+/// <c>sp_settriggerorder</c> is used. The current triggers are designed to be order-independent:
+/// each writes to a different target table and has no dependency on another trigger's side effects.
+/// If a future trigger introduces such a dependency, explicit ordering via <c>sp_settriggerorder</c>
+/// must be emitted.
+/// </para>
+/// </remarks>
 public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 {
     private const string StampToken = "Stamp";

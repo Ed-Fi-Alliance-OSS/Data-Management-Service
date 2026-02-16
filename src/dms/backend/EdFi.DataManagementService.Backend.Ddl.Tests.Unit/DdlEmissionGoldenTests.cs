@@ -67,7 +67,7 @@ public abstract class DdlEmissionGoldenTestBase
         var errorTask = process.StandardError.ReadToEndAsync();
         var output = outputTask.GetAwaiter().GetResult();
         var error = errorTask.GetAwaiter().GetResult();
-        process.WaitForExit();
+        process.WaitForExit(30_000);
 
         if (process.ExitCode == 0)
         {

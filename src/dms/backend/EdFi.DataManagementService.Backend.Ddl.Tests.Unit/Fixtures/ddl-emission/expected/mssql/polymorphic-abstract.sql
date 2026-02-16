@@ -23,6 +23,7 @@ ALTER TABLE [edfi].[School] ADD CONSTRAINT [FK_School_EducationOrganizationIdent
 
 ALTER TABLE [edfi].[LocalEducationAgency] ADD CONSTRAINT [FK_LocalEducationAgency_EducationOrganizationIdentity] FOREIGN KEY ([DocumentId]) REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId]) ON DELETE CASCADE;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE
@@ -44,6 +45,7 @@ BEGIN
     END
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_AbstractIdentity]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE
@@ -57,6 +59,7 @@ BEGIN
     VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:LocalEducationAgency');
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_ReferentialIdentity]
 ON [edfi].[LocalEducationAgency]
 AFTER INSERT, UPDATE
@@ -75,6 +78,7 @@ BEGIN
     FROM inserted i;
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -96,6 +100,7 @@ BEGIN
     END
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_AbstractIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -109,6 +114,7 @@ BEGIN
     VALUES (s.[DocumentId], s.[EducationOrganizationId], N'Ed-Fi:School');
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -127,6 +133,7 @@ BEGIN
     FROM inserted i;
 END;
 
+GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization] AS
 SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'School' AS nvarchar(50)) AS [Discriminator]
 FROM [edfi].[School]

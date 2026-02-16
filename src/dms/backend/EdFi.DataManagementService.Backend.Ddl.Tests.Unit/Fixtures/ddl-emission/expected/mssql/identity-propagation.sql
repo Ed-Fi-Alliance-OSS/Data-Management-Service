@@ -16,6 +16,7 @@ CREATE TABLE [edfi].[StudentSchoolAssociation] (
 
 ALTER TABLE [edfi].[StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_School] FOREIGN KEY ([SchoolId]) REFERENCES [edfi].[School] ([SchoolId]);
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -37,6 +38,7 @@ BEGIN
     END
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
 ON [edfi].[School]
 AFTER INSERT, UPDATE
@@ -50,6 +52,7 @@ BEGIN
     FROM inserted i;
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Stamp]
 ON [edfi].[StudentSchoolAssociation]
 AFTER INSERT, UPDATE
@@ -71,6 +74,7 @@ BEGIN
     END
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_ReferentialIdentity]
 ON [edfi].[StudentSchoolAssociation]
 AFTER INSERT, UPDATE
@@ -84,6 +88,7 @@ BEGIN
     FROM inserted i;
 END;
 
+GO
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Propagation_School]
 ON [edfi].[StudentSchoolAssociation]
 AFTER INSERT, UPDATE
@@ -93,8 +98,8 @@ BEGIN
     UPDATE t
     SET t.[SchoolId] = i.[SchoolId]
     FROM [edfi].[School] t
-    INNER JOIN inserted i ON t.[SchoolId] = i.[SchoolId]
-    INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+    INNER JOIN deleted d ON t.[SchoolId] = d.[SchoolId]
+    INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
     WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
 END;
 
