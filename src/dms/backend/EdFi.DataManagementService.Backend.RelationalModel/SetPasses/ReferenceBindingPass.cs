@@ -13,9 +13,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class ReferenceBindingPass : IRelationalModelSetPass
 {
-    private static readonly DbSchemaName _dmsSchemaName = new("dms");
-    private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
-
     /// <summary>
     /// Executes reference binding across all concrete resources and resource extensions.
     /// </summary>
@@ -205,19 +202,6 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     );
 
                     tableBuilder.AddColumn(descriptorColumn, originalDescriptorColumnName.Value);
-                    tableBuilder.AddConstraint(
-                        new TableConstraint.ForeignKey(
-                            ConstraintNaming.BuildDescriptorForeignKeyName(
-                                tableBuilder.Definition.Table,
-                                descriptorColumnName
-                            ),
-                            new[] { descriptorColumnName },
-                            _descriptorTableName,
-                            new[] { RelationalNameConventions.DocumentIdColumnName },
-                            OnDelete: ReferentialAction.NoAction,
-                            OnUpdate: ReferentialAction.NoAction
-                        )
-                    );
 
                     var isIdentityComponent = identityPaths.Contains(
                         identityBinding.ReferenceJsonPath.Canonical

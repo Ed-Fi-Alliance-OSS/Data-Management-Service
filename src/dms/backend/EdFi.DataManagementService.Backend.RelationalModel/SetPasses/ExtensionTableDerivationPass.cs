@@ -15,8 +15,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 {
     private const string ExtensionPropertyName = "_ext";
-    private static readonly DbSchemaName _dmsSchemaName = new("dms");
-    private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
 
     /// <summary>
     /// Executes extension table derivation across all resource-extension schemas.
@@ -1314,16 +1312,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     columnName,
                     descriptorPathInfo.DescriptorValuePath,
                     resourceLabel
-                )
-            );
-            tableBuilder.AddConstraint(
-                new TableConstraint.ForeignKey(
-                    ConstraintNaming.BuildDescriptorForeignKeyName(tableBuilder.Definition.Table, columnName),
-                    [columnName],
-                    _descriptorTableName,
-                    [RelationalNameConventions.DocumentIdColumnName],
-                    OnDelete: ReferentialAction.NoAction,
-                    OnUpdate: ReferentialAction.NoAction
                 )
             );
 

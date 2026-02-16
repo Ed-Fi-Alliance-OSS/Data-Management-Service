@@ -57,6 +57,23 @@ internal static class RelationalModelCanonicalization
             .ThenBy(edge => edge.DescriptorResource.ResourceName, StringComparer.Ordinal)
             .ThenBy(edge => edge.IsIdentityComponent)
             .ToArray();
+        var orderedDescriptorForeignKeyDeduplications = resourceModel
+            .DescriptorForeignKeyDeduplications.Select(entry =>
+                entry with
+                {
+                    BindingColumns = entry
+                        .BindingColumns.OrderBy(column => column.Value, StringComparer.Ordinal)
+                        .ToArray(),
+                }
+            )
+            .OrderBy(entry => entry.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(entry => entry.Table.Name, StringComparer.Ordinal)
+            .ThenBy(entry => entry.StorageColumn.Value, StringComparer.Ordinal)
+            .ThenBy(
+                entry => string.Join("|", entry.BindingColumns.Select(column => column.Value)),
+                StringComparer.Ordinal
+            )
+            .ToArray();
 
         return resourceModel with
         {
@@ -64,6 +81,7 @@ internal static class RelationalModelCanonicalization
             TablesInDependencyOrder = canonicalTables,
             DocumentReferenceBindings = orderedDocumentReferences,
             DescriptorEdgeSources = orderedDescriptorEdges,
+            DescriptorForeignKeyDeduplications = orderedDescriptorForeignKeyDeduplications,
         };
     }
 
