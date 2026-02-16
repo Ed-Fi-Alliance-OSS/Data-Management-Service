@@ -212,6 +212,12 @@ public sealed record RelationalResourceModel(
     /// </summary>
     public KeyUnificationEqualityConstraintDiagnostics KeyUnificationEqualityConstraints { get; init; } =
         KeyUnificationEqualityConstraintDiagnostics.Empty;
+
+    /// <summary>
+    /// Per-resource diagnostics for descriptor FK storage de-duplication.
+    /// </summary>
+    public IReadOnlyList<DescriptorForeignKeyDeduplication> DescriptorForeignKeyDeduplications { get; init; } =
+    [];
 }
 
 /// <summary>
@@ -339,6 +345,22 @@ public sealed record KeyUnificationEqualityConstraintDiagnostics(
     /// </summary>
     public static KeyUnificationEqualityConstraintDiagnostics Empty { get; } = new([], [], [], []);
 }
+
+/// <summary>
+/// Descriptor FK de-duplication diagnostics for one storage-column group.
+/// </summary>
+/// <param name="Table">The table where descriptor FK storage de-duplication was applied.</param>
+/// <param name="StorageColumn">
+/// The final storage column that receives the single emitted descriptor FK constraint.
+/// </param>
+/// <param name="BindingColumns">
+/// The descriptor binding/path columns that mapped to <paramref name="StorageColumn"/> (ordinal sorted).
+/// </param>
+public sealed record DescriptorForeignKeyDeduplication(
+    DbTableName Table,
+    DbColumnName StorageColumn,
+    IReadOnlyList<DbColumnName> BindingColumns
+);
 
 /// <summary>
 /// Primary key definition for a derived table.

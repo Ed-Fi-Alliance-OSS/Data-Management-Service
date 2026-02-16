@@ -220,6 +220,7 @@ public class Given_Key_Unification_For_Optional_NonReference_Scalars
 [TestFixture]
 public class Given_Key_Unification_For_Optional_NonReference_Descriptors
 {
+    private RelationalResourceModel _resourceModel = default!;
     private DbTableModel _rootTable = default!;
 
     /// <summary>
@@ -231,11 +232,12 @@ public class Given_Key_Unification_For_Optional_NonReference_Descriptors
         var projectSchema =
             KeyUnificationPassTestSchemaBuilder.BuildOptionalDescriptorUnificationProjectSchema();
         var result = KeyUnificationPassTestSchemaBuilder.BuildDerivedSet(projectSchema);
-        _rootTable = result
+        _resourceModel = result
             .ConcreteResourcesInNameOrder.Single(resource =>
                 resource.ResourceKey.Resource.ResourceName == "DescriptorExample"
             )
-            .RelationalModel.Root;
+            .RelationalModel;
+        _rootTable = _resourceModel.Root;
     }
 
     /// <summary>
@@ -312,6 +314,36 @@ public class Given_Key_Unification_For_Optional_NonReference_Descriptors
 
         expectedPresenceColumns.Should().HaveCount(2);
         nullOrTrueColumns.Should().Equal(expectedPresenceColumns);
+    }
+
+    /// <summary>
+    /// It should emit one descriptor FK constraint per mapped storage column and report de-dup diagnostics.
+    /// </summary>
+    [Test]
+    public void It_should_emit_one_descriptor_fk_per_storage_column_after_unification()
+    {
+        var keyUnificationClass = _rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+        var descriptorForeignKeys = _rootTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Where(constraint =>
+                constraint.TargetTable.Equals(new DbTableName(new DbSchemaName("dms"), "Descriptor"))
+            )
+            .ToArray();
+        var expectedBindingColumns = _rootTable
+            .Columns.Where(column =>
+                column.Kind == ColumnKind.DescriptorFk && column.SourceJsonPath is not null
+            )
+            .Select(column => column.ColumnName)
+            .OrderBy(column => column.Value, StringComparer.Ordinal)
+            .ToArray();
+        var dedup = _resourceModel.DescriptorForeignKeyDeduplications.Should().ContainSingle().Subject;
+
+        descriptorForeignKeys.Should().ContainSingle();
+        descriptorForeignKeys[0].Columns.Should().Equal(keyUnificationClass.CanonicalColumn);
+        descriptorForeignKeys[0].TargetColumns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
+        dedup.Table.Should().Be(_rootTable.Table);
+        dedup.StorageColumn.Should().Be(keyUnificationClass.CanonicalColumn);
+        dedup.BindingColumns.Should().Equal(expectedBindingColumns);
     }
 }
 

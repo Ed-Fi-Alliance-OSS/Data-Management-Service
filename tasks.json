@@ -25,7 +25,7 @@
       "Add a unit test where two descriptor binding columns unify to one canonical storage column and assert only one descriptor FK constraint exists and `ValidateForeignKeyStorageInvariantPass` remains satisfied.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Reference Constraints",

@@ -46,6 +46,7 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(RootIdentityConstraintPass),
                 typeof(ReferenceConstraintPass),
                 typeof(ArrayUniquenessConstraintPass),
+                typeof(DescriptorForeignKeyConstraintPass),
                 typeof(ApplyConstraintDialectHashingPass),
                 typeof(ValidateForeignKeyStorageInvariantPass),
                 typeof(DeriveIndexInventoryPass),

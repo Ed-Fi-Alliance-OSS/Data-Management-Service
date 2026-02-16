@@ -45436,54 +45436,6 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjecti_4122be3539",
-                "columns": [
-                  "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjecti_9ed95edefc",
-                "columns": [
-                  "ProgramEvaluationTypeDescriptor_Unified_DescriptorId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjecti_a2edb083f7",
-                "columns": [
-                  "ProgramTypeDescriptor_Unified_DescriptorId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
                 "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjective_RefKey",
                 "columns": [
                   "ProgramEvaluationObjective_DocumentId",
@@ -45514,7 +45466,7 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_ProgramEvaluation_Progra_4122be3539",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539",
                 "columns": [
                   "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
                 ],
@@ -45530,25 +45482,9 @@
               },
               {
                 "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_ProgramEvaluation_Progra_9ed95edefc",
+                "name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc",
                 "columns": [
                   "ProgramEvaluationTypeDescriptor_Unified_DescriptorId"
-                ],
-                "target_table": {
-                  "schema": "dms",
-                  "name": "Descriptor"
-                },
-                "target_columns": [
-                  "DocumentId"
-                ],
-                "on_delete": "NoAction",
-                "on_update": "NoAction"
-              },
-              {
-                "kind": "ForeignKey",
-                "name": "FK_ProgramEvaluationElement_ProgramEvaluation_Progra_a2edb083f7",
-                "columns": [
-                  "ProgramTypeDescriptor_Unified_DescriptorId"
                 ],
                 "target_table": {
                   "schema": "dms",
@@ -45584,6 +45520,22 @@
                   "ProgramProgram_EducationOrganizationId",
                   "ProgramProgram_ProgramName",
                   "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+                ],
+                "on_delete": "NoAction",
+                "on_update": "NoAction"
+              },
+              {
+                "kind": "ForeignKey",
+                "name": "FK_ProgramEvaluationElement_ProgramTypeDescriptor_Unified",
+                "columns": [
+                  "ProgramTypeDescriptor_Unified_DescriptorId"
+                ],
+                "target_table": {
+                  "schema": "dms",
+                  "name": "Descriptor"
+                },
+                "target_columns": [
+                  "DocumentId"
                 ],
                 "on_delete": "NoAction",
                 "on_update": "NoAction"

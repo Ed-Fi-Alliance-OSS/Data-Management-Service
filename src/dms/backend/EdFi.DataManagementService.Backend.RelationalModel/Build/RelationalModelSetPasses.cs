@@ -27,6 +27,7 @@ public static class RelationalModelSetPasses
             new RootIdentityConstraintPass(),
             new ReferenceConstraintPass(),
             new ArrayUniquenessConstraintPass(),
+            new DescriptorForeignKeyConstraintPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
             // Index and trigger inventory passes must precede dialect shortening,
