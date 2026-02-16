@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 /// </summary>
 public static class DerivedModelSetManifestEmitter
 {
-    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
 
     /// <summary>
     /// Emits the manifest JSON string from the given model set.
@@ -67,7 +67,7 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteEndObject();
         }
 
-        var json = Encoding.UTF8.GetString(buffer.WrittenSpan).ReplaceLineEndings("\n");
+        var json = Encoding.UTF8.GetString(buffer.WrittenSpan);
 
         return json + "\n";
     }
