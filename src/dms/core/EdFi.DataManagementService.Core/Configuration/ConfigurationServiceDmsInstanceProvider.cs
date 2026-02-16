@@ -27,7 +27,6 @@ public class ConfigurationServiceDmsInstanceProvider(
 ) : IDmsInstanceProvider
 {
     private const string TenantHeaderName = "Tenant";
-    private const string DefaultTenant = "(default)";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly CacheSettings _cacheSettings = cacheSettings ?? new CacheSettings();
@@ -39,7 +38,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     );
 
     /// <inheritdoc />
-    public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(SanitizeTenant(tenant));
+    public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
 
     /// <summary>
     /// Loads DMS instances from the Configuration Service API and stores them in memory
@@ -88,7 +87,7 @@ public class ConfigurationServiceDmsInstanceProvider(
 
             logger.LogInformation(
                 "DMS instance cache updated successfully for tenant {Tenant}",
-                SanitizeTenant(tenant)
+                tenant ?? "(default)"
             );
 
             return instances;
@@ -156,7 +155,7 @@ public class ConfigurationServiceDmsInstanceProvider(
                 return;
             }
 
-            string sanitizedTenant = SanitizeTenant(tenant);
+            string sanitizedTenant = tenant ?? "(default)";
             logger.LogInformation(
                 "DMS instance cache expired for tenant {Tenant} after {TtlSeconds}s, refreshing configuration from Configuration Service",
                 sanitizedTenant,
@@ -186,7 +185,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// <summary>
     /// Gets the cache key for a tenant, using empty string for null/empty tenant
     /// </summary>
-    private static string GetTenantKey(string? tenant) => SanitizeTenant(tenant);
+    private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
 
     /// <inheritdoc />
     public bool TenantExists(string tenant) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));

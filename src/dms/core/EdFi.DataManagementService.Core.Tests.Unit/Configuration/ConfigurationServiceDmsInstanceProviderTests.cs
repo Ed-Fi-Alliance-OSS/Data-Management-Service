@@ -875,7 +875,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
         {
             var tenantKeys = _provider!.GetLoadedTenantKeys();
             tenantKeys.Should().HaveCount(3);
-            tenantKeys.Should().Contain("default");
+            tenantKeys.Should().Contain("");
             tenantKeys.Should().Contain("TenantA");
             tenantKeys.Should().Contain("TenantB");
         }
