@@ -929,6 +929,234 @@ internal static class AbstractUnionViewFixture
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════
+// Extension Table Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Extension_Tables
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = ExtensionTableFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_create_core_schema()
+    {
+        _ddl.Should().Contain("CREATE SCHEMA \"edfi\"");
+    }
+
+    [Test]
+    public void It_should_create_extension_schema()
+    {
+        _ddl.Should().Contain("CREATE SCHEMA \"sample\"");
+    }
+
+    [Test]
+    public void It_should_create_extension_table_in_extension_schema()
+    {
+        _ddl.Should().Contain("CREATE TABLE \"sample\".\"SchoolExtension\"");
+    }
+
+    [Test]
+    public void It_should_create_cascade_fk_to_base_table()
+    {
+        _ddl.Should().Contain("\"FK_SchoolExtension_School\"");
+        _ddl.Should().Contain("REFERENCES \"edfi\".\"School\"");
+        _ddl.Should().Contain("ON DELETE CASCADE");
+    }
+
+    [Test]
+    public void It_should_emit_extension_schema_before_extension_tables()
+    {
+        var sampleSchemaIndex = _ddl.IndexOf("CREATE SCHEMA \"sample\"");
+        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE \"sample\".\"SchoolExtension\"");
+
+        sampleSchemaIndex.Should().BeLessThan(extensionTableIndex);
+    }
+
+    [Test]
+    public void It_should_emit_base_table_before_extension_table()
+    {
+        var baseTableIndex = _ddl.IndexOf("CREATE TABLE \"edfi\".\"School\"");
+        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE \"sample\".\"SchoolExtension\"");
+
+        baseTableIndex.Should().BeLessThan(extensionTableIndex);
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Extension_Tables
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = ExtensionTableFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_create_extension_table_in_extension_schema()
+    {
+        _ddl.Should().Contain("CREATE TABLE [sample].[SchoolExtension]");
+    }
+
+    [Test]
+    public void It_should_create_cascade_fk_to_base_table()
+    {
+        _ddl.Should().Contain("[FK_SchoolExtension_School]");
+        _ddl.Should().Contain("REFERENCES [edfi].[School]");
+        _ddl.Should().Contain("ON DELETE CASCADE");
+    }
+
+    [Test]
+    public void It_should_emit_base_table_before_extension_table()
+    {
+        var baseTableIndex = _ddl.IndexOf("CREATE TABLE [edfi].[School]");
+        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE [sample].[SchoolExtension]");
+
+        baseTableIndex.Should().BeLessThan(extensionTableIndex);
+    }
+}
+
+internal static class ExtensionTableFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var edfiSchema = new DbSchemaName("edfi");
+        var sampleSchema = new DbSchemaName("sample");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var extensionDataColumn = new DbColumnName("ExtensionData");
+
+        // Core table: School
+        var schoolTableName = new DbTableName(edfiSchema, "School");
+        var schoolTable = new DbTableModel(
+            schoolTableName,
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Array.Empty<TableConstraint>()
+        );
+
+        // Extension table: SchoolExtension
+        var schoolExtTableName = new DbTableName(sampleSchema, "SchoolExtension");
+        var schoolExtTable = new DbTableModel(
+            schoolExtTableName,
+            new JsonPathExpression("$._ext.sample", Array.Empty<JsonPathSegment>()),
+            new TableKey("PK_SchoolExtension", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    extensionDataColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 200),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_SchoolExtension_School",
+                    [documentIdColumn],
+                    schoolTableName,
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            schoolTable,
+            [schoolTable, schoolExtTable],
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                    new SchemaComponentInfo(
+                        "sample",
+                        "Sample",
+                        "1.0.0",
+                        false,
+                        "aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [
+                new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, edfiSchema),
+                new ProjectSchemaInfo("sample", "Sample", "1.0.0", false, sampleSchema),
+            ],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            Array.Empty<AbstractIdentityTableInfo>(),
+            Array.Empty<AbstractUnionViewInfo>(),
+            Array.Empty<DbIndexInfo>(),
+            Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
 internal static class TriggerFixture
 {
     internal static DerivedRelationalModelSet Build(SqlDialect dialect)
