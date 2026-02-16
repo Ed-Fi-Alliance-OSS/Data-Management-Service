@@ -547,6 +547,8 @@ END;
                     + FormatReferentialActions(foreignKey),
             TableConstraint.AllOrNoneNullability allOrNone =>
                 $"CONSTRAINT {Quote(allOrNone.Name)} CHECK ({FormatAllOrNoneCheck(allOrNone)})",
+            TableConstraint.NullOrTrue nullOrTrue =>
+                $"CONSTRAINT {Quote(nullOrTrue.Name)} CHECK ({FormatNullOrTrueCheck(nullOrTrue)})",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(constraint),
                 constraint,
@@ -566,6 +568,25 @@ END;
         );
 
         return $"({Quote(constraint.FkColumn)} IS NULL) OR ({dependencies})";
+    }
+
+    /// <summary>
+    /// Formats the expression for a null-or-true check constraint.
+    /// </summary>
+    private string FormatNullOrTrueCheck(TableConstraint.NullOrTrue constraint)
+    {
+        var trueLiteral = _dialectRules.Dialect switch
+        {
+            SqlDialect.Pgsql => "TRUE",
+            SqlDialect.Mssql => "1",
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_dialectRules.Dialect),
+                _dialectRules.Dialect,
+                "Unsupported SQL dialect."
+            ),
+        };
+
+        return $"{Quote(constraint.Column)} IS NULL OR {Quote(constraint.Column)} = {trueLiteral}";
     }
 
     /// <summary>

@@ -329,6 +329,11 @@ public static class RelationalModelManifestEmitter
                 writer.WritePropertyName("dependent_columns");
                 WriteColumnNameList(writer, allOrNone.DependentColumns);
                 break;
+            case TableConstraint.NullOrTrue nullOrTrue:
+                writer.WriteString("kind", "NullOrTrue");
+                writer.WriteString("name", nullOrTrue.Name);
+                writer.WriteString("column", nullOrTrue.Column.Value);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(constraint),

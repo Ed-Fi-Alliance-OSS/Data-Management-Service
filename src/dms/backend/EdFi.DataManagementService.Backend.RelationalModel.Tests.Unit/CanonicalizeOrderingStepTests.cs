@@ -278,6 +278,14 @@ public class Given_Mixed_Constraint_Types
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.schoolId"),
                 TargetResource: null
             ),
+            new DbColumnModel(
+                new DbColumnName("BooleanFlag"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Boolean),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.booleanFlag"),
+                TargetResource: null
+            ),
         };
 
         var constraints = new TableConstraint[]
@@ -286,6 +294,10 @@ public class Given_Mixed_Constraint_Types
                 "CK_School_Student_DocumentId_AllOrNone_B",
                 fkColumn,
                 dependentColumns
+            ),
+            new TableConstraint.NullOrTrue(
+                "CK_School_BooleanFlag_NullOrTrue_B",
+                new DbColumnName("BooleanFlag")
             ),
             new TableConstraint.ForeignKey(
                 "FK_School_Student_B",
@@ -298,6 +310,10 @@ public class Given_Mixed_Constraint_Types
                 "CK_School_Student_DocumentId_AllOrNone_A",
                 fkColumn,
                 dependentColumns
+            ),
+            new TableConstraint.NullOrTrue(
+                "CK_School_BooleanFlag_NullOrTrue_A",
+                new DbColumnName("BooleanFlag")
             ),
             new TableConstraint.ForeignKey(
                 "FK_School_Student_A",
@@ -351,7 +367,9 @@ public class Given_Mixed_Constraint_Types
                 "FK_School_Student_A",
                 "FK_School_Student_B",
                 "CK_School_Student_DocumentId_AllOrNone_A",
-                "CK_School_Student_DocumentId_AllOrNone_B"
+                "CK_School_Student_DocumentId_AllOrNone_B",
+                "CK_School_BooleanFlag_NullOrTrue_A",
+                "CK_School_BooleanFlag_NullOrTrue_B"
             );
     }
 
@@ -365,6 +383,7 @@ public class Given_Mixed_Constraint_Types
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => string.Empty,
         };
     }
@@ -450,6 +469,7 @@ internal static class CanonicalizeOrderingStepTestContext
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => string.Empty,
         };
     }

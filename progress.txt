@@ -1,0 +1,5 @@
+2026-02-16
+Task complete: Contracts (`reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md`), prep for `reference/design/backend-redesign/design-docs/key-unification.md`.
+Decisions: added `TableConstraint.NullOrTrue(Name, Column)` as explicit model contract; kept deterministic naming/signature path with new `ConstraintIdentityKind.NullOrTrue`; DDL emits dialect-safe CHECK (`= TRUE` Pgsql, `= 1` Mssql).
+Files changed: External RelationalModelTypes; ConstraintIdentity/Naming; ApplyConstraintDialectHashingPass; ApplyDialectIdentifierShorteningPass; RelationalModelOrdering; RelationalModelManifestEmitter; RelationalModelDdlEmitter; unit tests for manifest/ordering/shortening/DDL.
+Blockers/notes: no blockers. Feedback loops green: DDL unit tests, RelationalModel unit tests, full dms solution build.

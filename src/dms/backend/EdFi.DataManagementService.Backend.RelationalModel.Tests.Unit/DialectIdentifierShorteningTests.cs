@@ -76,7 +76,7 @@ public class Given_Pgsql_Identifier_Shortening
     }
 
     /// <summary>
-    /// It should shorten unique constraint, foreign key, and all-or-none constraint identifiers.
+    /// It should shorten unique, foreign key, all-or-none, and null-or-true constraint identifiers.
     /// </summary>
     [Test]
     public void It_should_shorten_constraint_identifiers()
@@ -91,6 +91,10 @@ public class Given_Pgsql_Identifier_Shortening
         var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
+        var expectedNullOrTrueConstraint = dialectRules.ShortenIdentifier(
+            identifiers.NullOrTrueConstraintName
+        );
+        var expectedNullOrTrueColumn = dialectRules.ShortenIdentifier(identifiers.NullOrTrueColumnName);
 
         var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
 
@@ -111,6 +115,10 @@ public class Given_Pgsql_Identifier_Shortening
         allOrNone.Name.Should().Be(expectedAllNone);
         allOrNone.FkColumn.Value.Should().Be(expectedFk);
         allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
+
+        var nullOrTrue = resourceModel.Root.Constraints.OfType<TableConstraint.NullOrTrue>().Single();
+        nullOrTrue.Name.Should().Be(expectedNullOrTrueConstraint);
+        nullOrTrue.Column.Value.Should().Be(expectedNullOrTrueColumn);
     }
 
     /// <summary>
@@ -299,7 +307,7 @@ public class Given_Mssql_Identifier_Shortening
     }
 
     /// <summary>
-    /// It should shorten unique constraint, foreign key, and all-or-none constraint identifiers.
+    /// It should shorten unique, foreign key, all-or-none, and null-or-true constraint identifiers.
     /// </summary>
     [Test]
     public void It_should_shorten_constraint_identifiers()
@@ -314,6 +322,10 @@ public class Given_Mssql_Identifier_Shortening
         var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
+        var expectedNullOrTrueConstraint = dialectRules.ShortenIdentifier(
+            identifiers.NullOrTrueConstraintName
+        );
+        var expectedNullOrTrueColumn = dialectRules.ShortenIdentifier(identifiers.NullOrTrueColumnName);
 
         var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
 
@@ -334,6 +346,10 @@ public class Given_Mssql_Identifier_Shortening
         allOrNone.Name.Should().Be(expectedAllNone);
         allOrNone.FkColumn.Value.Should().Be(expectedFk);
         allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
+
+        var nullOrTrue = resourceModel.Root.Constraints.OfType<TableConstraint.NullOrTrue>().Single();
+        nullOrTrue.Name.Should().Be(expectedNullOrTrueConstraint);
+        nullOrTrue.Column.Value.Should().Be(expectedNullOrTrueColumn);
     }
 
     /// <summary>
@@ -623,6 +639,8 @@ internal sealed record ShorteningIdentifiers(
     string UniqueConstraintName,
     string ForeignKeyConstraintName,
     string AllOrNoneConstraintName,
+    string NullOrTrueConstraintName,
+    string NullOrTrueColumnName,
     string IndexName,
     string TriggerName,
     string PropagationTriggerName,
@@ -658,6 +676,8 @@ internal sealed record ShorteningIdentifiers(
             UniqueConstraintName: BuildLongIdentifier(prefix, "UniqueConstraint", length),
             ForeignKeyConstraintName: BuildLongIdentifier(prefix, "ForeignKeyConstraint", length),
             AllOrNoneConstraintName: BuildLongIdentifier(prefix, "AllOrNoneConstraint", length),
+            NullOrTrueConstraintName: BuildLongIdentifier(prefix, "NullOrTrueConstraint", length),
+            NullOrTrueColumnName: BuildLongIdentifier(prefix, "NullOrTrueColumn", length),
             IndexName: BuildLongIdentifier(prefix, "Index", length),
             TriggerName: BuildLongIdentifier(prefix, "Trigger", length),
             PropagationTriggerName: BuildLongIdentifier(prefix, "PropagationTrigger", length),
@@ -732,6 +752,10 @@ internal static class IdentifierShorteningAssertions
         var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
+        var expectedNullOrTrueConstraint = dialectRules.ShortenIdentifier(
+            identifiers.NullOrTrueConstraintName
+        );
+        var expectedNullOrTrueColumn = dialectRules.ShortenIdentifier(identifiers.NullOrTrueColumnName);
         var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
         var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
         var expectedAbstractTable = dialectRules.ShortenIdentifier(identifiers.AbstractTableName);
@@ -777,6 +801,10 @@ internal static class IdentifierShorteningAssertions
         allOrNone.Name.Should().Be(expectedAllNone);
         allOrNone.FkColumn.Value.Should().Be(expectedFk);
         allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
+
+        var nullOrTrue = resourceModel.Root.Constraints.OfType<TableConstraint.NullOrTrue>().Single();
+        nullOrTrue.Name.Should().Be(expectedNullOrTrueConstraint);
+        nullOrTrue.Column.Value.Should().Be(expectedNullOrTrueColumn);
 
         var binding = resourceModel.DocumentReferenceBindings.Single();
         binding.Table.Schema.Value.Should().Be(expectedSchema);
@@ -959,6 +987,14 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.descriptor"),
                 TargetResource: ShorteningScenario.AbstractResource
             ),
+            new DbColumnModel(
+                new DbColumnName(_identifiers.NullOrTrueColumnName),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Boolean),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
         ];
 
         TableConstraint[] constraints =
@@ -979,6 +1015,10 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 _identifiers.AllOrNoneConstraintName,
                 new DbColumnName(_identifiers.FkColumnName),
                 [new DbColumnName(_identifiers.IdentityColumnName)]
+            ),
+            new TableConstraint.NullOrTrue(
+                _identifiers.NullOrTrueConstraintName,
+                new DbColumnName(_identifiers.NullOrTrueColumnName)
             ),
         ];
 

@@ -29,6 +29,11 @@ internal enum ConstraintIdentityKind
     /// All-or-none nullability check constraint identity.
     /// </summary>
     AllOrNone,
+
+    /// <summary>
+    /// Null-or-true check constraint identity.
+    /// </summary>
+    NullOrTrue,
 }
 
 /// <summary>
@@ -178,6 +183,23 @@ internal sealed class ConstraintIdentity : IEquatable<ConstraintIdentity>
             targetTable: null,
             Array.Empty<DbColumnName>(),
             CopyColumns(dependentColumns),
+            ReferentialAction.NoAction,
+            ReferentialAction.NoAction
+        );
+    }
+
+    /// <summary>
+    /// Creates a null-or-true check identity for a nullable-boolean column.
+    /// </summary>
+    public static ConstraintIdentity ForNullOrTrue(DbTableName table, DbColumnName column)
+    {
+        return new ConstraintIdentity(
+            ConstraintIdentityKind.NullOrTrue,
+            table,
+            [column],
+            targetTable: null,
+            Array.Empty<DbColumnName>(),
+            Array.Empty<DbColumnName>(),
             ReferentialAction.NoAction,
             ReferentialAction.NoAction
         );

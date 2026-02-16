@@ -207,6 +207,19 @@ public sealed class ApplyConstraintDialectHashingPass : IRelationalModelSetPass
                 changed = true;
                 return allOrNone with { Name = name };
             }
+            case TableConstraint.NullOrTrue nullOrTrue:
+            {
+                var identity = ConstraintIdentity.ForNullOrTrue(table, nullOrTrue.Column);
+                var name = ConstraintNaming.ApplyDialectLimit(nullOrTrue.Name, identity, dialectRules);
+
+                if (string.Equals(name, nullOrTrue.Name, StringComparison.Ordinal))
+                {
+                    return nullOrTrue;
+                }
+
+                changed = true;
+                return nullOrTrue with { Name = name };
+            }
             default:
                 throw new InvalidOperationException(
                     $"Unsupported constraint type '{constraint.GetType().Name}'."
