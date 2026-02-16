@@ -553,6 +553,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
+        if (identityElements.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
+            );
+        }
+
         var uuidv5Func = FormatUuidv5FunctionName();
 
         // DELETE existing row
@@ -587,8 +594,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append("('");
         builder.Append(Uuidv5Namespace);
         builder.Append("'::uuid, '");
-        builder.Append(projectName);
-        builder.Append(resourceName);
+        builder.Append(EscapeSqlLiteral(projectName));
+        builder.Append(EscapeSqlLiteral(resourceName));
         builder.Append("' || ");
         AppendPgsqlIdentityHashExpression(builder, identityElements);
         builder.Append("), NEW.");
@@ -659,6 +666,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
+        if (identityElements.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
+            );
+        }
+
         var uuidv5Func = FormatUuidv5FunctionName();
 
         // DELETE existing row
@@ -693,8 +707,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append("('");
         builder.Append(Uuidv5Namespace);
         builder.Append("', N'");
-        builder.Append(projectName);
-        builder.Append(resourceName);
+        builder.Append(EscapeSqlLiteral(projectName));
+        builder.Append(EscapeSqlLiteral(resourceName));
         builder.Append("' + ");
         AppendMssqlIdentityHashExpression(builder, identityElements);
         builder.Append("), i.");
@@ -1325,4 +1339,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     {
         return $"{Quote(DmsTableNames.Document.Schema)}.{Quote("uuidv5")}";
     }
+
+    /// <summary>
+    /// Escapes single quotes in a value for safe embedding in a SQL string literal.
+    /// </summary>
+    private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 }

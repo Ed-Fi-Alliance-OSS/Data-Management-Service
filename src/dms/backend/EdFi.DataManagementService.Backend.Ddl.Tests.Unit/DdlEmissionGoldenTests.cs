@@ -240,6 +240,48 @@ public class Given_DdlEmitter_With_PolymorphicAbstract_For_Mssql : DdlEmissionGo
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - Identity Propagation
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_With_IdentityPropagation_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = IdentityPropagationFixture.Build(SqlDialect.Pgsql);
+        _paths = EmitDdl("identity-propagation", SqlDialect.Pgsql, modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+[TestFixture]
+public class Given_DdlEmitter_With_IdentityPropagation_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = IdentityPropagationFixture.Build(SqlDialect.Mssql);
+        _paths = EmitDdl("identity-propagation", SqlDialect.Mssql, modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Golden File Tests - Extension Mapping
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1112,6 +1154,237 @@ internal static class ExtensionMappingFixture
                 new ProjectSchemaInfo("sample", "Sample", "1.0.0", false, sampleSchema),
             ],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
+            [],
+            [],
+            triggers
+        );
+    }
+}
+
+/// <summary>
+/// Fixture for identity propagation fallback scenario (MSSQL only):
+/// StudentSchoolAssociation references School via SchoolId FK.
+/// On MSSQL, an IdentityPropagationFallback trigger on StudentSchoolAssociation
+/// propagates SchoolId changes to the School root table (replacing ON UPDATE CASCADE).
+/// On PostgreSQL, only DocumentStamping and ReferentialIdentityMaintenance are emitted.
+/// </summary>
+internal static class IdentityPropagationFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var studentIdColumn = new DbColumnName("StudentUniqueId");
+        var entryDateColumn = new DbColumnName("EntryDate");
+
+        // School resource
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var schoolResourceKey = new ResourceKeyEntry(1, schoolResource, "1.0.0", false);
+
+        var schoolTableName = new DbTableName(schema, "School");
+        var schoolTable = new DbTableModel(
+            schoolTableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // StudentSchoolAssociation resource
+        var assocResource = new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation");
+        var assocResourceKey = new ResourceKeyEntry(2, assocResource, "1.0.0", false);
+
+        var assocTableName = new DbTableName(schema, "StudentSchoolAssociation");
+        var assocTable = new DbTableModel(
+            assocTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StudentSchoolAssociation",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    studentIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    entryDateColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Date),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_StudentSchoolAssociation_School",
+                    [schoolIdColumn],
+                    schoolTableName,
+                    [schoolIdColumn],
+                    ReferentialAction.NoAction,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        var schoolRelationalModel = new RelationalResourceModel(
+            schoolResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            schoolTable,
+            [schoolTable],
+            [],
+            []
+        );
+
+        var assocRelationalModel = new RelationalResourceModel(
+            assocResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            assocTable,
+            [assocTable],
+            [],
+            []
+        );
+
+        // Triggers
+        var triggers = new List<DbTriggerInfo>
+        {
+            // DocumentStamping on School root
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                schoolTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                [schoolIdColumn]
+            ),
+            // ReferentialIdentityMaintenance on School
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                schoolTableName,
+                DbTriggerKind.ReferentialIdentityMaintenance,
+                [documentIdColumn],
+                [schoolIdColumn],
+                ResourceKeyId: 1,
+                ProjectName: "Ed-Fi",
+                ResourceName: "School",
+                IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+            ),
+            // DocumentStamping on StudentSchoolAssociation root
+            new(
+                new DbTriggerName("TR_StudentSchoolAssociation_Stamp"),
+                assocTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                [schoolIdColumn, studentIdColumn, entryDateColumn]
+            ),
+            // ReferentialIdentityMaintenance on StudentSchoolAssociation
+            new(
+                new DbTriggerName("TR_StudentSchoolAssociation_ReferentialIdentity"),
+                assocTableName,
+                DbTriggerKind.ReferentialIdentityMaintenance,
+                [documentIdColumn],
+                [schoolIdColumn, studentIdColumn, entryDateColumn],
+                ResourceKeyId: 2,
+                ProjectName: "Ed-Fi",
+                ResourceName: "StudentSchoolAssociation",
+                IdentityElements:
+                [
+                    new IdentityElementMapping(schoolIdColumn, "$.schoolReference.schoolId"),
+                    new IdentityElementMapping(studentIdColumn, "$.studentReference.studentUniqueId"),
+                    new IdentityElementMapping(entryDateColumn, "$.entryDate"),
+                ]
+            ),
+        };
+
+        // IdentityPropagationFallback — MSSQL only
+        if (dialect == SqlDialect.Mssql)
+        {
+            triggers.Add(
+                new DbTriggerInfo(
+                    new DbTriggerName("TR_StudentSchoolAssociation_Propagation_School"),
+                    assocTableName,
+                    DbTriggerKind.IdentityPropagationFallback,
+                    [schoolIdColumn],
+                    [schoolIdColumn],
+                    schoolTableName,
+                    TargetColumnMappings: [new TriggerColumnMapping(schoolIdColumn, schoolIdColumn)]
+                )
+            );
+        }
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                2,
+                [0x01, 0x02],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [schoolResourceKey, assocResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [
+                new ConcreteResourceModel(
+                    schoolResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    schoolRelationalModel
+                ),
+                new ConcreteResourceModel(
+                    assocResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    assocRelationalModel
+                ),
+            ],
             [],
             [],
             [],
