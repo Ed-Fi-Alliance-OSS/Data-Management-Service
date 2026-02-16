@@ -9,6 +9,446 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 
+// ═══════════════════════════════════════════════════════════════════
+// Phase Ordering Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Foreign_Keys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_schemas_first()
+    {
+        _ddl.Should().Contain("CREATE SCHEMA");
+    }
+
+    [Test]
+    public void It_should_emit_foreign_keys_after_tables()
+    {
+        var schemaIndex = _ddl.IndexOf("CREATE SCHEMA");
+        var tableIndex = _ddl.IndexOf("CREATE TABLE");
+        var fkIndex = _ddl.IndexOf("ALTER TABLE");
+
+        schemaIndex.Should().BeLessThan(tableIndex);
+        tableIndex.Should().BeLessThan(fkIndex);
+    }
+
+    [Test]
+    public void It_should_not_include_foreign_keys_in_create_table()
+    {
+        var createTableEndIndex = _ddl.IndexOf(");", _ddl.IndexOf("CREATE TABLE"));
+        var firstFkIndex = _ddl.IndexOf("FOREIGN KEY");
+
+        // FK should not appear before the first CREATE TABLE ends
+        if (firstFkIndex > 0)
+        {
+            firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
+        }
+    }
+
+    [Test]
+    public void It_should_emit_foreign_keys_with_alter_table()
+    {
+        _ddl.Should().Contain("ALTER TABLE");
+        _ddl.Should().Contain("ADD CONSTRAINT");
+        _ddl.Should().Contain("FOREIGN KEY");
+        _ddl.Should().Contain("REFERENCES");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Foreign_Keys
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_foreign_keys_after_tables()
+    {
+        var tableIndex = _ddl.IndexOf("CREATE TABLE");
+        var fkIndex = _ddl.IndexOf("ALTER TABLE");
+
+        tableIndex.Should().BeLessThan(fkIndex);
+    }
+
+    [Test]
+    public void It_should_not_include_foreign_keys_in_create_table()
+    {
+        var createTableEndIndex = _ddl.IndexOf(");", _ddl.IndexOf("CREATE TABLE"));
+        var firstFkIndex = _ddl.IndexOf("FOREIGN KEY");
+
+        // FK should not appear before the first CREATE TABLE ends
+        if (firstFkIndex > 0)
+        {
+            firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Unbounded String Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Unbounded_String
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = UnboundedStringFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_varchar_without_max_suffix()
+    {
+        _ddl.Should().Contain("\"UnboundedColumn\" varchar NOT NULL");
+    }
+
+    [Test]
+    public void It_should_not_emit_varchar_max_for_postgresql()
+    {
+        _ddl.Should().NotContain("varchar(max)");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Unbounded_String
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = UnboundedStringFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_nvarchar_max_for_unbounded_string()
+    {
+        _ddl.Should().Contain("[UnboundedColumn] nvarchar(max) NOT NULL");
+    }
+
+    [Test]
+    public void It_should_not_emit_bare_nvarchar()
+    {
+        _ddl.Should().NotContain("nvarchar NOT NULL");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Abstract Identity Table Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Table
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = AbstractIdentityTableFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_abstract_identity_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE \"edfi\".\"EducationOrganizationIdentity\"");
+    }
+
+    [Test]
+    public void It_should_include_discriminator_column()
+    {
+        _ddl.Should().Contain("\"Discriminator\"");
+    }
+
+    [Test]
+    public void It_should_include_primary_key()
+    {
+        _ddl.Should().Contain("PRIMARY KEY");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Table
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = AbstractIdentityTableFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_abstract_identity_table()
+    {
+        _ddl.Should().Contain("CREATE TABLE [edfi].[EducationOrganizationIdentity]");
+    }
+
+    [Test]
+    public void It_should_include_discriminator_column()
+    {
+        _ddl.Should().Contain("[Discriminator]");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Abstract Union View Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Union_View
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = AbstractUnionViewFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_create_or_replace_view()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE VIEW");
+    }
+
+    [Test]
+    public void It_should_include_union_all()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_emit_views_after_tables_and_indexes()
+    {
+        var tableIndex = _ddl.IndexOf("CREATE TABLE");
+        var viewIndex = _ddl.IndexOf("CREATE OR REPLACE VIEW");
+
+        viewIndex.Should().BeGreaterThan(tableIndex);
+    }
+
+    [Test]
+    public void It_should_emit_discriminator_literal_with_postgresql_cast()
+    {
+        _ddl.Should().Contain("'School'::varchar");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = AbstractUnionViewFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_create_or_alter_view()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER VIEW");
+    }
+
+    [Test]
+    public void It_should_include_union_all()
+    {
+        _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_emit_discriminator_literal_with_sql_server_cast()
+    {
+        _ddl.Should().Contain("CAST(N'School' AS nvarchar(");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Trigger Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Triggers
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = TriggerFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_trigger_function()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE FUNCTION");
+        _ddl.Should().Contain("RETURNS TRIGGER");
+    }
+
+    [Test]
+    public void It_should_emit_trigger()
+    {
+        _ddl.Should().Contain("CREATE OR REPLACE TRIGGER");
+        _ddl.Should().Contain("EXECUTE FUNCTION");
+    }
+
+    [Test]
+    public void It_should_emit_plpgsql_language()
+    {
+        _ddl.Should().Contain("$$ LANGUAGE plpgsql");
+    }
+
+    [Test]
+    public void It_should_emit_return_new()
+    {
+        _ddl.Should().Contain("RETURN NEW;");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = TriggerFixture.Build(dialectRules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_create_or_alter_trigger()
+    {
+        _ddl.Should().Contain("CREATE OR ALTER TRIGGER");
+    }
+
+    [Test]
+    public void It_should_emit_after_insert_update()
+    {
+        _ddl.Should().Contain("AFTER INSERT, UPDATE");
+    }
+
+    [Test]
+    public void It_should_emit_set_nocount_on()
+    {
+        _ddl.Should().Contain("SET NOCOUNT ON;");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Determinism Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_Emitting_Twice
+{
+    private string _first = default!;
+    private string _second = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+
+        _first = emitter.Emit(modelSet);
+        _second = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_produce_byte_for_byte_identical_output()
+    {
+        _first.Should().Be(_second);
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_Emitting_Twice
+{
+    private string _first = default!;
+    private string _second = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+
+        _first = emitter.Emit(modelSet);
+        _second = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_produce_byte_for_byte_identical_output()
+    {
+        _first.Should().Be(_second);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Basic Tests (existing)
+// ═══════════════════════════════════════════════════════════════════
+
 [TestFixture]
 public class Given_Pgsql_Ddl_Emitter_With_Primary_Key_Constraint_Name
 {
@@ -115,6 +555,450 @@ internal static class PrimaryKeyFixture
             Array.Empty<AbstractUnionViewInfo>(),
             Array.Empty<DbIndexInfo>(),
             Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
+internal static class ForeignKeyFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var parentTableName = new DbTableName(schema, "School");
+        var childTableName = new DbTableName(schema, "SchoolAddress");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var parentTable = new DbTableModel(
+            parentTableName,
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Array.Empty<TableConstraint>()
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            new JsonPathExpression("$.addresses[*]", Array.Empty<JsonPathSegment>()),
+            new TableKey(
+                "PK_SchoolAddress",
+                [
+                    new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(new DbColumnName("AddressTypeId"), ColumnKind.Scalar),
+                ]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("AddressTypeId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_SchoolAddress_School",
+                    [documentIdColumn],
+                    parentTableName,
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            parentTable,
+            [parentTable, childTable],
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            Array.Empty<AbstractIdentityTableInfo>(),
+            Array.Empty<AbstractUnionViewInfo>(),
+            Array.Empty<DbIndexInfo>(),
+            Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
+internal static class UnboundedStringFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var unboundedColumn = new DbColumnName("UnboundedColumn");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var table = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    unboundedColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: null), // Unbounded
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Array.Empty<TableConstraint>()
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            [table],
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            Array.Empty<AbstractIdentityTableInfo>(),
+            Array.Empty<AbstractUnionViewInfo>(),
+            Array.Empty<DbIndexInfo>(),
+            Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
+internal static class AbstractIdentityTableFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var identityTableName = new DbTableName(schema, "EducationOrganizationIdentity");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var discriminatorColumn = new DbColumnName("Discriminator");
+        var resource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", true); // Abstract
+
+        var identityTable = new DbTableModel(
+            identityTableName,
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey(
+                "PK_EducationOrganizationIdentity",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    discriminatorColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Array.Empty<TableConstraint>()
+        );
+
+        var abstractIdentityTable = new AbstractIdentityTableInfo(resourceKey, identityTable);
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            Array.Empty<ConcreteResourceModel>(),
+            [abstractIdentityTable],
+            Array.Empty<AbstractUnionViewInfo>(),
+            Array.Empty<DbIndexInfo>(),
+            Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
+internal static class AbstractUnionViewFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var schoolTableName = new DbTableName(schema, "School");
+        var districtTableName = new DbTableName(schema, "LocalEducationAgency");
+        var viewName = new DbTableName(schema, "EducationOrganization");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var discriminatorColumn = new DbColumnName("Discriminator");
+
+        var abstractResource = new QualifiedResourceName("Ed-Fi", "EducationOrganization");
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var districtResource = new QualifiedResourceName("Ed-Fi", "LocalEducationAgency");
+        var abstractResourceKey = new ResourceKeyEntry(1, abstractResource, "1.0.0", true);
+        var schoolResourceKey = new ResourceKeyEntry(2, schoolResource, "1.0.0", false);
+        var districtResourceKey = new ResourceKeyEntry(3, districtResource, "1.0.0", false);
+
+        var outputColumns = new List<AbstractUnionViewOutputColumn>
+        {
+            new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
+            new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
+        };
+
+        var schoolArm = new AbstractUnionViewArm(
+            schoolResourceKey,
+            schoolTableName,
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.StringLiteral("School"),
+            ]
+        );
+
+        var districtArm = new AbstractUnionViewArm(
+            districtResourceKey,
+            districtTableName,
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.StringLiteral("LocalEducationAgency"),
+            ]
+        );
+
+        var unionView = new AbstractUnionViewInfo(
+            abstractResourceKey,
+            viewName,
+            outputColumns,
+            [schoolArm, districtArm]
+        );
+
+        // Create identity table
+        var identityTable = new DbTableModel(
+            new DbTableName(schema, "EducationOrganizationIdentity"),
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey(
+                "PK_EducationOrganizationIdentity",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    discriminatorColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Array.Empty<TableConstraint>()
+        );
+
+        var abstractIdentityTable = new AbstractIdentityTableInfo(abstractResourceKey, identityTable);
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                3,
+                [0x01, 0x02, 0x03],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [abstractResourceKey, schoolResourceKey, districtResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            Array.Empty<ConcreteResourceModel>(),
+            [abstractIdentityTable],
+            [unionView],
+            Array.Empty<DbIndexInfo>(),
+            Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
+internal static class TriggerFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var table = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Array.Empty<TableConstraint>()
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            [table],
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var trigger = new DbTriggerInfo(
+            new DbTriggerName("TR_School_DocumentStamping"),
+            tableName,
+            DbTriggerKind.DocumentStamping,
+            [documentIdColumn],
+            Array.Empty<DbColumnName>()
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            Array.Empty<AbstractIdentityTableInfo>(),
+            Array.Empty<AbstractUnionViewInfo>(),
+            Array.Empty<DbIndexInfo>(),
+            [trigger]
         );
     }
 }
