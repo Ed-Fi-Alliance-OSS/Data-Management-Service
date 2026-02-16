@@ -39731,34 +39731,6 @@
               }
             },
             {
-              "name": "Calendar_SchoolId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.calendarReference.schoolId",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolId_Unified",
-                "presence_column": "Calendar_DocumentId"
-              }
-            },
-            {
-              "name": "Calendar_SchoolYear",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.calendarReference.schoolYear",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolYear_Unified",
-                "presence_column": "Calendar_DocumentId"
-              }
-            },
-            {
               "name": "ClassOfSchoolYear_ClassOfSchoolYear",
               "kind": "Scalar",
               "type": {
@@ -39917,20 +39889,6 @@
               }
             },
             {
-              "name": "SchoolYear_SchoolYear",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.schoolYearTypeReference.schoolYear",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolYear_Unified",
-                "presence_column": "SchoolYear_DocumentId"
-              }
-            },
-            {
               "name": "SchoolYear_Unified",
               "kind": "Scalar",
               "type": {
@@ -39940,20 +39898,6 @@
               "source_path": null,
               "storage": {
                 "kind": "Stored"
-              }
-            },
-            {
-              "name": "School_SchoolId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": false,
-              "source_path": "$.schoolReference.schoolId",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolId_Unified",
-                "presence_column": "School_DocumentId"
               }
             },
             {
@@ -39991,6 +39935,34 @@
               "source_path": "$.calendarReference",
               "storage": {
                 "kind": "Stored"
+              }
+            },
+            {
+              "name": "Calendar_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolId_Unified",
+                "presence_column": "Calendar_DocumentId"
+              }
+            },
+            {
+              "name": "Calendar_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolYear",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolYear_Unified",
+                "presence_column": "Calendar_DocumentId"
               }
             },
             {
@@ -40042,6 +40014,20 @@
               }
             },
             {
+              "name": "SchoolYear_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolYearTypeReference.schoolYear",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolYear_Unified",
+                "presence_column": "SchoolYear_DocumentId"
+              }
+            },
+            {
               "name": "School_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -40051,6 +40037,20 @@
               "source_path": "$.schoolReference",
               "storage": {
                 "kind": "Stored"
+              }
+            },
+            {
+              "name": "School_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolReference.schoolId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolId_Unified",
+                "presence_column": "School_DocumentId"
               }
             },
             {
