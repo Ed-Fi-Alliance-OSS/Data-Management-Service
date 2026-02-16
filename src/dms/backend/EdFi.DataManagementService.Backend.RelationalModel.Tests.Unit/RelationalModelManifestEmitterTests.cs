@@ -163,6 +163,28 @@ public class Given_A_Relational_Model_Manifest_Emitter
         var root =
             JsonNode.Parse(_manifest) as JsonObject
             ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var keyUnificationDiagnostics =
+            root["key_unification_equality_constraints"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected key_unification_equality_constraints to be a JSON object."
+            );
+        var applied =
+            keyUnificationDiagnostics["applied"] as JsonArray
+            ?? throw new InvalidOperationException("Expected applied to be a JSON array.");
+        var redundant =
+            keyUnificationDiagnostics["redundant"] as JsonArray
+            ?? throw new InvalidOperationException("Expected redundant to be a JSON array.");
+        var ignored =
+            keyUnificationDiagnostics["ignored"] as JsonArray
+            ?? throw new InvalidOperationException("Expected ignored to be a JSON array.");
+        var ignoredByReason =
+            keyUnificationDiagnostics["ignored_by_reason"] as JsonObject
+            ?? throw new InvalidOperationException("Expected ignored_by_reason to be a JSON object.");
+
+        applied.Should().BeEmpty();
+        redundant.Should().BeEmpty();
+        ignored.Should().BeEmpty();
+        ignoredByReason.Count.Should().Be(0);
 
         var tables =
             root["tables"] as JsonArray
@@ -179,8 +201,14 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 ?? throw new InvalidOperationException(
                     "Expected key_unification_classes to be a JSON array."
                 );
+            var descriptorFkDeduplications =
+                table["descriptor_fk_deduplications"] as JsonArray
+                ?? throw new InvalidOperationException(
+                    "Expected descriptor_fk_deduplications to be a JSON array."
+                );
 
             keyUnificationClasses.Should().BeEmpty();
+            descriptorFkDeduplications.Should().BeEmpty();
 
             var columns =
                 table["columns"] as JsonArray
@@ -199,6 +227,262 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 storage["kind"]!.GetValue<string>().Should().Be("Stored");
             }
         }
+    }
+
+    /// <summary>
+    /// It should emit key-unification equality diagnostics for applied/redundant/cross-table constraints.
+    /// </summary>
+    [Test]
+    public void It_should_emit_key_unification_equality_constraint_diagnostics()
+    {
+        var derivedSet = BuildDerivedSet(BuildConstraintClassificationProjectSchema());
+        var resourceModel = derivedSet
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "ConstraintExample"
+            )
+            .RelationalModel;
+        var rootTable = resourceModel.Root;
+        var rootFiscalYearColumn = rootTable.Columns.Single(column =>
+            column.SourceJsonPath?.Canonical == "$.fiscalYear"
+        );
+        var rootLocalFiscalYearColumn = rootTable.Columns.Single(column =>
+            column.SourceJsonPath?.Canonical == "$.localFiscalYear"
+        );
+        var sectionTable = resourceModel.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Canonical == "$.sections[*]"
+        );
+        var sectionFiscalYearColumn = sectionTable.Columns.Single(column =>
+            column.SourceJsonPath?.Canonical == "$.sections[*].fiscalYear"
+        );
+        var keyUnificationClass = rootTable.KeyUnificationClasses.Should().ContainSingle().Subject;
+
+        var manifest = RelationalModelManifestEmitter.Emit(resourceModel, Array.Empty<ExtensionSite>());
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var keyUnificationDiagnostics =
+            root["key_unification_equality_constraints"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected key_unification_equality_constraints to be a JSON object."
+            );
+        var applied =
+            keyUnificationDiagnostics["applied"] as JsonArray
+            ?? throw new InvalidOperationException("Expected applied to be a JSON array.");
+        var redundant =
+            keyUnificationDiagnostics["redundant"] as JsonArray
+            ?? throw new InvalidOperationException("Expected redundant to be a JSON array.");
+        var ignored =
+            keyUnificationDiagnostics["ignored"] as JsonArray
+            ?? throw new InvalidOperationException("Expected ignored to be a JSON array.");
+        var ignoredByReason =
+            keyUnificationDiagnostics["ignored_by_reason"] as JsonObject
+            ?? throw new InvalidOperationException("Expected ignored_by_reason to be a JSON object.");
+
+        var appliedEntry =
+            applied.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected applied entry to be a JSON object.");
+        var appliedTable =
+            appliedEntry["table"] as JsonObject
+            ?? throw new InvalidOperationException("Expected applied table to be a JSON object.");
+
+        appliedEntry["endpoint_a_path"]!.GetValue<string>().Should().Be("$.fiscalYear");
+        appliedEntry["endpoint_b_path"]!.GetValue<string>().Should().Be("$.localFiscalYear");
+        appliedTable["schema"]!.GetValue<string>().Should().Be(rootTable.Table.Schema.Value);
+        appliedTable["name"]!.GetValue<string>().Should().Be(rootTable.Table.Name);
+        appliedEntry["endpoint_a_column"]!
+            .GetValue<string>()
+            .Should()
+            .Be(rootFiscalYearColumn.ColumnName.Value);
+        appliedEntry["endpoint_b_column"]!
+            .GetValue<string>()
+            .Should()
+            .Be(rootLocalFiscalYearColumn.ColumnName.Value);
+        appliedEntry["canonical_column"]!
+            .GetValue<string>()
+            .Should()
+            .Be(keyUnificationClass.CanonicalColumn.Value);
+
+        var redundantEntry =
+            redundant.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected redundant entry to be a JSON object.");
+        var redundantBinding =
+            redundantEntry["binding"] as JsonObject
+            ?? throw new InvalidOperationException("Expected redundant binding to be a JSON object.");
+        var redundantBindingTable =
+            redundantBinding["table"] as JsonObject
+            ?? throw new InvalidOperationException("Expected redundant binding table to be a JSON object.");
+
+        redundantEntry["endpoint_a_path"]!.GetValue<string>().Should().Be("$.fiscalYear");
+        redundantEntry["endpoint_b_path"]!.GetValue<string>().Should().Be("$.fiscalYear");
+        redundantBindingTable["schema"]!.GetValue<string>().Should().Be(rootTable.Table.Schema.Value);
+        redundantBindingTable["name"]!.GetValue<string>().Should().Be(rootTable.Table.Name);
+        redundantBinding["column"]!.GetValue<string>().Should().Be(rootFiscalYearColumn.ColumnName.Value);
+
+        var ignoredEntry =
+            ignored.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected ignored entry to be a JSON object.");
+        var endpointABinding =
+            ignoredEntry["endpoint_a_binding"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected ignored endpoint_a_binding to be a JSON object."
+            );
+        var endpointABindingTable =
+            endpointABinding["table"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected ignored endpoint_a_binding table to be a JSON object."
+            );
+        var endpointBBinding =
+            ignoredEntry["endpoint_b_binding"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected ignored endpoint_b_binding to be a JSON object."
+            );
+        var endpointBBindingTable =
+            endpointBBinding["table"] as JsonObject
+            ?? throw new InvalidOperationException(
+                "Expected ignored endpoint_b_binding table to be a JSON object."
+            );
+
+        ignoredEntry["endpoint_a_path"]!.GetValue<string>().Should().Be("$.fiscalYear");
+        ignoredEntry["endpoint_b_path"]!.GetValue<string>().Should().Be("$.sections[*].fiscalYear");
+        ignoredEntry["reason"]!.GetValue<string>().Should().Be("cross_table");
+        endpointABindingTable["schema"]!.GetValue<string>().Should().Be(rootTable.Table.Schema.Value);
+        endpointABindingTable["name"]!.GetValue<string>().Should().Be(rootTable.Table.Name);
+        endpointABinding["column"]!.GetValue<string>().Should().Be(rootFiscalYearColumn.ColumnName.Value);
+        endpointBBindingTable["schema"]!.GetValue<string>().Should().Be(sectionTable.Table.Schema.Value);
+        endpointBBindingTable["name"]!.GetValue<string>().Should().Be(sectionTable.Table.Name);
+        endpointBBinding["column"]!.GetValue<string>().Should().Be(sectionFiscalYearColumn.ColumnName.Value);
+
+        ignoredByReason.Count.Should().Be(1);
+        ignoredByReason["cross_table"]!.GetValue<int>().Should().Be(1);
+    }
+
+    /// <summary>
+    /// It should emit descriptor FK de-duplication diagnostics with the emitted FK constraint name.
+    /// </summary>
+    [Test]
+    public void It_should_emit_descriptor_fk_deduplications_with_constraint_name()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "DescriptorExample");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+        var canonicalColumn = new DbColumnName("SchoolTypeDescriptorId_Unified");
+        var primaryBindingColumn = new DbColumnName("PrimarySchoolTypeDescriptorId");
+        var secondaryBindingColumn = new DbColumnName("SecondarySchoolTypeDescriptorId");
+        var descriptorConstraintName = "FK_DescriptorExample_SchoolTypeDescriptorId_Unified";
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                canonicalColumn,
+                ColumnKind.DescriptorFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            ),
+            new DbColumnModel(
+                primaryBindingColumn,
+                ColumnKind.DescriptorFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.primarySchoolTypeDescriptor"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(canonicalColumn, PresenceColumn: null),
+            },
+            new DbColumnModel(
+                secondaryBindingColumn,
+                ColumnKind.DescriptorFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.secondarySchoolTypeDescriptor"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(canonicalColumn, PresenceColumn: null),
+            },
+        };
+
+        var constraints = new TableConstraint[]
+        {
+            new TableConstraint.ForeignKey(
+                descriptorConstraintName,
+                [canonicalColumn],
+                new DbTableName(new DbSchemaName("dms"), "Descriptor"),
+                [RelationalNameConventions.DocumentIdColumnName],
+                OnDelete: ReferentialAction.NoAction,
+                OnUpdate: ReferentialAction.NoAction
+            ),
+        };
+
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
+            columns,
+            constraints
+        );
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "DescriptorExample"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            [table],
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        )
+        {
+            DescriptorForeignKeyDeduplications =
+            [
+                new DescriptorForeignKeyDeduplication(
+                    tableName,
+                    canonicalColumn,
+                    [primaryBindingColumn, secondaryBindingColumn]
+                ),
+            ],
+        };
+
+        var manifest = RelationalModelManifestEmitter.Emit(resourceModel, Array.Empty<ExtensionSite>());
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+        var tableNode =
+            tables.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected table to be a JSON object.");
+        var deduplications =
+            tableNode["descriptor_fk_deduplications"] as JsonArray
+            ?? throw new InvalidOperationException(
+                "Expected descriptor_fk_deduplications to be a JSON array."
+            );
+        var deduplication =
+            deduplications.Should().ContainSingle().Subject as JsonObject
+            ?? throw new InvalidOperationException("Expected de-duplication entry to be a JSON object.");
+        var bindingColumns =
+            deduplication["binding_columns"] as JsonArray
+            ?? throw new InvalidOperationException("Expected binding_columns to be a JSON array.");
+
+        deduplication["storage_column"]!.GetValue<string>().Should().Be(canonicalColumn.Value);
+        bindingColumns
+            .Select(bindingColumn => bindingColumn?.GetValue<string>())
+            .Should()
+            .Equal(primaryBindingColumn.Value, secondaryBindingColumn.Value);
+        deduplication["constraint_name"]!.GetValue<string>().Should().Be(descriptorConstraintName);
     }
 
     /// <summary>
@@ -466,6 +750,98 @@ public class Given_A_Relational_Model_Manifest_Emitter
         {
             ["type"] = "object",
             ["properties"] = new JsonObject { ["tpdm"] = new JsonObject() },
+        };
+    }
+
+    /// <summary>
+    /// Build a derived relational-model set from one in-memory project schema.
+    /// </summary>
+    private static DerivedRelationalModelSet BuildDerivedSet(JsonObject projectSchema)
+    {
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+
+        return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// Build project schema for applied/redundant/cross-table equality-constraint diagnostics.
+    /// </summary>
+    private static JsonObject BuildConstraintClassificationProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["constraintExamples"] = BuildConstraintClassificationResourceSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build minimal resource schema with applied/redundant/cross-table equality constraints.
+    /// </summary>
+    private static JsonObject BuildConstraintClassificationResourceSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ConstraintExample",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = false,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject
+            {
+                ["SectionFiscalYear"] = new JsonObject
+                {
+                    ["isReference"] = false,
+                    ["path"] = "$.sections[*].fiscalYear",
+                },
+            },
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.localFiscalYear",
+                    ["targetJsonPath"] = "$.fiscalYear",
+                },
+                new JsonObject { ["sourceJsonPath"] = "$.fiscalYear", ["targetJsonPath"] = "$.fiscalYear" },
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.sections[*].fiscalYear",
+                    ["targetJsonPath"] = "$.fiscalYear",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["fiscalYear"] = new JsonObject { ["type"] = "integer" },
+                    ["localFiscalYear"] = new JsonObject { ["type"] = "integer" },
+                    ["sections"] = new JsonObject
+                    {
+                        ["type"] = "array",
+                        ["items"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject
+                            {
+                                ["fiscalYear"] = new JsonObject { ["type"] = "integer" },
+                            },
+                        },
+                    },
+                },
+            },
         };
     }
 
