@@ -15,6 +15,7 @@ internal static class ConstraintNaming
     internal const string NaturalKeyToken = "NK";
     internal const string ReferenceKeyToken = "RefKey";
     internal const string AllNoneToken = "AllNone";
+    internal const string NullOrTrueToken = "NullOrTrue";
     internal const string DocumentToken = "Document";
 
     private const string DescriptorIdSuffix = "_DescriptorId";
@@ -91,6 +92,14 @@ internal static class ConstraintNaming
     internal static string BuildAllOrNoneName(DbTableName table, string referenceBaseName)
     {
         return BuildName("CK", table, [referenceBaseName, AllNoneToken]);
+    }
+
+    /// <summary>
+    /// Builds the null-or-true check constraint name for a nullable-boolean column.
+    /// </summary>
+    internal static string BuildNullOrTrueName(DbTableName table, DbColumnName column)
+    {
+        return BuildName("CK", table, [column.Value, NullOrTrueToken]);
     }
 
     /// <summary>

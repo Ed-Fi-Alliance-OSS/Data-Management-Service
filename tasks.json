@@ -1,35 +1,35 @@
 [
   {
-    "category": "Constraints",
-    "description": "Introduce synthetic presence hardening via `TableConstraint.NullOrTrue`. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` defines `TableConstraint.NullOrTrue(string Name, DbColumnName Column)`; constraint naming/identity/dialect hashing/shortening all support it; manifest JSON serialization supports it; and `RelationalModelDdlEmitter` has minimal Pgsql/Mssql emission support (enough to keep unit tests green).",
+    "category": "Contracts",
+    "description": "Introduce synthetic presence hardening via `TableConstraint.NullOrTrue`. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` defines `TableConstraint.NullOrTrue(string Name, DbColumnName Column)`; `ConstraintIdentity`/`ConstraintNaming`/`ApplyConstraintDialectHashingPass`/`ApplyDialectIdentifierShorteningPass`/`RelationalModelOrdering` support this new constraint kind; `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelManifestEmitter.cs` serializes it deterministically; and `src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs` emits a dialect-appropriate CHECK expression (`<col> IS NULL OR <col> = TRUE/1`) so DDL unit tests stay green.",
     "steps-to-verify": [
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Key Unification",
-    "description": "Align `KeyUnificationPass` to the design: strict endpoint resolution by exact `DbColumnModel.SourceJsonPath.Canonical` only (delete `FindReferenceRelativeAliasCandidates` and `TryResolveAmbiguousReferenceEndpoint` heuristics), fail fast on unresolved/ambiguous endpoints and unsupported endpoint kinds, derive canonical stored columns + `ColumnStorage.UnifiedAlias` members with correct presence gating, and emit one `TableConstraint.NullOrTrue` per synthetic `..._Present` column. Acceptance: same-table applied constraints produce exactly one canonical stored column (`SourceJsonPath=null`) per class; unified members retain binding column names + `SourceJsonPath` and become aliases; reference-site aliases gate by `..._DocumentId`; optional non-reference aliases gate by synthetic presence flags; `DbTableModel.KeyUnificationClasses` ordering is deterministic and stable across runs.",
+    "description": "Align `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` to `reference/design/backend-redesign/design-docs/key-unification.md`: resolve equality-constraint endpoints strictly by exact `DbColumnModel.SourceJsonPath.Canonical` match (delete `FindReferenceRelativeAliasCandidates` and `TryResolveAmbiguousReferenceEndpoint` heuristics), fail fast on unresolved/ambiguous endpoints and unsupported endpoint kinds (only `Scalar` and `DescriptorFk`), classify every `resourceSchema.equalityConstraints` entry deterministically as `applied`/`redundant`/`ignored(cross_table)` for manifest emission, and build per-table connected components for `applied` edges. For each same-table unification class: add exactly one canonical stored column (`SourceJsonPath=null`), convert each member path column to `ColumnStorage.UnifiedAlias(canonical, presence?)`, gate reference-identity members by `{RefBaseName}_DocumentId`, gate optional non-reference members by synthetic nullable-boolean `{MemberColumn}_Present` (stored, `SourceJsonPath=null`) + one `TableConstraint.NullOrTrue` hardening CHECK per synthetic presence column, and leave required non-reference members ungated. Acceptance: `DbTableModel.KeyUnificationClasses` is populated with stable ordering (class order + member order) and no FK references any `UnifiedAlias` or synthetic presence-flag columns.",
     "steps-to-verify": [
-      "Add/extend minimal unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` for strict endpoint resolution, synthetic presence + NullOrTrue, and cross-table ignored constraints.",
+      "Add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` for strict endpoint resolution (unresolved/ambiguous), applied/redundant/ignored classification, reference-site gating via `..._DocumentId`, and optional scalar/descriptor gating via synthetic `..._Present` + `NullOrTrue`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "Descriptor FKs",
-    "description": "Refactor descriptor FK constraint emission into a post-unification pass. Acceptance: remove early descriptor FK constraint creation in `ReferenceBindingPass` and `ExtensionTableDerivationPass`; add a new set-level pass (after `KeyUnificationPass`) that maps descriptor binding columns to storage columns (canonical when unified), emits exactly one FK to `dms.Descriptor(DocumentId)` per `(table, storage_column)` pair, and de-duplicates multiple binding columns mapping to the same storage column; descriptor FK constraint names are derived from `(table, storage_column)` so they are stable under dedup.",
+    "description": "Refactor descriptor FK constraint emission into a post-unification set-level pass. Acceptance: remove early descriptor FK constraint creation in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceBindingPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ExtensionTableDerivationPass.cs`; add a new pass (wired into `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs` after `KeyUnificationPass` and before any constraint hashing/shortening) that maps each descriptor binding column (`ColumnKind.DescriptorFk`) to its storage column via `DbColumnModel.Storage` (canonical when unified), emits exactly one FK to `dms.Descriptor(DocumentId)` per `(table, storage_column)` pair, and records deterministic `descriptor_fk_deduplications[]` diagnostics when multiple binding columns map to the same storage column; constraint names are derived from `(table, storage_column)` so they are stable under de-dup.",
     "steps-to-verify": [
-      "Add a minimal synthetic-schema unit test where two descriptor binding columns unify to one canonical storage column and assert only one descriptor FK constraint is emitted.",
+      "Add a unit test where two descriptor binding columns unify to one canonical storage column and assert only one descriptor FK constraint exists and `ValidateForeignKeyStorageInvariantPass` remains satisfied.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "Reference Constraints",
-    "description": "Update reference constraint derivation to target storage columns under unification. Acceptance: in `ReferenceConstraintPass`, map both local and target identity-part columns through `DbColumnModel.Storage` (use `UnifiedAliasStorageResolver`) and de-duplicate repeated canonical storage columns after mapping while preserving identityJsonPaths order; ensure FK-supporting referenced-key UNIQUE constraints use the mapped (and deduped) target storage columns; all-or-none constraints remain on binding/path columns + `..._DocumentId` (no storage mapping).",
+    "description": "Update (or validate) `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` behavior under unification. Acceptance: composite reference FKs map both local and target identity-part columns through `DbColumnModel.Storage` (via `UnifiedAliasStorageResolver`) and de-duplicate repeated canonical storage columns after mapping while preserving `identityJsonPaths` order; FK-supporting referenced-key UNIQUE constraints use the mapped (and de-duplicated) target storage columns; and all-or-none CHECK constraints remain on binding/path columns (including aliases) + `..._DocumentId` (no storage mapping).",
     "steps-to-verify": [
       "Add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs` that exercise identity-part unification causing duplicate storage columns and assert FK/UK dedup with stable ordering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
@@ -37,17 +37,26 @@
     "completed": false
   },
   {
-    "category": "Dialect & Ordering",
-    "description": "Fix dialect shortening + deterministic ordering for key unification metadata. Acceptance: `ApplyDialectIdentifierShorteningPass` rewrites `ColumnStorage.UnifiedAlias` pointers (canonical/presence), `DbTableModel.KeyUnificationClasses` references, and `TableConstraint.NullOrTrue.Column`; canonical ordering guarantees the alias-dependency invariant (for every `UnifiedAlias`, its canonical and presence columns—including reference-site `..._DocumentId`—appear earlier) and places canonical + synthetic presence columns before dependent aliases.",
+    "category": "Dialect Shortening",
+    "description": "Fix dialect shortening for key unification metadata. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs` rewrites all key-unification references when identifiers shorten: `ColumnStorage.UnifiedAlias` pointers (canonical/presence), `DbTableModel.KeyUnificationClasses` (canonical + member lists), and `TableConstraint.NullOrTrue.Column`; plus any manifest diagnostics structures that store column names (if they are persisted across passes). Add unit tests covering shortening rewrites for both Pgsql and Mssql identifier limits.",
     "steps-to-verify": [
-      "Add unit tests for identifier shortening rewriting and for column-order dependency invariants.",
+      "Add unit tests for identifier shortening rewriting of unified-alias pointers, key-unification classes, and `NullOrTrue` constraints.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Ordering",
+    "description": "Fix deterministic ordering to respect unified-alias dependencies. Acceptance: canonical ordering guarantees the alias-dependency invariant (for every `UnifiedAlias`, its canonical and presence columns—including reference-site `..._DocumentId` and synthetic `..._Present`—appear earlier in `DbTableModel.Columns`), and places key-unification support columns (canonicals + synthetic presence flags) before dependent aliases while keeping existing key/descriptor/scalar grouping stable when possible; constraint ordering includes `NullOrTrue` deterministically (stable group + secondary name sort).",
+    "steps-to-verify": [
+      "Add unit tests for column-order dependency invariants (canonical/presence precede aliases) and for deterministic constraint ordering including `NullOrTrue`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
     "completed": false
   },
   {
     "category": "Manifests",
-    "description": "Emit key-unification diagnostics in manifest JSON without adding them to in-memory contracts. Acceptance: `RelationalModelManifestEmitter` emits `key_unification_equality_constraints` in the design-doc shape and always present (empty arrays when none): `applied`/`redundant`/`ignored` + `ignored_by_reason`; endpoint paths are canonicalized to undirected `(minPath,maxPath)` ordering while preserving duplicate ApiSchema entries; ignored.reason supports only `cross_table`; applied entries include resolved endpoint binding columns and the final `canonical_column`. Also emit per-table `descriptor_fk_deduplications` always present (empty when none) with deterministic ordering and including `constraint_name` for each dedup group.",
+    "description": "Emit key-unification diagnostics in manifest JSON (per `reference/design/backend-redesign/design-docs/key-unification.md`) without changing the public `DerivedRelationalModelSet` contract surface beyond the existing key-unification metadata. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelManifestEmitter.cs` emits `key_unification_equality_constraints` and always includes it (empty arrays when none): `applied`/`redundant`/`ignored` plus `ignored_by_reason`; endpoint paths are canonicalized to undirected `(minPath,maxPath)` ordering while preserving duplicate ApiSchema entries; ignored.reason supports only `cross_table`; applied entries include resolved endpoint binding columns and the final `canonical_column`. Also emit per-table `descriptor_fk_deduplications` always present (empty when none) with deterministic ordering and including `constraint_name` for each de-dup group. Ensure `NullOrTrue` constraints serialize deterministically in `constraints[]`.",
     "steps-to-verify": [
       "Update `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelManifestEmitterTests.cs` to assert new properties exist and are empty when appropriate.",
       "Add a focused minimal-schema test that produces applied/redundant/cross_table cases and asserts the emitted report shape and ordering.",
@@ -57,7 +66,7 @@
   },
   {
     "category": "Goldens",
-    "description": "Update authoritative DS 5.2 fixtures/goldens to validate end-to-end behavior. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelAuthoritativeGoldenTests.cs` switches to set-level `DerivedRelationalModelSetBuilder` for `Fixtures/authoritative/ds-5.2/expected/authoritative-relational-model.manifest.json` so reference binding + key unification + diagnostics execute; `DerivedRelationalModelSetAuthoritativeGoldenTests.cs` includes `Ed-Fi.StudentAssessmentRegistration` and `Ed-Fi.ProgramEvaluationElement` in `resource_details` for key-unification coverage; goldens pass without `UPDATE_GOLDENS`, and no `RelationalMappingVersion` bump is introduced (fixtures may remain on existing version strings such as `1.0.0`).",
+    "description": "Update authoritative DS 5.2 fixtures/goldens to validate end-to-end set-level behavior. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/RelationalModelAuthoritativeGoldenTests.cs` switches from the per-resource pipeline to the set-level `DerivedRelationalModelSetBuilder` so reference binding + key unification + descriptor FK de-dup + diagnostics execute; `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/DerivedRelationalModelSetAuthoritativeGoldenTests.cs` includes `Ed-Fi.StudentAssessmentRegistration` and `Ed-Fi.ProgramEvaluationElement` in `resource_details` for key-unification coverage; goldens pass without `UPDATE_GOLDENS`, and no `RelationalMappingVersion` bump is introduced (fixtures may remain on existing version strings such as `1.0.0`).",
     "steps-to-verify": [
       "Regenerate goldens once: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
       "Verify clean diff: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"

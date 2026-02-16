@@ -349,6 +349,13 @@ public abstract record TableConstraint
         DbColumnName FkColumn,
         IReadOnlyList<DbColumnName> DependentColumns
     ) : TableConstraint;
+
+    /// <summary>
+    /// A check constraint that enforces a nullable boolean column can only be <c>NULL</c> or <c>TRUE</c>.
+    /// </summary>
+    /// <param name="Name">The physical constraint name.</param>
+    /// <param name="Column">The constrained nullable-boolean column.</param>
+    public sealed record NullOrTrue(string Name, DbColumnName Column) : TableConstraint;
 }
 
 /// <summary>

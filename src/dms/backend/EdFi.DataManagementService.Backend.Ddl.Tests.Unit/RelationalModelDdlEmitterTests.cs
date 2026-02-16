@@ -54,6 +54,56 @@ public class Given_Mssql_Ddl_Emitter_With_Primary_Key_Constraint_Name
 }
 
 [TestFixture]
+public class Given_Pgsql_Ddl_Emitter_With_Null_Or_True_Constraint
+{
+    private string _sql = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new PgsqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = NullOrTrueFixture.Build(dialectRules.Dialect);
+
+        _sql = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_pgsql_null_or_true_check_expression()
+    {
+        _sql.Should()
+            .Contain(
+                "CONSTRAINT \"CK_School_FiscalYear_Present_NullOrTrue\" CHECK (\"FiscalYear_Present\" IS NULL OR \"FiscalYear_Present\" = TRUE)"
+            );
+    }
+}
+
+[TestFixture]
+public class Given_Mssql_Ddl_Emitter_With_Null_Or_True_Constraint
+{
+    private string _sql = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialectRules = new MssqlDialectRules();
+        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var modelSet = NullOrTrueFixture.Build(dialectRules.Dialect);
+
+        _sql = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_mssql_null_or_true_check_expression()
+    {
+        _sql.Should()
+            .Contain(
+                "CONSTRAINT [CK_School_FiscalYear_Present_NullOrTrue] CHECK ([FiscalYear_Present] IS NULL OR [FiscalYear_Present] = 1)"
+            );
+    }
+}
+
+[TestFixture]
 public class Given_Pgsql_Ddl_Emitter_With_Trigger_Inventory
 {
     private string _sql = default!;
@@ -228,6 +278,84 @@ internal static class PrimaryKeyFixture
                 ),
             },
             Array.Empty<TableConstraint>()
+        );
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            [table],
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            Array.Empty<AbstractIdentityTableInfo>(),
+            Array.Empty<AbstractUnionViewInfo>(),
+            Array.Empty<DbIndexInfo>(),
+            Array.Empty<DbTriggerInfo>()
+        );
+    }
+}
+
+internal static class NullOrTrueFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var presenceColumn = new DbColumnName("FiscalYear_Present");
+        var keyColumn = new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart);
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+        var table = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new TableKey("PK_School", [keyColumn]),
+            new[]
+            {
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    presenceColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            },
+            new TableConstraint[]
+            {
+                new TableConstraint.NullOrTrue("CK_School_FiscalYear_Present_NullOrTrue", presenceColumn),
+            }
         );
         var relationalModel = new RelationalResourceModel(
             resource,

@@ -322,6 +322,91 @@ public class Given_A_Relational_Model_Manifest_Emitter
     }
 
     /// <summary>
+    /// It should emit null-or-true constraints.
+    /// </summary>
+    [Test]
+    public void It_should_emit_null_or_true_constraints()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "School");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+        var presenceColumn = new DbColumnName("FiscalYear_Present");
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                presenceColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Boolean),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        };
+
+        var constraints = new TableConstraint[]
+        {
+            new TableConstraint.NullOrTrue("CK_School_FiscalYear_Present_NullOrTrue", presenceColumn),
+        };
+
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
+            columns,
+            constraints
+        );
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "School"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            new[] { table },
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var manifest = RelationalModelManifestEmitter.Emit(resourceModel, Array.Empty<ExtensionSite>());
+
+        var root =
+            JsonNode.Parse(manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var tables =
+            root["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        var tableNode =
+            tables.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected table to be a JSON object.");
+
+        var constraintNodes =
+            tableNode["constraints"] as JsonArray
+            ?? throw new InvalidOperationException("Expected constraints to be a JSON array.");
+
+        var constraint =
+            constraintNodes.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected constraint to be a JSON object.");
+
+        constraint["kind"]!.GetValue<string>().Should().Be("NullOrTrue");
+        constraint["name"]!.GetValue<string>().Should().Be("CK_School_FiscalYear_Present_NullOrTrue");
+        constraint["column"]!.GetValue<string>().Should().Be("FiscalYear_Present");
+    }
+
+    /// <summary>
     /// Create schema.
     /// </summary>
     private static JsonObject CreateSchema()

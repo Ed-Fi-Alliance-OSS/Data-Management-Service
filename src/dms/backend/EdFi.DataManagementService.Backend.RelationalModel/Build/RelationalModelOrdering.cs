@@ -89,6 +89,7 @@ internal static class RelationalModelOrdering
             TableConstraint.Unique => 1,
             TableConstraint.ForeignKey => 2,
             TableConstraint.AllOrNoneNullability => 3,
+            TableConstraint.NullOrTrue => 4,
             _ => 99,
         };
     }
@@ -103,6 +104,7 @@ internal static class RelationalModelOrdering
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => string.Empty,
         };
     }

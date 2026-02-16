@@ -399,6 +399,25 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     DependentColumns = updatedDependents,
                 };
             }
+            case TableConstraint.NullOrTrue nullOrTrue:
+            {
+                var updatedName = dialectRules.ShortenIdentifier(nullOrTrue.Name);
+                var updatedColumn = ShortenColumn(nullOrTrue.Column, dialectRules);
+                changed =
+                    !updatedColumn.Equals(nullOrTrue.Column)
+                    || !string.Equals(updatedName, nullOrTrue.Name, StringComparison.Ordinal);
+
+                if (!changed)
+                {
+                    return nullOrTrue;
+                }
+
+                return nullOrTrue with
+                {
+                    Name = updatedName,
+                    Column = updatedColumn,
+                };
+            }
             default:
                 throw new InvalidOperationException(
                     $"Unsupported constraint type '{constraint.GetType().Name}'."
@@ -1251,6 +1270,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => throw new InvalidOperationException(
                 $"Unsupported constraint type '{constraint.GetType().Name}'."
             ),
