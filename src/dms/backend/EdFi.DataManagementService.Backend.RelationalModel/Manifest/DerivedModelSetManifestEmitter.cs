@@ -17,6 +17,8 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 /// </summary>
 public static class DerivedModelSetManifestEmitter
 {
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
+
     /// <summary>
     /// Emits the manifest JSON string from the given model set.
     /// </summary>
@@ -40,7 +42,7 @@ public static class DerivedModelSetManifestEmitter
 
         var buffer = new ArrayBufferWriter<byte>();
 
-        using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
+        using (var writer = new Utf8JsonWriter(buffer, _writerOptions))
         {
             writer.WriteStartObject();
             writer.WriteString("dialect", modelSet.Dialect.ToString());
@@ -70,6 +72,9 @@ public static class DerivedModelSetManifestEmitter
         return json + "\n";
     }
 
+    /// <summary>
+    /// Writes the <c>projects</c> array.
+    /// </summary>
     private static void WriteProjects(Utf8JsonWriter writer, IReadOnlyList<ProjectSchemaInfo> projects)
     {
         writer.WritePropertyName("projects");
@@ -89,6 +94,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes the <c>resources</c> summary array.
+    /// </summary>
     private static void WriteResourcesSummary(
         Utf8JsonWriter writer,
         IReadOnlyList<ConcreteResourceModel> resources
@@ -110,6 +118,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes the <c>abstract_identity_tables</c> array.
+    /// </summary>
     private static void WriteAbstractIdentityTables(
         Utf8JsonWriter writer,
         IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTables
@@ -130,6 +141,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes the <c>abstract_union_views</c> array.
+    /// </summary>
     private static void WriteAbstractUnionViews(
         Utf8JsonWriter writer,
         IReadOnlyList<AbstractUnionViewInfo> abstractUnionViews
@@ -168,6 +182,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes a single output column for an abstract union view.
+    /// </summary>
     private static void WriteAbstractUnionViewOutputColumn(
         Utf8JsonWriter writer,
         AbstractUnionViewOutputColumn column
@@ -201,6 +218,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single union arm for an abstract union view.
+    /// </summary>
     private static void WriteAbstractUnionViewArm(Utf8JsonWriter writer, AbstractUnionViewArm arm)
     {
         writer.WriteStartObject();
@@ -222,6 +242,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single projection expression within a union arm.
+    /// </summary>
     private static void WriteProjectionExpression(
         Utf8JsonWriter writer,
         AbstractUnionViewProjectionExpression expression
@@ -250,6 +273,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes the <c>indexes</c> array.
+    /// </summary>
     private static void WriteIndexes(Utf8JsonWriter writer, IReadOnlyList<DbIndexInfo> indexes)
     {
         writer.WritePropertyName("indexes");
@@ -271,6 +297,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes the <c>triggers</c> array.
+    /// </summary>
     private static void WriteTriggers(Utf8JsonWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
     {
         writer.WritePropertyName("triggers");
@@ -300,6 +329,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes the optional <c>resource_details</c> array for the requested resources.
+    /// </summary>
     private static void WriteResourceDetails(
         Utf8JsonWriter writer,
         IReadOnlyList<ConcreteResourceModel> resources,
@@ -324,6 +356,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes a single resource detail object including tables, bindings, and extension sites.
+    /// </summary>
     private static void WriteResourceDetail(
         Utf8JsonWriter writer,
         ConcreteResourceModel resource,
@@ -375,6 +410,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a <c>resource</c> property containing project and resource name.
+    /// </summary>
     private static void WriteResource(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WritePropertyName("resource");
@@ -384,6 +422,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a table object with its key columns, columns, and constraints.
+    /// </summary>
     private static void WriteTable(Utf8JsonWriter writer, DbTableModel table)
     {
         writer.WriteStartObject();
@@ -418,6 +459,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single key column object.
+    /// </summary>
     private static void WriteKeyColumn(Utf8JsonWriter writer, DbKeyColumn keyColumn)
     {
         writer.WriteStartObject();
@@ -426,6 +470,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single column object with its type and source path.
+    /// </summary>
     private static void WriteColumn(Utf8JsonWriter writer, DbColumnModel column)
     {
         writer.WriteStartObject();
@@ -446,6 +493,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a scalar type object or null value.
+    /// </summary>
     private static void WriteScalarType(Utf8JsonWriter writer, RelationalScalarType? scalarType)
     {
         if (scalarType is null)
@@ -471,6 +521,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single table constraint (Unique, ForeignKey, or AllOrNoneNullability).
+    /// </summary>
     private static void WriteConstraint(Utf8JsonWriter writer, TableConstraint constraint)
     {
         writer.WriteStartObject();
@@ -513,6 +566,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes an array of column name strings.
+    /// </summary>
     private static void WriteColumnNameList(Utf8JsonWriter writer, IReadOnlyList<DbColumnName> columns)
     {
         writer.WriteStartArray();
@@ -523,6 +579,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndArray();
     }
 
+    /// <summary>
+    /// Writes a single document reference binding with its identity bindings.
+    /// </summary>
     private static void WriteDocumentReferenceBinding(Utf8JsonWriter writer, DocumentReferenceBinding binding)
     {
         writer.WriteStartObject();
@@ -543,6 +602,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single reference identity binding.
+    /// </summary>
     private static void WriteReferenceIdentityBinding(
         Utf8JsonWriter writer,
         ReferenceIdentityBinding identityBinding
@@ -554,6 +616,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single descriptor edge source.
+    /// </summary>
     private static void WriteDescriptorEdge(Utf8JsonWriter writer, DescriptorEdgeSource edge)
     {
         writer.WriteStartObject();
@@ -567,6 +632,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single extension site with its project keys.
+    /// </summary>
     private static void WriteExtensionSite(Utf8JsonWriter writer, ExtensionSite site)
     {
         writer.WriteStartObject();
@@ -582,6 +650,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a table reference object with schema and name.
+    /// </summary>
     private static void WriteTableReference(Utf8JsonWriter writer, DbTableName tableName)
     {
         writer.WriteStartObject();
@@ -590,6 +661,9 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a resource reference object with project and resource name.
+    /// </summary>
     private static void WriteResourceReference(Utf8JsonWriter writer, QualifiedResourceName resource)
     {
         writer.WriteStartObject();

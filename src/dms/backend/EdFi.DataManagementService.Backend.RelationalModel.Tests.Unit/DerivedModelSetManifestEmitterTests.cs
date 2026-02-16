@@ -42,15 +42,16 @@ public class Given_A_Descriptor_Only_Model_Set_When_Emitting_Manifest
         var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
         var derivedSet = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
 
+        var firstEmission = DerivedModelSetManifestEmitter.Emit(derivedSet);
         var secondEmission = DerivedModelSetManifestEmitter.Emit(derivedSet);
 
-        secondEmission.Should().Be(_manifest);
+        secondEmission.Should().Be(firstEmission);
     }
 
     [Test]
     public void It_should_use_unix_line_endings()
     {
-        _manifest.Should().NotContain("\r\n");
+        _manifest.Should().NotContain("\r");
         _manifest.Should().Contain("\n");
     }
 
