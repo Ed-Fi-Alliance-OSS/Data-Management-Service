@@ -62,7 +62,7 @@
       "Add a focused minimal-schema test that produces applied/redundant/cross_table cases and asserts the emitted report shape and ordering.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Goldens",
