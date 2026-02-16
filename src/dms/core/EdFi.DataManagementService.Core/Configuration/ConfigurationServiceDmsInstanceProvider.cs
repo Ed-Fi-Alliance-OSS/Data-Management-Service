@@ -186,7 +186,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// <summary>
     /// Gets the cache key for a tenant, using empty string for null/empty tenant
     /// </summary>
-    private static string GetTenantKey(string? tenant) => tenant ?? string.Empty;
+    private static string GetTenantKey(string? tenant) => SanitizeTenant(tenant);
 
     /// <inheritdoc />
     public bool TenantExists(string tenant) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
