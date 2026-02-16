@@ -63,8 +63,9 @@ public abstract class DdlEmissionGoldenTestBase
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
+        var errorTask = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
+        var error = errorTask.Result;
         process.WaitForExit();
 
         if (process.ExitCode == 0)
@@ -92,9 +93,9 @@ public abstract class DdlEmissionGoldenTestBase
     }
 
     /// <summary>
-    /// Assert that emitted DDL matches the golden file.
+    /// Emits DDL and writes the actual output file. Call this in SetUp (arrange + act).
     /// </summary>
-    protected static void AssertDdlMatchesGolden(
+    protected static GoldenTestPaths EmitDdl(
         string fixtureName,
         SqlDialect dialect,
         DerivedRelationalModelSet modelSet
@@ -111,41 +112,46 @@ public abstract class DdlEmissionGoldenTestBase
             $"{fixtureName}.sql"
         );
 
-        // Emit DDL
         var dialectRules =
             dialect == SqlDialect.Pgsql ? (ISqlDialectRules)new PgsqlDialectRules() : new MssqlDialectRules();
         var emitter = new RelationalModelDdlEmitter(dialectRules);
         var ddl = emitter.Emit(modelSet);
 
-        // Write actual output
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, ddl);
 
-        // Update golden if requested
         if (ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
             File.WriteAllText(expectedPath, ddl);
         }
 
-        // Verify golden exists
-        File.Exists(expectedPath)
-            .Should()
-            .BeTrue($"Golden file missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate.");
+        return new GoldenTestPaths(expectedPath, actualPath);
+    }
 
-        // Compare with git diff
-        var diffOutput = RunGitDiff(expectedPath, actualPath);
+    /// <summary>
+    /// Asserts that the emitted DDL matches the golden file. Call this in the test method.
+    /// </summary>
+    protected static void AssertGoldenMatch(GoldenTestPaths paths)
+    {
+        File.Exists(paths.ExpectedPath)
+            .Should()
+            .BeTrue($"Golden file missing at {paths.ExpectedPath}. Set UPDATE_GOLDENS=1 to generate.");
+
+        var diffOutput = RunGitDiff(paths.ExpectedPath, paths.ActualPath);
 
         if (!string.IsNullOrWhiteSpace(diffOutput))
         {
             Assert.Fail(
                 $"DDL output does not match golden file.\n\n"
-                    + $"Expected: {expectedPath}\n"
-                    + $"Actual: {actualPath}\n\n"
+                    + $"Expected: {paths.ExpectedPath}\n"
+                    + $"Actual: {paths.ActualPath}\n\n"
                     + $"Diff:\n{diffOutput}"
             );
         }
     }
+
+    protected record GoldenTestPaths(string ExpectedPath, string ActualPath);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -155,36 +161,38 @@ public abstract class DdlEmissionGoldenTestBase
 [TestFixture]
 public class Given_DdlEmitter_With_NestedCollections_For_Pgsql : DdlEmissionGoldenTestBase
 {
+    private GoldenTestPaths _paths = default!;
+
     [SetUp]
     public void Setup()
     {
         var modelSet = NestedCollectionsFixture.Build(SqlDialect.Pgsql);
-        AssertDdlMatchesGolden("nested-collections", SqlDialect.Pgsql, modelSet);
+        _paths = EmitDdl("nested-collections", SqlDialect.Pgsql, modelSet);
     }
 
     [Test]
     public void It_should_emit_ddl_matching_golden_file()
     {
-        // Assertion handled in Setup via AssertDdlMatchesGolden
-        Assert.Pass();
+        AssertGoldenMatch(_paths);
     }
 }
 
 [TestFixture]
 public class Given_DdlEmitter_With_NestedCollections_For_Mssql : DdlEmissionGoldenTestBase
 {
+    private GoldenTestPaths _paths = default!;
+
     [SetUp]
     public void Setup()
     {
         var modelSet = NestedCollectionsFixture.Build(SqlDialect.Mssql);
-        AssertDdlMatchesGolden("nested-collections", SqlDialect.Mssql, modelSet);
+        _paths = EmitDdl("nested-collections", SqlDialect.Mssql, modelSet);
     }
 
     [Test]
     public void It_should_emit_ddl_matching_golden_file()
     {
-        // Assertion handled in Setup via AssertDdlMatchesGolden
-        Assert.Pass();
+        AssertGoldenMatch(_paths);
     }
 }
 
@@ -195,36 +203,38 @@ public class Given_DdlEmitter_With_NestedCollections_For_Mssql : DdlEmissionGold
 [TestFixture]
 public class Given_DdlEmitter_With_PolymorphicAbstract_For_Pgsql : DdlEmissionGoldenTestBase
 {
+    private GoldenTestPaths _paths = default!;
+
     [SetUp]
     public void Setup()
     {
         var modelSet = PolymorphicAbstractFixture.Build(SqlDialect.Pgsql);
-        AssertDdlMatchesGolden("polymorphic-abstract", SqlDialect.Pgsql, modelSet);
+        _paths = EmitDdl("polymorphic-abstract", SqlDialect.Pgsql, modelSet);
     }
 
     [Test]
     public void It_should_emit_ddl_matching_golden_file()
     {
-        // Assertion handled in Setup via AssertDdlMatchesGolden
-        Assert.Pass();
+        AssertGoldenMatch(_paths);
     }
 }
 
 [TestFixture]
 public class Given_DdlEmitter_With_PolymorphicAbstract_For_Mssql : DdlEmissionGoldenTestBase
 {
+    private GoldenTestPaths _paths = default!;
+
     [SetUp]
     public void Setup()
     {
         var modelSet = PolymorphicAbstractFixture.Build(SqlDialect.Mssql);
-        AssertDdlMatchesGolden("polymorphic-abstract", SqlDialect.Mssql, modelSet);
+        _paths = EmitDdl("polymorphic-abstract", SqlDialect.Mssql, modelSet);
     }
 
     [Test]
     public void It_should_emit_ddl_matching_golden_file()
     {
-        // Assertion handled in Setup via AssertDdlMatchesGolden
-        Assert.Pass();
+        AssertGoldenMatch(_paths);
     }
 }
 
@@ -235,36 +245,38 @@ public class Given_DdlEmitter_With_PolymorphicAbstract_For_Mssql : DdlEmissionGo
 [TestFixture]
 public class Given_DdlEmitter_With_ExtensionMapping_For_Pgsql : DdlEmissionGoldenTestBase
 {
+    private GoldenTestPaths _paths = default!;
+
     [SetUp]
     public void Setup()
     {
         var modelSet = ExtensionMappingFixture.Build(SqlDialect.Pgsql);
-        AssertDdlMatchesGolden("extension-mapping", SqlDialect.Pgsql, modelSet);
+        _paths = EmitDdl("extension-mapping", SqlDialect.Pgsql, modelSet);
     }
 
     [Test]
     public void It_should_emit_ddl_matching_golden_file()
     {
-        // Assertion handled in Setup via AssertDdlMatchesGolden
-        Assert.Pass();
+        AssertGoldenMatch(_paths);
     }
 }
 
 [TestFixture]
 public class Given_DdlEmitter_With_ExtensionMapping_For_Mssql : DdlEmissionGoldenTestBase
 {
+    private GoldenTestPaths _paths = default!;
+
     [SetUp]
     public void Setup()
     {
         var modelSet = ExtensionMappingFixture.Build(SqlDialect.Mssql);
-        AssertDdlMatchesGolden("extension-mapping", SqlDialect.Mssql, modelSet);
+        _paths = EmitDdl("extension-mapping", SqlDialect.Mssql, modelSet);
     }
 
     [Test]
     public void It_should_emit_ddl_matching_golden_file()
     {
-        // Assertion handled in Setup via AssertDdlMatchesGolden
-        Assert.Pass();
+        AssertGoldenMatch(_paths);
     }
 }
 

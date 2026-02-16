@@ -52,11 +52,11 @@ public sealed class RelationalModelDdlEmitter
         // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs)
         AppendTables(builder, modelSet.ConcreteResourcesInNameOrder);
 
-        // Phase 3: Foreign Keys (separate ALTER TABLE statements)
-        AppendForeignKeys(builder, modelSet.ConcreteResourcesInNameOrder);
-
-        // Phase 4: Abstract Identity Tables
+        // Phase 3: Abstract Identity Tables (must precede FKs that reference them)
         AppendAbstractIdentityTables(builder, modelSet.AbstractIdentityTablesInNameOrder);
+
+        // Phase 4: Foreign Keys (separate ALTER TABLE statements)
+        AppendForeignKeys(builder, modelSet.ConcreteResourcesInNameOrder);
 
         // Phase 5: Indexes
         AppendIndexes(builder, modelSet.IndexesInCreateOrder);
@@ -326,6 +326,7 @@ public sealed class RelationalModelDdlEmitter
     /// </summary>
     private void AppendDocumentStampingBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
+        // TODO DMS-938: Implement document stamping trigger body (stamp dms.Document ContentVersion/IdentityVersion on writes)
         builder.Append(indent);
         builder.AppendLine("-- Document stamping logic");
     }
@@ -335,6 +336,7 @@ public sealed class RelationalModelDdlEmitter
     /// </summary>
     private void AppendReferentialIdentityBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
+        // TODO DMS-938: Implement referential identity maintenance trigger body (maintain dms.ReferentialIdentity rows)
         builder.Append(indent);
         builder.AppendLine("-- Referential identity logic");
     }
@@ -344,6 +346,7 @@ public sealed class RelationalModelDdlEmitter
     /// </summary>
     private void AppendAbstractIdentityBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
+        // TODO DMS-938: Implement abstract identity maintenance trigger body (maintain {schema}.{AbstractResource}Identity)
         builder.Append(indent);
         builder.AppendLine("-- Abstract identity logic");
     }
@@ -353,6 +356,7 @@ public sealed class RelationalModelDdlEmitter
     /// </summary>
     private void AppendIdentityPropagationBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
+        // TODO DMS-938: Implement identity propagation fallback trigger body
         builder.Append(indent);
         builder.AppendLine("-- Identity propagation logic");
     }
@@ -565,7 +569,7 @@ public sealed class RelationalModelDdlEmitter
 
             builder.AppendLine();
             builder.Append("FROM ");
-            builder.Append(Quote(arm.FromTable));
+            builder.AppendLine(Quote(arm.FromTable));
         }
 
         builder.AppendLine(";");
