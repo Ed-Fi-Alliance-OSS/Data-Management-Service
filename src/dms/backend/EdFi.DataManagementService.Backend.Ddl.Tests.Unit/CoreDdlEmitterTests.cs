@@ -360,6 +360,18 @@ public class Given_CoreDdlEmitter_With_PgsqlDialect
         _ddl.Should().Contain("\"Description\" varchar(1024) NULL");
     }
 
+    [Test]
+    public void It_should_have_nullable_effective_begin_date_in_descriptor()
+    {
+        _ddl.Should().Contain("\"EffectiveBeginDate\" date NULL");
+    }
+
+    [Test]
+    public void It_should_have_nullable_effective_end_date_in_descriptor()
+    {
+        _ddl.Should().Contain("\"EffectiveEndDate\" date NULL");
+    }
+
     // ── Foreign keys ────────────────────────────────────────────────
 
     [Test]
@@ -771,6 +783,18 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_nullable_description_in_descriptor()
     {
         _ddl.Should().Contain("[Description] nvarchar(1024) NULL");
+    }
+
+    [Test]
+    public void It_should_have_nullable_effective_begin_date_in_descriptor()
+    {
+        _ddl.Should().Contain("[EffectiveBeginDate] date NULL");
+    }
+
+    [Test]
+    public void It_should_have_nullable_effective_end_date_in_descriptor()
+    {
+        _ddl.Should().Contain("[EffectiveEndDate] date NULL");
     }
 
     // ── Foreign keys ────────────────────────────────────────────────

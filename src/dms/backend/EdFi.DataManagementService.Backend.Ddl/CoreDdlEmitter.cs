@@ -46,6 +46,8 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private string StringType(int maxLength) =>
         $"{_dialect.Rules.ScalarTypeDefaults.StringType}({maxLength})";
 
+    private string DateType => _dialect.Rules.ScalarTypeDefaults.DateType;
+
     private string DateTimeType => _dialect.Rules.ScalarTypeDefaults.DateTimeType;
 
     private string BooleanType => _dialect.Rules.ScalarTypeDefaults.BooleanType;
@@ -143,6 +145,10 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("Description"), StringType(1024), true)},"
             );
+            writer.AppendLine(
+                $"{_dialect.RenderColumnDefinition(Col("EffectiveBeginDate"), DateType, true)},"
+            );
+            writer.AppendLine($"{_dialect.RenderColumnDefinition(Col("EffectiveEndDate"), DateType, true)},");
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("Discriminator"), StringType(128), false)},"
             );
