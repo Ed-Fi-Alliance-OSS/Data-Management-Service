@@ -39,7 +39,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     );
 
     /// <inheritdoc />
-    public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(tenant ?? DefaultTenant);
+    public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(SanitizeTenant(tenant));
 
     /// <summary>
     /// Loads DMS instances from the Configuration Service API and stores them in memory
@@ -88,7 +88,7 @@ public class ConfigurationServiceDmsInstanceProvider(
 
             logger.LogInformation(
                 "DMS instance cache updated successfully for tenant {Tenant}",
-                tenant ?? DefaultTenant
+                SanitizeTenant(tenant)
             );
 
             return instances;
@@ -294,7 +294,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         if (tenantResponses == null)
         {
             logger.LogWarning("Deserialization returned null - treating as empty tenant list");
-            return Array.Empty<string>();
+            return [];
         }
 
         return tenantResponses.Select(t => t.Name).ToList();
@@ -337,7 +337,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         if (dmsInstanceResponses == null)
         {
             logger.LogWarning("Deserialization returned null - treating as empty instance list");
-            return Array.Empty<DmsInstance>();
+            return [];
         }
 
         return dmsInstanceResponses
@@ -368,7 +368,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     }
 
     private static string SanitizeTenant(string? tenant) =>
-        LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
+        LoggingSanitizer.SanitizeForLogging(tenant ?? DefaultTenant);
 
     private SemaphoreSlim GetTenantLock(string tenantKey) =>
         _tenantLocks.GetOrAdd(tenantKey, _ => new SemaphoreSlim(1, 1));
@@ -382,8 +382,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         public string InstanceType { get; init; } = string.Empty;
         public string InstanceName { get; init; } = string.Empty;
         public string? ConnectionString { get; init; } = null;
-        public IList<DmsInstanceRouteContextItem> DmsInstanceRouteContexts { get; init; } =
-            Array.Empty<DmsInstanceRouteContextItem>();
+        public IList<DmsInstanceRouteContextItem> DmsInstanceRouteContexts { get; init; } = [];
     }
 
     /// <summary>
