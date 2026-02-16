@@ -593,6 +593,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append(uuidv5Func);
         builder.Append("('");
         builder.Append(Uuidv5Namespace);
+        // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
+        // with no separator — do not add one without updating the calculator.
         builder.Append("'::uuid, '");
         builder.Append(EscapeSqlLiteral(projectName));
         builder.Append(EscapeSqlLiteral(resourceName));
@@ -615,7 +617,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             if (i > 0)
                 builder.Append(" || '#' || ");
             builder.Append("'$");
-            builder.Append(elements[i].IdentityJsonPath);
+            builder.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
             builder.Append("=' || NEW.");
             builder.Append(Quote(elements[i].Column));
             builder.Append("::text");
@@ -706,6 +708,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append(uuidv5Func);
         builder.Append("('");
         builder.Append(Uuidv5Namespace);
+        // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
+        // with no separator — do not add one without updating the calculator.
         builder.Append("', N'");
         builder.Append(EscapeSqlLiteral(projectName));
         builder.Append(EscapeSqlLiteral(resourceName));
@@ -729,7 +733,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             if (i > 0)
                 builder.Append(" + N'#' + ");
             builder.Append("N'$");
-            builder.Append(elements[i].IdentityJsonPath);
+            builder.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
             builder.Append("=' + CAST(i.");
             builder.Append(Quote(elements[i].Column));
             builder.Append(" AS nvarchar(max))");
@@ -808,7 +812,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             builder.Append(Quote(mapping.SourceColumn));
         }
         builder.Append(", '");
-        builder.Append(trigger.DiscriminatorValue);
+        builder.Append(EscapeSqlLiteral(trigger.DiscriminatorValue ?? string.Empty));
         builder.AppendLine("')");
 
         builder.Append(indent);
@@ -886,7 +890,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             builder.Append(Quote(mapping.SourceColumn));
         }
         builder.Append(", N'");
-        builder.Append(trigger.DiscriminatorValue);
+        builder.Append(EscapeSqlLiteral(trigger.DiscriminatorValue ?? string.Empty));
         builder.AppendLine("');");
     }
 
@@ -930,11 +934,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append(Quote(fkColumn));
         builder.Append(" = i.");
         builder.AppendLine(Quote(fkColumn));
+        // Correlate old/new rows of the trigger's owning table by DocumentId (the universal PK),
+        // not by the FK column — the FK column is what changes, so it cannot be the join key.
+        var documentIdCol = Quote(new DbColumnName("DocumentId"));
         builder.Append(indent);
         builder.Append("INNER JOIN deleted d ON d.");
-        builder.Append(Quote(fkColumn));
+        builder.Append(documentIdCol);
         builder.Append(" = i.");
-        builder.AppendLine(Quote(fkColumn));
+        builder.AppendLine(documentIdCol);
 
         builder.Append(indent);
         builder.Append("WHERE ");

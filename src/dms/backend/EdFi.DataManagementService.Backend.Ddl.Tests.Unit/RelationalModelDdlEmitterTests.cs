@@ -507,8 +507,7 @@ internal static class PrimaryKeyFixture
             tableName,
             new JsonPathExpression("$", []),
             new TableKey(primaryKeyName, [keyColumn]),
-            new[]
-            {
+            [
                 new DbColumnModel(
                     columnName,
                     ColumnKind.ParentKeyPart,
@@ -517,7 +516,7 @@ internal static class PrimaryKeyFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
-            },
+            ],
             []
         );
         var relationalModel = new RelationalResourceModel(
@@ -838,11 +837,11 @@ internal static class AbstractUnionViewFixture
         var schoolResourceKey = new ResourceKeyEntry(2, schoolResource, "1.0.0", false);
         var districtResourceKey = new ResourceKeyEntry(3, districtResource, "1.0.0", false);
 
-        var outputColumns = new List<AbstractUnionViewOutputColumn>
-        {
+        List<AbstractUnionViewOutputColumn> outputColumns =
+        [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
-        };
+        ];
 
         var schoolArm = new AbstractUnionViewArm(
             schoolResourceKey,

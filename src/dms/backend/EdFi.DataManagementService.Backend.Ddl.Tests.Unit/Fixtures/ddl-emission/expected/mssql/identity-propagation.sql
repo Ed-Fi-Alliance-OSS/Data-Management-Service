@@ -94,7 +94,7 @@ BEGIN
     SET t.[SchoolId] = i.[SchoolId]
     FROM [edfi].[School] t
     INNER JOIN inserted i ON t.[SchoolId] = i.[SchoolId]
-    INNER JOIN deleted d ON d.[SchoolId] = i.[SchoolId]
+    INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
     WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
 END;
 

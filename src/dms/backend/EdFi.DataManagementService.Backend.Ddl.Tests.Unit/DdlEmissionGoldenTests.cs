@@ -494,8 +494,8 @@ internal static class NestedCollectionsFixture
         );
 
         // Triggers
-        var triggers = new List<DbTriggerInfo>
-        {
+        List<DbTriggerInfo> triggers =
+        [
             // DocumentStamping on root table (with identity projection column SchoolId)
             new(
                 new DbTriggerName("TR_School_Stamp"),
@@ -532,7 +532,7 @@ internal static class NestedCollectionsFixture
                 ResourceName: "School",
                 IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
             ),
-        };
+        ];
 
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
@@ -702,12 +702,12 @@ internal static class PolymorphicAbstractFixture
 
         // Abstract union view
         var viewName = new DbTableName(schema, "EducationOrganization");
-        var outputColumns = new List<AbstractUnionViewOutputColumn>
-        {
+        List<AbstractUnionViewOutputColumn> outputColumns =
+        [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
             new(organizationIdColumn, new RelationalScalarType(ScalarKind.Int32), null, null),
             new(discriminatorColumn, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
-        };
+        ];
 
         var schoolArm = new AbstractUnionViewArm(
             schoolResourceKey,
@@ -766,8 +766,8 @@ internal static class PolymorphicAbstractFixture
             [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")]
         );
 
-        var triggers = new List<DbTriggerInfo>
-        {
+        List<DbTriggerInfo> triggers =
+        [
             // DocumentStamping on LEA root (with identity projection)
             new(
                 new DbTriggerName("TR_LocalEducationAgency_Stamp"),
@@ -838,7 +838,7 @@ internal static class PolymorphicAbstractFixture
                 ],
                 SuperclassAlias: superclassAlias
             ),
-        };
+        ];
 
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
@@ -1075,8 +1075,8 @@ internal static class ExtensionMappingFixture
         );
 
         // Triggers
-        var triggers = new List<DbTriggerInfo>
-        {
+        List<DbTriggerInfo> triggers =
+        [
             // DocumentStamping on root table (with identity projection column SchoolId)
             new(
                 new DbTriggerName("TR_School_Stamp"),
@@ -1121,7 +1121,7 @@ internal static class ExtensionMappingFixture
                 ResourceName: "School",
                 IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
             ),
-        };
+        ];
 
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
@@ -1288,8 +1288,8 @@ internal static class IdentityPropagationFixture
         );
 
         // Triggers
-        var triggers = new List<DbTriggerInfo>
-        {
+        List<DbTriggerInfo> triggers =
+        [
             // DocumentStamping on School root
             new(
                 new DbTriggerName("TR_School_Stamp"),
@@ -1335,7 +1335,7 @@ internal static class IdentityPropagationFixture
                     new IdentityElementMapping(entryDateColumn, "$.entryDate"),
                 ]
             ),
-        };
+        ];
 
         // IdentityPropagationFallback — MSSQL only
         if (dialect == SqlDialect.Mssql)
