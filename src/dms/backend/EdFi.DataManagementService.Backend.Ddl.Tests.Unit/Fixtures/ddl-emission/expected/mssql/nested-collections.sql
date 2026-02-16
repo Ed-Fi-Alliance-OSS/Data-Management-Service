@@ -25,3 +25,61 @@ ALTER TABLE [edfi].[SchoolAddress] ADD CONSTRAINT [FK_SchoolAddress_School] FORE
 
 ALTER TABLE [edfi].[SchoolAddressPhoneNumber] ADD CONSTRAINT [FK_SchoolAddressPhoneNumber_SchoolAddress] FOREIGN KEY ([DocumentId], [AddressOrdinal]) REFERENCES [edfi].[SchoolAddress] ([DocumentId], [AddressOrdinal]) ON DELETE CASCADE;
 
+CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
+ON [edfi].[School]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
+    IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
+    BEGIN
+        UPDATE d
+        SET d.[IdentityVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[IdentityLastModifiedAt] = sysutcdatetime()
+        FROM [dms].[Document] d
+        INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
+        INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
+        WHERE i.[SchoolId] <> del.[SchoolId];
+    END
+END;
+
+CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddress_Stamp]
+ON [edfi].[SchoolAddress]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
+END;
+
+CREATE OR ALTER TRIGGER [edfi].[TR_SchoolAddressPhoneNumber_Stamp]
+ON [edfi].[SchoolAddressPhoneNumber]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE d
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
+    FROM [dms].[Document] d
+    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
+END;
+
+CREATE OR ALTER TRIGGER [edfi].[TR_School_ReferentialIdentity]
+ON [edfi].[School]
+AFTER INSERT, UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE FROM [dms].[ReferentialIdentity]
+    WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
+    INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+    SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiSchool' + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
+    FROM inserted i;
+END;
+

@@ -33,3 +33,84 @@ ALTER TABLE "sample"."SchoolExtension" ADD CONSTRAINT "FK_SchoolExtension_School
 
 ALTER TABLE "sample"."SchoolAddressExtension" ADD CONSTRAINT "FK_SchoolAddressExtension_SchoolAddress" FOREIGN KEY ("DocumentId", "AddressOrdinal") REFERENCES "edfi"."SchoolAddress" ("DocumentId", "AddressOrdinal") ON DELETE CASCADE;
 
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER "TR_School_Stamp"
+BEFORE INSERT OR UPDATE ON "edfi"."School"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER "TR_SchoolAddress_Stamp"
+BEFORE INSERT OR UPDATE ON "edfi"."SchoolAddress"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolAddressExtension_Stamp"()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER "TR_SchoolAddressExtension_Stamp"
+BEFORE INSERT OR UPDATE ON "sample"."SchoolAddressExtension"
+FOR EACH ROW
+EXECUTE FUNCTION "sample"."TF_TR_SchoolAddressExtension_Stamp"();
+
+CREATE OR REPLACE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp"()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER "TR_SchoolExtension_Stamp"
+BEFORE INSERT OR UPDATE ON "sample"."SchoolExtension"
+FOR EACH ROW
+EXECUTE FUNCTION "sample"."TF_TR_SchoolExtension_Stamp"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
+RETURNS TRIGGER AS $$
+BEGIN
+    DELETE FROM "dms"."ReferentialIdentity"
+    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 1);
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE TRIGGER "TR_School_ReferentialIdentity"
+BEFORE INSERT OR UPDATE ON "edfi"."School"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
+

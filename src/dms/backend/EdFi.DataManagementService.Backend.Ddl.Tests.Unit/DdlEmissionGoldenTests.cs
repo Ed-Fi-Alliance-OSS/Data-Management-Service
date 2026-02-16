@@ -450,6 +450,47 @@ internal static class NestedCollectionsFixture
             Array.Empty<DescriptorEdgeSource>()
         );
 
+        // Triggers
+        var triggers = new List<DbTriggerInfo>
+        {
+            // DocumentStamping on root table (with identity projection column SchoolId)
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                schoolTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                [schoolIdColumn]
+            ),
+            // DocumentStamping on child table SchoolAddress (no identity projection)
+            new(
+                new DbTriggerName("TR_SchoolAddress_Stamp"),
+                addressTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                []
+            ),
+            // DocumentStamping on nested child table (no identity projection)
+            new(
+                new DbTriggerName("TR_SchoolAddressPhoneNumber_Stamp"),
+                phoneTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                []
+            ),
+            // ReferentialIdentityMaintenance on root table
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                schoolTableName,
+                DbTriggerKind.ReferentialIdentityMaintenance,
+                [documentIdColumn],
+                [schoolIdColumn],
+                ResourceKeyId: 1,
+                ProjectName: "Ed-Fi",
+                ResourceName: "School",
+                IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+            ),
+        };
+
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
                 "1.0.0",
@@ -474,7 +515,7 @@ internal static class NestedCollectionsFixture
             Array.Empty<AbstractIdentityTableInfo>(),
             Array.Empty<AbstractUnionViewInfo>(),
             Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            triggers
         );
     }
 }
@@ -674,6 +715,88 @@ internal static class PolymorphicAbstractFixture
             Array.Empty<DescriptorEdgeSource>()
         );
 
+        // Triggers
+        var superclassAlias = new SuperclassAliasInfo(
+            1,
+            "Ed-Fi",
+            "EducationOrganization",
+            [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")]
+        );
+
+        var triggers = new List<DbTriggerInfo>
+        {
+            // DocumentStamping on LEA root (with identity projection)
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_Stamp"),
+                leaTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                [organizationIdColumn]
+            ),
+            // AbstractIdentityMaintenance on LEA → EducationOrganizationIdentity
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_AbstractIdentity"),
+                leaTableName,
+                DbTriggerKind.AbstractIdentityMaintenance,
+                [documentIdColumn],
+                [organizationIdColumn],
+                identityTableName,
+                TargetColumnMappings: [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                DiscriminatorValue: "Ed-Fi:LocalEducationAgency"
+            ),
+            // ReferentialIdentityMaintenance on LEA
+            new(
+                new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
+                leaTableName,
+                DbTriggerKind.ReferentialIdentityMaintenance,
+                [documentIdColumn],
+                [organizationIdColumn],
+                ResourceKeyId: 3,
+                ProjectName: "Ed-Fi",
+                ResourceName: "LocalEducationAgency",
+                IdentityElements:
+                [
+                    new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId"),
+                ],
+                SuperclassAlias: superclassAlias
+            ),
+            // DocumentStamping on School root (with identity projection)
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                schoolTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                [organizationIdColumn]
+            ),
+            // AbstractIdentityMaintenance on School → EducationOrganizationIdentity
+            new(
+                new DbTriggerName("TR_School_AbstractIdentity"),
+                schoolTableName,
+                DbTriggerKind.AbstractIdentityMaintenance,
+                [documentIdColumn],
+                [organizationIdColumn],
+                identityTableName,
+                TargetColumnMappings: [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                DiscriminatorValue: "Ed-Fi:School"
+            ),
+            // ReferentialIdentityMaintenance on School
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                schoolTableName,
+                DbTriggerKind.ReferentialIdentityMaintenance,
+                [documentIdColumn],
+                [organizationIdColumn],
+                ResourceKeyId: 2,
+                ProjectName: "Ed-Fi",
+                ResourceName: "School",
+                IdentityElements:
+                [
+                    new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId"),
+                ],
+                SuperclassAlias: superclassAlias
+            ),
+        };
+
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
                 "1.0.0",
@@ -709,7 +832,7 @@ internal static class PolymorphicAbstractFixture
             [abstractIdentityTable],
             [unionView],
             Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            triggers
         );
     }
 }
@@ -908,6 +1031,55 @@ internal static class ExtensionMappingFixture
             Array.Empty<DescriptorEdgeSource>()
         );
 
+        // Triggers
+        var triggers = new List<DbTriggerInfo>
+        {
+            // DocumentStamping on root table (with identity projection column SchoolId)
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                schoolTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                [schoolIdColumn]
+            ),
+            // DocumentStamping on child table SchoolAddress (no identity projection)
+            new(
+                new DbTriggerName("TR_SchoolAddress_Stamp"),
+                addressTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                []
+            ),
+            // DocumentStamping on extension table SchoolAddressExtension (no identity projection)
+            new(
+                new DbTriggerName("TR_SchoolAddressExtension_Stamp"),
+                addressExtTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                []
+            ),
+            // DocumentStamping on extension table SchoolExtension (no identity projection)
+            new(
+                new DbTriggerName("TR_SchoolExtension_Stamp"),
+                schoolExtTableName,
+                DbTriggerKind.DocumentStamping,
+                [documentIdColumn],
+                []
+            ),
+            // ReferentialIdentityMaintenance on root table
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                schoolTableName,
+                DbTriggerKind.ReferentialIdentityMaintenance,
+                [documentIdColumn],
+                [schoolIdColumn],
+                ResourceKeyId: 1,
+                ProjectName: "Ed-Fi",
+                ResourceName: "School",
+                IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+            ),
+        };
+
         return new DerivedRelationalModelSet(
             new EffectiveSchemaInfo(
                 "1.0.0",
@@ -942,7 +1114,7 @@ internal static class ExtensionMappingFixture
             Array.Empty<AbstractIdentityTableInfo>(),
             Array.Empty<AbstractUnionViewInfo>(),
             Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            triggers
         );
     }
 }

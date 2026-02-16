@@ -109,16 +109,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            // ReferentialIdentityMaintenance trigger on the root table.
-            context.TriggerInventory.Add(
-                new DbTriggerInfo(
-                    new DbTriggerName(BuildTriggerName(rootTable.Table, ReferentialIdentityToken)),
-                    rootTable.Table,
-                    DbTriggerKind.ReferentialIdentityMaintenance,
-                    [RelationalNameConventions.DocumentIdColumnName],
-                    identityProjectionColumns
-                )
-            );
+            // Build identity element mappings for UUIDv5 computation.
+            var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
+
+            // Resolve the resource key entry for referential identity metadata.
+            var resourceKeyEntry = context.GetResourceKeyEntry(resource);
 
             // AbstractIdentityMaintenance triggers — one per abstract identity table this
             // resource contributes to (discovered via subclass metadata).
@@ -127,6 +122,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 "isSubclass",
                 defaultValue: false
             );
+
+            SuperclassAliasInfo? superclassAlias = null;
 
             if (isSubclass)
             {
@@ -143,8 +140,47 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     superclassResourceName
                 );
 
+                var superclassResourceKeyEntry = context.GetResourceKeyEntry(superclassResource);
+
+                // Build superclass identity element mappings, handling superclassIdentityJsonPath remapping.
+                var superclassIdentityJsonPath = TryGetOptionalString(
+                    resourceContext.ResourceSchema,
+                    "superclassIdentityJsonPath"
+                );
+
+                IReadOnlyList<IdentityElementMapping> superclassIdentityElements;
+                if (superclassIdentityJsonPath is not null)
+                {
+                    // When superclassIdentityJsonPath is set, the subclass has exactly one identity path
+                    // that maps to the superclass's single identity path.
+                    superclassIdentityElements =
+                    [
+                        new IdentityElementMapping(identityElements[0].Column, superclassIdentityJsonPath),
+                    ];
+                }
+                else
+                {
+                    // Same identity paths — reuse the concrete identity elements.
+                    superclassIdentityElements = identityElements;
+                }
+
+                superclassAlias = new SuperclassAliasInfo(
+                    superclassResourceKeyEntry.ResourceKeyId,
+                    superclassProjectName,
+                    superclassResourceName,
+                    superclassIdentityElements
+                );
+
                 if (abstractTablesByResource.TryGetValue(superclassResource, out var abstractTable))
                 {
+                    var targetColumnMappings = BuildAbstractIdentityColumnMappings(
+                        abstractTable.TableModel,
+                        resourceModel,
+                        builderContext,
+                        resource,
+                        superclassIdentityJsonPath
+                    );
+
                     context.TriggerInventory.Add(
                         new DbTriggerInfo(
                             new DbTriggerName(BuildTriggerName(rootTable.Table, AbstractIdentityToken)),
@@ -152,11 +188,29 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                             DbTriggerKind.AbstractIdentityMaintenance,
                             [RelationalNameConventions.DocumentIdColumnName],
                             identityProjectionColumns,
-                            abstractTable.TableModel.Table
+                            abstractTable.TableModel.Table,
+                            TargetColumnMappings: targetColumnMappings,
+                            DiscriminatorValue: $"{resource.ProjectName}:{resource.ResourceName}"
                         )
                     );
                 }
             }
+
+            // ReferentialIdentityMaintenance trigger on the root table.
+            context.TriggerInventory.Add(
+                new DbTriggerInfo(
+                    new DbTriggerName(BuildTriggerName(rootTable.Table, ReferentialIdentityToken)),
+                    rootTable.Table,
+                    DbTriggerKind.ReferentialIdentityMaintenance,
+                    [RelationalNameConventions.DocumentIdColumnName],
+                    identityProjectionColumns,
+                    ResourceKeyId: resourceKeyEntry.ResourceKeyId,
+                    ProjectName: resource.ProjectName,
+                    ResourceName: resource.ResourceName,
+                    IdentityElements: identityElements,
+                    SuperclassAlias: superclassAlias
+                )
+            );
 
             // IdentityPropagationFallback — MSSQL only: emits triggers for reference FKs that
             // would use ON UPDATE CASCADE on PostgreSQL but must use NO ACTION on SQL Server.
@@ -293,6 +347,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn);
             var propagatedColumns = binding.IdentityBindings.Select(ib => ib.Column).ToArray();
 
+            // Build column mappings from source to target for identity propagation.
+            var targetColumnMappings = binding
+                .IdentityBindings.Select(ib => new TriggerColumnMapping(ib.Column, ib.Column))
+                .ToArray();
+
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName(
@@ -302,7 +361,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     DbTriggerKind.IdentityPropagationFallback,
                     [binding.FkColumn],
                     propagatedColumns,
-                    targetTable
+                    targetTable,
+                    TargetColumnMappings: targetColumnMappings
                 )
             );
         }
@@ -318,6 +378,134 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         return fkColumn.Value.EndsWith(DocumentIdSuffix, StringComparison.Ordinal)
             ? fkColumn.Value[..^DocumentIdSuffix.Length]
             : fkColumn.Value;
+    }
+
+    /// <summary>
+    /// Builds identity element mappings for UUIDv5 computation by pairing each identity projection
+    /// column with its canonical JSON path.
+    /// </summary>
+    private static IReadOnlyList<IdentityElementMapping> BuildIdentityElementMappings(
+        RelationalResourceModel resourceModel,
+        RelationalModelBuilderContext builderContext,
+        QualifiedResourceName resource
+    )
+    {
+        if (builderContext.IdentityJsonPaths.Count == 0)
+        {
+            return [];
+        }
+
+        var rootTable = resourceModel.Root;
+        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable, resource);
+        var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
+            resourceModel.DocumentReferenceBindings,
+            resource
+        );
+
+        HashSet<string> seenColumns = new(StringComparer.Ordinal);
+        List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
+
+        foreach (var identityPath in builderContext.IdentityJsonPaths)
+        {
+            DbColumnName column;
+
+            if (referenceBindingsByIdentityPath.TryGetValue(identityPath.Canonical, out var binding))
+            {
+                column = binding.FkColumn;
+            }
+            else if (rootColumnsByPath.TryGetValue(identityPath.Canonical, out var columnName))
+            {
+                column = columnName;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
+                        + "did not map to a root table column during identity element mapping."
+                );
+            }
+
+            if (seenColumns.Add(column.Value))
+            {
+                mappings.Add(new IdentityElementMapping(column, identityPath.Canonical));
+            }
+        }
+
+        return mappings.ToArray();
+    }
+
+    /// <summary>
+    /// Builds column mappings from concrete root table columns to abstract identity table columns
+    /// for <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers.
+    /// </summary>
+    private static IReadOnlyList<TriggerColumnMapping> BuildAbstractIdentityColumnMappings(
+        DbTableModel abstractTable,
+        RelationalResourceModel resourceModel,
+        RelationalModelBuilderContext builderContext,
+        QualifiedResourceName resource,
+        string? superclassIdentityJsonPath
+    )
+    {
+        var rootTable = resourceModel.Root;
+        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable, resource);
+        var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
+            resourceModel.DocumentReferenceBindings,
+            resource
+        );
+
+        List<TriggerColumnMapping> mappings = [];
+
+        // Iterate over abstract identity table columns that have a source JSON path
+        // (these are the identity columns, excluding DocumentId and Discriminator).
+        foreach (var abstractColumn in abstractTable.Columns)
+        {
+            if (abstractColumn.SourceJsonPath is null)
+            {
+                continue;
+            }
+
+            var abstractPath = abstractColumn.SourceJsonPath.Value.Canonical;
+
+            // Determine which concrete identity path maps to this abstract path.
+            string concretePath;
+            if (
+                superclassIdentityJsonPath is not null
+                && string.Equals(abstractPath, superclassIdentityJsonPath, StringComparison.Ordinal)
+            )
+            {
+                // When superclassIdentityJsonPath is set, the first concrete identity path
+                // maps to the superclass identity path.
+                concretePath = builderContext.IdentityJsonPaths[0].Canonical;
+            }
+            else
+            {
+                // Normal case: the concrete path is the same as the abstract path.
+                concretePath = abstractPath;
+            }
+
+            // Resolve the concrete source column.
+            DbColumnName sourceColumn;
+            if (referenceBindingsByIdentityPath.TryGetValue(concretePath, out var binding))
+            {
+                sourceColumn = binding.FkColumn;
+            }
+            else if (rootColumnsByPath.TryGetValue(concretePath, out var columnName))
+            {
+                sourceColumn = columnName;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Abstract identity path '{abstractPath}' (concrete path '{concretePath}') "
+                        + $"on resource '{FormatResource(resource)}' did not map to a root table column "
+                        + "during abstract identity column mapping."
+                );
+            }
+
+            mappings.Add(new TriggerColumnMapping(sourceColumn, abstractColumn.ColumnName));
+        }
+
+        return mappings.ToArray();
     }
 
     /// <summary>

@@ -322,43 +322,634 @@ public sealed class RelationalModelDdlEmitter
     }
 
     /// <summary>
-    /// Appends document stamping trigger body (stub for future implementation).
+    /// Appends document stamping trigger body that stamps <c>dms.Document.ContentVersion</c>
+    /// and (for root tables with identity projection columns) <c>IdentityVersion</c> on writes.
     /// </summary>
     private void AppendDocumentStampingBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
-        // TODO DMS-938: Implement document stamping trigger body (stamp dms.Document ContentVersion/IdentityVersion on writes)
+        var documentTable = Quote(DmsTableNames.Document);
+        var sequenceName = FormatSequenceName();
+        var keyColumn = trigger.KeyColumns[0];
+
+        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        {
+            AppendPgsqlDocumentStampingBody(builder, trigger, indent, documentTable, sequenceName, keyColumn);
+        }
+        else
+        {
+            AppendMssqlDocumentStampingBody(builder, trigger, indent, documentTable, sequenceName, keyColumn);
+        }
+    }
+
+    private void AppendPgsqlDocumentStampingBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        string documentTable,
+        string sequenceName,
+        DbColumnName keyColumn
+    )
+    {
+        // ContentVersion stamp
         builder.Append(indent);
-        builder.AppendLine("-- Document stamping logic");
+        builder.Append("UPDATE ");
+        builder.AppendLine(documentTable);
+        builder.Append(indent);
+        builder.Append("SET ");
+        builder.Append(Quote(new DbColumnName("ContentVersion")));
+        builder.Append(" = nextval('");
+        builder.Append(sequenceName);
+        builder.Append("'), ");
+        builder.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+        builder.AppendLine(" = now()");
+        builder.Append(indent);
+        builder.Append("WHERE ");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" = NEW.");
+        builder.Append(Quote(keyColumn));
+        builder.AppendLine(";");
+
+        // IdentityVersion stamp for root tables with identity projection columns
+        if (trigger.IdentityProjectionColumns.Count > 0)
+        {
+            builder.Append(indent);
+            builder.Append("IF TG_OP = 'UPDATE' AND (");
+            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+            {
+                if (i > 0)
+                    builder.Append(" OR ");
+                var col = Quote(trigger.IdentityProjectionColumns[i]);
+                builder.Append("OLD.");
+                builder.Append(col);
+                builder.Append(" IS DISTINCT FROM NEW.");
+                builder.Append(col);
+            }
+            builder.AppendLine(") THEN");
+
+            var innerIndent = indent + "    ";
+            builder.Append(innerIndent);
+            builder.Append("UPDATE ");
+            builder.AppendLine(documentTable);
+            builder.Append(innerIndent);
+            builder.Append("SET ");
+            builder.Append(Quote(new DbColumnName("IdentityVersion")));
+            builder.Append(" = nextval('");
+            builder.Append(sequenceName);
+            builder.Append("'), ");
+            builder.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
+            builder.AppendLine(" = now()");
+            builder.Append(innerIndent);
+            builder.Append("WHERE ");
+            builder.Append(Quote(new DbColumnName("DocumentId")));
+            builder.Append(" = NEW.");
+            builder.Append(Quote(keyColumn));
+            builder.AppendLine(";");
+
+            builder.Append(indent);
+            builder.AppendLine("END IF;");
+        }
+    }
+
+    private void AppendMssqlDocumentStampingBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        string documentTable,
+        string sequenceName,
+        DbColumnName keyColumn
+    )
+    {
+        // ContentVersion stamp
+        builder.Append(indent);
+        builder.AppendLine("UPDATE d");
+        builder.Append(indent);
+        builder.Append("SET d.");
+        builder.Append(Quote(new DbColumnName("ContentVersion")));
+        builder.Append(" = NEXT VALUE FOR ");
+        builder.Append(sequenceName);
+        builder.Append(", d.");
+        builder.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+        builder.AppendLine(" = sysutcdatetime()");
+        builder.Append(indent);
+        builder.Append("FROM ");
+        builder.Append(documentTable);
+        builder.AppendLine(" d");
+        builder.Append(indent);
+        builder.Append("INNER JOIN inserted i ON d.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" = i.");
+        builder.Append(Quote(keyColumn));
+        builder.AppendLine(";");
+
+        // IdentityVersion stamp for root tables with identity projection columns
+        if (trigger.IdentityProjectionColumns.Count > 0)
+        {
+            builder.Append(indent);
+            builder.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
+            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+            {
+                if (i > 0)
+                    builder.Append(" OR ");
+                builder.Append("UPDATE(");
+                builder.Append(Quote(trigger.IdentityProjectionColumns[i]));
+                builder.Append(')');
+            }
+            builder.AppendLine(")");
+
+            builder.Append(indent);
+            builder.AppendLine("BEGIN");
+
+            var innerIndent = indent + "    ";
+            builder.Append(innerIndent);
+            builder.AppendLine("UPDATE d");
+            builder.Append(innerIndent);
+            builder.Append("SET d.");
+            builder.Append(Quote(new DbColumnName("IdentityVersion")));
+            builder.Append(" = NEXT VALUE FOR ");
+            builder.Append(sequenceName);
+            builder.Append(", d.");
+            builder.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
+            builder.AppendLine(" = sysutcdatetime()");
+            builder.Append(innerIndent);
+            builder.Append("FROM ");
+            builder.Append(documentTable);
+            builder.AppendLine(" d");
+            builder.Append(innerIndent);
+            builder.Append("INNER JOIN inserted i ON d.");
+            builder.Append(Quote(new DbColumnName("DocumentId")));
+            builder.Append(" = i.");
+            builder.AppendLine(Quote(keyColumn));
+            builder.Append(innerIndent);
+            builder.Append("INNER JOIN deleted del ON del.");
+            builder.Append(Quote(keyColumn));
+            builder.Append(" = i.");
+            builder.AppendLine(Quote(keyColumn));
+            builder.Append(innerIndent);
+            builder.Append("WHERE ");
+            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+            {
+                if (i > 0)
+                {
+                    builder.Append(" OR ");
+                }
+                var col = Quote(trigger.IdentityProjectionColumns[i]);
+                builder.Append("i.");
+                builder.Append(col);
+                builder.Append(" <> del.");
+                builder.Append(col);
+            }
+            builder.AppendLine(";");
+
+            builder.Append(indent);
+            builder.AppendLine("END");
+        }
     }
 
     /// <summary>
-    /// Appends referential identity maintenance trigger body (stub for future implementation).
+    /// Appends referential identity maintenance trigger body that maintains
+    /// <c>dms.ReferentialIdentity</c> rows via UUIDv5 computation.
     /// </summary>
     private void AppendReferentialIdentityBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
-        // TODO DMS-938: Implement referential identity maintenance trigger body (maintain dms.ReferentialIdentity rows)
+        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        {
+            AppendPgsqlReferentialIdentityBody(builder, trigger, indent);
+        }
+        else
+        {
+            AppendMssqlReferentialIdentityBody(builder, trigger, indent);
+        }
+    }
+
+    private void AppendPgsqlReferentialIdentityBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent
+    )
+    {
+        var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
+
+        // Primary referential identity
+        AppendPgsqlReferentialIdentityBlock(
+            builder,
+            indent,
+            refIdTable,
+            trigger.ResourceKeyId!.Value,
+            trigger.ProjectName!,
+            trigger.ResourceName!,
+            trigger.IdentityElements!
+        );
+
+        // Superclass alias
+        if (trigger.SuperclassAlias is { } alias)
+        {
+            AppendPgsqlReferentialIdentityBlock(
+                builder,
+                indent,
+                refIdTable,
+                alias.ResourceKeyId,
+                alias.ProjectName,
+                alias.ResourceName,
+                alias.IdentityElements
+            );
+        }
+    }
+
+    private void AppendPgsqlReferentialIdentityBlock(
+        StringBuilder builder,
+        string indent,
+        string refIdTable,
+        short resourceKeyId,
+        string projectName,
+        string resourceName,
+        IReadOnlyList<IdentityElementMapping> identityElements
+    )
+    {
+        var uuidv5Func = FormatUuidv5FunctionName();
+
+        // DELETE existing row
         builder.Append(indent);
-        builder.AppendLine("-- Referential identity logic");
+        builder.Append("DELETE FROM ");
+        builder.AppendLine(refIdTable);
+        builder.Append(indent);
+        builder.Append("WHERE ");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" = NEW.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" AND ");
+        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
+        builder.Append(" = ");
+        builder.Append(resourceKeyId);
+        builder.AppendLine(";");
+
+        // INSERT new row with UUIDv5
+        builder.Append(indent);
+        builder.Append("INSERT INTO ");
+        builder.Append(refIdTable);
+        builder.AppendLine(
+            " ("
+                + Quote(new DbColumnName("ReferentialId"))
+                + ", "
+                + Quote(new DbColumnName("DocumentId"))
+                + ", "
+                + Quote(new DbColumnName("ResourceKeyId"))
+                + ")"
+        );
+        builder.Append(indent);
+        builder.Append("VALUES (");
+        builder.Append(uuidv5Func);
+        builder.Append("('");
+        builder.Append(Uuidv5Namespace);
+        builder.Append("'::uuid, '");
+        builder.Append(projectName);
+        builder.Append(resourceName);
+        builder.Append("' || ");
+        AppendPgsqlIdentityHashExpression(builder, identityElements);
+        builder.Append("), NEW.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(", ");
+        builder.Append(resourceKeyId);
+        builder.AppendLine(");");
+    }
+
+    private void AppendPgsqlIdentityHashExpression(
+        StringBuilder builder,
+        IReadOnlyList<IdentityElementMapping> elements
+    )
+    {
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (i > 0)
+                builder.Append(" || '#' || ");
+            builder.Append("'$");
+            builder.Append(elements[i].IdentityJsonPath);
+            builder.Append("=' || NEW.");
+            builder.Append(Quote(elements[i].Column));
+            builder.Append("::text");
+        }
+    }
+
+    private void AppendMssqlReferentialIdentityBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent
+    )
+    {
+        var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
+
+        // Primary referential identity
+        AppendMssqlReferentialIdentityBlock(
+            builder,
+            indent,
+            refIdTable,
+            trigger.ResourceKeyId!.Value,
+            trigger.ProjectName!,
+            trigger.ResourceName!,
+            trigger.IdentityElements!
+        );
+
+        // Superclass alias
+        if (trigger.SuperclassAlias is { } alias)
+        {
+            AppendMssqlReferentialIdentityBlock(
+                builder,
+                indent,
+                refIdTable,
+                alias.ResourceKeyId,
+                alias.ProjectName,
+                alias.ResourceName,
+                alias.IdentityElements
+            );
+        }
+    }
+
+    private void AppendMssqlReferentialIdentityBlock(
+        StringBuilder builder,
+        string indent,
+        string refIdTable,
+        short resourceKeyId,
+        string projectName,
+        string resourceName,
+        IReadOnlyList<IdentityElementMapping> identityElements
+    )
+    {
+        var uuidv5Func = FormatUuidv5FunctionName();
+
+        // DELETE existing row
+        builder.Append(indent);
+        builder.Append("DELETE FROM ");
+        builder.AppendLine(refIdTable);
+        builder.Append(indent);
+        builder.Append("WHERE ");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" IN (SELECT ");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" FROM inserted) AND ");
+        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
+        builder.Append(" = ");
+        builder.Append(resourceKeyId);
+        builder.AppendLine(";");
+
+        // INSERT new rows from inserted table with UUIDv5
+        builder.Append(indent);
+        builder.Append("INSERT INTO ");
+        builder.Append(refIdTable);
+        builder.AppendLine(
+            " ("
+                + Quote(new DbColumnName("ReferentialId"))
+                + ", "
+                + Quote(new DbColumnName("DocumentId"))
+                + ", "
+                + Quote(new DbColumnName("ResourceKeyId"))
+                + ")"
+        );
+        builder.Append(indent);
+        builder.Append("SELECT ");
+        builder.Append(uuidv5Func);
+        builder.Append("('");
+        builder.Append(Uuidv5Namespace);
+        builder.Append("', N'");
+        builder.Append(projectName);
+        builder.Append(resourceName);
+        builder.Append("' + ");
+        AppendMssqlIdentityHashExpression(builder, identityElements);
+        builder.Append("), i.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(", ");
+        builder.AppendLine(resourceKeyId.ToString());
+        builder.Append(indent);
+        builder.AppendLine("FROM inserted i;");
+    }
+
+    private void AppendMssqlIdentityHashExpression(
+        StringBuilder builder,
+        IReadOnlyList<IdentityElementMapping> elements
+    )
+    {
+        for (int i = 0; i < elements.Count; i++)
+        {
+            if (i > 0)
+                builder.Append(" + N'#' + ");
+            builder.Append("N'$");
+            builder.Append(elements[i].IdentityJsonPath);
+            builder.Append("=' + CAST(i.");
+            builder.Append(Quote(elements[i].Column));
+            builder.Append(" AS nvarchar(max))");
+        }
     }
 
     /// <summary>
-    /// Appends abstract identity maintenance trigger body (stub for future implementation).
+    /// Appends abstract identity maintenance trigger body that maintains abstract identity
+    /// tables from concrete resource root tables.
     /// </summary>
     private void AppendAbstractIdentityBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
-        // TODO DMS-938: Implement abstract identity maintenance trigger body (maintain {schema}.{AbstractResource}Identity)
+        if (trigger.TargetTable is null || trigger.TargetColumnMappings is null)
+        {
+            throw new InvalidOperationException(
+                $"AbstractIdentityMaintenance trigger '{trigger.Name.Value}' requires TargetTable and TargetColumnMappings."
+            );
+        }
+
+        var validatedTargetTable = trigger.TargetTable.Value;
+        var validatedMappings = trigger.TargetColumnMappings;
+
+        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        {
+            AppendPgsqlAbstractIdentityBody(
+                builder,
+                trigger,
+                indent,
+                validatedTargetTable,
+                validatedMappings
+            );
+        }
+        else
+        {
+            AppendMssqlAbstractIdentityBody(
+                builder,
+                trigger,
+                indent,
+                validatedTargetTable,
+                validatedMappings
+            );
+        }
+    }
+
+    private void AppendPgsqlAbstractIdentityBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        DbTableName targetTableName,
+        IReadOnlyList<TriggerColumnMapping> mappings
+    )
+    {
+        var targetTable = Quote(targetTableName);
+
+        // INSERT ... ON CONFLICT DO UPDATE
         builder.Append(indent);
-        builder.AppendLine("-- Abstract identity logic");
+        builder.Append("INSERT INTO ");
+        builder.Append(targetTable);
+        builder.Append(" (");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        foreach (var mapping in mappings)
+        {
+            builder.Append(", ");
+            builder.Append(Quote(mapping.TargetColumn));
+        }
+        builder.Append(", ");
+        builder.Append(Quote(new DbColumnName("Discriminator")));
+        builder.AppendLine(")");
+
+        builder.Append(indent);
+        builder.Append("VALUES (NEW.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        foreach (var mapping in mappings)
+        {
+            builder.Append(", NEW.");
+            builder.Append(Quote(mapping.SourceColumn));
+        }
+        builder.Append(", '");
+        builder.Append(trigger.DiscriminatorValue);
+        builder.AppendLine("')");
+
+        builder.Append(indent);
+        builder.Append("ON CONFLICT (");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.AppendLine(")");
+
+        builder.Append(indent);
+        builder.Append("DO UPDATE SET ");
+        for (int i = 0; i < mappings.Count; i++)
+        {
+            if (i > 0)
+                builder.Append(", ");
+            builder.Append(Quote(mappings[i].TargetColumn));
+            builder.Append(" = EXCLUDED.");
+            builder.Append(Quote(mappings[i].TargetColumn));
+        }
+        builder.AppendLine(";");
+    }
+
+    private void AppendMssqlAbstractIdentityBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        DbTableName targetTableName,
+        IReadOnlyList<TriggerColumnMapping> mappings
+    )
+    {
+        var targetTable = Quote(targetTableName);
+
+        // MERGE statement
+        builder.Append(indent);
+        builder.Append("MERGE ");
+        builder.Append(targetTable);
+        builder.AppendLine(" AS t");
+        builder.Append(indent);
+        builder.Append("USING inserted AS s ON t.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(" = s.");
+        builder.AppendLine(Quote(new DbColumnName("DocumentId")));
+
+        // WHEN MATCHED THEN UPDATE
+        builder.Append(indent);
+        builder.Append("WHEN MATCHED THEN UPDATE SET ");
+        for (int i = 0; i < mappings.Count; i++)
+        {
+            if (i > 0)
+                builder.Append(", ");
+            builder.Append("t.");
+            builder.Append(Quote(mappings[i].TargetColumn));
+            builder.Append(" = s.");
+            builder.Append(Quote(mappings[i].SourceColumn));
+        }
+        builder.AppendLine();
+
+        // WHEN NOT MATCHED THEN INSERT
+        builder.Append(indent);
+        builder.Append("WHEN NOT MATCHED THEN INSERT (");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        foreach (var mapping in mappings)
+        {
+            builder.Append(", ");
+            builder.Append(Quote(mapping.TargetColumn));
+        }
+        builder.Append(", ");
+        builder.Append(Quote(new DbColumnName("Discriminator")));
+        builder.AppendLine(")");
+
+        builder.Append(indent);
+        builder.Append("VALUES (s.");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        foreach (var mapping in mappings)
+        {
+            builder.Append(", s.");
+            builder.Append(Quote(mapping.SourceColumn));
+        }
+        builder.Append(", N'");
+        builder.Append(trigger.DiscriminatorValue);
+        builder.AppendLine("');");
     }
 
     /// <summary>
-    /// Appends identity propagation fallback trigger body (stub for future implementation).
+    /// Appends identity propagation fallback trigger body (MSSQL only) that cascades
+    /// identity column updates to target tables when <c>ON UPDATE CASCADE</c> is not available.
     /// </summary>
     private void AppendIdentityPropagationBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
-        // TODO DMS-938: Implement identity propagation fallback trigger body
+        if (trigger.TargetTable is null || trigger.TargetColumnMappings is null)
+        {
+            throw new InvalidOperationException(
+                $"IdentityPropagationFallback trigger '{trigger.Name.Value}' requires TargetTable and TargetColumnMappings."
+            );
+        }
+
+        var targetTable = Quote(trigger.TargetTable.Value);
+        var fkColumn = trigger.KeyColumns[0];
+
         builder.Append(indent);
-        builder.AppendLine("-- Identity propagation logic");
+        builder.AppendLine("UPDATE t");
+        builder.Append(indent);
+        builder.Append("SET ");
+        for (int i = 0; i < trigger.TargetColumnMappings.Count; i++)
+        {
+            if (i > 0)
+                builder.Append(", ");
+            builder.Append("t.");
+            builder.Append(Quote(trigger.TargetColumnMappings[i].TargetColumn));
+            builder.Append(" = i.");
+            builder.Append(Quote(trigger.TargetColumnMappings[i].SourceColumn));
+        }
+        builder.AppendLine();
+
+        builder.Append(indent);
+        builder.Append("FROM ");
+        builder.Append(targetTable);
+        builder.AppendLine(" t");
+        builder.Append(indent);
+        builder.Append("INNER JOIN inserted i ON t.");
+        builder.Append(Quote(fkColumn));
+        builder.Append(" = i.");
+        builder.AppendLine(Quote(fkColumn));
+        builder.Append(indent);
+        builder.Append("INNER JOIN deleted d ON d.");
+        builder.Append(Quote(fkColumn));
+        builder.Append(" = i.");
+        builder.AppendLine(Quote(fkColumn));
+
+        builder.Append(indent);
+        builder.Append("WHERE ");
+        for (int i = 0; i < trigger.TargetColumnMappings.Count; i++)
+        {
+            if (i > 0)
+                builder.Append(" OR ");
+            builder.Append("i.");
+            builder.Append(Quote(trigger.TargetColumnMappings[i].SourceColumn));
+            builder.Append(" <> d.");
+            builder.Append(Quote(trigger.TargetColumnMappings[i].SourceColumn));
+        }
+        builder.AppendLine(";");
     }
 
     /// <summary>
@@ -690,5 +1281,27 @@ public sealed class RelationalModelDdlEmitter
     private string Quote(DbTriggerName trigger)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, trigger);
+    }
+
+    /// <summary>
+    /// The UUIDv5 namespace used for referential identity computation.
+    /// Matches <c>ReferentialIdCalculator.EdFiUuidv5Namespace</c>.
+    /// </summary>
+    private const string Uuidv5Namespace = "edf1edf1-3df1-3df1-3df1-3df1edf1edf1";
+
+    /// <summary>
+    /// Formats the qualified <c>dms.ChangeVersionSequence</c> name for the current dialect.
+    /// </summary>
+    private string FormatSequenceName()
+    {
+        return $"{Quote(DmsTableNames.Document.Schema)}.{Quote(DmsTableNames.ChangeVersionSequence)}";
+    }
+
+    /// <summary>
+    /// Formats the qualified <c>dms.uuidv5</c> function name for the current dialect.
+    /// </summary>
+    private string FormatUuidv5FunctionName()
+    {
+        return $"{Quote(DmsTableNames.Document.Schema)}.{Quote("uuidv5")}";
     }
 }

@@ -91,7 +91,7 @@ internal static class ReservedIdentifierAssertions
         sql.Should().Contain(quoted);
         sql.Should().Contain("CREATE TABLE");
         Regex.IsMatch(sql, @"CREATE\s+(UNIQUE\s+)?INDEX").Should().BeTrue();
-        sql.Should().Contain("CREATE TRIGGER");
+        Regex.IsMatch(sql, @"CREATE\s+(OR\s+(REPLACE|ALTER)\s+)?TRIGGER").Should().BeTrue();
         sql.Should().Contain($"CONSTRAINT {quoted}");
 
         AssertNoUnquotedIdentifier(sql, dialect);

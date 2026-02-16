@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 /// </summary>
 public static class RelationalModelManifestEmitter
 {
-    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
 
     /// <summary>
     /// Emits a JSON manifest for a completed relational model build.

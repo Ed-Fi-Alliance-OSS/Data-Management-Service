@@ -244,6 +244,35 @@ public enum DbTriggerKind
 public readonly record struct DbTriggerName(string Value);
 
 /// <summary>
+/// Maps a root table column to its identity JSON path for UUIDv5 computation.
+/// </summary>
+/// <param name="Column">The physical column on the root table.</param>
+/// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
+public sealed record IdentityElementMapping(DbColumnName Column, string IdentityJsonPath);
+
+/// <summary>
+/// Superclass alias information for subclass resources that must also maintain referential identity
+/// under their superclass resource key.
+/// </summary>
+/// <param name="ResourceKeyId">The superclass resource key ID.</param>
+/// <param name="ProjectName">The superclass project name.</param>
+/// <param name="ResourceName">The superclass resource name.</param>
+/// <param name="IdentityElements">Identity element mappings for the superclass identity.</param>
+public sealed record SuperclassAliasInfo(
+    short ResourceKeyId,
+    string ProjectName,
+    string ResourceName,
+    IReadOnlyList<IdentityElementMapping> IdentityElements
+);
+
+/// <summary>
+/// Maps a source column on the trigger's owning table to a target column on the maintenance table.
+/// </summary>
+/// <param name="SourceColumn">The column on the trigger's owning table.</param>
+/// <param name="TargetColumn">The corresponding column on the target table.</param>
+public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnName TargetColumn);
+
+/// <summary>
 /// Derived trigger inventory entry.
 /// </summary>
 /// <param name="Name">The trigger name.</param>
@@ -261,7 +290,37 @@ public readonly record struct DbTriggerName(string Value);
 /// <param name="TargetTable">
 /// The maintenance target table, when applicable. For
 /// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, this identifies the abstract
-/// identity table being maintained. <c>null</c> for other trigger kinds.
+/// identity table being maintained. For <see cref="DbTriggerKind.IdentityPropagationFallback"/>
+/// triggers, the target table whose columns are updated. <c>null</c> for other trigger kinds.
+/// </param>
+/// <param name="ResourceKeyId">
+/// The resource key ID for UUIDv5 computation. Used by
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
+/// </param>
+/// <param name="ProjectName">
+/// The project name for UUIDv5 computation. Used by
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
+/// </param>
+/// <param name="ResourceName">
+/// The resource name for UUIDv5 computation. Used by
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
+/// </param>
+/// <param name="IdentityElements">
+/// Identity element mappings for UUIDv5 computation. Used by
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
+/// </param>
+/// <param name="SuperclassAlias">
+/// Superclass alias information for subclass resources. Used by
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers on subclass resources.
+/// </param>
+/// <param name="TargetColumnMappings">
+/// Column mappings from the source table to the target table. Used by
+/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> and
+/// <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers.
+/// </param>
+/// <param name="DiscriminatorValue">
+/// The discriminator value written to the abstract identity table. Used by
+/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers.
 /// </param>
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
@@ -269,7 +328,14 @@ public sealed record DbTriggerInfo(
     DbTriggerKind Kind,
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
-    DbTableName? TargetTable = null
+    DbTableName? TargetTable = null,
+    short? ResourceKeyId = null,
+    string? ProjectName = null,
+    string? ResourceName = null,
+    IReadOnlyList<IdentityElementMapping>? IdentityElements = null,
+    SuperclassAliasInfo? SuperclassAlias = null,
+    IReadOnlyList<TriggerColumnMapping>? TargetColumnMappings = null,
+    string? DiscriminatorValue = null
 );
 
 /// <summary>
