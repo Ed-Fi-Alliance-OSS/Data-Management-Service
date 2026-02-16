@@ -181,19 +181,58 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         var tables = resourceModel.TablesInDependencyOrder.ToArray();
         var bindingsByPath = BuildSourcePathBindingsByTable(tables);
         Dictionary<int, List<(TableBoundColumn Left, TableBoundColumn Right)>> appliedEdgesByTable = [];
+        List<AppliedConstraintCandidate> appliedConstraints = [];
+        List<KeyUnificationRedundantConstraint> redundantConstraints = [];
+        List<KeyUnificationIgnoredConstraint> ignoredConstraints = [];
 
         foreach (var constraint in constraints)
         {
-            var left = ResolveEndpointBinding(bindingsByPath, constraint.SourcePath, resource);
-            var right = ResolveEndpointBinding(bindingsByPath, constraint.TargetPath, resource);
+            var leftCandidates = ResolveEndpointCandidates(bindingsByPath, constraint.SourcePath, resource);
+            var rightCandidates = ResolveEndpointCandidates(bindingsByPath, constraint.TargetPath, resource);
 
-            if (left.TableIndex != right.TableIndex)
+            var leftTableIndex = ResolveEndpointTableIndex(constraint.SourcePath, leftCandidates, resource);
+            var rightTableIndex = ResolveEndpointTableIndex(constraint.TargetPath, rightCandidates, resource);
+
+            var left = leftCandidates[0];
+            var right = rightCandidates[0];
+
+            ValidateSupportedEndpointKind(left, constraint.SourcePath, resource);
+            ValidateSupportedEndpointKind(right, constraint.TargetPath, resource);
+            var orderedEndpoints = CanonicalizeConstraintEndpoints(constraint, left, right);
+
+            if (leftTableIndex != rightTableIndex)
             {
+                ignoredConstraints.Add(
+                    new KeyUnificationIgnoredConstraint(
+                        orderedEndpoints.EndpointAPath,
+                        orderedEndpoints.EndpointBPath,
+                        KeyUnificationIgnoredReason.CrossTable,
+                        orderedEndpoints.EndpointABinding,
+                        orderedEndpoints.EndpointBBinding
+                    )
+                );
                 continue;
+            }
+
+            if (leftCandidates.Length != 1)
+            {
+                ThrowAmbiguousEndpointBinding(constraint.SourcePath, leftCandidates, resource);
+            }
+
+            if (rightCandidates.Length != 1)
+            {
+                ThrowAmbiguousEndpointBinding(constraint.TargetPath, rightCandidates, resource);
             }
 
             if (left.Column.ColumnName.Equals(right.Column.ColumnName))
             {
+                redundantConstraints.Add(
+                    new KeyUnificationRedundantConstraint(
+                        orderedEndpoints.EndpointAPath,
+                        orderedEndpoints.EndpointBPath,
+                        orderedEndpoints.EndpointABinding
+                    )
+                );
                 continue;
             }
 
@@ -204,16 +243,21 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             }
 
             edges.Add((left, right));
-        }
-
-        if (appliedEdgesByTable.Count == 0)
-        {
-            return resourceModel;
+            appliedConstraints.Add(
+                new AppliedConstraintCandidate(
+                    orderedEndpoints.EndpointAPath,
+                    orderedEndpoints.EndpointBPath,
+                    left.TableIndex,
+                    left.Table.Table,
+                    orderedEndpoints.EndpointABinding.Column,
+                    orderedEndpoints.EndpointBBinding.Column
+                )
+            );
         }
 
         var changed = false;
 
-        foreach (var tableEntry in appliedEdgesByTable)
+        foreach (var tableEntry in appliedEdgesByTable.OrderBy(item => item.Key))
         {
             var table = tables[tableEntry.Key];
             var updatedTable = ApplyKeyUnificationToTable(
@@ -232,14 +276,21 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             changed = true;
         }
 
+        var diagnostics = BuildEqualityConstraintDiagnostics(
+            FinalizeAppliedConstraints(appliedConstraints, tables, resource),
+            redundantConstraints,
+            ignoredConstraints
+        );
+        var updatedModel = resourceModel with { KeyUnificationEqualityConstraints = diagnostics };
+
         if (!changed)
         {
-            return resourceModel;
+            return updatedModel;
         }
 
-        var updatedRoot = tables.Single(table => table.Table.Equals(resourceModel.Root.Table));
+        var updatedRoot = tables.Single(table => table.Table.Equals(updatedModel.Root.Table));
 
-        return resourceModel with
+        return updatedModel with
         {
             Root = updatedRoot,
             TablesInDependencyOrder = tables,
@@ -280,17 +331,15 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves one source-path endpoint to a unique physical table/column binding.
+    /// Resolves one source-path endpoint to all distinct physical table/column bindings.
     /// </summary>
-    private static TableBoundColumn ResolveEndpointBinding(
+    private static TableBoundColumn[] ResolveEndpointCandidates(
         IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
         JsonPathExpression endpointPath,
         QualifiedResourceName resource
     )
     {
-        var candidates = ResolveEndpointCandidates(bindingsByPath, endpointPath);
-
-        if (candidates.Length == 0)
+        if (!bindingsByPath.TryGetValue(endpointPath.Canonical, out var rawCandidates))
         {
             throw new InvalidOperationException(
                 $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
@@ -298,7 +347,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             );
         }
 
-        var distinctCandidates = candidates
+        return rawCandidates
             .GroupBy(candidate =>
                 (
                     candidate.TableIndex,
@@ -308,29 +357,42 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 )
             )
             .Select(group => group.First())
+            .OrderBy(candidate => candidate.Table.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Table.Table.Name, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Table.JsonScope.Canonical, StringComparer.Ordinal)
+            .ThenBy(candidate => candidate.Column.ColumnName.Value, StringComparer.Ordinal)
             .ToArray();
+    }
 
-        if (distinctCandidates.Length == 1)
+    private static int ResolveEndpointTableIndex(
+        JsonPathExpression endpointPath,
+        IReadOnlyList<TableBoundColumn> candidates,
+        QualifiedResourceName resource
+    )
+    {
+        var distinctTableIndexes = candidates.Select(candidate => candidate.TableIndex).Distinct().ToArray();
+
+        if (distinctTableIndexes.Length == 1)
         {
-            return distinctCandidates[0];
+            return distinctTableIndexes[0];
         }
 
-        if (TryResolveAmbiguousReferenceEndpoint(endpointPath, distinctCandidates, out var resolvedCandidate))
-        {
-            return resolvedCandidate;
-        }
+        ThrowAmbiguousEndpointBinding(endpointPath, candidates, resource);
+        return distinctTableIndexes[0];
+    }
 
+    private static void ThrowAmbiguousEndpointBinding(
+        JsonPathExpression endpointPath,
+        IReadOnlyList<TableBoundColumn> distinctCandidates,
+        QualifiedResourceName resource
+    )
+    {
         var details = string.Join(
             ", ",
-            distinctCandidates
-                .OrderBy(candidate => candidate.Table.Table.Schema.Value, StringComparer.Ordinal)
-                .ThenBy(candidate => candidate.Table.Table.Name, StringComparer.Ordinal)
-                .ThenBy(candidate => candidate.Table.JsonScope.Canonical, StringComparer.Ordinal)
-                .ThenBy(candidate => candidate.Column.ColumnName.Value, StringComparer.Ordinal)
-                .Select(candidate =>
-                    $"{candidate.Table.Table.Schema.Value}.{candidate.Table.Table.Name}"
-                    + $"[{candidate.Table.JsonScope.Canonical}].{candidate.Column.ColumnName.Value}"
-                )
+            distinctCandidates.Select(candidate =>
+                $"{candidate.Table.Table.Schema.Value}.{candidate.Table.Table.Name}"
+                + $"[{candidate.Table.JsonScope.Canonical}].{candidate.Column.ColumnName.Value}"
+            )
         );
 
         throw new InvalidOperationException(
@@ -340,159 +402,214 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves legacy ambiguous reference endpoints that bind to the same table/path but multiple propagated
-    /// identity columns (for example, repeated <c>...schoolId</c> bindings). Uses deterministic first-column
-    /// selection so default pipeline execution remains stable.
+    /// Ensures key unification only accepts scalar/descriptor endpoint kinds.
     /// </summary>
-    private static bool TryResolveAmbiguousReferenceEndpoint(
+    private static void ValidateSupportedEndpointKind(
+        TableBoundColumn endpoint,
         JsonPathExpression endpointPath,
-        IReadOnlyList<TableBoundColumn> candidates,
-        out TableBoundColumn resolvedCandidate
+        QualifiedResourceName resource
     )
     {
-        resolvedCandidate = default!;
-
-        var sourcePaths = candidates
-            .Select(candidate => candidate.Column.SourceJsonPath?.Canonical)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-
-        if (
-            sourcePaths.Length != 1
-            || !string.Equals(sourcePaths[0], endpointPath.Canonical, StringComparison.Ordinal)
-        )
+        if (endpoint.Column.Kind is ColumnKind.Scalar or ColumnKind.DescriptorFk)
         {
-            return false;
+            return;
         }
 
-        var tableScopes = candidates
-            .Select(candidate => (candidate.TableIndex, candidate.Table.Table, candidate.Table.JsonScope))
-            .Distinct()
-            .ToArray();
-
-        if (tableScopes.Length != 1)
-        {
-            return false;
-        }
-
-        resolvedCandidate = candidates
-            .OrderBy(candidate => candidate.Column.ColumnName.Value, StringComparer.Ordinal)
-            .First();
-
-        return true;
+        throw new InvalidOperationException(
+            $"Equality constraint endpoint '{endpointPath.Canonical}' on resource "
+                + $"'{FormatResource(resource)}' resolved to unsupported column kind "
+                + $"'{endpoint.Column.Kind}' at '{endpoint.Table.Table}.{endpoint.Column.ColumnName.Value}'."
+        );
     }
 
     /// <summary>
-    /// Resolves endpoint candidates from direct SourceJsonPath bindings, with a deterministic fallback for
-    /// reference-relative identity aliases (for example, <c>gradingPeriodSchoolId</c>).
+    /// Canonicalizes endpoint ordering for deterministic diagnostics.
     /// </summary>
-    private static TableBoundColumn[] ResolveEndpointCandidates(
-        IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
-        JsonPathExpression endpointPath
+    private static OrderedConstraintEndpoints CanonicalizeConstraintEndpoints(
+        EqualityConstraintInput constraint,
+        TableBoundColumn sourceEndpoint,
+        TableBoundColumn targetEndpoint
     )
     {
-        if (bindingsByPath.TryGetValue(endpointPath.Canonical, out var directCandidates))
+        if (string.CompareOrdinal(constraint.SourcePath.Canonical, constraint.TargetPath.Canonical) <= 0)
         {
-            return directCandidates.ToArray();
+            return new OrderedConstraintEndpoints(
+                constraint.SourcePath,
+                ToEndpointBinding(sourceEndpoint),
+                constraint.TargetPath,
+                ToEndpointBinding(targetEndpoint)
+            );
         }
 
-        return FindReferenceRelativeAliasCandidates(bindingsByPath, endpointPath);
+        return new OrderedConstraintEndpoints(
+            constraint.TargetPath,
+            ToEndpointBinding(targetEndpoint),
+            constraint.SourcePath,
+            ToEndpointBinding(sourceEndpoint)
+        );
     }
 
     /// <summary>
-    /// Finds candidates for endpoints expressed with reference-relative identity aliases that differ from the
-    /// bound SourceJsonPath tail token.
+    /// Converts a bound endpoint to diagnostics binding shape.
     /// </summary>
-    private static TableBoundColumn[] FindReferenceRelativeAliasCandidates(
-        IReadOnlyDictionary<string, List<TableBoundColumn>> bindingsByPath,
-        JsonPathExpression endpointPath
+    private static KeyUnificationEndpointBinding ToEndpointBinding(TableBoundColumn endpoint)
+    {
+        return new KeyUnificationEndpointBinding(endpoint.Table.Table, endpoint.Column.ColumnName);
+    }
+
+    /// <summary>
+    /// Finalizes applied constraints by resolving each endpoint binding to its class canonical column.
+    /// </summary>
+    private static IReadOnlyList<KeyUnificationAppliedConstraint> FinalizeAppliedConstraints(
+        IReadOnlyList<AppliedConstraintCandidate> appliedConstraints,
+        IReadOnlyList<DbTableModel> tables,
+        QualifiedResourceName resource
     )
     {
-        if (
-            endpointPath.Segments.Count == 0
-            || endpointPath.Segments[^1] is not JsonPathSegment.Property endpointProperty
-        )
+        if (appliedConstraints.Count == 0)
         {
             return [];
         }
 
-        var endpointAliasToken = NormalizeReferenceAliasToken(
-            RelationalNameConventions.ToPascalCase(endpointProperty.Name)
-        );
-        var parentSegmentCount = endpointPath.Segments.Count - 1;
-        List<TableBoundColumn> candidates = [];
+        Dictionary<int, IReadOnlyDictionary<DbColumnName, DbColumnName>> canonicalByMemberByTable = [];
 
-        foreach (var boundColumn in bindingsByPath.Values.SelectMany(static value => value))
+        foreach (
+            var tableIndex in appliedConstraints
+                .Select(constraint => constraint.TableIndex)
+                .Distinct()
+                .OrderBy(index => index)
+        )
         {
-            if (boundColumn.Column.SourceJsonPath is not { } sourcePath)
-            {
-                continue;
-            }
-
-            if (!HasSameParentPath(sourcePath, endpointPath, parentSegmentCount))
-            {
-                continue;
-            }
-
-            var columnAliasToken = NormalizeReferenceAliasToken(
-                ExtractColumnIdentityAliasToken(boundColumn.Column.ColumnName)
-            );
-
-            if (!string.Equals(endpointAliasToken, columnAliasToken, StringComparison.Ordinal))
-            {
-                continue;
-            }
-
-            candidates.Add(boundColumn);
+            canonicalByMemberByTable[tableIndex] = BuildCanonicalByMemberLookup(tables[tableIndex], resource);
         }
 
-        return candidates.ToArray();
+        List<KeyUnificationAppliedConstraint> finalized = new(appliedConstraints.Count);
+
+        foreach (var appliedConstraint in appliedConstraints)
+        {
+            if (
+                !canonicalByMemberByTable.TryGetValue(appliedConstraint.TableIndex, out var canonicalByMember)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification diagnostics on resource '{FormatResource(resource)}' could not resolve "
+                        + $"table index '{appliedConstraint.TableIndex}'."
+                );
+            }
+
+            if (!canonicalByMember.TryGetValue(appliedConstraint.EndpointAColumn, out var canonicalColumn))
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification diagnostics on resource '{FormatResource(resource)}' could not map "
+                        + $"endpoint column '{appliedConstraint.EndpointAColumn.Value}' to a canonical column "
+                        + $"on table '{appliedConstraint.Table}'."
+                );
+            }
+
+            if (!canonicalByMember.TryGetValue(appliedConstraint.EndpointBColumn, out var endpointBCanonical))
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification diagnostics on resource '{FormatResource(resource)}' could not map "
+                        + $"endpoint column '{appliedConstraint.EndpointBColumn.Value}' to a canonical column "
+                        + $"on table '{appliedConstraint.Table}'."
+                );
+            }
+
+            if (!canonicalColumn.Equals(endpointBCanonical))
+            {
+                throw new InvalidOperationException(
+                    $"Key-unification diagnostics on resource '{FormatResource(resource)}' resolved endpoint "
+                        + $"columns '{appliedConstraint.EndpointAColumn.Value}' and "
+                        + $"'{appliedConstraint.EndpointBColumn.Value}' to different canonical columns "
+                        + $"('{canonicalColumn.Value}', '{endpointBCanonical.Value}')."
+                );
+            }
+
+            finalized.Add(
+                new KeyUnificationAppliedConstraint(
+                    appliedConstraint.EndpointAPath,
+                    appliedConstraint.EndpointBPath,
+                    appliedConstraint.Table,
+                    appliedConstraint.EndpointAColumn,
+                    appliedConstraint.EndpointBColumn,
+                    canonicalColumn
+                )
+            );
+        }
+
+        return finalized;
     }
 
     /// <summary>
-    /// Returns true when two paths share the same parent scope (all segments except the terminal property).
+    /// Builds a lookup from unification member column name to class canonical column.
     /// </summary>
-    private static bool HasSameParentPath(
-        JsonPathExpression sourcePath,
-        JsonPathExpression endpointPath,
-        int parentSegmentCount
+    private static IReadOnlyDictionary<DbColumnName, DbColumnName> BuildCanonicalByMemberLookup(
+        DbTableModel table,
+        QualifiedResourceName resource
     )
     {
-        if (sourcePath.Segments.Count != parentSegmentCount + 1)
-        {
-            return false;
-        }
+        Dictionary<DbColumnName, DbColumnName> lookup = [];
 
-        for (var index = 0; index < parentSegmentCount; index++)
+        foreach (var keyUnificationClass in table.KeyUnificationClasses)
         {
-            if (!Equals(sourcePath.Segments[index], endpointPath.Segments[index]))
+            foreach (var memberPathColumn in keyUnificationClass.MemberPathColumns)
             {
-                return false;
+                if (!lookup.TryAdd(memberPathColumn, keyUnificationClass.CanonicalColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Key-unification diagnostics on resource '{FormatResource(resource)}' table "
+                            + $"'{table.Table}' encountered duplicate member column "
+                            + $"'{memberPathColumn.Value}'."
+                    );
+                }
             }
         }
 
-        return sourcePath.Segments[^1] is JsonPathSegment.Property;
+        return lookup;
     }
 
     /// <summary>
-    /// Extracts the identity alias token from a column name by removing the reference-base prefix.
+    /// Produces deterministic diagnostics payloads from classified constraints.
     /// </summary>
-    private static string ExtractColumnIdentityAliasToken(DbColumnName columnName)
+    private static KeyUnificationEqualityConstraintDiagnostics BuildEqualityConstraintDiagnostics(
+        IReadOnlyList<KeyUnificationAppliedConstraint> appliedConstraints,
+        IReadOnlyList<KeyUnificationRedundantConstraint> redundantConstraints,
+        IReadOnlyList<KeyUnificationIgnoredConstraint> ignoredConstraints
+    )
     {
-        var value = columnName.Value;
-        var separatorIndex = value.IndexOf('_');
+        var applied = appliedConstraints
+            .OrderBy(constraint => constraint.EndpointAPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.Table.Name, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointAColumn.Value, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBColumn.Value, StringComparer.Ordinal)
+            .ToArray();
+        var redundant = redundantConstraints
+            .OrderBy(constraint => constraint.EndpointAPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.Binding.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.Binding.Table.Name, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.Binding.Column.Value, StringComparer.Ordinal)
+            .ToArray();
+        var ignored = ignoredConstraints
+            .OrderBy(constraint => constraint.EndpointAPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBPath.Canonical, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.Reason.ToString(), StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointABinding.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointABinding.Table.Name, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointABinding.Column.Value, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBBinding.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBBinding.Table.Name, StringComparer.Ordinal)
+            .ThenBy(constraint => constraint.EndpointBBinding.Column.Value, StringComparer.Ordinal)
+            .ToArray();
+        var ignoredByReason = ignored
+            .GroupBy(constraint => constraint.Reason)
+            .OrderBy(group => group.Key.ToString(), StringComparer.Ordinal)
+            .Select(group => new KeyUnificationIgnoredByReasonEntry(group.Key, group.Count()))
+            .ToArray();
 
-        return separatorIndex >= 0 && separatorIndex < value.Length - 1
-            ? value[(separatorIndex + 1)..]
-            : value;
-    }
-
-    /// <summary>
-    /// Normalizes a reference-identity alias token by stripping the optional <c>Reference</c> marker.
-    /// </summary>
-    private static string NormalizeReferenceAliasToken(string token)
-    {
-        return token.Replace("Reference", string.Empty, StringComparison.Ordinal);
+        return new KeyUnificationEqualityConstraintDiagnostics(applied, redundant, ignored, ignoredByReason);
     }
 
     /// <summary>
@@ -524,6 +641,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             .Select(column => column.ColumnName.Value)
             .ToHashSet(StringComparer.Ordinal);
         List<KeyUnificationClass> keyUnificationClasses = [];
+        HashSet<DbColumnName> syntheticPresenceColumns = [];
 
         foreach (
             var component in componentColumnNames.OrderBy(
@@ -583,12 +701,11 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
             updatedColumns.Add(canonicalColumn);
             columnIndexByName[canonicalColumnName.Value] = updatedColumns.Count - 1;
-            existingColumnNames.Add(canonicalColumnName.Value);
 
             foreach (var memberColumn in memberColumns)
             {
                 var sourcePath = GetRequiredSourcePath(memberColumn, resource, table);
-                var presenceColumn = ResolvePresenceColumn(
+                var presenceResolution = ResolvePresenceColumn(
                     memberColumn,
                     sourcePath,
                     referenceBindingByIdentityPath,
@@ -596,10 +713,19 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                     updatedColumns,
                     columnIndexByName
                 );
+
+                if (presenceResolution.SyntheticPresenceColumn is { } syntheticPresenceColumn)
+                {
+                    syntheticPresenceColumns.Add(syntheticPresenceColumn);
+                }
+
                 var memberColumnIndex = columnIndexByName[memberColumn.ColumnName.Value];
                 var updatedMemberColumn = updatedColumns[memberColumnIndex] with
                 {
-                    Storage = new ColumnStorage.UnifiedAlias(canonicalColumnName, presenceColumn),
+                    Storage = new ColumnStorage.UnifiedAlias(
+                        canonicalColumnName,
+                        presenceResolution.PresenceColumn
+                    ),
                 };
 
                 updatedColumns[memberColumnIndex] = updatedMemberColumn;
@@ -624,11 +750,16 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             resource,
             table.Table
         );
+        var constraintsWithPresenceHardening = AppendNullOrTrueConstraints(
+            rewrittenConstraints,
+            table.Table,
+            syntheticPresenceColumns
+        );
 
         return table with
         {
             Columns = updatedColumns.ToArray(),
-            Constraints = rewrittenConstraints,
+            Constraints = constraintsWithPresenceHardening,
             KeyUnificationClasses = keyUnificationClasses
                 .OrderBy(@class => @class.CanonicalColumn.Value, StringComparer.Ordinal)
                 .ToArray(),
@@ -910,7 +1041,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// <summary>
     /// Resolves reference or synthetic presence gating for one member alias.
     /// </summary>
-    private static DbColumnName? ResolvePresenceColumn(
+    private static PresenceResolution ResolvePresenceColumn(
         DbColumnModel memberColumn,
         JsonPathExpression sourcePath,
         IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingByIdentityPath,
@@ -921,12 +1052,12 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     {
         if (referenceBindingByIdentityPath.TryGetValue(sourcePath.Canonical, out var binding))
         {
-            return binding.FkColumn;
+            return new PresenceResolution(binding.FkColumn, null);
         }
 
         if (!memberColumn.IsNullable)
         {
-            return null;
+            return new PresenceResolution(null, null);
         }
 
         var presenceColumnName = AllocatePresenceColumnName(
@@ -945,7 +1076,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
         updatedColumns.Add(presenceColumn);
         columnIndexByName[presenceColumnName.Value] = updatedColumns.Count - 1;
-        return presenceColumnName;
+        return new PresenceResolution(presenceColumnName, presenceColumnName);
     }
 
     /// <summary>
@@ -983,6 +1114,51 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
             return new DbColumnName(fallbackName);
         }
+    }
+
+    /// <summary>
+    /// Appends one <see cref="TableConstraint.NullOrTrue"/> per synthetic presence column.
+    /// </summary>
+    private static IReadOnlyList<TableConstraint> AppendNullOrTrueConstraints(
+        IReadOnlyList<TableConstraint> constraints,
+        DbTableName table,
+        IReadOnlyCollection<DbColumnName> syntheticPresenceColumns
+    )
+    {
+        if (syntheticPresenceColumns.Count == 0)
+        {
+            return constraints;
+        }
+
+        var existingIdentities = constraints
+            .OfType<TableConstraint.NullOrTrue>()
+            .Select(nullOrTrue => ConstraintIdentity.ForNullOrTrue(table, nullOrTrue.Column))
+            .ToHashSet();
+        List<TableConstraint> updatedConstraints = new(constraints);
+
+        foreach (
+            var syntheticPresenceColumn in syntheticPresenceColumns.OrderBy(
+                column => column.Value,
+                StringComparer.Ordinal
+            )
+        )
+        {
+            var identity = ConstraintIdentity.ForNullOrTrue(table, syntheticPresenceColumn);
+
+            if (!existingIdentities.Add(identity))
+            {
+                continue;
+            }
+
+            updatedConstraints.Add(
+                new TableConstraint.NullOrTrue(
+                    ConstraintNaming.BuildNullOrTrueName(table, syntheticPresenceColumn),
+                    syntheticPresenceColumn
+                )
+            );
+        }
+
+        return updatedConstraints.ToArray();
     }
 
     /// <summary>
@@ -1138,4 +1314,34 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// One source-path column binding with table context.
     /// </summary>
     private sealed record TableBoundColumn(int TableIndex, DbTableModel Table, DbColumnModel Column);
+
+    /// <summary>
+    /// Canonicalized endpoint ordering for one equality constraint.
+    /// </summary>
+    private sealed record OrderedConstraintEndpoints(
+        JsonPathExpression EndpointAPath,
+        KeyUnificationEndpointBinding EndpointABinding,
+        JsonPathExpression EndpointBPath,
+        KeyUnificationEndpointBinding EndpointBBinding
+    );
+
+    /// <summary>
+    /// Provisional applied-constraint diagnostics captured before canonical-column resolution.
+    /// </summary>
+    private sealed record AppliedConstraintCandidate(
+        JsonPathExpression EndpointAPath,
+        JsonPathExpression EndpointBPath,
+        int TableIndex,
+        DbTableName Table,
+        DbColumnName EndpointAColumn,
+        DbColumnName EndpointBColumn
+    );
+
+    /// <summary>
+    /// Presence resolution result for one member-path alias.
+    /// </summary>
+    private sealed record PresenceResolution(
+        DbColumnName? PresenceColumn,
+        DbColumnName? SyntheticPresenceColumn
+    );
 }

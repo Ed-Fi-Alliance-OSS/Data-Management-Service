@@ -205,7 +205,14 @@ public sealed record RelationalResourceModel(
     IReadOnlyList<DbTableModel> TablesInDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
-);
+)
+{
+    /// <summary>
+    /// Per-resource equality-constraint diagnostics for key-unification classification.
+    /// </summary>
+    public KeyUnificationEqualityConstraintDiagnostics KeyUnificationEqualityConstraints { get; init; } =
+        KeyUnificationEqualityConstraintDiagnostics.Empty;
+}
 
 /// <summary>
 /// The model for a physical table derived from a JSONPath scope.
@@ -241,6 +248,97 @@ public sealed record KeyUnificationClass(
     DbColumnName CanonicalColumn,
     IReadOnlyList<DbColumnName> MemberPathColumns
 );
+
+/// <summary>
+/// Ignore reasons for key-unification equality constraints.
+/// </summary>
+public enum KeyUnificationIgnoredReason
+{
+    /// <summary>
+    /// Endpoint bindings resolved to different physical tables.
+    /// </summary>
+    CrossTable,
+}
+
+/// <summary>
+/// One resolved endpoint binding for key-unification diagnostics.
+/// </summary>
+/// <param name="Table">The physical table containing the endpoint binding column.</param>
+/// <param name="Column">The endpoint binding column.</param>
+public sealed record KeyUnificationEndpointBinding(DbTableName Table, DbColumnName Column);
+
+/// <summary>
+/// Applied equality-constraint diagnostic entry.
+/// </summary>
+/// <param name="EndpointAPath">Canonical endpoint-a path (ordinal minimum).</param>
+/// <param name="EndpointBPath">Canonical endpoint-b path (ordinal maximum).</param>
+/// <param name="Table">The table owning both endpoint bindings.</param>
+/// <param name="EndpointAColumn">Endpoint-a binding column.</param>
+/// <param name="EndpointBColumn">Endpoint-b binding column.</param>
+/// <param name="CanonicalColumn">The resolved canonical storage column for the applied class.</param>
+public sealed record KeyUnificationAppliedConstraint(
+    JsonPathExpression EndpointAPath,
+    JsonPathExpression EndpointBPath,
+    DbTableName Table,
+    DbColumnName EndpointAColumn,
+    DbColumnName EndpointBColumn,
+    DbColumnName CanonicalColumn
+);
+
+/// <summary>
+/// Redundant equality-constraint diagnostic entry.
+/// </summary>
+/// <param name="EndpointAPath">Canonical endpoint-a path (ordinal minimum).</param>
+/// <param name="EndpointBPath">Canonical endpoint-b path (ordinal maximum).</param>
+/// <param name="Binding">The shared endpoint binding for both paths.</param>
+public sealed record KeyUnificationRedundantConstraint(
+    JsonPathExpression EndpointAPath,
+    JsonPathExpression EndpointBPath,
+    KeyUnificationEndpointBinding Binding
+);
+
+/// <summary>
+/// Ignored equality-constraint diagnostic entry.
+/// </summary>
+/// <param name="EndpointAPath">Canonical endpoint-a path (ordinal minimum).</param>
+/// <param name="EndpointBPath">Canonical endpoint-b path (ordinal maximum).</param>
+/// <param name="Reason">The deterministic ignore reason.</param>
+/// <param name="EndpointABinding">Endpoint-a resolved binding.</param>
+/// <param name="EndpointBBinding">Endpoint-b resolved binding.</param>
+public sealed record KeyUnificationIgnoredConstraint(
+    JsonPathExpression EndpointAPath,
+    JsonPathExpression EndpointBPath,
+    KeyUnificationIgnoredReason Reason,
+    KeyUnificationEndpointBinding EndpointABinding,
+    KeyUnificationEndpointBinding EndpointBBinding
+);
+
+/// <summary>
+/// Aggregate ignored-entry count by reason.
+/// </summary>
+/// <param name="Reason">The ignore reason.</param>
+/// <param name="Count">The number of ignored entries with this reason.</param>
+public sealed record KeyUnificationIgnoredByReasonEntry(KeyUnificationIgnoredReason Reason, int Count);
+
+/// <summary>
+/// Per-resource key-unification equality-constraint diagnostics.
+/// </summary>
+/// <param name="Applied">Applied same-table constraints.</param>
+/// <param name="Redundant">Redundant same-binding constraints.</param>
+/// <param name="Ignored">Ignored constraints (for v1: cross-table only).</param>
+/// <param name="IgnoredByReason">Aggregate ignored counts by reason.</param>
+public sealed record KeyUnificationEqualityConstraintDiagnostics(
+    IReadOnlyList<KeyUnificationAppliedConstraint> Applied,
+    IReadOnlyList<KeyUnificationRedundantConstraint> Redundant,
+    IReadOnlyList<KeyUnificationIgnoredConstraint> Ignored,
+    IReadOnlyList<KeyUnificationIgnoredByReasonEntry> IgnoredByReason
+)
+{
+    /// <summary>
+    /// Empty diagnostics payload.
+    /// </summary>
+    public static KeyUnificationEqualityConstraintDiagnostics Empty { get; } = new([], [], [], []);
+}
 
 /// <summary>
 /// Primary key definition for a derived table.
