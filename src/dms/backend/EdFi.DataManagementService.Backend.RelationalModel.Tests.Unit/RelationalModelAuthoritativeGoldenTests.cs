@@ -46,8 +46,20 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
 
         File.Exists(inputPath).Should().BeTrue($"fixture missing at {inputPath}");
 
-        var apiSchemaRoot = LoadApiSchemaRoot(inputPath);
-        var manifest = BuildProjectManifest(apiSchemaRoot);
+        var projectSchema = LoadProjectSchema(inputPath);
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(projectSchema, false);
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        var endpointMappings = BuildResourceEndpointMappings(projectSchema);
+
+        var extensionSiteCapture = new ExtensionSiteCapturePass();
+        IRelationalModelSetPass[] passes =
+        [
+            .. RelationalModelSetPasses.CreateDefault(),
+            extensionSiteCapture,
+        ];
+        var builder = new DerivedRelationalModelSetBuilder(passes);
+        var derivedSet = builder.Build(effectiveSchemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        var manifest = BuildProjectManifest(derivedSet, extensionSiteCapture, endpointMappings);
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
@@ -80,59 +92,138 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
     /// <summary>
     /// Load api schema root.
     /// </summary>
-    private static JsonNode LoadApiSchemaRoot(string path)
+    private static JsonObject LoadProjectSchema(string path)
     {
         var root = JsonNode.Parse(File.ReadAllText(path));
 
-        return root ?? throw new InvalidOperationException($"ApiSchema parsed null: {path}");
+        if (root is not JsonObject rootObject)
+        {
+            throw new InvalidOperationException($"ApiSchema parsed null or non-object: {path}");
+        }
+
+        return RequireObject(rootObject["projectSchema"], "projectSchema");
     }
 
     /// <summary>
-    /// Build project manifest.
+    /// Build resource endpoint mappings.
     /// </summary>
-    private static string BuildProjectManifest(JsonNode apiSchemaRoot)
+    private static ResourceEndpointMappings BuildResourceEndpointMappings(JsonObject projectSchema)
     {
-        if (apiSchemaRoot is not JsonObject rootObject)
-        {
-            throw new InvalidOperationException("ApiSchema root must be a JSON object.");
-        }
+        ArgumentNullException.ThrowIfNull(projectSchema);
 
-        var projectSchema = RequireObject(rootObject["projectSchema"], "projectSchema");
         var projectName = RequireString(projectSchema, "projectName");
-        var projectEndpointName = RequireString(projectSchema, "projectEndpointName");
-        var projectVersion = RequireString(projectSchema, "projectVersion");
         var resourceSchemas = RequireObject(
             projectSchema["resourceSchemas"],
             "projectSchema.resourceSchemas"
         );
 
-        var resourceEndpointNames = resourceSchemas
-            .Select(entry => entry.Key)
-            .OrderBy(name => name, StringComparer.Ordinal)
+        Dictionary<QualifiedResourceName, string> endpointNamesByResource = new();
+        Dictionary<string, QualifiedResourceName> resourcesByEndpointName = new(StringComparer.Ordinal);
+
+        foreach (var resourceSchemaEntry in resourceSchemas)
+        {
+            if (resourceSchemaEntry.Value is null)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema.resourceSchemas entries to be non-null, invalid ApiSchema."
+                );
+            }
+
+            if (resourceSchemaEntry.Value is not JsonObject resourceSchema)
+            {
+                throw new InvalidOperationException(
+                    "Expected projectSchema.resourceSchemas entries to be objects, invalid ApiSchema."
+                );
+            }
+
+            if (string.IsNullOrWhiteSpace(resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    "Expected resource schema entry key to be non-empty, invalid ApiSchema."
+                );
+            }
+
+            var resourceName = GetResourceName(resourceSchemaEntry.Key, resourceSchema);
+            var resource = new QualifiedResourceName(projectName, resourceName);
+
+            if (!endpointNamesByResource.TryAdd(resource, resourceSchemaEntry.Key))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate resource detected for endpoint '{resourceSchemaEntry.Key}' ({FormatResource(resource)})."
+                );
+            }
+
+            if (!resourcesByEndpointName.TryAdd(resourceSchemaEntry.Key, resource))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate resource endpoint name detected: '{resourceSchemaEntry.Key}'."
+                );
+            }
+        }
+
+        return new ResourceEndpointMappings(endpointNamesByResource, resourcesByEndpointName);
+    }
+
+    /// <summary>
+    /// Build project manifest.
+    /// </summary>
+    private static string BuildProjectManifest(
+        DerivedRelationalModelSet modelSet,
+        ExtensionSiteCapturePass extensionSiteCapture,
+        ResourceEndpointMappings endpointMappings
+    )
+    {
+        ArgumentNullException.ThrowIfNull(modelSet);
+        ArgumentNullException.ThrowIfNull(extensionSiteCapture);
+        ArgumentNullException.ThrowIfNull(endpointMappings);
+
+        if (modelSet.ProjectSchemasInEndpointOrder.Count != 1)
+        {
+            throw new InvalidOperationException(
+                "Expected a single project schema for the authoritative ds-5.2 manifest."
+            );
+        }
+
+        var project = modelSet.ProjectSchemasInEndpointOrder[0];
+        var resourcesByName = modelSet.ConcreteResourcesInNameOrder.ToDictionary(resource =>
+            resource.ResourceKey.Resource
+        );
+
+        if (resourcesByName.Count != endpointMappings.ResourcesByEndpointName.Count)
+        {
+            throw new InvalidOperationException(
+                "Derived resource count does not match the project schema resource count."
+            );
+        }
+
+        var orderedEndpointNames = endpointMappings
+            .ResourcesByEndpointName.Keys.OrderBy(name => name, StringComparer.Ordinal)
             .ToArray();
 
-        var pipeline = CreatePipeline();
         var buffer = new ArrayBufferWriter<byte>();
 
         using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { Indented = true }))
         {
             writer.WriteStartObject();
-            writer.WriteString("project_name", projectName);
-            writer.WriteString("project_endpoint_name", projectEndpointName);
-            writer.WriteString("project_version", projectVersion);
+            writer.WriteString("project_name", project.ProjectName);
+            writer.WriteString("project_endpoint_name", project.ProjectEndpointName);
+            writer.WriteString("project_version", project.ProjectVersion);
             writer.WritePropertyName("resources");
             writer.WriteStartArray();
 
-            foreach (var endpointName in resourceEndpointNames)
+            foreach (var endpointName in orderedEndpointNames)
             {
-                var context = new RelationalModelBuilderContext
-                {
-                    ApiSchemaRoot = apiSchemaRoot,
-                    ResourceEndpointName = endpointName,
-                };
+                var resource = endpointMappings.ResourcesByEndpointName[endpointName];
 
-                var buildResult = pipeline.Run(context);
-                var manifest = RelationalModelManifestEmitter.Emit(buildResult);
+                if (!resourcesByName.TryGetValue(resource, out var model))
+                {
+                    throw new InvalidOperationException(
+                        $"Derived resource not found for endpoint '{endpointName}' ({FormatResource(resource)})."
+                    );
+                }
+
+                var extensionSites = extensionSiteCapture.GetExtensionSites(resource);
+                var manifest = RelationalModelManifestEmitter.Emit(model.RelationalModel, extensionSites);
 
                 using var manifestDocument = JsonDocument.Parse(manifest);
                 writer.WriteStartObject();
@@ -149,24 +240,6 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
         var json = Encoding.UTF8.GetString(buffer.WrittenSpan);
 
         return json + "\n";
-    }
-
-    /// <summary>
-    /// Create pipeline.
-    /// </summary>
-    private static RelationalModelBuilderPipeline CreatePipeline()
-    {
-        return new RelationalModelBuilderPipeline(
-            new IRelationalModelBuilderStep[]
-            {
-                new ExtractInputsStep(),
-                new ValidateJsonSchemaStep(),
-                new DiscoverExtensionSitesStep(),
-                new DeriveTableScopesAndKeysStep(),
-                new DeriveColumnsAndBindDescriptorEdgesStep(),
-                new CanonicalizeOrderingStep(),
-            }
-        );
     }
 
     /// <summary>
@@ -244,4 +317,46 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
             "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
         );
     }
+
+    /// <summary>
+    /// Test type extension site capture pass.
+    /// </summary>
+    private sealed class ExtensionSiteCapturePass : IRelationalModelSetPass
+    {
+        private readonly Dictionary<QualifiedResourceName, IReadOnlyList<ExtensionSite>> _sitesByResource =
+            new();
+
+        /// <summary>
+        /// Execute.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            foreach (var resource in context.ConcreteResourcesInNameOrder)
+            {
+                _sitesByResource[resource.ResourceKey.Resource] = context.GetExtensionSitesForResource(
+                    resource.ResourceKey.Resource
+                );
+            }
+        }
+
+        /// <summary>
+        /// Get extension sites.
+        /// </summary>
+        public IReadOnlyList<ExtensionSite> GetExtensionSites(QualifiedResourceName resource)
+        {
+            return _sitesByResource.TryGetValue(resource, out var sites)
+                ? sites
+                : Array.Empty<ExtensionSite>();
+        }
+    }
+
+    /// <summary>
+    /// Test type resource endpoint mappings.
+    /// </summary>
+    private sealed record ResourceEndpointMappings(
+        IReadOnlyDictionary<QualifiedResourceName, string> EndpointNamesByResource,
+        IReadOnlyDictionary<string, QualifiedResourceName> ResourcesByEndpointName
+    );
 }

@@ -38756,6 +38756,1852 @@
     {
       "resource": {
         "project_name": "Ed-Fi",
+        "resource_name": "ProgramEvaluationElement"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "ProgramEvaluationElement",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramTypeDescriptor_Unified_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ElementMaxNumericRating",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 6,
+                "scale": 3
+              },
+              "is_nullable": true,
+              "source_path": "$.elementMaxNumericRating",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ElementMinNumericRating",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 6,
+                "scale": 3
+              },
+              "is_nullable": true,
+              "source_path": "$.elementMinNumericRating",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ElementSortOrder",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.elementSortOrder",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEducationOrganizationId_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationElementDescription",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationElementDescription",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationElementTitle",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationElementTitle",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationTitle_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramName_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEducationOrganizationId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEducationOrganizationId_Unified",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEvaluationTitle",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEvaluationTitle",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationTitle_Unified",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programName",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramName_Unified",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programTypeDescriptor",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programEducationOrganizationId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEducationOrganizationId_Unified",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramEvaluationTitle",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programEvaluationTitle",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationTitle_Unified",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programName",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramName_Unified",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            }
+          ],
+          "key_unification_classes": [
+            {
+              "canonical_column": "ProgramEducationOrganizationId_Unified",
+              "member_path_columns": [
+                "ProgramEvaluationObjective_ProgramEducationOrganizationId",
+                "ProgramEvaluation_ProgramEducationOrganizationId"
+              ]
+            },
+            {
+              "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+              "member_path_columns": [
+                "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+                "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+              ]
+            },
+            {
+              "canonical_column": "ProgramEvaluationTitle_Unified",
+              "member_path_columns": [
+                "ProgramEvaluationObjective_ProgramEvaluationTitle",
+                "ProgramEvaluation_ProgramEvaluationTitle"
+              ]
+            },
+            {
+              "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+              "member_path_columns": [
+                "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+                "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+              ]
+            },
+            {
+              "canonical_column": "ProgramName_Unified",
+              "member_path_columns": [
+                "ProgramEvaluationObjective_ProgramName",
+                "ProgramEvaluation_ProgramName"
+              ]
+            },
+            {
+              "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
+              "member_path_columns": [
+                "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
+                "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+              ]
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ProgramEvaluationElement_NK",
+              "columns": [
+                "ProgramEvaluationElementTitle",
+                "ProgramEvaluation_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_ProgramEvaluationElement_RefKey",
+              "columns": [
+                "DocumentId",
+                "ProgramEvaluationElementTitle",
+                "ProgramEducationOrganizationId_Unified",
+                "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                "ProgramEvaluationTitle_Unified",
+                "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                "ProgramName_Unified",
+                "ProgramTypeDescriptor_Unified_DescriptorId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElement_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElement_ProgramEvaluationObjective_RefKey",
+              "columns": [
+                "ProgramEvaluationObjective_DocumentId",
+                "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
+                "ProgramEducationOrganizationId_Unified",
+                "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                "ProgramEvaluationTitle_Unified",
+                "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                "ProgramName_Unified",
+                "ProgramTypeDescriptor_Unified_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ProgramEvaluationObjective"
+              },
+              "target_columns": [
+                "DocumentId",
+                "ProgramEvaluationObjectiveTitle",
+                "ProgramEvaluation_ProgramEducationOrganizationId",
+                "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+                "ProgramEvaluation_ProgramEvaluationTitle",
+                "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+                "ProgramEvaluation_ProgramName",
+                "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElement_ProgramEvaluationPeriodD_4122be3539",
+              "columns": [
+                "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElement_ProgramEvaluationTypeDes_9ed95edefc",
+              "columns": [
+                "ProgramEvaluationTypeDescriptor_Unified_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElement_ProgramEvaluation_RefKey",
+              "columns": [
+                "ProgramEvaluation_DocumentId",
+                "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                "ProgramEvaluationTitle_Unified",
+                "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                "ProgramEducationOrganizationId_Unified",
+                "ProgramName_Unified",
+                "ProgramTypeDescriptor_Unified_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ProgramEvaluation"
+              },
+              "target_columns": [
+                "DocumentId",
+                "ProgramEvaluationPeriodDescriptor_DescriptorId",
+                "ProgramEvaluationTitle",
+                "ProgramEvaluationTypeDescriptor_DescriptorId",
+                "ProgramProgram_EducationOrganizationId",
+                "ProgramProgram_ProgramName",
+                "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElement_ProgramTypeDescriptor_Unified",
+              "columns": [
+                "ProgramTypeDescriptor_Unified_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_ProgramEvaluationElement_ProgramEvaluationObjective_AllNone",
+              "fk_column": "ProgramEvaluationObjective_DocumentId",
+              "dependent_columns": [
+                "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
+                "ProgramEvaluationObjective_ProgramEducationOrganizationId",
+                "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+                "ProgramEvaluationObjective_ProgramEvaluationTitle",
+                "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+                "ProgramEvaluationObjective_ProgramName",
+                "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_ProgramEvaluationElement_ProgramEvaluation_AllNone",
+              "fk_column": "ProgramEvaluation_DocumentId",
+              "dependent_columns": [
+                "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+                "ProgramEvaluation_ProgramEvaluationTitle",
+                "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+                "ProgramEvaluation_ProgramEducationOrganizationId",
+                "ProgramEvaluation_ProgramName",
+                "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "ProgramEvaluationElementProgramEvaluationLevel",
+          "scope": "$.programEvaluationLevels[*]",
+          "key_columns": [
+            {
+              "name": "ProgramEvaluationElement_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "ProgramEvaluationElement_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "RatingLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationLevels[*].ratingLevelDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ElementMaxNumericRating",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 6,
+                "scale": 3
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationLevels[*].maxNumericRating",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ElementMinNumericRating",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Decimal",
+                "precision": 6,
+                "scale": 3
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationLevels[*].minNumericRating",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_ProgramEvaluationElementProgramEvaluationLevel_Pr_15e463ba4f",
+              "columns": [
+                "ProgramEvaluationElement_DocumentId",
+                "RatingLevelDescriptor_DescriptorId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElementProgramEvaluationLevel_Pr_649870364e",
+              "columns": [
+                "ProgramEvaluationElement_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "ProgramEvaluationElement"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_ProgramEvaluationElementProgramEvaluationLevel_Ra_e42bd3a7df",
+              "columns": [
+                "RatingLevelDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "document_reference_bindings": [
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.programEvaluationObjectiveReference",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluationObjective_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramEvaluationObjective"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle",
+              "column": "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle"
+            },
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programEducationOrganizationId",
+              "column": "ProgramEvaluationObjective_ProgramEducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+              "column": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc"
+            },
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programEvaluationTitle",
+              "column": "ProgramEvaluationObjective_ProgramEvaluationTitle"
+            },
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+              "column": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb"
+            },
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programName",
+              "column": "ProgramEvaluationObjective_ProgramName"
+            },
+            {
+              "reference_json_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
+              "column": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.programEvaluationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluation_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramEvaluation"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+              "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
+            },
+            {
+              "reference_json_path": "$.programEvaluationReference.programEvaluationTitle",
+              "column": "ProgramEvaluation_ProgramEvaluationTitle"
+            },
+            {
+              "reference_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+              "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
+            },
+            {
+              "reference_json_path": "$.programEvaluationReference.programEducationOrganizationId",
+              "column": "ProgramEvaluation_ProgramEducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.programEvaluationReference.programName",
+              "column": "ProgramEvaluation_ProgramName"
+            },
+            {
+              "reference_json_path": "$.programEvaluationReference.programTypeDescriptor",
+              "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.programEvaluationObjectiveReference.programEvaluationPeriodDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramEvaluationPeriodDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.programEvaluationObjectiveReference.programEvaluationTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramEvaluationTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.programEvaluationObjectiveReference.programTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": true,
+          "descriptor_value_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramEvaluationPeriodDescriptor"
+          }
+        },
+        {
+          "is_identity_component": true,
+          "descriptor_value_path": "$.programEvaluationReference.programEvaluationTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramEvaluationTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": true,
+          "descriptor_value_path": "$.programEvaluationReference.programTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElement"
+          },
+          "fk_column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.programEvaluationLevels[*].ratingLevelDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "ProgramEvaluationElementProgramEvaluationLevel"
+          },
+          "fk_column": "RatingLevelDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "RatingLevelDescriptor"
+          }
+        }
+      ],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "StudentAssessmentRegistration"
+      },
+      "physical_schema": "edfi",
+      "storage_kind": "RelationalTables",
+      "tables": [
+        {
+          "schema": "edfi",
+          "name": "StudentAssessmentRegistration",
+          "scope": "$",
+          "key_columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart"
+            }
+          ],
+          "columns": [
+            {
+              "name": "DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentGradeLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentGradeLevelDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PlatformTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.platformTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentAdministration_AdministrationIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAdministrationReference.administrationIdentifier",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentAdministration_AssessmentIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAdministrationReference.assessmentIdentifier",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentAdministration_AssigningEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentAdministration_Namespace",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAdministrationReference.namespace",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ReportingEducationOrganization_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.reportingEducationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": true,
+              "source_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.studentUniqueId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentEducationOrganizationAssociation_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentEducationOrganizationAssociationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_EntryDate",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Date"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentSchoolAssociationReference.entryDate",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentSchoolAssociationReference.schoolId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentUniqueId_Unified",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "TestingEducationOrganization_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.testingEducationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentAdministration_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAdministrationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ReportingEducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.reportingEducationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentEducationOrganizationAssociation_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentEducationOrganizationAssociationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentEducationOrganizationAssociation_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "StudentUniqueId_Unified",
+                "presence_column": "StudentEducationOrganizationAssociation_DocumentId"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentSchoolAssociationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentSchoolAssociationReference.studentUniqueId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "StudentUniqueId_Unified",
+                "presence_column": "StudentSchoolAssociation_DocumentId"
+              }
+            },
+            {
+              "name": "TestingEducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.testingEducationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [
+            {
+              "canonical_column": "StudentUniqueId_Unified",
+              "member_path_columns": [
+                "StudentEducationOrganizationAssociation_StudentUniqueId",
+                "StudentSchoolAssociation_StudentUniqueId"
+              ]
+            }
+          ],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentAssessmentRegistration_NK",
+              "columns": [
+                "AssessmentAdministration_DocumentId",
+                "StudentEducationOrganizationAssociation_DocumentId"
+              ]
+            },
+            {
+              "kind": "Unique",
+              "name": "UX_StudentAssessmentRegistration_RefKey",
+              "columns": [
+                "DocumentId",
+                "AssessmentAdministration_AdministrationIdentifier",
+                "AssessmentAdministration_AssessmentIdentifier",
+                "AssessmentAdministration_AssigningEducationOrganizationId",
+                "AssessmentAdministration_Namespace",
+                "StudentEducationOrganizationAssociation_EducationOrganizationId",
+                "StudentUniqueId_Unified"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_AssessmentAdministr_3bb5a25afd",
+              "columns": [
+                "AssessmentAdministration_DocumentId",
+                "AssessmentAdministration_AdministrationIdentifier",
+                "AssessmentAdministration_AssessmentIdentifier",
+                "AssessmentAdministration_Namespace",
+                "AssessmentAdministration_AssigningEducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "AssessmentAdministration"
+              },
+              "target_columns": [
+                "DocumentId",
+                "AdministrationIdentifier",
+                "Assessment_AssessmentIdentifier",
+                "Assessment_Namespace",
+                "AssigningEducationOrganization_EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_AssessmentGradeLevelDescriptor",
+              "columns": [
+                "AssessmentGradeLevelDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_Document",
+              "columns": [
+                "DocumentId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Document"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_PlatformTypeDescriptor",
+              "columns": [
+                "PlatformTypeDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_ReportingEducationO_e4fb973c7d",
+              "columns": [
+                "ReportingEducationOrganization_DocumentId",
+                "ReportingEducationOrganization_EducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "EducationOrganizationIdentity"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "Cascade"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_ScheduledStudentEdu_fe418223f2",
+              "columns": [
+                "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
+                "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c",
+                "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentEducationOrganizationAssessmentAccommodation"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "Student_StudentUniqueId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_StudentEducationOrg_6ffa85a9b0",
+              "columns": [
+                "StudentEducationOrganizationAssociation_DocumentId",
+                "StudentEducationOrganizationAssociation_EducationOrganizationId",
+                "StudentUniqueId_Unified"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentEducationOrganizationAssociation"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganization_EducationOrganizationId",
+                "Student_StudentUniqueId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_StudentSchoolAssoci_92e3e47c30",
+              "columns": [
+                "StudentSchoolAssociation_DocumentId",
+                "StudentSchoolAssociation_EntryDate",
+                "StudentSchoolAssociation_SchoolId",
+                "StudentUniqueId_Unified"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentSchoolAssociation"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EntryDate",
+                "SchoolId_Unified",
+                "Student_StudentUniqueId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "Cascade"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistration_TestingEducationOrg_c0b3cd4d24",
+              "columns": [
+                "TestingEducationOrganization_DocumentId",
+                "TestingEducationOrganization_EducationOrganizationId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "EducationOrganizationIdentity"
+              },
+              "target_columns": [
+                "DocumentId",
+                "EducationOrganizationId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "Cascade"
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentAssessmentRegistration_AssessmentAdministr_768d8c93a1",
+              "fk_column": "AssessmentAdministration_DocumentId",
+              "dependent_columns": [
+                "AssessmentAdministration_AdministrationIdentifier",
+                "AssessmentAdministration_AssessmentIdentifier",
+                "AssessmentAdministration_Namespace",
+                "AssessmentAdministration_AssigningEducationOrganizationId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentAssessmentRegistration_ReportingEducationO_6c530af4d2",
+              "fk_column": "ReportingEducationOrganization_DocumentId",
+              "dependent_columns": [
+                "ReportingEducationOrganization_EducationOrganizationId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentAssessmentRegistration_ScheduledStudentEdu_eaaa6f6c97",
+              "fk_column": "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
+              "dependent_columns": [
+                "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c",
+                "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentAssessmentRegistration_StudentEducationOrg_fda0fdd035",
+              "fk_column": "StudentEducationOrganizationAssociation_DocumentId",
+              "dependent_columns": [
+                "StudentEducationOrganizationAssociation_EducationOrganizationId",
+                "StudentEducationOrganizationAssociation_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentAssessmentRegistration_StudentSchoolAssoci_d9aaeb4583",
+              "fk_column": "StudentSchoolAssociation_DocumentId",
+              "dependent_columns": [
+                "StudentSchoolAssociation_EntryDate",
+                "StudentSchoolAssociation_SchoolId",
+                "StudentSchoolAssociation_StudentUniqueId"
+              ]
+            },
+            {
+              "kind": "AllOrNoneNullability",
+              "name": "CK_StudentAssessmentRegistration_TestingEducationOrg_b6f11be3ee",
+              "fk_column": "TestingEducationOrganization_DocumentId",
+              "dependent_columns": [
+                "TestingEducationOrganization_EducationOrganizationId"
+              ]
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "StudentAssessmentRegistrationAssessmentAccommodation",
+          "scope": "$.assessmentAccommodations[*]",
+          "key_columns": [
+            {
+              "name": "StudentAssessmentRegistration_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "StudentAssessmentRegistration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AccommodationDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAccommodations[*].accommodationDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentAssessmentRegistrationAssessmentAccommodat_6ba059ea60",
+              "columns": [
+                "StudentAssessmentRegistration_DocumentId",
+                "AccommodationDescriptor_DescriptorId"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistrationAssessmentAccommodat_5ffd2402d4",
+              "columns": [
+                "StudentAssessmentRegistration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentAssessmentRegistration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistrationAssessmentAccommodat_d1ac0c0fc8",
+              "columns": [
+                "AccommodationDescriptor_DescriptorId"
+              ],
+              "target_table": {
+                "schema": "dms",
+                "name": "Descriptor"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "NoAction",
+              "on_update": "NoAction"
+            }
+          ]
+        },
+        {
+          "schema": "edfi",
+          "name": "StudentAssessmentRegistrationAssessmentCustomization",
+          "scope": "$.assessmentCustomizations[*]",
+          "key_columns": [
+            {
+              "name": "StudentAssessmentRegistration_DocumentId",
+              "kind": "ParentKeyPart"
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal"
+            }
+          ],
+          "columns": [
+            {
+              "name": "StudentAssessmentRegistration_DocumentId",
+              "kind": "ParentKeyPart",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Ordinal",
+              "kind": "Ordinal",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CustomizationKey",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentCustomizations[*].customizationKey",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "CustomizationValue",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 1024
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentCustomizations[*].customizationValue",
+              "storage": {
+                "kind": "Stored"
+              }
+            }
+          ],
+          "key_unification_classes": [],
+          "constraints": [
+            {
+              "kind": "Unique",
+              "name": "UX_StudentAssessmentRegistrationAssessmentCustomizat_b0491c4ea5",
+              "columns": [
+                "StudentAssessmentRegistration_DocumentId",
+                "CustomizationKey"
+              ]
+            },
+            {
+              "kind": "ForeignKey",
+              "name": "FK_StudentAssessmentRegistrationAssessmentCustomizat_bba92e6cef",
+              "columns": [
+                "StudentAssessmentRegistration_DocumentId"
+              ],
+              "target_table": {
+                "schema": "edfi",
+                "name": "StudentAssessmentRegistration"
+              },
+              "target_columns": [
+                "DocumentId"
+              ],
+              "on_delete": "Cascade",
+              "on_update": "NoAction"
+            }
+          ]
+        }
+      ],
+      "document_reference_bindings": [
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.assessmentAdministrationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "AssessmentAdministration_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "AssessmentAdministration"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.assessmentAdministrationReference.administrationIdentifier",
+              "column": "AssessmentAdministration_AdministrationIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentAdministrationReference.assessmentIdentifier",
+              "column": "AssessmentAdministration_AssessmentIdentifier"
+            },
+            {
+              "reference_json_path": "$.assessmentAdministrationReference.namespace",
+              "column": "AssessmentAdministration_Namespace"
+            },
+            {
+              "reference_json_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId",
+              "column": "AssessmentAdministration_AssigningEducationOrganizationId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.reportingEducationOrganizationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "ReportingEducationOrganization_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationOrganization"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.reportingEducationOrganizationReference.educationOrganizationId",
+              "column": "ReportingEducationOrganization_EducationOrganizationId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentEducationOrganizationAssessmentAccommodation"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.educationOrganizationId",
+              "column": "ScheduledStudentEducationOrganizationAssessmentAccom_42c01c7c2c"
+            },
+            {
+              "reference_json_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference.studentUniqueId",
+              "column": "ScheduledStudentEducationOrganizationAssessmentAccom_44578471b1"
+            }
+          ]
+        },
+        {
+          "is_identity_component": true,
+          "reference_object_path": "$.studentEducationOrganizationAssociationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "StudentEducationOrganizationAssociation_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentEducationOrganizationAssociation"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.studentEducationOrganizationAssociationReference.educationOrganizationId",
+              "column": "StudentEducationOrganizationAssociation_EducationOrganizationId"
+            },
+            {
+              "reference_json_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId",
+              "column": "StudentEducationOrganizationAssociation_StudentUniqueId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.studentSchoolAssociationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "StudentSchoolAssociation_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentSchoolAssociation"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.studentSchoolAssociationReference.entryDate",
+              "column": "StudentSchoolAssociation_EntryDate"
+            },
+            {
+              "reference_json_path": "$.studentSchoolAssociationReference.schoolId",
+              "column": "StudentSchoolAssociation_SchoolId"
+            },
+            {
+              "reference_json_path": "$.studentSchoolAssociationReference.studentUniqueId",
+              "column": "StudentSchoolAssociation_StudentUniqueId"
+            }
+          ]
+        },
+        {
+          "is_identity_component": false,
+          "reference_object_path": "$.testingEducationOrganizationReference",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "TestingEducationOrganization_DocumentId",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationOrganization"
+          },
+          "identity_bindings": [
+            {
+              "reference_json_path": "$.testingEducationOrganizationReference.educationOrganizationId",
+              "column": "TestingEducationOrganization_EducationOrganizationId"
+            }
+          ]
+        }
+      ],
+      "descriptor_edge_sources": [
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.assessmentGradeLevelDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "AssessmentGradeLevelDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "GradeLevelDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.platformTypeDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistration"
+          },
+          "fk_column": "PlatformTypeDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "PlatformTypeDescriptor"
+          }
+        },
+        {
+          "is_identity_component": false,
+          "descriptor_value_path": "$.assessmentAccommodations[*].accommodationDescriptor",
+          "table": {
+            "schema": "edfi",
+            "name": "StudentAssessmentRegistrationAssessmentAccommodation"
+          },
+          "fk_column": "AccommodationDescriptor_DescriptorId",
+          "descriptor_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "AccommodationDescriptor"
+          }
+        }
+      ],
+      "extension_sites": []
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
         "resource_name": "StudentSchoolAssociation"
       },
       "physical_schema": "edfi",
