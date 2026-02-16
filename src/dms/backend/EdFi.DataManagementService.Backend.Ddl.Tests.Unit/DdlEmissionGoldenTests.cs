@@ -63,9 +63,10 @@ public abstract class DdlEmissionGoldenTestBase
 
         using var process = new Process { StartInfo = startInfo };
         process.Start();
+        var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
-        var error = errorTask.Result;
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
         process.WaitForExit();
 
         if (process.ExitCode == 0)
@@ -308,7 +309,7 @@ internal static class NestedCollectionsFixture
         var schoolTableName = new DbTableName(schema, "School");
         var schoolTable = new DbTableModel(
             schoolTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -328,14 +329,14 @@ internal static class NestedCollectionsFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         // Child collection: SchoolAddress
         var addressTableName = new DbTableName(schema, "SchoolAddress");
         var addressTable = new DbTableModel(
             addressTableName,
-            new JsonPathExpression("$.addresses[*]", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$.addresses[*]", []),
             new TableKey(
                 "PK_SchoolAddress",
                 [
@@ -385,7 +386,7 @@ internal static class NestedCollectionsFixture
         var phoneTableName = new DbTableName(schema, "SchoolAddressPhoneNumber");
         var phoneTable = new DbTableModel(
             phoneTableName,
-            new JsonPathExpression("$.addresses[*].phoneNumbers[*]", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$.addresses[*].phoneNumbers[*]", []),
             new TableKey(
                 "PK_SchoolAddressPhoneNumber",
                 [
@@ -446,8 +447,8 @@ internal static class NestedCollectionsFixture
             ResourceStorageKind.RelationalTables,
             schoolTable,
             [schoolTable, addressTable, phoneTable],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         // Triggers
@@ -512,9 +513,9 @@ internal static class NestedCollectionsFixture
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
+            [],
+            [],
+            [],
             triggers
         );
     }
@@ -548,7 +549,7 @@ internal static class PolymorphicAbstractFixture
         var identityTableName = new DbTableName(schema, "EducationOrganizationIdentity");
         var identityTable = new DbTableModel(
             identityTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey(
                 "PK_EducationOrganizationIdentity",
                 [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
@@ -579,14 +580,14 @@ internal static class PolymorphicAbstractFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         // School concrete table
         var schoolTableName = new DbTableName(schema, "School");
         var schoolTable = new DbTableModel(
             schoolTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -622,7 +623,7 @@ internal static class PolymorphicAbstractFixture
         var leaTableName = new DbTableName(schema, "LocalEducationAgency");
         var leaTable = new DbTableModel(
             leaTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey(
                 "PK_LocalEducationAgency",
                 [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
@@ -701,8 +702,8 @@ internal static class PolymorphicAbstractFixture
             ResourceStorageKind.RelationalTables,
             schoolTable,
             [schoolTable],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         var leaRelationalModel = new RelationalResourceModel(
@@ -711,8 +712,8 @@ internal static class PolymorphicAbstractFixture
             ResourceStorageKind.RelationalTables,
             leaTable,
             [leaTable],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         // Triggers
@@ -831,7 +832,7 @@ internal static class PolymorphicAbstractFixture
             ],
             [abstractIdentityTable],
             [unionView],
-            Array.Empty<DbIndexInfo>(),
+            [],
             triggers
         );
     }
@@ -862,7 +863,7 @@ internal static class ExtensionMappingFixture
         var schoolTableName = new DbTableName(edfiSchema, "School");
         var schoolTable = new DbTableModel(
             schoolTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -882,14 +883,14 @@ internal static class ExtensionMappingFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         // Core collection: SchoolAddress
         var addressTableName = new DbTableName(edfiSchema, "SchoolAddress");
         var addressTable = new DbTableModel(
             addressTableName,
-            new JsonPathExpression("$.addresses[*]", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$.addresses[*]", []),
             new TableKey(
                 "PK_SchoolAddress",
                 [
@@ -939,7 +940,7 @@ internal static class ExtensionMappingFixture
         var schoolExtTableName = new DbTableName(sampleSchema, "SchoolExtension");
         var schoolExtTable = new DbTableModel(
             schoolExtTableName,
-            new JsonPathExpression("$._ext.sample", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$._ext.sample", []),
             new TableKey("PK_SchoolExtension", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -975,7 +976,7 @@ internal static class ExtensionMappingFixture
         var addressExtTableName = new DbTableName(sampleSchema, "SchoolAddressExtension");
         var addressExtTable = new DbTableModel(
             addressExtTableName,
-            new JsonPathExpression("$.addresses[*]._ext.sample", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$.addresses[*]._ext.sample", []),
             new TableKey(
                 "PK_SchoolAddressExtension",
                 [
@@ -1027,8 +1028,8 @@ internal static class ExtensionMappingFixture
             ResourceStorageKind.RelationalTables,
             schoolTable,
             [schoolTable, addressTable, schoolExtTable, addressExtTable],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         // Triggers
@@ -1111,9 +1112,9 @@ internal static class ExtensionMappingFixture
                 new ProjectSchemaInfo("sample", "Sample", "1.0.0", false, sampleSchema),
             ],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
+            [],
+            [],
+            [],
             triggers
         );
     }

@@ -11,19 +11,10 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// <summary>
 /// Emits dialect-specific DDL (schemas, tables, indexes, and triggers) from a derived relational model set.
 /// </summary>
-public sealed class RelationalModelDdlEmitter
+public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 {
-    private readonly ISqlDialectRules _dialectRules;
-
-    /// <summary>
-    /// Initializes a new DDL emitter using the specified SQL dialect rules.
-    /// </summary>
-    /// <param name="dialectRules">The dialect rules used for quoting and scalar type defaults.</param>
-    public RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
-    {
-        ArgumentNullException.ThrowIfNull(dialectRules);
-        _dialectRules = dialectRules;
-    }
+    private readonly ISqlDialectRules _dialectRules =
+        dialectRules ?? throw new ArgumentNullException(nameof(dialectRules));
 
     /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, and triggers in the model set.
@@ -493,10 +484,7 @@ public sealed class RelationalModelDdlEmitter
                     builder.Append(" OR ");
                 }
                 var col = Quote(trigger.IdentityProjectionColumns[i]);
-                builder.Append("i.");
-                builder.Append(col);
-                builder.Append(" <> del.");
-                builder.Append(col);
+                AppendMssqlNullSafeNotEqual(builder, "i", col, "del", col);
             }
             builder.AppendLine(";");
 
@@ -586,15 +574,13 @@ public sealed class RelationalModelDdlEmitter
         builder.Append(indent);
         builder.Append("INSERT INTO ");
         builder.Append(refIdTable);
-        builder.AppendLine(
-            " ("
-                + Quote(new DbColumnName("ReferentialId"))
-                + ", "
-                + Quote(new DbColumnName("DocumentId"))
-                + ", "
-                + Quote(new DbColumnName("ResourceKeyId"))
-                + ")"
-        );
+        builder.Append(" (");
+        builder.Append(Quote(new DbColumnName("ReferentialId")));
+        builder.Append(", ");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(", ");
+        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
+        builder.AppendLine(")");
         builder.Append(indent);
         builder.Append("VALUES (");
         builder.Append(uuidv5Func);
@@ -694,15 +680,13 @@ public sealed class RelationalModelDdlEmitter
         builder.Append(indent);
         builder.Append("INSERT INTO ");
         builder.Append(refIdTable);
-        builder.AppendLine(
-            " ("
-                + Quote(new DbColumnName("ReferentialId"))
-                + ", "
-                + Quote(new DbColumnName("DocumentId"))
-                + ", "
-                + Quote(new DbColumnName("ResourceKeyId"))
-                + ")"
-        );
+        builder.Append(" (");
+        builder.Append(Quote(new DbColumnName("ReferentialId")));
+        builder.Append(", ");
+        builder.Append(Quote(new DbColumnName("DocumentId")));
+        builder.Append(", ");
+        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
+        builder.AppendLine(")");
         builder.Append(indent);
         builder.Append("SELECT ");
         builder.Append(uuidv5Func);
@@ -944,12 +928,49 @@ public sealed class RelationalModelDdlEmitter
         {
             if (i > 0)
                 builder.Append(" OR ");
-            builder.Append("i.");
-            builder.Append(Quote(trigger.TargetColumnMappings[i].SourceColumn));
-            builder.Append(" <> d.");
-            builder.Append(Quote(trigger.TargetColumnMappings[i].SourceColumn));
+            var col = Quote(trigger.TargetColumnMappings[i].SourceColumn);
+            AppendMssqlNullSafeNotEqual(builder, "i", col, "d", col);
         }
         builder.AppendLine(";");
+    }
+
+    /// <summary>
+    /// Appends a NULL-safe inequality comparison for MSSQL, equivalent to PostgreSQL's
+    /// <c>IS DISTINCT FROM</c>. Emits <c>(left.col &lt;&gt; right.col OR (left.col IS NULL AND right.col IS NOT NULL) OR (left.col IS NOT NULL AND right.col IS NULL))</c>.
+    /// </summary>
+    private static void AppendMssqlNullSafeNotEqual(
+        StringBuilder builder,
+        string leftAlias,
+        string quotedColumn,
+        string rightAlias,
+        string rightQuotedColumn
+    )
+    {
+        builder.Append('(');
+        builder.Append(leftAlias);
+        builder.Append('.');
+        builder.Append(quotedColumn);
+        builder.Append(" <> ");
+        builder.Append(rightAlias);
+        builder.Append('.');
+        builder.Append(rightQuotedColumn);
+        builder.Append(" OR (");
+        builder.Append(leftAlias);
+        builder.Append('.');
+        builder.Append(quotedColumn);
+        builder.Append(" IS NULL AND ");
+        builder.Append(rightAlias);
+        builder.Append('.');
+        builder.Append(rightQuotedColumn);
+        builder.Append(" IS NOT NULL) OR (");
+        builder.Append(leftAlias);
+        builder.Append('.');
+        builder.Append(quotedColumn);
+        builder.Append(" IS NOT NULL AND ");
+        builder.Append(rightAlias);
+        builder.Append('.');
+        builder.Append(rightQuotedColumn);
+        builder.Append(" IS NULL))");
     }
 
     /// <summary>

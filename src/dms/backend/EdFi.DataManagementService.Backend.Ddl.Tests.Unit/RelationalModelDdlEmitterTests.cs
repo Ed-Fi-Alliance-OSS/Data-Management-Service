@@ -505,7 +505,7 @@ internal static class PrimaryKeyFixture
         var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
         var table = new DbTableModel(
             tableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey(primaryKeyName, [keyColumn]),
             new[]
             {
@@ -518,7 +518,7 @@ internal static class PrimaryKeyFixture
                     TargetResource: null
                 ),
             },
-            Array.Empty<TableConstraint>()
+            []
         );
         var relationalModel = new RelationalResourceModel(
             resource,
@@ -526,8 +526,8 @@ internal static class PrimaryKeyFixture
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         return new DerivedRelationalModelSet(
@@ -551,10 +551,10 @@ internal static class PrimaryKeyFixture
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            [],
+            [],
+            [],
+            []
         );
     }
 }
@@ -573,7 +573,7 @@ internal static class ForeignKeyFixture
 
         var parentTable = new DbTableModel(
             parentTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -593,12 +593,12 @@ internal static class ForeignKeyFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         var childTable = new DbTableModel(
             childTableName,
-            new JsonPathExpression("$.addresses[*]", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$.addresses[*]", []),
             new TableKey(
                 "PK_SchoolAddress",
                 [
@@ -642,8 +642,8 @@ internal static class ForeignKeyFixture
             ResourceStorageKind.RelationalTables,
             parentTable,
             [parentTable, childTable],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         return new DerivedRelationalModelSet(
@@ -667,10 +667,10 @@ internal static class ForeignKeyFixture
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            [],
+            [],
+            [],
+            []
         );
     }
 }
@@ -688,7 +688,7 @@ internal static class UnboundedStringFixture
 
         var table = new DbTableModel(
             tableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -708,7 +708,7 @@ internal static class UnboundedStringFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         var relationalModel = new RelationalResourceModel(
@@ -717,8 +717,8 @@ internal static class UnboundedStringFixture
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         return new DerivedRelationalModelSet(
@@ -742,10 +742,10 @@ internal static class UnboundedStringFixture
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            [],
+            [],
+            [],
+            []
         );
     }
 }
@@ -763,7 +763,7 @@ internal static class AbstractIdentityTableFixture
 
         var identityTable = new DbTableModel(
             identityTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey(
                 "PK_EducationOrganizationIdentity",
                 [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
@@ -786,7 +786,7 @@ internal static class AbstractIdentityTableFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         var abstractIdentityTable = new AbstractIdentityTableInfo(resourceKey, identityTable);
@@ -811,11 +811,11 @@ internal static class AbstractIdentityTableFixture
             ),
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
-            Array.Empty<ConcreteResourceModel>(),
+            [],
             [abstractIdentityTable],
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            [],
+            [],
+            []
         );
     }
 }
@@ -872,7 +872,7 @@ internal static class AbstractUnionViewFixture
         // Create identity table
         var identityTable = new DbTableModel(
             new DbTableName(schema, "EducationOrganizationIdentity"),
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey(
                 "PK_EducationOrganizationIdentity",
                 [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
@@ -895,7 +895,7 @@ internal static class AbstractUnionViewFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         var abstractIdentityTable = new AbstractIdentityTableInfo(abstractResourceKey, identityTable);
@@ -920,11 +920,11 @@ internal static class AbstractUnionViewFixture
             ),
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
-            Array.Empty<ConcreteResourceModel>(),
+            [],
             [abstractIdentityTable],
             [unionView],
-            Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            [],
+            []
         );
     }
 }
@@ -1049,7 +1049,7 @@ internal static class ExtensionTableFixture
         var schoolTableName = new DbTableName(edfiSchema, "School");
         var schoolTable = new DbTableModel(
             schoolTableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -1069,14 +1069,14 @@ internal static class ExtensionTableFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         // Extension table: SchoolExtension
         var schoolExtTableName = new DbTableName(sampleSchema, "SchoolExtension");
         var schoolExtTable = new DbTableModel(
             schoolExtTableName,
-            new JsonPathExpression("$._ext.sample", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$._ext.sample", []),
             new TableKey("PK_SchoolExtension", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -1114,8 +1114,8 @@ internal static class ExtensionTableFixture
             ResourceStorageKind.RelationalTables,
             schoolTable,
             [schoolTable, schoolExtTable],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         return new DerivedRelationalModelSet(
@@ -1149,10 +1149,10 @@ internal static class ExtensionTableFixture
                 new ProjectSchemaInfo("sample", "Sample", "1.0.0", false, sampleSchema),
             ],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
-            Array.Empty<DbTriggerInfo>()
+            [],
+            [],
+            [],
+            []
         );
     }
 }
@@ -1169,7 +1169,7 @@ internal static class TriggerFixture
 
         var table = new DbTableModel(
             tableName,
-            new JsonPathExpression("$", Array.Empty<JsonPathSegment>()),
+            new JsonPathExpression("$", []),
             new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
             [
                 new DbColumnModel(
@@ -1181,7 +1181,7 @@ internal static class TriggerFixture
                     TargetResource: null
                 ),
             ],
-            Array.Empty<TableConstraint>()
+            []
         );
 
         var relationalModel = new RelationalResourceModel(
@@ -1190,8 +1190,8 @@ internal static class TriggerFixture
             ResourceStorageKind.RelationalTables,
             table,
             [table],
-            Array.Empty<DocumentReferenceBinding>(),
-            Array.Empty<DescriptorEdgeSource>()
+            [],
+            []
         );
 
         var trigger = new DbTriggerInfo(
@@ -1199,7 +1199,7 @@ internal static class TriggerFixture
             tableName,
             DbTriggerKind.DocumentStamping,
             [documentIdColumn],
-            Array.Empty<DbColumnName>()
+            []
         );
 
         return new DerivedRelationalModelSet(
@@ -1223,9 +1223,9 @@ internal static class TriggerFixture
             dialect,
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
             [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
-            Array.Empty<AbstractIdentityTableInfo>(),
-            Array.Empty<AbstractUnionViewInfo>(),
-            Array.Empty<DbIndexInfo>(),
+            [],
+            [],
+            [],
             [trigger]
         );
     }

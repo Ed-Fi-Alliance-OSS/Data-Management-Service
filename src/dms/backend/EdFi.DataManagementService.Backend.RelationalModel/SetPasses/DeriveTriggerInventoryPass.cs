@@ -298,6 +298,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             StringComparer.Ordinal
         );
 
+        var concreteResourcesByName = context.ConcreteResourcesInNameOrder.ToDictionary(model =>
+            model.ResourceKey.Resource
+        );
+
         foreach (var mapping in builderContext.DocumentReferenceMappings)
         {
             if (!bindingByReferencePath.TryGetValue(mapping.ReferenceObjectPath.Canonical, out var binding))
@@ -328,11 +332,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     continue;
                 }
 
-                var targetEntry = context.ConcreteResourcesInNameOrder.FirstOrDefault(model =>
-                    model.ResourceKey.Resource == mapping.TargetResource
-                );
-
-                if (targetEntry is null)
+                if (!concreteResourcesByName.TryGetValue(mapping.TargetResource, out var targetEntry))
                 {
                     continue;
                 }
