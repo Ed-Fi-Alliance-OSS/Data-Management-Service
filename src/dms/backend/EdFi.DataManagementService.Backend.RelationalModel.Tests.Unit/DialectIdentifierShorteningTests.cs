@@ -633,6 +633,8 @@ internal sealed record ShorteningIdentifiers(
     string SchemaName,
     string TableName,
     string KeyColumnName,
+    string CanonicalColumnName,
+    string AliasMemberColumnName,
     string FkColumnName,
     string IdentityColumnName,
     string DescriptorColumnName,
@@ -670,6 +672,8 @@ internal sealed record ShorteningIdentifiers(
             SchemaName: BuildLongIdentifier(prefix, "Schema", length),
             TableName: BuildLongIdentifier(prefix, "Table", length),
             KeyColumnName: BuildLongIdentifier(prefix, "KeyColumn", length),
+            CanonicalColumnName: BuildLongIdentifier(prefix, "CanonicalColumn", length),
+            AliasMemberColumnName: BuildLongIdentifier(prefix, "AliasMemberColumn", length),
             FkColumnName: BuildLongIdentifier(prefix, "FkColumn", length),
             IdentityColumnName: BuildLongIdentifier(prefix, "IdentityColumn", length),
             DescriptorColumnName: BuildLongIdentifier(prefix, "DescriptorColumn", length),
@@ -746,6 +750,8 @@ internal static class IdentifierShorteningAssertions
         var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
         var expectedPrimaryKey = dialectRules.ShortenIdentifier($"PK_{identifiers.TableName}");
         var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
+        var expectedCanonical = dialectRules.ShortenIdentifier(identifiers.CanonicalColumnName);
+        var expectedAliasMember = dialectRules.ShortenIdentifier(identifiers.AliasMemberColumnName);
         var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
         var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
         var expectedDescriptor = dialectRules.ShortenIdentifier(identifiers.DescriptorColumnName);
@@ -784,6 +790,23 @@ internal static class IdentifierShorteningAssertions
             .ColumnName.Value.Should()
             .Be(expectedKey);
 
+        var aliasMemberColumn = resourceModel.Root.Columns.Single(column =>
+            column.ColumnName.Value == expectedAliasMember
+        );
+        var aliasMemberStorage = aliasMemberColumn
+            .Storage.Should()
+            .BeOfType<ColumnStorage.UnifiedAlias>()
+            .Subject;
+        aliasMemberStorage.CanonicalColumn.Value.Should().Be(expectedCanonical);
+        aliasMemberStorage.PresenceColumn.Should().Be(new DbColumnName(expectedNullOrTrueColumn));
+
+        var keyUnificationClass = resourceModel.Root.KeyUnificationClasses.Should().ContainSingle().Subject;
+        keyUnificationClass.CanonicalColumn.Value.Should().Be(expectedCanonical);
+        keyUnificationClass
+            .MemberPathColumns.Select(column => column.Value)
+            .Should()
+            .Equal(expectedAliasMember, expectedIdentity);
+
         var uniqueConstraint = resourceModel.Root.Constraints.OfType<TableConstraint.Unique>().Single();
         uniqueConstraint.Name.Should().Be(expectedUnique);
         uniqueConstraint.Columns.Single().Value.Should().Be(expectedKey);
@@ -816,6 +839,39 @@ internal static class IdentifierShorteningAssertions
         edge.Table.Schema.Value.Should().Be(expectedSchema);
         edge.Table.Name.Should().Be(expectedTable);
         edge.FkColumn.Value.Should().Be(expectedDescriptor);
+
+        var keyUnificationDiagnostics = resourceModel.KeyUnificationEqualityConstraints;
+        var applied = keyUnificationDiagnostics.Applied.Should().ContainSingle().Subject;
+        applied.Table.Schema.Value.Should().Be(expectedSchema);
+        applied.Table.Name.Should().Be(expectedTable);
+        applied.EndpointAColumn.Value.Should().Be(expectedAliasMember);
+        applied.EndpointBColumn.Value.Should().Be(expectedIdentity);
+        applied.CanonicalColumn.Value.Should().Be(expectedCanonical);
+
+        var redundant = keyUnificationDiagnostics.Redundant.Should().ContainSingle().Subject;
+        redundant.Binding.Table.Schema.Value.Should().Be(expectedSchema);
+        redundant.Binding.Table.Name.Should().Be(expectedTable);
+        redundant.Binding.Column.Value.Should().Be(expectedAliasMember);
+
+        var ignored = keyUnificationDiagnostics.Ignored.Should().ContainSingle().Subject;
+        ignored.EndpointABinding.Table.Schema.Value.Should().Be(expectedSchema);
+        ignored.EndpointABinding.Table.Name.Should().Be(expectedTable);
+        ignored.EndpointABinding.Column.Value.Should().Be(expectedAliasMember);
+        ignored.EndpointBBinding.Table.Schema.Value.Should().Be(expectedSchema);
+        ignored.EndpointBBinding.Table.Name.Should().Be(expectedTable);
+        ignored.EndpointBBinding.Column.Value.Should().Be(expectedFk);
+
+        var descriptorForeignKeyDeduplication = resourceModel
+            .DescriptorForeignKeyDeduplications.Should()
+            .ContainSingle()
+            .Subject;
+        descriptorForeignKeyDeduplication.Table.Schema.Value.Should().Be(expectedSchema);
+        descriptorForeignKeyDeduplication.Table.Name.Should().Be(expectedTable);
+        descriptorForeignKeyDeduplication.StorageColumn.Value.Should().Be(expectedCanonical);
+        descriptorForeignKeyDeduplication
+            .BindingColumns.Select(column => column.Value)
+            .Should()
+            .Equal(expectedDescriptor, expectedAliasMember);
 
         var index = result.IndexesInCreateOrder.Single();
         index.Name.Value.Should().Be(expectedIndex);
@@ -964,6 +1020,14 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 TargetResource: null
             ),
             new DbColumnModel(
+                new DbColumnName(_identifiers.CanonicalColumnName),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, MaxLength: 20),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
                 new DbColumnName(_identifiers.FkColumnName),
                 ColumnKind.DocumentFk,
                 new RelationalScalarType(ScalarKind.Int64),
@@ -979,6 +1043,20 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.ref.identity"),
                 TargetResource: null
             ),
+            new DbColumnModel(
+                new DbColumnName(_identifiers.AliasMemberColumnName),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.String, MaxLength: 20),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.aliasMember"),
+                TargetResource: null
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(
+                    new DbColumnName(_identifiers.CanonicalColumnName),
+                    new DbColumnName(_identifiers.NullOrTrueColumnName)
+                ),
+            },
             new DbColumnModel(
                 new DbColumnName(_identifiers.DescriptorColumnName),
                 ColumnKind.DescriptorFk,
@@ -1028,7 +1106,19 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), [keyColumn]),
             columns,
             constraints
-        );
+        )
+        {
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    new DbColumnName(_identifiers.CanonicalColumnName),
+                    [
+                        new DbColumnName(_identifiers.AliasMemberColumnName),
+                        new DbColumnName(_identifiers.IdentityColumnName),
+                    ]
+                ),
+            ],
+        };
 
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: true,
@@ -1061,7 +1151,58 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             [table],
             [binding],
             [descriptorEdge]
-        );
+        )
+        {
+            KeyUnificationEqualityConstraints = new KeyUnificationEqualityConstraintDiagnostics(
+                [
+                    new KeyUnificationAppliedConstraint(
+                        JsonPathExpressionCompiler.Compile("$.aliasMember"),
+                        JsonPathExpressionCompiler.Compile("$.ref.identity"),
+                        tableName,
+                        new DbColumnName(_identifiers.AliasMemberColumnName),
+                        new DbColumnName(_identifiers.IdentityColumnName),
+                        new DbColumnName(_identifiers.CanonicalColumnName)
+                    ),
+                ],
+                [
+                    new KeyUnificationRedundantConstraint(
+                        JsonPathExpressionCompiler.Compile("$.redundantA"),
+                        JsonPathExpressionCompiler.Compile("$.redundantB"),
+                        new KeyUnificationEndpointBinding(
+                            tableName,
+                            new DbColumnName(_identifiers.AliasMemberColumnName)
+                        )
+                    ),
+                ],
+                [
+                    new KeyUnificationIgnoredConstraint(
+                        JsonPathExpressionCompiler.Compile("$.ignoredA"),
+                        JsonPathExpressionCompiler.Compile("$.ignoredB"),
+                        KeyUnificationIgnoredReason.CrossTable,
+                        new KeyUnificationEndpointBinding(
+                            tableName,
+                            new DbColumnName(_identifiers.AliasMemberColumnName)
+                        ),
+                        new KeyUnificationEndpointBinding(
+                            tableName,
+                            new DbColumnName(_identifiers.FkColumnName)
+                        )
+                    ),
+                ],
+                [new KeyUnificationIgnoredByReasonEntry(KeyUnificationIgnoredReason.CrossTable, 1)]
+            ),
+            DescriptorForeignKeyDeduplications =
+            [
+                new DescriptorForeignKeyDeduplication(
+                    tableName,
+                    new DbColumnName(_identifiers.CanonicalColumnName),
+                    [
+                        new DbColumnName(_identifiers.DescriptorColumnName),
+                        new DbColumnName(_identifiers.AliasMemberColumnName),
+                    ]
+                ),
+            ],
+        };
 
         context.ConcreteResourcesInNameOrder.Add(
             new ConcreteResourceModel(_resourceKey, ResourceStorageKind.RelationalTables, resourceModel)
