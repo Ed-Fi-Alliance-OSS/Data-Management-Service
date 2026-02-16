@@ -43,7 +43,7 @@
       "Add unit tests for identifier shortening rewriting of unified-alias pointers, key-unification classes, and `NullOrTrue` constraints.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Ordering",

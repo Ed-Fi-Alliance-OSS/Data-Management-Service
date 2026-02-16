@@ -45362,8 +45362,8 @@
               {
                 "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
                 "member_path_columns": [
-                  "ProgramEvaluationObjective_ProgramEvaluationPeriodDescriptor_DescriptorId",
-                  "ProgramEvaluation_ProgramEvaluationPeriodDescriptor_DescriptorId"
+                  "ProgramEvaluationObjective_ProgramEvaluationPeriodDe_0fde0c9fcc",
+                  "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e"
                 ]
               },
               {
@@ -45376,7 +45376,7 @@
               {
                 "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
                 "member_path_columns": [
-                  "ProgramEvaluationObjective_ProgramEvaluationTypeDescriptor_DescriptorId",
+                  "ProgramEvaluationObjective_ProgramEvaluationTypeDesc_513b5067cb",
                   "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId"
                 ]
               },
@@ -55400,7 +55400,7 @@
                 "storage": {
                   "kind": "UnifiedAlias",
                   "canonical_column": "StaffUniqueId_Unified",
-                  "presence_column": "EmploymentStaffEducationOrganizationEmploymentAssociation_DocumentId"
+                  "presence_column": "EmploymentStaffEducationOrganizationEmploymentAssoci_7a3d86aa2b"
                 }
               },
               {
@@ -55547,7 +55547,7 @@
               {
                 "canonical_column": "StaffUniqueId_Unified",
                 "member_path_columns": [
-                  "EmploymentStaffEducationOrganizationEmploymentAssociation_StaffUniqueId",
+                  "EmploymentStaffEducationOrganizationEmploymentAssoci_3d5ca61d33",
                   "Staff_StaffUniqueId"
                 ]
               }

@@ -165,6 +165,20 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             changed |= edgeChanged;
         }
 
+        var updatedEqualityConstraintDiagnostics = ApplyToKeyUnificationEqualityConstraintDiagnostics(
+            resourceModel.KeyUnificationEqualityConstraints,
+            dialectRules,
+            out var equalityConstraintDiagnosticsChanged
+        );
+        changed |= equalityConstraintDiagnosticsChanged;
+
+        var updatedDescriptorForeignKeyDeduplications = ApplyToDescriptorForeignKeyDeduplications(
+            resourceModel.DescriptorForeignKeyDeduplications,
+            dialectRules,
+            out var descriptorForeignKeyDeduplicationsChanged
+        );
+        changed |= descriptorForeignKeyDeduplicationsChanged;
+
         if (!changed)
         {
             return resourceModel;
@@ -180,6 +194,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             TablesInDependencyOrder = updatedTables,
             DocumentReferenceBindings = updatedReferences,
             DescriptorEdgeSources = updatedDescriptorEdges,
+            KeyUnificationEqualityConstraints = updatedEqualityConstraintDiagnostics,
+            DescriptorForeignKeyDeduplications = updatedDescriptorForeignKeyDeduplications,
         };
     }
 
@@ -226,6 +242,13 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             changed |= constraintChanged;
         }
 
+        var updatedKeyUnificationClasses = ApplyToKeyUnificationClasses(
+            table.KeyUnificationClasses,
+            dialectRules,
+            out var keyUnificationClassesChanged
+        );
+        changed |= keyUnificationClassesChanged;
+
         if (!changed)
         {
             return table;
@@ -237,7 +260,58 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Key = updatedKey,
             Columns = updatedColumns,
             Constraints = updatedConstraints,
+            KeyUnificationClasses = updatedKeyUnificationClasses,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to key-unification classes and reports whether any identifiers changed.
+    /// </summary>
+    private static IReadOnlyList<KeyUnificationClass> ApplyToKeyUnificationClasses(
+        IReadOnlyList<KeyUnificationClass> keyUnificationClasses,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (keyUnificationClasses.Count == 0)
+        {
+            return keyUnificationClasses;
+        }
+
+        var updatedClasses = new KeyUnificationClass[keyUnificationClasses.Count];
+
+        for (var index = 0; index < keyUnificationClasses.Count; index++)
+        {
+            var keyUnificationClass = keyUnificationClasses[index];
+            var updatedCanonicalColumn = ShortenColumn(keyUnificationClass.CanonicalColumn, dialectRules);
+            var updatedMemberPathColumns = ShortenColumns(
+                keyUnificationClass.MemberPathColumns,
+                dialectRules,
+                out var memberPathColumnsChanged
+            );
+            var classChanged =
+                !updatedCanonicalColumn.Equals(keyUnificationClass.CanonicalColumn)
+                || memberPathColumnsChanged;
+
+            if (classChanged)
+            {
+                changed = true;
+
+                updatedClasses[index] = keyUnificationClass with
+                {
+                    CanonicalColumn = updatedCanonicalColumn,
+                    MemberPathColumns = updatedMemberPathColumns,
+                };
+            }
+            else
+            {
+                updatedClasses[index] = keyUnificationClass;
+            }
+        }
+
+        return changed ? updatedClasses : keyUnificationClasses;
     }
 
     /// <summary>
@@ -298,7 +372,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     )
     {
         var updatedName = ShortenColumn(column.ColumnName, dialectRules);
-        changed = !updatedName.Equals(column.ColumnName);
+        var updatedStorage = ApplyToColumnStorage(column.Storage, dialectRules, out var storageChanged);
+        changed = !updatedName.Equals(column.ColumnName) || storageChanged;
 
         if (!changed)
         {
@@ -308,7 +383,56 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return column with
         {
             ColumnName = updatedName,
+            Storage = updatedStorage,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to column storage metadata and reports whether it changed.
+    /// </summary>
+    private static ColumnStorage ApplyToColumnStorage(
+        ColumnStorage storage,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        switch (storage)
+        {
+            case ColumnStorage.Stored:
+                changed = false;
+                return storage;
+            case ColumnStorage.UnifiedAlias unifiedAlias:
+            {
+                var updatedCanonicalColumn = ShortenColumn(unifiedAlias.CanonicalColumn, dialectRules);
+                var updatedPresenceColumn = unifiedAlias.PresenceColumn is { } presenceColumn
+                    ? ShortenColumn(presenceColumn, dialectRules)
+                    : (DbColumnName?)null;
+
+                changed =
+                    !updatedCanonicalColumn.Equals(unifiedAlias.CanonicalColumn)
+                    || (updatedPresenceColumn is null) != (unifiedAlias.PresenceColumn is null)
+                    || (
+                        updatedPresenceColumn is not null
+                        && unifiedAlias.PresenceColumn is not null
+                        && !updatedPresenceColumn.Value.Equals(unifiedAlias.PresenceColumn.Value)
+                    );
+
+                if (!changed)
+                {
+                    return storage;
+                }
+
+                return unifiedAlias with
+                {
+                    CanonicalColumn = updatedCanonicalColumn,
+                    PresenceColumn = updatedPresenceColumn,
+                };
+            }
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported column storage type '{storage.GetType().Name}'."
+                );
+        }
     }
 
     /// <summary>
@@ -523,6 +647,275 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Table = updatedTable,
             FkColumn = updatedFk,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to key-unification equality-constraint diagnostics and reports whether it changed.
+    /// </summary>
+    private static KeyUnificationEqualityConstraintDiagnostics ApplyToKeyUnificationEqualityConstraintDiagnostics(
+        KeyUnificationEqualityConstraintDiagnostics diagnostics,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        var updatedApplied = ApplyToAppliedEqualityConstraints(
+            diagnostics.Applied,
+            dialectRules,
+            out var appliedChanged
+        );
+        changed |= appliedChanged;
+
+        var updatedRedundant = ApplyToRedundantEqualityConstraints(
+            diagnostics.Redundant,
+            dialectRules,
+            out var redundantChanged
+        );
+        changed |= redundantChanged;
+
+        var updatedIgnored = ApplyToIgnoredEqualityConstraints(
+            diagnostics.Ignored,
+            dialectRules,
+            out var ignoredChanged
+        );
+        changed |= ignoredChanged;
+
+        if (!changed)
+        {
+            return diagnostics;
+        }
+
+        return diagnostics with
+        {
+            Applied = updatedApplied,
+            Redundant = updatedRedundant,
+            Ignored = updatedIgnored,
+        };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to applied equality-constraint diagnostics and reports whether it changed.
+    /// </summary>
+    private static IReadOnlyList<KeyUnificationAppliedConstraint> ApplyToAppliedEqualityConstraints(
+        IReadOnlyList<KeyUnificationAppliedConstraint> appliedConstraints,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (appliedConstraints.Count == 0)
+        {
+            return appliedConstraints;
+        }
+
+        var updatedConstraints = new KeyUnificationAppliedConstraint[appliedConstraints.Count];
+
+        for (var index = 0; index < appliedConstraints.Count; index++)
+        {
+            var constraint = appliedConstraints[index];
+            var updatedTable = ShortenTable(constraint.Table, dialectRules);
+            var updatedEndpointAColumn = ShortenColumn(constraint.EndpointAColumn, dialectRules);
+            var updatedEndpointBColumn = ShortenColumn(constraint.EndpointBColumn, dialectRules);
+            var updatedCanonicalColumn = ShortenColumn(constraint.CanonicalColumn, dialectRules);
+            var constraintChanged =
+                !updatedTable.Equals(constraint.Table)
+                || !updatedEndpointAColumn.Equals(constraint.EndpointAColumn)
+                || !updatedEndpointBColumn.Equals(constraint.EndpointBColumn)
+                || !updatedCanonicalColumn.Equals(constraint.CanonicalColumn);
+
+            if (constraintChanged)
+            {
+                changed = true;
+
+                updatedConstraints[index] = constraint with
+                {
+                    Table = updatedTable,
+                    EndpointAColumn = updatedEndpointAColumn,
+                    EndpointBColumn = updatedEndpointBColumn,
+                    CanonicalColumn = updatedCanonicalColumn,
+                };
+            }
+            else
+            {
+                updatedConstraints[index] = constraint;
+            }
+        }
+
+        return changed ? updatedConstraints : appliedConstraints;
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to redundant equality-constraint diagnostics and reports whether it changed.
+    /// </summary>
+    private static IReadOnlyList<KeyUnificationRedundantConstraint> ApplyToRedundantEqualityConstraints(
+        IReadOnlyList<KeyUnificationRedundantConstraint> redundantConstraints,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (redundantConstraints.Count == 0)
+        {
+            return redundantConstraints;
+        }
+
+        var updatedConstraints = new KeyUnificationRedundantConstraint[redundantConstraints.Count];
+
+        for (var index = 0; index < redundantConstraints.Count; index++)
+        {
+            var constraint = redundantConstraints[index];
+            var updatedBinding = ApplyToKeyUnificationEndpointBinding(
+                constraint.Binding,
+                dialectRules,
+                out var bindingChanged
+            );
+
+            if (bindingChanged)
+            {
+                changed = true;
+                updatedConstraints[index] = constraint with { Binding = updatedBinding };
+            }
+            else
+            {
+                updatedConstraints[index] = constraint;
+            }
+        }
+
+        return changed ? updatedConstraints : redundantConstraints;
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to ignored equality-constraint diagnostics and reports whether it changed.
+    /// </summary>
+    private static IReadOnlyList<KeyUnificationIgnoredConstraint> ApplyToIgnoredEqualityConstraints(
+        IReadOnlyList<KeyUnificationIgnoredConstraint> ignoredConstraints,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (ignoredConstraints.Count == 0)
+        {
+            return ignoredConstraints;
+        }
+
+        var updatedConstraints = new KeyUnificationIgnoredConstraint[ignoredConstraints.Count];
+
+        for (var index = 0; index < ignoredConstraints.Count; index++)
+        {
+            var constraint = ignoredConstraints[index];
+            var updatedEndpointABinding = ApplyToKeyUnificationEndpointBinding(
+                constraint.EndpointABinding,
+                dialectRules,
+                out var endpointABindingChanged
+            );
+            var updatedEndpointBBinding = ApplyToKeyUnificationEndpointBinding(
+                constraint.EndpointBBinding,
+                dialectRules,
+                out var endpointBBindingChanged
+            );
+            var constraintChanged = endpointABindingChanged || endpointBBindingChanged;
+
+            if (constraintChanged)
+            {
+                changed = true;
+
+                updatedConstraints[index] = constraint with
+                {
+                    EndpointABinding = updatedEndpointABinding,
+                    EndpointBBinding = updatedEndpointBBinding,
+                };
+            }
+            else
+            {
+                updatedConstraints[index] = constraint;
+            }
+        }
+
+        return changed ? updatedConstraints : ignoredConstraints;
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to key-unification endpoint binding diagnostics and reports whether it changed.
+    /// </summary>
+    private static KeyUnificationEndpointBinding ApplyToKeyUnificationEndpointBinding(
+        KeyUnificationEndpointBinding endpointBinding,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        var updatedTable = ShortenTable(endpointBinding.Table, dialectRules);
+        var updatedColumn = ShortenColumn(endpointBinding.Column, dialectRules);
+        changed =
+            !updatedTable.Equals(endpointBinding.Table) || !updatedColumn.Equals(endpointBinding.Column);
+
+        if (!changed)
+        {
+            return endpointBinding;
+        }
+
+        return endpointBinding with
+        {
+            Table = updatedTable,
+            Column = updatedColumn,
+        };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to descriptor FK de-duplication diagnostics and reports whether it changed.
+    /// </summary>
+    private static IReadOnlyList<DescriptorForeignKeyDeduplication> ApplyToDescriptorForeignKeyDeduplications(
+        IReadOnlyList<DescriptorForeignKeyDeduplication> deduplications,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+
+        if (deduplications.Count == 0)
+        {
+            return deduplications;
+        }
+
+        var updatedDeduplications = new DescriptorForeignKeyDeduplication[deduplications.Count];
+
+        for (var index = 0; index < deduplications.Count; index++)
+        {
+            var deduplication = deduplications[index];
+            var updatedTable = ShortenTable(deduplication.Table, dialectRules);
+            var updatedStorageColumn = ShortenColumn(deduplication.StorageColumn, dialectRules);
+            var updatedBindingColumns = ShortenColumns(
+                deduplication.BindingColumns,
+                dialectRules,
+                out var bindingColumnsChanged
+            );
+            var deduplicationChanged =
+                !updatedTable.Equals(deduplication.Table)
+                || !updatedStorageColumn.Equals(deduplication.StorageColumn)
+                || bindingColumnsChanged;
+
+            if (deduplicationChanged)
+            {
+                changed = true;
+
+                updatedDeduplications[index] = deduplication with
+                {
+                    Table = updatedTable,
+                    StorageColumn = updatedStorageColumn,
+                    BindingColumns = updatedBindingColumns,
+                };
+            }
+            else
+            {
+                updatedDeduplications[index] = deduplication;
+            }
+        }
+
+        return changed ? updatedDeduplications : deduplications;
     }
 
     /// <summary>
