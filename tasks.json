@@ -16,7 +16,7 @@
       "Add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` for strict endpoint resolution (unresolved/ambiguous), applied/redundant/ignored classification, reference-site gating via `..._DocumentId`, and optional scalar/descriptor gating via synthetic `..._Present` + `NullOrTrue`.",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Descriptor FKs",

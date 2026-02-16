@@ -3,3 +3,8 @@ Task complete: Contracts (`reference/design/backend-redesign/epics/01-relational
 Decisions: added `TableConstraint.NullOrTrue(Name, Column)` as explicit model contract; kept deterministic naming/signature path with new `ConstraintIdentityKind.NullOrTrue`; DDL emits dialect-safe CHECK (`= TRUE` Pgsql, `= 1` Mssql).
 Files changed: External RelationalModelTypes; ConstraintIdentity/Naming; ApplyConstraintDialectHashingPass; ApplyDialectIdentifierShorteningPass; RelationalModelOrdering; RelationalModelManifestEmitter; RelationalModelDdlEmitter; unit tests for manifest/ordering/shortening/DDL.
 Blockers/notes: no blockers. Feedback loops green: DDL unit tests, RelationalModel unit tests, full dms solution build.
+2026-02-16
+Task complete: Key Unification (`reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md`), prep for `reference/design/backend-redesign/design-docs/key-unification.md`.
+Decisions: validated existing KeyUnificationPass behavior as matching acceptance: exact canonical SourceJsonPath endpoint resolution, fail-fast unresolved/ambiguous/unsupported endpoint kinds, deterministic applied/redundant/ignored(cross_table) diagnostics, per-table connected components, canonical+alias+presence gating, FK rewrite to canonical stored columns so no FK references UnifiedAlias/synthetic presence columns; no additional source changes needed.
+Files changed: tasks.json; progress.txt.
+Blockers/notes: no blockers. Feedback loops green: RelationalModel unit tests, full dms solution build.
