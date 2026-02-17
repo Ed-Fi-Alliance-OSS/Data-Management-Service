@@ -90,11 +90,13 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
         foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
         {
-            ValidateForeignKeyColumns(
-                table,
+            ForeignKeyStorageValidator.ValidateEndpointColumns(
                 fk,
-                tableMetadata.ColumnsByName,
-                tableMetadata.SyntheticScalarPresenceColumns
+                table.Table,
+                fk.TargetTable,
+                "local",
+                fk.Columns,
+                tableMetadata
             );
 
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
@@ -115,53 +117,6 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         }
 
         inventory.AddRange(tableIndexes);
-    }
-
-    /// <summary>
-    /// Validates that FK columns target real table columns and avoid key-unification alias/presence columns.
-    /// </summary>
-    private static void ValidateForeignKeyColumns(
-        DbTableModel table,
-        TableConstraint.ForeignKey foreignKey,
-        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
-        IReadOnlySet<DbColumnName> syntheticPresenceFlags
-    )
-    {
-        if (foreignKey.Columns.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Foreign key '{foreignKey.Name}' on table '{table.Table}' must define at least one local column."
-            );
-        }
-
-        foreach (var column in foreignKey.Columns)
-        {
-            if (!columnsByName.TryGetValue(column, out var columnModel))
-            {
-                throw new InvalidOperationException(
-                    $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references unknown column "
-                        + $"'{column.Value}'."
-                );
-            }
-
-            if (syntheticPresenceFlags.Contains(columnModel.ColumnName))
-            {
-                throw new InvalidOperationException(
-                    $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references synthetic presence "
-                        + $"column '{column.Value}'. Foreign keys must target storage columns."
-                );
-            }
-
-            if (columnModel.Storage is ColumnStorage.UnifiedAlias unifiedAlias)
-            {
-                throw new InvalidOperationException(
-                    $"Foreign key '{foreignKey.Name}' on table '{table.Table}' references binding/alias column "
-                        + $"'{column.Value}' while canonical storage column "
-                        + $"'{unifiedAlias.CanonicalColumn.Value}' is present. "
-                        + "Foreign keys must target canonical storage columns."
-                );
-            }
-        }
     }
 
     /// <summary>
