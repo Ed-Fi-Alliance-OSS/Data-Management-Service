@@ -93,3 +93,8 @@ Task complete: Refactoring (`reference/design/backend-redesign/epics/01-relation
 Decisions: removed unused `ReferenceSitePresenceColumns` from `UnifiedAliasStorageResolver.TableMetadata` and dropped dead population path; kept strict validation behavior unchanged (reference-site gate still validated as stored before continue).
 Files changed: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/UnifiedAliasStorageResolver.cs`; `tasks.json`; `progress.txt`.
 Blockers/notes: no blockers. Feedback loops green: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`; `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.
+2026-02-17
+Task complete: Maintainability (`reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md`), prep for `reference/design/backend-redesign/design-docs/key-unification.md`.
+Decisions: removed redundant `.DistinctBy(column => column.ColumnName)` in `ApplyKeyUnificationToTable`; added fail-fast connected-component duplicate-member assertion so duplicate names cannot be silently masked while preserving deterministic source-path then column-name member ordering.
+Files changed: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`; `tasks.json`; `progress.txt`.
+Blockers/notes: no blockers. Feedback loops green: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`; `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.
