@@ -643,6 +643,7 @@ public class Given_Key_Unification_Invalid_Synthetic_Presence_Columns
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder([
             new KeyUnificationInvalidSyntheticPresenceForeignKeyFixturePass(),
+            new ValidateUnifiedAliasMetadataPass(),
             new DeriveIndexInventoryPass(),
         ]);
 
@@ -686,6 +687,7 @@ public class Given_Key_Unification_API_Bound_Synthetic_Presence_Columns
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder([
             new KeyUnificationApiBoundSyntheticPresenceForeignKeyFixturePass(),
+            new ValidateUnifiedAliasMetadataPass(),
             new DeriveIndexInventoryPass(),
         ]);
 

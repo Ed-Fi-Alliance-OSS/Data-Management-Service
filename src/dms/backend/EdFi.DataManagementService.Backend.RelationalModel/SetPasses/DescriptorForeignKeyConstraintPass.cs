@@ -25,6 +25,7 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         {
             var concreteResource = context.ConcreteResourcesInNameOrder[index];
             var updatedModel = ApplyToResource(
+                context,
                 concreteResource.RelationalModel,
                 concreteResource.ResourceKey.Resource
             );
@@ -37,6 +38,7 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
     }
 
     private static RelationalResourceModel ApplyToResource(
+        RelationalModelSetBuilderContext context,
         RelationalResourceModel resourceModel,
         QualifiedResourceName resource
     )
@@ -47,7 +49,7 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         for (var tableIndex = 0; tableIndex < resourceModel.TablesInDependencyOrder.Count; tableIndex++)
         {
             var table = resourceModel.TablesInDependencyOrder[tableIndex];
-            updatedTables[tableIndex] = ApplyToTable(table, resource, dedupDiagnostics);
+            updatedTables[tableIndex] = ApplyToTable(context, table, resource, dedupDiagnostics);
         }
 
         var updatedRoot = updatedTables.Single(table => table.JsonScope.Equals(resourceModel.Root.JsonScope));
@@ -66,19 +68,13 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
     }
 
     private static DbTableModel ApplyToTable(
+        RelationalModelSetBuilderContext context,
         DbTableModel table,
         QualifiedResourceName resource,
         List<DescriptorForeignKeyDeduplication> dedupDiagnostics
     )
     {
-        var tableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
-            table,
-            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
-                ThrowIfPresenceColumnMissing: true,
-                ThrowIfInvalidStrictSyntheticCandidate: true,
-                UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
-            )
-        );
+        var tableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(context, table);
 
         Dictionary<DbColumnName, DescriptorStorageGroup> storageGroupsByColumn = [];
 
