@@ -16,6 +16,10 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class KeyUnificationPass : IRelationalModelSetPass
 {
+    private static readonly IComparer<IReadOnlyList<string>> ConnectedComponentOrderingComparer = Comparer<
+        IReadOnlyList<string>
+    >.Create(CompareConnectedComponents);
+
     /// <summary>
     /// Executes key unification for all concrete resources and extensions.
     /// </summary>
@@ -644,10 +648,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         HashSet<DbColumnName> syntheticPresenceColumns = [];
 
         foreach (
-            var component in componentColumnNames.OrderBy(
-                group => string.Join("|", group.OrderBy(name => name, StringComparer.Ordinal)),
-                StringComparer.Ordinal
-            )
+            var component in componentColumnNames.OrderBy(group => group, ConnectedComponentOrderingComparer)
         )
         {
             var memberColumns = component
@@ -786,6 +787,46 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                     group.OrderBy(columnName => columnName, StringComparer.Ordinal).ToArray()
             )
             .ToArray();
+    }
+
+    /// <summary>
+    /// Deterministically orders components by first element, then size, then full sequence.
+    /// </summary>
+    private static int CompareConnectedComponents(IReadOnlyList<string> left, IReadOnlyList<string> right)
+    {
+        ArgumentNullException.ThrowIfNull(left);
+        ArgumentNullException.ThrowIfNull(right);
+
+        if (left.Count == 0 || right.Count == 0)
+        {
+            return left.Count.CompareTo(right.Count);
+        }
+
+        var firstMemberComparison = string.CompareOrdinal(left[0], right[0]);
+
+        if (firstMemberComparison != 0)
+        {
+            return firstMemberComparison;
+        }
+
+        var lengthComparison = left.Count.CompareTo(right.Count);
+
+        if (lengthComparison != 0)
+        {
+            return lengthComparison;
+        }
+
+        for (var index = 0; index < left.Count; index++)
+        {
+            var memberComparison = string.CompareOrdinal(left[index], right[index]);
+
+            if (memberComparison != 0)
+            {
+                return memberComparison;
+            }
+        }
+
+        return 0;
     }
 
     /// <summary>
