@@ -137,5 +137,69 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Key Unification",
+    "description": "Canonical base-name derivation should fail fast on malformed member paths and follow `reference/design/backend-redesign/design-docs/key-unification.md`. Important: if this change breaks a golden test with src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json or src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json then revert the change and mark this task as completed. Acceptance: in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` `BuildMemberBaseToken` handles the \"relative segment list is empty\" case only when `relativeSegments.Length == 0` (not just when the derived property list is empty), and fails fast when the stripped relative segment list is non-empty but yields no property segments; add/extend unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` covering (a) normal property-relative paths, (b) `SourceJsonPath == JsonScope` wildcard-scope cases deriving from the last prefix property segment, and (c) invalid shapes failing with actionable messages.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Remove dead code in `UnifiedAliasStorageResolver.TableMetadata`. Acceptance: delete `ReferenceSitePresenceColumns` from `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/UnifiedAliasStorageResolver.cs` (and all associated population); after the change, there are no unused metadata fields and behavior is unchanged.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Inline the `ResolveCanonicalBaseName` wrapper to reduce indirection. Acceptance: in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`, remove `ResolveCanonicalBaseName(...)` (currently a one-liner) and call `BuildMemberBaseToken(members[0], ...)` directly (or rename/refactor so the method name matches actual behavior).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Deduplicate unified-alias presence-gate validation across passes (index inventory, trigger inventory, descriptor FK derivation, FK invariants). Acceptance: introduce a single authoritative validation step immediately after `KeyUnificationPass` (e.g., a `ValidateUnifiedAliasMetadataPass` wired in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/Build/RelationalModelSetPasses.cs`) OR cache `UnifiedAliasStorageResolver.TableMetadata` per table in the shared context so strict validation is performed once with consistent `PresenceGateMetadataOptions`, and downstream passes reuse the result without re-validating. Ensure error messages remain deterministic and include table/column context.",
+    "steps-to-verify": [
+      "Add/extend unit tests that construct invalid unified-alias metadata (missing presence column, invalid strict synthetic presence flag) and assert the model build fails fast with an actionable message.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Mark throw-only helpers with `[DoesNotReturn]` to simplify control flow in key unification. Acceptance: annotate throw-only helpers (e.g., `ThrowAmbiguousEndpointBinding`) in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` with `System.Diagnostics.CodeAnalysis.DoesNotReturn` and remove any \"unreachable but required\" returns (e.g., in `ResolveEndpointTableIndex`).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Remove redundant `DistinctBy(column => column.ColumnName)` in `ApplyKeyUnificationToTable`. Acceptance: in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`, remove the `DistinctBy` call and keep deterministic member ordering unchanged; add a small regression test (or internal assertion) that connected-component derivation never produces duplicate member column names.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Performance",
+    "description": "Cache per-table `UnifiedAliasStorageResolver.TableMetadata` in `ReferenceConstraintPass.MapReferenceIdentityColumnsToStorage` to avoid rebuilding metadata for every reference mapping. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` reuses metadata by `DbTableName` within the pass execution so schemas with many references do not repeatedly allocate dictionaries/sets, and all derived constraints/diagnostics remain identical.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
