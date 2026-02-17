@@ -81,10 +81,10 @@ public class ConfigurationServiceDmsInstanceProvider(
                     instance.InstanceType
                 );
             }
-
+            string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
             logger.LogInformation(
                 "DMS instance cache updated successfully for tenant {Tenant}",
-                tenant ?? "(default)"
+                sanitizedTenant
             );
 
             return instances;
@@ -151,9 +151,10 @@ public class ConfigurationServiceDmsInstanceProvider(
             {
                 return;
             }
+            string sanitizedTenant = LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)");
             logger.LogInformation(
                 "DMS instance cache expired for tenant {Tenant} after {TtlSeconds}s, refreshing configuration from Configuration Service",
-                LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)"),
+                sanitizedTenant,
                 _cacheSettings.DmsInstanceCacheExpirationSeconds
             );
 
