@@ -640,6 +640,57 @@ public class Given_Key_Unification_With_Unsupported_Endpoint_Kinds
 }
 
 /// <summary>
+/// Test fixture for descriptor endpoint target-resource validation failures.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_A_Null_Descriptor_Target_Resource
+{
+    private Action _act = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema =
+            KeyUnificationPassTestSchemaBuilder.BuildOptionalDescriptorUnificationProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        IRelationalModelSetPass[] passes =
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new NullDescriptorTargetResourcePass(
+                resourceName: "DescriptorExample",
+                sourcePath: "$.primarySchoolTypeDescriptor"
+            ),
+            new KeyUnificationPass(),
+        ];
+        var builder = new DerivedRelationalModelSetBuilder(passes);
+        _act = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when a descriptor unification member has no target resource.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_descriptor_member_target_resource_is_null()
+    {
+        _act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*descriptor target resource is required*resource 'Ed-Fi:DescriptorExample'*table 'edfi.DescriptorExample'*column 'PrimarySchoolTypeDescriptor_DescriptorId'*"
+            );
+    }
+}
+
+/// <summary>
 /// Test fixture for canonical base-token derivation.
 /// </summary>
 [TestFixture]
@@ -904,6 +955,77 @@ file sealed class DuplicateSourcePathBindingPass(string resourceName, string sou
 
             suffix++;
         }
+    }
+}
+
+/// <summary>
+/// Test-only set pass that clears one descriptor column TargetResource to exercise fail-fast validation.
+/// </summary>
+file sealed class NullDescriptorTargetResourcePass(string resourceName, string sourcePath)
+    : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute pass.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(NullDescriptorTarget)
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.JsonScope.Equals(concreteResource.RelationalModel.Root.JsonScope)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+
+    /// <summary>
+    /// Rewrite the matched descriptor column to null TargetResource.
+    /// </summary>
+    private DbTableModel NullDescriptorTarget(DbTableModel table)
+    {
+        var updatedColumns = table
+            .Columns.Select(column =>
+                column.Kind == ColumnKind.DescriptorFk
+                && string.Equals(column.SourceJsonPath?.Canonical, sourcePath, StringComparison.Ordinal)
+                    ? column with
+                    {
+                        TargetResource = null,
+                    }
+                    : column
+            )
+            .ToArray();
+
+        return table with
+        {
+            Columns = updatedColumns,
+        };
     }
 }
 
