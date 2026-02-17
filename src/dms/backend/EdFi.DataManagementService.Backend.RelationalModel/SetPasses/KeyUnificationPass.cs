@@ -744,14 +744,8 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return table;
         }
 
-        var rewrittenConstraints = RewriteForeignKeyColumnsToStorage(
-            table.Constraints,
-            updatedColumns,
-            resource,
-            table.Table
-        );
         var constraintsWithPresenceHardening = AppendNullOrTrueConstraints(
-            rewrittenConstraints,
+            table.Constraints,
             table.Table,
             syntheticPresenceColumns
         );
@@ -1159,112 +1153,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         }
 
         return updatedConstraints.ToArray();
-    }
-
-    /// <summary>
-    /// Rewrites local FK columns to canonical storage columns after unification converts member columns into aliases.
-    /// </summary>
-    private static IReadOnlyList<TableConstraint> RewriteForeignKeyColumnsToStorage(
-        IReadOnlyList<TableConstraint> constraints,
-        IReadOnlyList<DbColumnModel> columns,
-        QualifiedResourceName resource,
-        DbTableName table
-    )
-    {
-        var columnsByName = columns.ToDictionary(column => column.ColumnName, column => column);
-        List<TableConstraint> rewritten = new(constraints.Count);
-        var changed = false;
-
-        foreach (var constraint in constraints)
-        {
-            if (constraint is not TableConstraint.ForeignKey foreignKey)
-            {
-                rewritten.Add(constraint);
-                continue;
-            }
-
-            HashSet<DbColumnName> seenColumns = [];
-            List<DbColumnName> mappedColumns = new(foreignKey.Columns.Count);
-
-            foreach (var column in foreignKey.Columns)
-            {
-                var storageColumn = ResolveForeignKeyStorageColumn(
-                    column,
-                    columnsByName,
-                    resource,
-                    table,
-                    foreignKey.Name
-                );
-
-                if (seenColumns.Add(storageColumn))
-                {
-                    mappedColumns.Add(storageColumn);
-                }
-            }
-
-            if (mappedColumns.SequenceEqual(foreignKey.Columns))
-            {
-                rewritten.Add(constraint);
-                continue;
-            }
-
-            changed = true;
-            rewritten.Add(foreignKey with { Columns = mappedColumns.ToArray() });
-        }
-
-        return changed ? rewritten.ToArray() : constraints;
-    }
-
-    /// <summary>
-    /// Resolves one FK column to its canonical stored column for the local table.
-    /// </summary>
-    private static DbColumnName ResolveForeignKeyStorageColumn(
-        DbColumnName column,
-        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
-        QualifiedResourceName resource,
-        DbTableName table,
-        string constraintName
-    )
-    {
-        if (!columnsByName.TryGetValue(column, out var columnModel))
-        {
-            throw new InvalidOperationException(
-                $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
-                    + $"could not resolve FK column '{column.Value}' for constraint '{constraintName}'."
-            );
-        }
-
-        switch (columnModel.Storage)
-        {
-            case ColumnStorage.Stored:
-                return columnModel.ColumnName;
-            case ColumnStorage.UnifiedAlias unifiedAlias:
-                if (!columnsByName.TryGetValue(unifiedAlias.CanonicalColumn, out var canonicalColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
-                            + $"resolved alias FK column '{column.Value}' to missing canonical column "
-                            + $"'{unifiedAlias.CanonicalColumn.Value}' for constraint '{constraintName}'."
-                    );
-                }
-
-                if (canonicalColumn.Storage is not ColumnStorage.Stored)
-                {
-                    throw new InvalidOperationException(
-                        $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
-                            + $"resolved alias FK column '{column.Value}' to non-stored canonical column "
-                            + $"'{unifiedAlias.CanonicalColumn.Value}' for constraint '{constraintName}'."
-                    );
-                }
-
-                return canonicalColumn.ColumnName;
-            default:
-                throw new InvalidOperationException(
-                    $"Key-unification FK rewrite on resource '{FormatResource(resource)}' table '{table}' "
-                        + $"encountered unsupported storage metadata for FK column '{column.Value}' "
-                        + $"on constraint '{constraintName}'."
-                );
-        }
     }
 
     /// <summary>
