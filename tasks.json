@@ -80,6 +80,6 @@
       "Review doc diff: `git diff -- reference/design/backend-redesign/design-docs/mpack-format-v1.md`",
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
-    "completed": false
+    "completed": true
   }
 ]

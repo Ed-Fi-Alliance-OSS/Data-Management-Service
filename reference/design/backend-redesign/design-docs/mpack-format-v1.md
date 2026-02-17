@@ -109,7 +109,8 @@ All collections are `repeated` and MUST be emitted in stable sort order:
   - `tables_in_read_dependency_order`: root-first, then increasing depth; stable within depth by `(json_scope, table_name)`
   - `tables_in_write_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)`
   - `columns`: stable per table; key columns first (in key order), then document reference groups, descriptor FKs, then scalars
-  - `constraints`: ascending by `(name)`
+  - `constraints`: ascending by `(constraint_kind_group, name)` where
+    `constraint_kind_group = unique < foreign_key < all_or_none_nullability < null_or_true`
   - `document_reference_bindings`: ascending by `(reference_object_path)`
   - `descriptor_edge_sources`: ascending by `(descriptor_value_path)`
   - `key_unification_classes`: ascending by `(canonical_column.value)`
@@ -352,7 +353,7 @@ message DbTableModel {
 
   TableKey key = 10;
   repeated DbColumnModel columns = 11;                   // order is significant (binding + DDL)
-  repeated TableConstraint constraints = 12;             // deterministic ordering by name
+  repeated TableConstraint constraints = 12;             // deterministic ordering by kind-group, then name
   repeated KeyUnificationClass key_unification_classes = 20;
 }
 
@@ -434,6 +435,11 @@ message KeyUnificationClass {
   repeated DbColumnName member_path_columns = 2;         // ordered (do not sort)
 }
 
+enum ReferentialAction {
+  REFERENTIAL_ACTION_NO_ACTION = 0;
+  REFERENTIAL_ACTION_CASCADE = 1;
+}
+
 message TableConstraint {
   // Deterministic, portable constraint name (used for diagnostics).
   string name = 1;
@@ -441,6 +447,8 @@ message TableConstraint {
   oneof kind {
     UniqueConstraint unique = 10;
     ForeignKeyConstraint foreign_key = 11;
+    AllOrNoneNullabilityConstraint all_or_none_nullability = 12;
+    NullOrTrueConstraint null_or_true = 13;
   }
 }
 
@@ -452,6 +460,17 @@ message ForeignKeyConstraint {
   repeated DbColumnName columns = 1;
   DbTableName target_table = 2;
   repeated DbColumnName target_columns = 3;
+  ReferentialAction on_delete = 4;
+  ReferentialAction on_update = 5;
+}
+
+message AllOrNoneNullabilityConstraint {
+  DbColumnName fk_column = 1;
+  repeated DbColumnName dependent_columns = 2;
+}
+
+message NullOrTrueConstraint {
+  DbColumnName column = 1;
 }
 
 message DocumentReferenceBinding {
@@ -602,8 +621,11 @@ It is expected to be included in `EffectiveSchemaHash` computation (see `referen
 
 Key unification is gated by `RelationalMappingVersion` (not `PackFormatVersion`):
 
-- Producers MUST bump `RelationalMappingVersion` when key-unification semantics are enabled in emitted artifacts.
+- Producers MUST bump `RelationalMappingVersion` when key-unification semantics are first enabled in emitted artifacts.
 - Consumers MUST reject packs whose `relational_mapping_version` does not match the expected value, including older packs that omit key-unification metadata.
 - Consumers MAY interpret missing `DbColumnModel.storage` as `Stored` and missing `DbTableModel.key_unification_classes` as empty only when explicitly operating in an older `RelationalMappingVersion` mode.
+
+Repository status note (non-normative): this story updates the mapping-pack contract documentation only; this repo is
+not introducing a `RelationalMappingVersion` bump in the same change.
 
 ---
