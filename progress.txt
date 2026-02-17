@@ -68,3 +68,8 @@ Task complete: Key Unification (`reference/design/backend-redesign/epics/01-rela
 Decisions: replaced component ordering key `string.Join("|", ...)` + redundant per-component `OrderBy` with deterministic list comparer (first member, then length, then ordinal sequence) to preserve stable ordering while removing extra sorts/string allocations.
 Files changed: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`; `tasks.json`; `progress.txt`.
 Blockers/notes: no blockers. Feedback loops green: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`; `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.
+2026-02-17
+Task complete: Dialect Shortening (`reference/design/backend-redesign/epics/01-relational-model/07-index-and-trigger-inventory.md`), prep for `reference/design/backend-redesign/design-docs/key-unification.md`.
+Decisions: simplified `ColumnStorage.UnifiedAlias` change detection to equivalent auditable expression using `Nullable.Equals` for presence gate; kept canonical-column comparison unchanged; behavior preserved.
+Files changed: `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs`; `tasks.json`; `progress.txt`.
+Blockers/notes: no blockers. Feedback loops green: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`; `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`.

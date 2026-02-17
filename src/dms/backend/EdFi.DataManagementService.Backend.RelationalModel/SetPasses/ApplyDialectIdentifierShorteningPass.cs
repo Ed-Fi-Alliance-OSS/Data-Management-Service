@@ -410,12 +410,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
 
                 changed =
                     !updatedCanonicalColumn.Equals(unifiedAlias.CanonicalColumn)
-                    || (updatedPresenceColumn is null) != (unifiedAlias.PresenceColumn is null)
-                    || (
-                        updatedPresenceColumn is not null
-                        && unifiedAlias.PresenceColumn is not null
-                        && !updatedPresenceColumn.Value.Equals(unifiedAlias.PresenceColumn.Value)
-                    );
+                    || !Nullable.Equals(updatedPresenceColumn, unifiedAlias.PresenceColumn);
 
                 if (!changed)
                 {
