@@ -46,6 +46,7 @@ public class Given_A_Descriptor_Only_Model_Set_When_Emitting_Manifest
         var secondEmission = DerivedModelSetManifestEmitter.Emit(derivedSet);
 
         secondEmission.Should().Be(firstEmission);
+        firstEmission.Should().Be(_manifest, "independent builds must produce identical manifests");
     }
 
     [Test]
@@ -171,11 +172,49 @@ public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
     public void It_should_include_indexes_for_relational_tables()
     {
         _manifest.Should().Contain("\"indexes\":");
+        _manifest.Should().Contain("\"name\": \"PK_Contact\"");
+        _manifest.Should().Contain("\"kind\": \"PrimaryKey\"");
+        _manifest.Should().Contain("\"kind\": \"UniqueConstraint\"");
     }
 
     [Test]
     public void It_should_include_triggers_for_relational_tables()
     {
         _manifest.Should().Contain("\"triggers\":");
+        _manifest.Should().Contain("\"kind\": \"DocumentStamping\"");
+    }
+
+    [Test]
+    public void It_should_include_resource_details_when_requested()
+    {
+        var coreSchema = CommonInventoryTestSchemaBuilder.BuildExtensionCoreProjectSchema();
+        var extensionSchema = CommonInventoryTestSchemaBuilder.BuildExtensionProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreSchema,
+            isExtensionProject: false
+        );
+        var extensionProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            extensionSchema,
+            isExtensionProject: true
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([
+            coreProject,
+            extensionProject,
+        ]);
+        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        var derivedSet = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var detailedManifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "Contact") }
+        );
+
+        detailedManifest.Should().Contain("\"resource_details\":");
+        detailedManifest.Should().Contain("\"resource_name\": \"Contact\"");
+        detailedManifest.Should().Contain("\"tables\":");
+        detailedManifest.Should().Contain("\"constraints\":");
+        detailedManifest.Should().Contain("\"document_reference_bindings\":");
+        detailedManifest.Should().Contain("\"descriptor_edge_sources\":");
+        detailedManifest.Should().Contain("\"extension_sites\":");
     }
 }

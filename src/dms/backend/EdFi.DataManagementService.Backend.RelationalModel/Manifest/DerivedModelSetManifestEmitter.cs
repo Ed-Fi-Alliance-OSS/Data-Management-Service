@@ -40,7 +40,7 @@ public static class DerivedModelSetManifestEmitter
     {
         ArgumentNullException.ThrowIfNull(modelSet);
 
-        var buffer = new ArrayBufferWriter<byte>();
+        var buffer = new ArrayBufferWriter<byte>(initialCapacity: 65536);
 
         using (var writer = new Utf8JsonWriter(buffer, _writerOptions))
         {
