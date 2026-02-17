@@ -699,8 +699,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             var component in componentColumnNames.OrderBy(group => group, ConnectedComponentOrderingComparer)
         )
         {
-            ValidateConnectedComponentHasUniqueMembers(component, table, resource);
-
             var memberColumns = component
                 .Select(columnName =>
                 {
@@ -808,31 +806,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 .OrderBy(@class => @class.CanonicalColumn.Value, StringComparer.Ordinal)
                 .ToArray(),
         };
-    }
-
-    /// <summary>
-    /// Validates that connected-component member lists do not include duplicate column names.
-    /// </summary>
-    private static void ValidateConnectedComponentHasUniqueMembers(
-        IReadOnlyList<string> component,
-        DbTableModel table,
-        QualifiedResourceName resource
-    )
-    {
-        HashSet<string> seenMembers = new(StringComparer.Ordinal);
-
-        foreach (var columnName in component)
-        {
-            if (seenMembers.Add(columnName))
-            {
-                continue;
-            }
-
-            throw new InvalidOperationException(
-                $"Key-unification connected component contains duplicate member column '{columnName}' "
-                    + $"on table '{table.Table}' for resource '{FormatResource(resource)}'."
-            );
-        }
     }
 
     /// <summary>
