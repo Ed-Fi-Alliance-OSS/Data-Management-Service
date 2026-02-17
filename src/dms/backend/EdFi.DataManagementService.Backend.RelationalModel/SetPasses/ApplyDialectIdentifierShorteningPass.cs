@@ -702,18 +702,16 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             dialectRules,
             out var identityColumnsChanged
         );
-        var updatedTargetTable = trigger.TargetTable is { } target
-            ? ShortenTable(target, dialectRules)
-            : trigger.TargetTable;
-        var targetTableChanged =
-            updatedTargetTable is not null
-            && trigger.TargetTable is not null
-            && !updatedTargetTable.Value.Equals(trigger.TargetTable.Value);
+        var updatedParameters = ApplyToTriggerParameters(
+            trigger.Parameters,
+            dialectRules,
+            out var parametersChanged
+        );
 
         changed =
             columnsChanged
             || identityColumnsChanged
-            || targetTableChanged
+            || parametersChanged
             || !updatedTable.Equals(trigger.Table)
             || !updatedName.Equals(trigger.Name);
 
@@ -728,8 +726,37 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             Table = updatedTable,
             KeyColumns = updatedColumns,
             IdentityProjectionColumns = updatedIdentityColumns,
-            TargetTable = updatedTargetTable,
+            Parameters = updatedParameters,
         };
+    }
+
+    /// <summary>
+    /// Applies dialect shortening to trigger-kind-specific parameters and reports whether they changed.
+    /// </summary>
+    private static TriggerKindParameters ApplyToTriggerParameters(
+        TriggerKindParameters parameters,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        switch (parameters)
+        {
+            case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
+            {
+                var updatedTargetTable = ShortenTable(abstractId.TargetTable, dialectRules);
+                changed = !updatedTargetTable.Equals(abstractId.TargetTable);
+                return changed ? abstractId with { TargetTable = updatedTargetTable } : parameters;
+            }
+            case TriggerKindParameters.IdentityPropagationFallback propagation:
+            {
+                var updatedTargetTable = ShortenTable(propagation.TargetTable, dialectRules);
+                changed = !updatedTargetTable.Equals(propagation.TargetTable);
+                return changed ? propagation with { TargetTable = updatedTargetTable } : parameters;
+            }
+            default:
+                changed = false;
+                return parameters;
+        }
     }
 
     /// <summary>

@@ -1196,9 +1196,9 @@ internal static class TriggerFixture
         var trigger = new DbTriggerInfo(
             new DbTriggerName("TR_School_DocumentStamping"),
             tableName,
-            DbTriggerKind.DocumentStamping,
             [documentIdColumn],
-            []
+            [],
+            new TriggerKindParameters.DocumentStamping()
         );
 
         return new DerivedRelationalModelSet(

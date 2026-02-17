@@ -311,16 +311,23 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteString("name", trigger.Name.Value);
             writer.WritePropertyName("table");
             WriteTableReference(writer, trigger.Table);
-            writer.WriteString("kind", trigger.Kind.ToString());
+            writer.WriteString("kind", trigger.Parameters.GetType().Name);
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, trigger.KeyColumns);
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            if (trigger.TargetTable is { } targetTable)
+            var targetTable = trigger.Parameters switch
+            {
+                TriggerKindParameters.AbstractIdentityMaintenance a => (DbTableName?)a.TargetTable,
+                TriggerKindParameters.IdentityPropagationFallback p => p.TargetTable,
+                _ => null,
+            };
+
+            if (targetTable is { } tt)
             {
                 writer.WritePropertyName("target_table");
-                WriteTableReference(writer, targetTable);
+                WriteTableReference(writer, tt);
             }
 
             writer.WriteEndObject();

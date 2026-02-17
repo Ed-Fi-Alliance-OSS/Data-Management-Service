@@ -295,22 +295,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// </summary>
     private void AppendTriggerBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
-        switch (trigger.Kind)
+        switch (trigger.Parameters)
         {
-            case DbTriggerKind.DocumentStamping:
+            case TriggerKindParameters.DocumentStamping:
                 AppendDocumentStampingBody(builder, trigger, indent);
                 break;
-            case DbTriggerKind.ReferentialIdentityMaintenance:
-                AppendReferentialIdentityBody(builder, trigger, indent);
+            case TriggerKindParameters.ReferentialIdentityMaintenance refId:
+                AppendReferentialIdentityBody(builder, trigger, indent, refId);
                 break;
-            case DbTriggerKind.AbstractIdentityMaintenance:
-                AppendAbstractIdentityBody(builder, trigger, indent);
+            case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
+                AppendAbstractIdentityBody(builder, trigger, indent, abstractId);
                 break;
-            case DbTriggerKind.IdentityPropagationFallback:
-                AppendIdentityPropagationBody(builder, trigger, indent);
+            case TriggerKindParameters.IdentityPropagationFallback propagation:
+                AppendIdentityPropagationBody(builder, trigger, indent, propagation);
                 break;
             default:
-                throw new ArgumentOutOfRangeException(nameof(trigger.Kind));
+                throw new ArgumentOutOfRangeException(nameof(trigger.Parameters));
         }
     }
 
@@ -499,22 +499,27 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// Appends referential identity maintenance trigger body that maintains
     /// <c>dms.ReferentialIdentity</c> rows via UUIDv5 computation.
     /// </summary>
-    private void AppendReferentialIdentityBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
+    private void AppendReferentialIdentityBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        TriggerKindParameters.ReferentialIdentityMaintenance refId
+    )
     {
         if (_dialectRules.Dialect == SqlDialect.Pgsql)
         {
-            AppendPgsqlReferentialIdentityBody(builder, trigger, indent);
+            AppendPgsqlReferentialIdentityBody(builder, indent, refId);
         }
         else
         {
-            AppendMssqlReferentialIdentityBody(builder, trigger, indent);
+            AppendMssqlReferentialIdentityBody(builder, indent, refId);
         }
     }
 
     private void AppendPgsqlReferentialIdentityBody(
         StringBuilder builder,
-        DbTriggerInfo trigger,
-        string indent
+        string indent,
+        TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
         var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
@@ -524,14 +529,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             builder,
             indent,
             refIdTable,
-            trigger.ResourceKeyId!.Value,
-            trigger.ProjectName!,
-            trigger.ResourceName!,
-            trigger.IdentityElements!
+            refId.ResourceKeyId,
+            refId.ProjectName,
+            refId.ResourceName,
+            refId.IdentityElements
         );
 
         // Superclass alias
-        if (trigger.SuperclassAlias is { } alias)
+        if (refId.SuperclassAlias is { } alias)
         {
             AppendPgsqlReferentialIdentityBlock(
                 builder,
@@ -628,8 +633,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
     private void AppendMssqlReferentialIdentityBody(
         StringBuilder builder,
-        DbTriggerInfo trigger,
-        string indent
+        string indent,
+        TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
         var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
@@ -639,14 +644,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             builder,
             indent,
             refIdTable,
-            trigger.ResourceKeyId!.Value,
-            trigger.ProjectName!,
-            trigger.ResourceName!,
-            trigger.IdentityElements!
+            refId.ResourceKeyId,
+            refId.ProjectName,
+            refId.ResourceName,
+            refId.IdentityElements
         );
 
         // Superclass alias
-        if (trigger.SuperclassAlias is { } alias)
+        if (refId.SuperclassAlias is { } alias)
         {
             AppendMssqlReferentialIdentityBlock(
                 builder,
@@ -746,26 +751,22 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// Appends abstract identity maintenance trigger body that maintains abstract identity
     /// tables from concrete resource root tables.
     /// </summary>
-    private void AppendAbstractIdentityBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
+    private void AppendAbstractIdentityBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        TriggerKindParameters.AbstractIdentityMaintenance abstractId
+    )
     {
-        if (trigger.TargetTable is null || trigger.TargetColumnMappings is null)
-        {
-            throw new InvalidOperationException(
-                $"AbstractIdentityMaintenance trigger '{trigger.Name.Value}' requires TargetTable and TargetColumnMappings."
-            );
-        }
-
-        var validatedTargetTable = trigger.TargetTable.Value;
-        var validatedMappings = trigger.TargetColumnMappings;
-
         if (_dialectRules.Dialect == SqlDialect.Pgsql)
         {
             AppendPgsqlAbstractIdentityBody(
                 builder,
                 trigger,
                 indent,
-                validatedTargetTable,
-                validatedMappings
+                abstractId.TargetTable,
+                abstractId.TargetColumnMappings,
+                abstractId.DiscriminatorValue
             );
         }
         else
@@ -774,8 +775,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
                 builder,
                 trigger,
                 indent,
-                validatedTargetTable,
-                validatedMappings
+                abstractId.TargetTable,
+                abstractId.TargetColumnMappings,
+                abstractId.DiscriminatorValue
             );
         }
     }
@@ -785,7 +787,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         DbTriggerInfo trigger,
         string indent,
         DbTableName targetTableName,
-        IReadOnlyList<TriggerColumnMapping> mappings
+        IReadOnlyList<TriggerColumnMapping> mappings,
+        string discriminatorValue
     )
     {
         var targetTable = Quote(targetTableName);
@@ -814,7 +817,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             builder.Append(Quote(mapping.SourceColumn));
         }
         builder.Append(", '");
-        builder.Append(EscapeSqlLiteral(trigger.DiscriminatorValue ?? string.Empty));
+        builder.Append(EscapeSqlLiteral(discriminatorValue));
         builder.AppendLine("')");
 
         builder.Append(indent);
@@ -840,7 +843,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         DbTriggerInfo trigger,
         string indent,
         DbTableName targetTableName,
-        IReadOnlyList<TriggerColumnMapping> mappings
+        IReadOnlyList<TriggerColumnMapping> mappings,
+        string discriminatorValue
     )
     {
         var targetTable = Quote(targetTableName);
@@ -892,7 +896,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             builder.Append(Quote(mapping.SourceColumn));
         }
         builder.Append(", N'");
-        builder.Append(EscapeSqlLiteral(trigger.DiscriminatorValue ?? string.Empty));
+        builder.Append(EscapeSqlLiteral(discriminatorValue));
         builder.AppendLine("');");
     }
 
@@ -900,30 +904,28 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// Appends identity propagation fallback trigger body (MSSQL only) that cascades
     /// identity column updates to target tables when <c>ON UPDATE CASCADE</c> is not available.
     /// </summary>
-    private void AppendIdentityPropagationBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
+    private void AppendIdentityPropagationBody(
+        StringBuilder builder,
+        DbTriggerInfo trigger,
+        string indent,
+        TriggerKindParameters.IdentityPropagationFallback propagation
+    )
     {
-        if (trigger.TargetTable is null || trigger.TargetColumnMappings is null)
-        {
-            throw new InvalidOperationException(
-                $"IdentityPropagationFallback trigger '{trigger.Name.Value}' requires TargetTable and TargetColumnMappings."
-            );
-        }
-
-        var targetTable = Quote(trigger.TargetTable.Value);
+        var targetTable = Quote(propagation.TargetTable);
         var fkColumn = trigger.KeyColumns[0];
 
         builder.Append(indent);
         builder.AppendLine("UPDATE t");
         builder.Append(indent);
         builder.Append("SET ");
-        for (int i = 0; i < trigger.TargetColumnMappings.Count; i++)
+        for (int i = 0; i < propagation.TargetColumnMappings.Count; i++)
         {
             if (i > 0)
                 builder.Append(", ");
             builder.Append("t.");
-            builder.Append(Quote(trigger.TargetColumnMappings[i].TargetColumn));
+            builder.Append(Quote(propagation.TargetColumnMappings[i].TargetColumn));
             builder.Append(" = i.");
-            builder.Append(Quote(trigger.TargetColumnMappings[i].SourceColumn));
+            builder.Append(Quote(propagation.TargetColumnMappings[i].SourceColumn));
         }
         builder.AppendLine();
 
@@ -948,11 +950,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
         builder.Append(indent);
         builder.Append("WHERE ");
-        for (int i = 0; i < trigger.TargetColumnMappings.Count; i++)
+        for (int i = 0; i < propagation.TargetColumnMappings.Count; i++)
         {
             if (i > 0)
                 builder.Append(" OR ");
-            var col = Quote(trigger.TargetColumnMappings[i].SourceColumn);
+            var col = Quote(propagation.TargetColumnMappings[i].SourceColumn);
             AppendMssqlNullSafeNotEqual(builder, "i", col, "d", col);
         }
         builder.AppendLine(";");

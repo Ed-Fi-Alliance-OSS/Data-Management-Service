@@ -212,29 +212,58 @@ public sealed record DbIndexInfo(
 );
 
 /// <summary>
-/// Classifies the logical intent of a derived trigger.
+/// Discriminated union for trigger-kind-specific parameters. Each subtype carries exactly
+/// the fields required by its trigger kind, providing compile-time type safety instead of
+/// nullable optional parameters.
 /// </summary>
-public enum DbTriggerKind
+public abstract record TriggerKindParameters
 {
-    /// <summary>
-    /// Trigger that stamps document representation/identity versions.
-    /// </summary>
-    DocumentStamping,
+    private TriggerKindParameters() { }
 
     /// <summary>
-    /// Trigger that maintains referential identity for concrete resources.
+    /// Parameters for triggers that stamp document representation/identity versions.
     /// </summary>
-    ReferentialIdentityMaintenance,
+    public sealed record DocumentStamping() : TriggerKindParameters;
 
     /// <summary>
-    /// Trigger that maintains abstract identity tables from concrete roots.
+    /// Parameters for triggers that maintain referential identity for concrete resources.
     /// </summary>
-    AbstractIdentityMaintenance,
+    /// <param name="ResourceKeyId">The resource key ID for UUIDv5 computation.</param>
+    /// <param name="ProjectName">The project name for UUIDv5 computation.</param>
+    /// <param name="ResourceName">The resource name for UUIDv5 computation.</param>
+    /// <param name="IdentityElements">Identity element mappings for UUIDv5 computation.</param>
+    /// <param name="SuperclassAlias">
+    /// Superclass alias information for subclass resources. <c>null</c> for non-subclass resources.
+    /// </param>
+    public sealed record ReferentialIdentityMaintenance(
+        short ResourceKeyId,
+        string ProjectName,
+        string ResourceName,
+        IReadOnlyList<IdentityElementMapping> IdentityElements,
+        SuperclassAliasInfo? SuperclassAlias = null
+    ) : TriggerKindParameters;
 
     /// <summary>
-    /// Trigger-based fallback for identity propagation when cascade paths are constrained.
+    /// Parameters for triggers that maintain abstract identity tables from concrete roots.
     /// </summary>
-    IdentityPropagationFallback,
+    /// <param name="TargetTable">The abstract identity table being maintained.</param>
+    /// <param name="TargetColumnMappings">Column mappings from the source table to the target table.</param>
+    /// <param name="DiscriminatorValue">The discriminator value written to the abstract identity table.</param>
+    public sealed record AbstractIdentityMaintenance(
+        DbTableName TargetTable,
+        IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        string DiscriminatorValue
+    ) : TriggerKindParameters;
+
+    /// <summary>
+    /// Parameters for trigger-based fallback for identity propagation when cascade paths are constrained.
+    /// </summary>
+    /// <param name="TargetTable">The target table whose columns are updated.</param>
+    /// <param name="TargetColumnMappings">Column mappings from the source table to the target table.</param>
+    public sealed record IdentityPropagationFallback(
+        DbTableName TargetTable,
+        IReadOnlyList<TriggerColumnMapping> TargetColumnMappings
+    ) : TriggerKindParameters;
 }
 
 /// <summary>
@@ -277,65 +306,22 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// </summary>
 /// <param name="Name">The trigger name.</param>
 /// <param name="Table">The owning table.</param>
-/// <param name="Kind">The trigger intent classification.</param>
 /// <param name="KeyColumns">Key columns used to identify the affected <c>DocumentId</c>.</param>
 /// <param name="IdentityProjectionColumns">
 /// Columns whose change affects the resource identity projection. For
-/// <see cref="DbTriggerKind.DocumentStamping"/> triggers on root tables, these are the columns
+/// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these are the columns
 /// that should additionally bump <c>IdentityVersion</c>. For
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> and
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, these are the columns that
+/// <see cref="TriggerKindParameters.ReferentialIdentityMaintenance"/> and
+/// <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers, these are the columns that
 /// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>
-/// <param name="TargetTable">
-/// The maintenance target table, when applicable. For
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, this identifies the abstract
-/// identity table being maintained. For <see cref="DbTriggerKind.IdentityPropagationFallback"/>
-/// triggers, the target table whose columns are updated. <c>null</c> for other trigger kinds.
-/// </param>
-/// <param name="ResourceKeyId">
-/// The resource key ID for UUIDv5 computation. Used by
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
-/// </param>
-/// <param name="ProjectName">
-/// The project name for UUIDv5 computation. Used by
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
-/// </param>
-/// <param name="ResourceName">
-/// The resource name for UUIDv5 computation. Used by
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
-/// </param>
-/// <param name="IdentityElements">
-/// Identity element mappings for UUIDv5 computation. Used by
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers.
-/// </param>
-/// <param name="SuperclassAlias">
-/// Superclass alias information for subclass resources. Used by
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> triggers on subclass resources.
-/// </param>
-/// <param name="TargetColumnMappings">
-/// Column mappings from the source table to the target table. Used by
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> and
-/// <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers.
-/// </param>
-/// <param name="DiscriminatorValue">
-/// The discriminator value written to the abstract identity table. Used by
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers.
-/// </param>
+/// <param name="Parameters">The trigger-kind-specific parameters.</param>
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
     DbTableName Table,
-    DbTriggerKind Kind,
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
-    DbTableName? TargetTable = null,
-    short? ResourceKeyId = null,
-    string? ProjectName = null,
-    string? ResourceName = null,
-    IReadOnlyList<IdentityElementMapping>? IdentityElements = null,
-    SuperclassAliasInfo? SuperclassAlias = null,
-    IReadOnlyList<TriggerColumnMapping>? TargetColumnMappings = null,
-    string? DiscriminatorValue = null
+    TriggerKindParameters Parameters
 );
 
 /// <summary>

@@ -113,9 +113,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     new DbTriggerInfo(
                         new DbTriggerName(BuildTriggerName(table.Table, StampToken)),
                         table.Table,
-                        DbTriggerKind.DocumentStamping,
                         keyColumns,
-                        isRootTable ? identityProjectionColumns : []
+                        isRootTable ? identityProjectionColumns : [],
+                        new TriggerKindParameters.DocumentStamping()
                     )
                 );
             }
@@ -196,12 +196,13 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                         new DbTriggerInfo(
                             new DbTriggerName(BuildTriggerName(rootTable.Table, AbstractIdentityToken)),
                             rootTable.Table,
-                            DbTriggerKind.AbstractIdentityMaintenance,
                             [RelationalNameConventions.DocumentIdColumnName],
                             identityProjectionColumns,
-                            abstractTable.TableModel.Table,
-                            TargetColumnMappings: targetColumnMappings,
-                            DiscriminatorValue: $"{resource.ProjectName}:{resource.ResourceName}"
+                            new TriggerKindParameters.AbstractIdentityMaintenance(
+                                abstractTable.TableModel.Table,
+                                targetColumnMappings,
+                                $"{resource.ProjectName}:{resource.ResourceName}"
+                            )
                         )
                     );
                 }
@@ -212,14 +213,15 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 new DbTriggerInfo(
                     new DbTriggerName(BuildTriggerName(rootTable.Table, ReferentialIdentityToken)),
                     rootTable.Table,
-                    DbTriggerKind.ReferentialIdentityMaintenance,
                     [RelationalNameConventions.DocumentIdColumnName],
                     identityProjectionColumns,
-                    ResourceKeyId: resourceKeyEntry.ResourceKeyId,
-                    ProjectName: resource.ProjectName,
-                    ResourceName: resource.ResourceName,
-                    IdentityElements: identityElements,
-                    SuperclassAlias: superclassAlias
+                    new TriggerKindParameters.ReferentialIdentityMaintenance(
+                        resourceKeyEntry.ResourceKeyId,
+                        resource.ProjectName,
+                        resource.ResourceName,
+                        identityElements,
+                        superclassAlias
+                    )
                 )
             );
 
@@ -289,7 +291,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Emits <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers for each root-table
+    /// Emits <see cref="TriggerKindParameters.IdentityPropagationFallback"/> triggers for each root-table
     /// reference binding whose target is abstract or allows identity updates. These replace the
     /// <c>ON UPDATE CASCADE</c> that PostgreSQL handles natively but SQL Server rejects due to
     /// multiple cascade paths.
@@ -326,7 +328,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 continue;
             }
 
-            DbTableName? targetTable;
+            DbTableName targetTable;
 
             if (abstractTablesByResource.TryGetValue(mapping.TargetResource, out var abstractTableInfo))
             {
@@ -369,11 +371,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                         BuildTriggerName(rootTable.Table, $"{PropagationFallbackPrefix}_{referenceBaseName}")
                     ),
                     rootTable.Table,
-                    DbTriggerKind.IdentityPropagationFallback,
                     [binding.FkColumn],
                     propagatedColumns,
-                    targetTable,
-                    TargetColumnMappings: targetColumnMappings
+                    new TriggerKindParameters.IdentityPropagationFallback(targetTable, targetColumnMappings)
                 )
             );
         }
@@ -447,7 +447,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds column mappings from concrete root table columns to abstract identity table columns
-    /// for <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers.
+    /// for <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers.
     /// </summary>
     private static IReadOnlyList<TriggerColumnMapping> BuildAbstractIdentityColumnMappings(
         DbTableModel abstractTable,

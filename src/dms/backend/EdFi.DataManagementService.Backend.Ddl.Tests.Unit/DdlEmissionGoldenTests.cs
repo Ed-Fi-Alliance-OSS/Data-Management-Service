@@ -500,37 +500,38 @@ internal static class NestedCollectionsFixture
             new(
                 new DbTriggerName("TR_School_Stamp"),
                 schoolTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                [schoolIdColumn]
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // DocumentStamping on child table SchoolAddress (no identity projection)
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
                 addressTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // DocumentStamping on nested child table (no identity projection)
             new(
                 new DbTriggerName("TR_SchoolAddressPhoneNumber_Stamp"),
                 phoneTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // ReferentialIdentityMaintenance on root table
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
                 schoolTableName,
-                DbTriggerKind.ReferentialIdentityMaintenance,
                 [documentIdColumn],
                 [schoolIdColumn],
-                ResourceKeyId: 1,
-                ProjectName: "Ed-Fi",
-                ResourceName: "School",
-                IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                )
             ),
         ];
 
@@ -772,71 +773,69 @@ internal static class PolymorphicAbstractFixture
             new(
                 new DbTriggerName("TR_LocalEducationAgency_Stamp"),
                 leaTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                [organizationIdColumn]
+                [organizationIdColumn],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // AbstractIdentityMaintenance on LEA → EducationOrganizationIdentity
             new(
                 new DbTriggerName("TR_LocalEducationAgency_AbstractIdentity"),
                 leaTableName,
-                DbTriggerKind.AbstractIdentityMaintenance,
                 [documentIdColumn],
                 [organizationIdColumn],
-                identityTableName,
-                TargetColumnMappings: [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
-                DiscriminatorValue: "Ed-Fi:LocalEducationAgency"
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    identityTableName,
+                    [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    "Ed-Fi:LocalEducationAgency"
+                )
             ),
             // ReferentialIdentityMaintenance on LEA
             new(
                 new DbTriggerName("TR_LocalEducationAgency_ReferentialIdentity"),
                 leaTableName,
-                DbTriggerKind.ReferentialIdentityMaintenance,
                 [documentIdColumn],
                 [organizationIdColumn],
-                ResourceKeyId: 3,
-                ProjectName: "Ed-Fi",
-                ResourceName: "LocalEducationAgency",
-                IdentityElements:
-                [
-                    new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId"),
-                ],
-                SuperclassAlias: superclassAlias
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    3,
+                    "Ed-Fi",
+                    "LocalEducationAgency",
+                    [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")],
+                    superclassAlias
+                )
             ),
             // DocumentStamping on School root (with identity projection)
             new(
                 new DbTriggerName("TR_School_Stamp"),
                 schoolTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                [organizationIdColumn]
+                [organizationIdColumn],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // AbstractIdentityMaintenance on School → EducationOrganizationIdentity
             new(
                 new DbTriggerName("TR_School_AbstractIdentity"),
                 schoolTableName,
-                DbTriggerKind.AbstractIdentityMaintenance,
                 [documentIdColumn],
                 [organizationIdColumn],
-                identityTableName,
-                TargetColumnMappings: [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
-                DiscriminatorValue: "Ed-Fi:School"
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    identityTableName,
+                    [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                    "Ed-Fi:School"
+                )
             ),
             // ReferentialIdentityMaintenance on School
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
                 schoolTableName,
-                DbTriggerKind.ReferentialIdentityMaintenance,
                 [documentIdColumn],
                 [organizationIdColumn],
-                ResourceKeyId: 2,
-                ProjectName: "Ed-Fi",
-                ResourceName: "School",
-                IdentityElements:
-                [
-                    new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId"),
-                ],
-                SuperclassAlias: superclassAlias
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    2,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")],
+                    superclassAlias
+                )
             ),
         ];
 
@@ -1081,45 +1080,46 @@ internal static class ExtensionMappingFixture
             new(
                 new DbTriggerName("TR_School_Stamp"),
                 schoolTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                [schoolIdColumn]
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // DocumentStamping on child table SchoolAddress (no identity projection)
             new(
                 new DbTriggerName("TR_SchoolAddress_Stamp"),
                 addressTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // DocumentStamping on extension table SchoolAddressExtension (no identity projection)
             new(
                 new DbTriggerName("TR_SchoolAddressExtension_Stamp"),
                 addressExtTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // DocumentStamping on extension table SchoolExtension (no identity projection)
             new(
                 new DbTriggerName("TR_SchoolExtension_Stamp"),
                 schoolExtTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // ReferentialIdentityMaintenance on root table
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
                 schoolTableName,
-                DbTriggerKind.ReferentialIdentityMaintenance,
                 [documentIdColumn],
                 [schoolIdColumn],
-                ResourceKeyId: 1,
-                ProjectName: "Ed-Fi",
-                ResourceName: "School",
-                IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                )
             ),
         ];
 
@@ -1294,46 +1294,47 @@ internal static class IdentityPropagationFixture
             new(
                 new DbTriggerName("TR_School_Stamp"),
                 schoolTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                [schoolIdColumn]
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // ReferentialIdentityMaintenance on School
             new(
                 new DbTriggerName("TR_School_ReferentialIdentity"),
                 schoolTableName,
-                DbTriggerKind.ReferentialIdentityMaintenance,
                 [documentIdColumn],
                 [schoolIdColumn],
-                ResourceKeyId: 1,
-                ProjectName: "Ed-Fi",
-                ResourceName: "School",
-                IdentityElements: [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                )
             ),
             // DocumentStamping on StudentSchoolAssociation root
             new(
                 new DbTriggerName("TR_StudentSchoolAssociation_Stamp"),
                 assocTableName,
-                DbTriggerKind.DocumentStamping,
                 [documentIdColumn],
-                [schoolIdColumn, studentIdColumn, entryDateColumn]
+                [schoolIdColumn, studentIdColumn, entryDateColumn],
+                new TriggerKindParameters.DocumentStamping()
             ),
             // ReferentialIdentityMaintenance on StudentSchoolAssociation
             new(
                 new DbTriggerName("TR_StudentSchoolAssociation_ReferentialIdentity"),
                 assocTableName,
-                DbTriggerKind.ReferentialIdentityMaintenance,
                 [documentIdColumn],
                 [schoolIdColumn, studentIdColumn, entryDateColumn],
-                ResourceKeyId: 2,
-                ProjectName: "Ed-Fi",
-                ResourceName: "StudentSchoolAssociation",
-                IdentityElements:
-                [
-                    new IdentityElementMapping(schoolIdColumn, "$.schoolReference.schoolId"),
-                    new IdentityElementMapping(studentIdColumn, "$.studentReference.studentUniqueId"),
-                    new IdentityElementMapping(entryDateColumn, "$.entryDate"),
-                ]
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    2,
+                    "Ed-Fi",
+                    "StudentSchoolAssociation",
+                    [
+                        new IdentityElementMapping(schoolIdColumn, "$.schoolReference.schoolId"),
+                        new IdentityElementMapping(studentIdColumn, "$.studentReference.studentUniqueId"),
+                        new IdentityElementMapping(entryDateColumn, "$.entryDate"),
+                    ]
+                )
             ),
         ];
 
@@ -1344,11 +1345,12 @@ internal static class IdentityPropagationFixture
                 new DbTriggerInfo(
                     new DbTriggerName("TR_StudentSchoolAssociation_Propagation_School"),
                     assocTableName,
-                    DbTriggerKind.IdentityPropagationFallback,
                     [schoolIdColumn],
                     [schoolIdColumn],
-                    schoolTableName,
-                    TargetColumnMappings: [new TriggerColumnMapping(schoolIdColumn, schoolIdColumn)]
+                    new TriggerKindParameters.IdentityPropagationFallback(
+                        schoolTableName,
+                        [new TriggerColumnMapping(schoolIdColumn, schoolIdColumn)]
+                    )
                 )
             );
         }
