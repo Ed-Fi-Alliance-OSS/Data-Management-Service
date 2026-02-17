@@ -31,13 +31,13 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 
             foreach (var table in concreteResource.RelationalModel.TablesInDependencyOrder)
             {
-                DeriveIndexesForTable(table, context.IndexInventory);
+                DeriveIndexesForTable(table, context.IndexInventory, context);
             }
         }
 
         foreach (var abstractTable in context.AbstractIdentityTablesInNameOrder)
         {
-            DeriveIndexesForTable(abstractTable.TableModel, context.IndexInventory);
+            DeriveIndexesForTable(abstractTable.TableModel, context.IndexInventory, context);
         }
     }
 
@@ -45,17 +45,14 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     /// Derives PK-implied, UK-implied, and FK-support indexes for a single table and appends
     /// them to the inventory.
     /// </summary>
-    private static void DeriveIndexesForTable(DbTableModel table, List<DbIndexInfo> inventory)
+    private static void DeriveIndexesForTable(
+        DbTableModel table,
+        List<DbIndexInfo> inventory,
+        RelationalModelSetBuilderContext context
+    )
     {
         List<DbIndexInfo> tableIndexes = [];
-        var tableMetadata = UnifiedAliasStorageResolver.BuildTableMetadata(
-            table,
-            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
-                ThrowIfPresenceColumnMissing: true,
-                ThrowIfInvalidStrictSyntheticCandidate: true,
-                UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
-            )
-        );
+        var tableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(context, table);
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
         var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)

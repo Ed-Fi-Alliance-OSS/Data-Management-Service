@@ -42,6 +42,7 @@ public class Given_Default_RelationalModelSet_Passes
                 typeof(ExtensionTableDerivationPass),
                 typeof(ReferenceBindingPass),
                 typeof(KeyUnificationPass),
+                typeof(ValidateUnifiedAliasMetadataPass),
                 typeof(AbstractIdentityTableAndUnionViewDerivationPass),
                 typeof(RootIdentityConstraintPass),
                 typeof(ReferenceConstraintPass),

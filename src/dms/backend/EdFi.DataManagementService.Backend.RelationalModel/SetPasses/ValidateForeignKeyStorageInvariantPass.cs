@@ -20,17 +20,7 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
         var tablesByName = BuildTablesByName(context);
         var tableMetadataByName = tablesByName.ToDictionary(
             entry => entry.Key,
-            entry =>
-                UnifiedAliasStorageResolver.BuildTableMetadata(
-                    entry.Value,
-                    new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
-                        ThrowIfPresenceColumnMissing: false,
-                        ThrowIfInvalidStrictSyntheticCandidate: false,
-                        UnifiedAliasStorageResolver
-                            .ScalarPresenceGateClassification
-                            .StrictSyntheticPresenceFlag
-                    )
-                )
+            entry => UnifiedAliasStrictMetadataCache.GetOrBuild(context, entry.Value)
         );
 
         foreach (var table in tablesByName.Values)
