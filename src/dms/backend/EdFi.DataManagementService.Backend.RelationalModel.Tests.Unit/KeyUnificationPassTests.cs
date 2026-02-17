@@ -3,8 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.RelationalModel.Schema;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -524,6 +527,168 @@ public class Given_Key_Unification_With_Unsupported_Endpoint_Kinds
     {
         _act.Should().Throw<InvalidOperationException>().WithMessage("*unsupported column kind*");
     }
+}
+
+/// <summary>
+/// Test fixture for canonical base-token derivation.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Canonical_Base_Token_Derivation
+{
+    private static readonly QualifiedResourceName Resource = new("Ed-Fi", "Example");
+
+    /// <summary>
+    /// It should derive the base token from property-relative segments for a reference identity binding.
+    /// </summary>
+    [Test]
+    public void It_should_derive_base_token_from_property_relative_segments()
+    {
+        var sourcePath = JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId");
+        var table = CreateTable(JsonPathExpressionCompiler.Compile("$"));
+        var memberColumn = CreateScalarColumn("School_SchoolId", sourcePath);
+        var referenceBinding = new DocumentReferenceBinding(
+            IsIdentityComponent: false,
+            ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.schoolReference"),
+            table.Table,
+            new DbColumnName("School_DocumentId"),
+            new QualifiedResourceName("Ed-Fi", "School"),
+            [new ReferenceIdentityBinding(sourcePath, memberColumn.ColumnName)]
+        );
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingByIdentityPath = new Dictionary<
+            string,
+            DocumentReferenceBinding
+        >(StringComparer.Ordinal)
+        {
+            [sourcePath.Canonical] = referenceBinding,
+        };
+
+        var baseToken = InvokeBuildMemberBaseToken(memberColumn, table, referenceBindingByIdentityPath);
+
+        baseToken.Should().Be("SchoolId");
+    }
+
+    /// <summary>
+    /// It should derive the base token from the last prefix property when source path equals wildcard scope.
+    /// </summary>
+    [Test]
+    public void It_should_derive_base_token_from_last_prefix_property_when_source_path_equals_scope()
+    {
+        var sourcePath = JsonPathExpressionCompiler.Compile("$.programDescriptors[*]");
+        var table = CreateTable(sourcePath);
+        var memberColumn = CreateDescriptorColumn("ProgramDescriptorId", sourcePath);
+
+        var baseToken = InvokeBuildMemberBaseToken(
+            memberColumn,
+            table,
+            new Dictionary<string, DocumentReferenceBinding>(StringComparer.Ordinal)
+        );
+
+        baseToken.Should().Be("ProgramDescriptor");
+    }
+
+    /// <summary>
+    /// It should fail fast when the stripped relative segment list is non-empty but contains no properties.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_relative_segments_are_non_empty_and_non_property()
+    {
+        var sourcePath = new JsonPathExpression(
+            "$.programDescriptors.<unsupported>",
+            [new JsonPathSegment.Property("programDescriptors"), new UnsupportedJsonPathSegment()]
+        );
+        var table = CreateTable(JsonPathExpressionCompiler.Compile("$.programDescriptors"));
+        var memberColumn = CreateScalarColumn("ProgramDescriptors_Unsupported", sourcePath);
+
+        Action act = () =>
+            _ = InvokeBuildMemberBaseToken(
+                memberColumn,
+                table,
+                new Dictionary<string, DocumentReferenceBinding>(StringComparer.Ordinal)
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*contains unsupported non-property segments after prefix stripping*");
+    }
+
+    /// <summary>
+    /// Invokes private BuildMemberBaseToken and unwraps invocation exceptions.
+    /// </summary>
+    private static string InvokeBuildMemberBaseToken(
+        DbColumnModel member,
+        DbTableModel table,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingByIdentityPath
+    )
+    {
+        var method = typeof(KeyUnificationPass).GetMethod(
+            "BuildMemberBaseToken",
+            BindingFlags.NonPublic | BindingFlags.Static
+        );
+
+        method.Should().NotBeNull();
+
+        try
+        {
+            return (string)method!.Invoke(null, [member, table, referenceBindingByIdentityPath, Resource])!;
+        }
+        catch (TargetInvocationException exception) when (exception.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Creates a minimal table for member-token derivation tests.
+    /// </summary>
+    private static DbTableModel CreateTable(JsonPathExpression jsonScope)
+    {
+        return new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Example"),
+            jsonScope,
+            new TableKey(
+                "PK_Example",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            [],
+            []
+        );
+    }
+
+    /// <summary>
+    /// Creates a scalar member column with SourceJsonPath for token derivation tests.
+    /// </summary>
+    private static DbColumnModel CreateScalarColumn(string columnName, JsonPathExpression sourcePath)
+    {
+        return new DbColumnModel(
+            new DbColumnName(columnName),
+            ColumnKind.Scalar,
+            new RelationalScalarType(ScalarKind.Int32),
+            IsNullable: true,
+            sourcePath,
+            TargetResource: null
+        );
+    }
+
+    /// <summary>
+    /// Creates a descriptor member column with SourceJsonPath for token derivation tests.
+    /// </summary>
+    private static DbColumnModel CreateDescriptorColumn(string columnName, JsonPathExpression sourcePath)
+    {
+        return new DbColumnModel(
+            new DbColumnName(columnName),
+            ColumnKind.DescriptorFk,
+            new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: true,
+            sourcePath,
+            new QualifiedResourceName("Ed-Fi", "ProgramDescriptor")
+        );
+    }
+
+    /// <summary>
+    /// Test-only unsupported segment kind to validate fail-fast behavior for malformed relative paths.
+    /// </summary>
+    private sealed record UnsupportedJsonPathSegment : JsonPathSegment;
 }
 
 /// <summary>

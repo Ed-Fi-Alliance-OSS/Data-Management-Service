@@ -1000,6 +1000,15 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             );
         }
 
+        if (relativeSegments.Length != 0)
+        {
+            throw new InvalidOperationException(
+                $"Key-unification member path '{sourcePath.Canonical}' on resource "
+                    + $"'{FormatResource(resource)}' table '{table.Table}' contains unsupported "
+                    + "non-property segments after prefix stripping."
+            );
+        }
+
         for (var index = prefixSegments.Count - 1; index >= 0; index--)
         {
             if (prefixSegments[index] is not JsonPathSegment.Property property)
