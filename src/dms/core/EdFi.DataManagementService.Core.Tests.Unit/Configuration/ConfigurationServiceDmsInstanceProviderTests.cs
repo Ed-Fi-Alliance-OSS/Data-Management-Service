@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
@@ -919,6 +920,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
     public class Given_DmsInstanceCache_Refresh_Disabled
     {
         private ConfigurationServiceDmsInstanceProvider? _provider;
+        private FakeTimeProvider? _fakeTimeProvider;
         private TestHttpMessageHandler? _handler;
 
         [SetUp]
@@ -954,12 +956,14 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 DmsInstanceCacheExpirationSeconds = 1,
             };
 
+            _fakeTimeProvider = new FakeTimeProvider();
             _provider = new ConfigurationServiceDmsInstanceProvider(
                 apiClient,
                 tokenHandler,
                 context,
                 NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
-                cacheSettings
+                cacheSettings,
+                _fakeTimeProvider
             );
 
             await _provider.LoadDmsInstances();
@@ -1069,11 +1073,13 @@ public class ConfigurationServiceDmsInstanceProviderTests
     public class Given_DmsInstanceCache_Refresh_Expired
     {
         private ConfigurationServiceDmsInstanceProvider? _provider;
+        private FakeTimeProvider? _fakeTimeProvider;
         private TestHttpMessageHandler? _handler;
 
         [SetUp]
         public async Task Setup()
         {
+            _fakeTimeProvider = new FakeTimeProvider();
             var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
             A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
                 .Returns("valid-token");
@@ -1101,7 +1107,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
             var cacheSettings = new CacheSettings
             {
                 DmsInstanceCacheRefreshEnabled = true,
-                DmsInstanceCacheExpirationSeconds = 1,
+                DmsInstanceCacheExpirationSeconds = 10,
             };
 
             _provider = new ConfigurationServiceDmsInstanceProvider(
@@ -1109,7 +1115,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 tokenHandler,
                 context,
                 NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
-                cacheSettings
+                cacheSettings,
+                _fakeTimeProvider
             );
 
             await _provider.LoadDmsInstances();
@@ -1133,12 +1140,23 @@ public class ConfigurationServiceDmsInstanceProviderTests
         [Test]
         public async Task It_should_refresh_after_expiration()
         {
-            await Task.Delay(TimeSpan.FromMilliseconds(1100));
+            _fakeTimeProvider!.Advance(TimeSpan.FromSeconds(11));
 
             await _provider!.RefreshInstancesIfExpiredAsync();
 
             _handler!.GetRequestCount("v2/dmsInstances/").Should().Be(2);
-            _provider.GetAll().Should().ContainSingle(i => i.InstanceName == "Updated Instance");
+            _provider.GetAll().Should().Contain(i => i.InstanceName == "Updated Instance");
+        }
+
+        [Test]
+        public async Task It_should_not_refresh_before_expiration()
+        {
+            _fakeTimeProvider!.Advance(TimeSpan.FromSeconds(2));
+
+            await _provider!.RefreshInstancesIfExpiredAsync();
+
+            _handler!.GetRequestCount("v2/dmsInstances/").Should().Be(1);
+            _provider.GetAll().Should().NotContain(i => i.InstanceName == "Updated Instance");
         }
     }
 

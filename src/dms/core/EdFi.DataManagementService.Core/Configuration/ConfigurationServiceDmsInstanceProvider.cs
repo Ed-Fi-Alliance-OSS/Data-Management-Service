@@ -4,10 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
-using System.Linq;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using System.Threading;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
@@ -23,13 +21,15 @@ public class ConfigurationServiceDmsInstanceProvider(
     IConfigurationServiceTokenHandler configurationServiceTokenHandler,
     ConfigurationServiceContext configurationServiceContext,
     ILogger<ConfigurationServiceDmsInstanceProvider> logger,
-    CacheSettings? cacheSettings = null
+    CacheSettings? cacheSettings = null,
+    TimeProvider? timeProvider = null
 ) : IDmsInstanceProvider
 {
     private const string TenantHeaderName = "Tenant";
     private static readonly JsonSerializerOptions _jsonOptions = new() { PropertyNameCaseInsensitive = true };
 
     private readonly CacheSettings _cacheSettings = cacheSettings ?? new CacheSettings();
+    private readonly TimeProvider _timeProvider = timeProvider ?? TimeProvider.System;
     private readonly ConcurrentDictionary<string, TenantCacheEntry> _instancesByTenant = new(
         StringComparer.OrdinalIgnoreCase
     );
@@ -60,20 +60,17 @@ public class ConfigurationServiceDmsInstanceProvider(
                 configurationServiceContext.scope
             );
 
-            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
-
-            // Set tenant header for multi-tenant environments
-            SetTenantHeader(tenant);
-
             logger.LogInformation("Fetching DMS instances from Configuration Service");
 
-            IList<DmsInstance> instances = await FetchDmsInstances();
+            IList<DmsInstance> instances = await FetchDmsInstances(configurationServiceToken, tenant);
 
             logger.LogInformation("Successfully fetched {InstanceCount} DMS instances", instances.Count);
 
             // Store instances by tenant
-            _instancesByTenant[GetTenantKey(tenant)] = new TenantCacheEntry(instances, DateTimeOffset.UtcNow);
+            _instancesByTenant[GetTenantKey(tenant)] = new TenantCacheEntry(
+                instances,
+                _timeProvider.GetUtcNow()
+            );
 
             foreach (DmsInstance instance in instances)
             {
@@ -138,7 +135,7 @@ public class ConfigurationServiceDmsInstanceProvider(
         }
 
         TimeSpan expiration = TimeSpan.FromSeconds(_cacheSettings.DmsInstanceCacheExpirationSeconds);
-        if (DateTimeOffset.UtcNow - cachedEntry.LastRefreshed < expiration)
+        if (_timeProvider.GetUtcNow() - cachedEntry.LastRefreshed < expiration)
         {
             return;
         }
@@ -149,16 +146,14 @@ public class ConfigurationServiceDmsInstanceProvider(
         {
             if (
                 _instancesByTenant.TryGetValue(tenantKey, out TenantCacheEntry? refreshedEntry)
-                && DateTimeOffset.UtcNow - refreshedEntry.LastRefreshed < expiration
+                && _timeProvider.GetUtcNow() - refreshedEntry.LastRefreshed < expiration
             )
             {
                 return;
             }
-
-            string sanitizedTenant = tenant ?? "(default)";
             logger.LogInformation(
                 "DMS instance cache expired for tenant {Tenant} after {TtlSeconds}s, refreshing configuration from Configuration Service",
-                sanitizedTenant,
+                LoggingSanitizer.SanitizeForLogging(tenant ?? "(default)"),
                 _cacheSettings.DmsInstanceCacheExpirationSeconds
             );
 
@@ -210,15 +205,9 @@ public class ConfigurationServiceDmsInstanceProvider(
                 configurationServiceContext.scope
             );
 
-            configurationServiceApiClient.Client.DefaultRequestHeaders.Authorization =
-                new AuthenticationHeaderValue("Bearer", configurationServiceToken);
-
-            // Note: /v2/tenants endpoint does not require Tenant header
-            SetTenantHeader(null);
-
             logger.LogInformation("Fetching tenants from Configuration Service");
 
-            IList<string> tenants = await FetchTenants();
+            IList<string> tenants = await FetchTenants(configurationServiceToken);
 
             logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
 
@@ -251,7 +240,7 @@ public class ConfigurationServiceDmsInstanceProvider(
             );
             throw new InvalidOperationException(
                 "Configuration Service returned an invalid response format for tenants. "
-                    + "This may indicate an API mismatch or corrupted data.",
+                    + "This may indicate an API version mismatch or corrupted data.",
                 ex
             );
         }
@@ -260,13 +249,16 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// <summary>
     /// Fetches tenant names from the Configuration Service API
     /// </summary>
-    private async Task<IList<string>> FetchTenants()
+    private async Task<IList<string>> FetchTenants(string configurationServiceToken)
     {
         const string TenantsEndpoint = "v2/tenants/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", TenantsEndpoint);
 
-        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(TenantsEndpoint);
+        using var request = new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+        // No tenant header needed for tenants endpoint
+        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -302,15 +294,19 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// <summary>
     /// Fetches DMS instances from the Configuration Service API
     /// </summary>
-    private async Task<IList<DmsInstance>> FetchDmsInstances()
+    private async Task<IList<DmsInstance>> FetchDmsInstances(string configurationServiceToken, string? tenant)
     {
         const string DmsInstancesEndpoint = "v2/dmsInstances/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", DmsInstancesEndpoint);
 
-        HttpResponseMessage response = await configurationServiceApiClient.Client.GetAsync(
-            DmsInstancesEndpoint
-        );
+        using var request = new HttpRequestMessage(HttpMethod.Get, DmsInstancesEndpoint);
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
+        if (!string.IsNullOrEmpty(tenant))
+        {
+            request.Headers.Add(TenantHeaderName, tenant);
+        }
+        HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
 
         if (!response.IsSuccessStatusCode)
         {
@@ -357,14 +353,7 @@ public class ConfigurationServiceDmsInstanceProvider(
     /// Sets the Tenant header for multi-tenant API calls
     /// </summary>
     /// <param name="tenant">The tenant identifier, or null to remove the header</param>
-    private void SetTenantHeader(string? tenant)
-    {
-        configurationServiceApiClient.Client.DefaultRequestHeaders.Remove(TenantHeaderName);
-        if (!string.IsNullOrEmpty(tenant))
-        {
-            configurationServiceApiClient.Client.DefaultRequestHeaders.Add(TenantHeaderName, tenant);
-        }
-    }
+    // SetTenantHeader is no longer needed; per-request headers are now used for thread safety.
 
     private SemaphoreSlim GetTenantLock(string tenantKey) =>
         _tenantLocks.GetOrAdd(tenantKey, _ => new SemaphoreSlim(1, 1));
