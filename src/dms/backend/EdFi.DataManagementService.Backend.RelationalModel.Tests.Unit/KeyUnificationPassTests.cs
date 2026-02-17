@@ -88,10 +88,10 @@ public class Given_Key_Unification_For_Reference_Sites
     }
 
     /// <summary>
-    /// It should rewrite foreign keys to stored columns (never unified aliases or synthetic presence columns).
+    /// It should keep foreign keys on storage-safe columns for invariant validation.
     /// </summary>
     [Test]
-    public void It_should_rewrite_foreign_keys_to_stored_columns_only()
+    public void It_should_keep_foreign_keys_on_storage_safe_columns()
     {
         var columnsByName = _rootTable.Columns.ToDictionary(column => column.ColumnName, column => column);
 
