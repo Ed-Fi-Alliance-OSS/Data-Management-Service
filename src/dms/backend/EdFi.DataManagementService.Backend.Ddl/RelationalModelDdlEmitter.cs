@@ -1263,7 +1263,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             // PostgreSQL: 'literal'::type
             builder.Append('\'');
-            builder.Append(value.Replace("'", "''"));
+            builder.Append(EscapeSqlLiteral(value));
             builder.Append("'::");
             builder.Append(sqlType);
         }
@@ -1271,7 +1271,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             // SQL Server: CAST(N'literal' AS type)
             builder.Append("CAST(N'");
-            builder.Append(value.Replace("'", "''"));
+            builder.Append(EscapeSqlLiteral(value));
             builder.Append("' AS ");
             builder.Append(sqlType);
             builder.Append(')');
