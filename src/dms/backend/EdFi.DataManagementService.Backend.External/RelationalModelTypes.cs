@@ -410,20 +410,37 @@ public abstract record ColumnStorage
 /// <param name="IsNullable">Whether the column allows NULL.</param>
 /// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
 /// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
+/// <param name="Storage">Storage metadata for bind-vs-storage behavior.</param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
-    QualifiedResourceName? TargetResource
+    QualifiedResourceName? TargetResource,
+    ColumnStorage Storage
 )
 {
     /// <summary>
-    /// Storage metadata for bind-vs-storage behavior.
-    /// Defaults to <see cref="ColumnStorage.Stored"/> for existing schemas.
+    /// Initializes a new instance with stored-column default behavior.
     /// </summary>
-    public ColumnStorage Storage { get; init; } = new ColumnStorage.Stored();
+    public DbColumnModel(
+        DbColumnName ColumnName,
+        ColumnKind Kind,
+        RelationalScalarType? ScalarType,
+        bool IsNullable,
+        JsonPathExpression? SourceJsonPath,
+        QualifiedResourceName? TargetResource
+    )
+        : this(
+            ColumnName,
+            Kind,
+            ScalarType,
+            IsNullable,
+            SourceJsonPath,
+            TargetResource,
+            new ColumnStorage.Stored()
+        ) { }
 }
 
 /// <summary>
