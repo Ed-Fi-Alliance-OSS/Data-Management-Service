@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -381,11 +382,11 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return distinctTableIndexes[0];
         }
 
-        ThrowAmbiguousEndpointBinding(endpointPath, candidates, resource);
-        return distinctTableIndexes[0];
+        return ThrowAmbiguousEndpointBinding(endpointPath, candidates, resource);
     }
 
-    private static void ThrowAmbiguousEndpointBinding(
+    [DoesNotReturn]
+    private static int ThrowAmbiguousEndpointBinding(
         JsonPathExpression endpointPath,
         IReadOnlyList<TableBoundColumn> distinctCandidates,
         QualifiedResourceName resource
