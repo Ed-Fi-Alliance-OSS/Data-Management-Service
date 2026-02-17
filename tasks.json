@@ -84,16 +84,6 @@
   },
   {
     "category": "Key Unification",
-    "description": "Fix fail-fast ambiguity handling ordering in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` so ambiguous/unresolved endpoints cannot be silently downgraded to `ignored(cross_table)`. Acceptance: for each equality-constraint endpoint, enforce the authoritative resolution rules in `reference/design/backend-redesign/design-docs/key-unification.md` before any cross-table classification: (1) resolve candidates strictly by exact `DbColumnModel.SourceJsonPath.Canonical` match, (2) de-duplicate only when all candidates are the same `(table,column)` binding, (3) fail fast when candidate count is 0 or >1 after de-dup, (4) validate supported endpoint kinds (`Scalar`, `DescriptorFk`) on the uniquely resolved bindings, and only then (5) classify as `ignored(cross_table)` when both endpoints resolve uniquely but bind to different physical tables.",
-    "steps-to-verify": [
-      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` where a cross-table equality constraint endpoint is also ambiguous (duplicate `SourceJsonPath` bindings across different tables) and assert the derived-model build fails fast (no `ignored(cross_table)` classification).",
-      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
-      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
-    ],
-    "completed": false
-  },
-  {
-    "category": "Key Unification",
     "description": "Remove foreign key mutation from key unification and replace it with a set-level invariant. Acceptance: delete `RewriteForeignKeyColumnsToStorage` (and helper `ResolveForeignKeyStorageColumn`) from `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` so the pass no longer rewrites any pre-existing PK/UK/FK/all-or-none constraints (per `reference/design/backend-redesign/design-docs/key-unification.md`, step 9). Enforce the contract via `ValidateForeignKeyStorageInvariantPass` (or a new invariant pass): fail fast deterministically if any FK local or target column is a `ColumnStorage.UnifiedAlias` or a synthetic `..._Present` presence-flag column, and ensure the diagnostic includes constraint name, table, and offending column(s).",
     "steps-to-verify": [
       "Add/extend unit tests that exercise an FK referencing an alias column and assert the invariant pass fails fast with an actionable message.",
