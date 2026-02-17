@@ -1005,6 +1005,15 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 );
             }
 
+            if (member.Kind == ColumnKind.DescriptorFk && member.TargetResource is null)
+            {
+                throw new InvalidOperationException(
+                    $"Key unification descriptor target resource is required on resource "
+                        + $"'{FormatResource(resource)}' table '{table.Table}' for column "
+                        + $"'{member.ColumnName.Value}'."
+                );
+            }
+
             if (
                 member.Kind == ColumnKind.DescriptorFk
                 && !Equals(member.TargetResource, first.TargetResource)
