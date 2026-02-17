@@ -35,8 +35,7 @@ internal static class UnifiedAliasStorageResolver
         DbTableName Table,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> ColumnsByName,
         IReadOnlySet<DbColumnName> AllPresenceGateColumns,
-        IReadOnlySet<DbColumnName> SyntheticScalarPresenceColumns,
-        IReadOnlySet<DbColumnName> ReferenceSitePresenceColumns
+        IReadOnlySet<DbColumnName> SyntheticScalarPresenceColumns
     );
 
     /// <summary>
@@ -49,7 +48,6 @@ internal static class UnifiedAliasStorageResolver
         var columnsByName = table.Columns.ToDictionary(column => column.ColumnName, column => column);
         HashSet<DbColumnName> allPresenceGateColumns = [];
         HashSet<DbColumnName> syntheticScalarPresenceColumns = [];
-        HashSet<DbColumnName> referenceSitePresenceColumns = [];
 
         foreach (var column in table.Columns)
         {
@@ -84,7 +82,6 @@ internal static class UnifiedAliasStorageResolver
                     );
                 }
 
-                referenceSitePresenceColumns.Add(presenceColumn);
                 continue;
             }
 
@@ -121,8 +118,7 @@ internal static class UnifiedAliasStorageResolver
             table.Table,
             columnsByName,
             allPresenceGateColumns,
-            syntheticScalarPresenceColumns,
-            referenceSitePresenceColumns
+            syntheticScalarPresenceColumns
         );
     }
 
