@@ -425,6 +425,68 @@ public class Given_Key_Unification_Constraint_Classification
 }
 
 /// <summary>
+/// Test fixture for root selection when multiple tables share one DbTableName.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Duplicate_Table_Names_Across_Scopes
+{
+    private RelationalResourceModel _resourceModel = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = KeyUnificationPassTestSchemaBuilder.BuildConstraintClassificationProjectSchema();
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        IRelationalModelSetPass[] passes =
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new DuplicateTableNameAcrossScopesPass(
+                resourceName: "ConstraintExample",
+                duplicatedScope: "$.sections[*]"
+            ),
+            new KeyUnificationPass(),
+        ];
+        var builder = new DerivedRelationalModelSetBuilder(passes);
+
+        _resourceModel = builder
+            .Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules())
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "ConstraintExample"
+            )
+            .RelationalModel;
+    }
+
+    /// <summary>
+    /// It should preserve the root table by JsonScope when table names collide.
+    /// </summary>
+    [Test]
+    public void It_should_preserve_root_by_scope_when_table_names_collide()
+    {
+        var rootTableNameMatches = _resourceModel
+            .TablesInDependencyOrder.Where(table => table.Table.Equals(_resourceModel.Root.Table))
+            .ToArray();
+        var rootByScope = _resourceModel.TablesInDependencyOrder.Single(table =>
+            table.JsonScope.Equals(_resourceModel.Root.JsonScope)
+        );
+
+        rootTableNameMatches.Should().HaveCount(2);
+        _resourceModel.Root.JsonScope.Canonical.Should().Be("$");
+        rootByScope.Should().BeSameAs(_resourceModel.Root);
+        _resourceModel.Root.KeyUnificationClasses.Should().ContainSingle();
+    }
+}
+
+/// <summary>
 /// Test fixture for unresolved equality-constraint endpoint failures.
 /// </summary>
 [TestFixture]
@@ -793,6 +855,62 @@ file sealed class DuplicateSourcePathBindingPass(string resourceName, string sou
             }
 
             suffix++;
+        }
+    }
+}
+
+/// <summary>
+/// Test-only set pass that rewrites one table name to collide with the resource root table name.
+/// </summary>
+file sealed class DuplicateTableNameAcrossScopesPass(string resourceName, string duplicatedScope)
+    : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute pass.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[index];
+
+            if (
+                !string.Equals(
+                    concreteResource.ResourceKey.Resource.ResourceName,
+                    resourceName,
+                    StringComparison.Ordinal
+                )
+            )
+            {
+                continue;
+            }
+
+            var rootTableName = concreteResource.RelationalModel.Root.Table;
+            var updatedTables = concreteResource
+                .RelationalModel.TablesInDependencyOrder.Select(table =>
+                    string.Equals(table.JsonScope.Canonical, duplicatedScope, StringComparison.Ordinal)
+                        ? table with
+                        {
+                            Table = rootTableName,
+                        }
+                        : table
+                )
+                .ToArray();
+            var updatedRoot = updatedTables.Single(table =>
+                table.JsonScope.Equals(concreteResource.RelationalModel.Root.JsonScope)
+            );
+            var updatedModel = concreteResource.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables,
+            };
+
+            context.ConcreteResourcesInNameOrder[index] = concreteResource with
+            {
+                RelationalModel = updatedModel,
+            };
         }
     }
 }
