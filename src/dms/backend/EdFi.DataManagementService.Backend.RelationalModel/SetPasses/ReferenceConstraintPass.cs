@@ -34,7 +34,6 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         var resourceContextsByResource = BuildResourceContextLookup(context);
         Dictionary<QualifiedResourceName, TargetIdentityInfo> targetIdentityCache = new();
         Dictionary<QualifiedResourceName, ResourceMutation> mutations = new();
-        Dictionary<DbTableName, UnifiedAliasStorageResolver.TableMetadata> tableMetadataCache = new();
 
         var passContext = new ReferenceConstraintContext(
             context,
@@ -42,8 +41,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             abstractIdentityTablesByResource,
             resourceContextsByResource,
             targetIdentityCache,
-            mutations,
-            tableMetadataCache
+            mutations
         );
 
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
@@ -186,7 +184,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 targetInfo.TableModel,
                 mapping,
                 resource,
-                context.TableMetadataCache
+                context.SetContext
             );
 
             EnsureTargetUnique(
@@ -196,7 +194,10 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 context.Mutations
             );
 
-            var localTableMetadata = GetOrCreateTableMetadata(context.TableMetadataCache, bindingTable);
+            var localTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(
+                context.SetContext,
+                bindingTable
+            );
             var localReferenceFkColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                 binding.FkColumn,
                 localTableMetadata,
@@ -206,8 +207,8 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 "foreign keys"
             );
 
-            var targetTableMetadata = GetOrCreateTableMetadata(
-                context.TableMetadataCache,
+            var targetTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(
+                context.SetContext,
                 targetInfo.TableModel
             );
             var targetDocumentIdColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
@@ -280,7 +281,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         DbTableModel targetTable,
         DocumentReferenceMapping mapping,
         QualifiedResourceName resource,
-        IDictionary<DbTableName, UnifiedAliasStorageResolver.TableMetadata> tableMetadataCache
+        RelationalModelSetBuilderContext setContext
     )
     {
         if (identityColumns.LocalColumns.Count != identityColumns.TargetColumns.Count)
@@ -291,8 +292,8 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             );
         }
 
-        var localTableMetadata = GetOrCreateTableMetadata(tableMetadataCache, localTable);
-        var targetTableMetadata = GetOrCreateTableMetadata(tableMetadataCache, targetTable);
+        var localTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, localTable);
+        var targetTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, targetTable);
         var localMappingContext = BuildReferenceMappingContext(mapping, resource);
         var targetMappingContext = BuildReferenceMappingContext(mapping, mapping.TargetResource);
         Dictionary<DbColumnName, DbColumnName> targetByLocalStorageColumn = new();
@@ -343,32 +344,6 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         }
 
         return new ReferenceIdentityColumnSet(localStorageColumns.ToArray(), targetStorageColumns.ToArray());
-    }
-
-    private static UnifiedAliasStorageResolver.TableMetadata GetOrCreateTableMetadata(
-        IDictionary<DbTableName, UnifiedAliasStorageResolver.TableMetadata> tableMetadataCache,
-        DbTableModel table
-    )
-    {
-        ArgumentNullException.ThrowIfNull(tableMetadataCache);
-        ArgumentNullException.ThrowIfNull(table);
-
-        if (tableMetadataCache.TryGetValue(table.Table, out var cachedMetadata))
-        {
-            return cachedMetadata;
-        }
-
-        var metadata = UnifiedAliasStorageResolver.BuildTableMetadata(
-            table,
-            new UnifiedAliasStorageResolver.PresenceGateMetadataOptions(
-                ThrowIfPresenceColumnMissing: false,
-                ThrowIfInvalidStrictSyntheticCandidate: false,
-                UnifiedAliasStorageResolver.ScalarPresenceGateClassification.AnyScalarPresenceGate
-            )
-        );
-        tableMetadataCache[table.Table] = metadata;
-
-        return metadata;
     }
 
     /// <summary>
@@ -954,8 +929,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         > AbstractIdentityTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> ResourceContextsByResource,
         IDictionary<QualifiedResourceName, TargetIdentityInfo> TargetIdentityCache,
-        IDictionary<QualifiedResourceName, ResourceMutation> Mutations,
-        IDictionary<DbTableName, UnifiedAliasStorageResolver.TableMetadata> TableMetadataCache
+        IDictionary<QualifiedResourceName, ResourceMutation> Mutations
     );
 
     /// <summary>

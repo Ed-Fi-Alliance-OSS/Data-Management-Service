@@ -679,6 +679,148 @@ public class Given_Reference_Constraint_Derivation_With_Key_Unification
 }
 
 /// <summary>
+/// Test fixture for reference constraint derivation with invalid unified-alias presence metadata.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Constraint_Derivation_With_Invalid_Unified_Alias_Presence_Metadata
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new InvalidUnifiedAliasPresenceGateFixturePass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+        ]);
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when unified-alias presence metadata is invalid.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_unified_alias_presence_metadata_is_invalid()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Unified alias column");
+        exception.Message.Should().Contain("table");
+        exception.Message.Should().Contain("MissingPresenceGate");
+        exception.Message.Should().Contain("presence-gate column");
+    }
+
+    /// <summary>
+    /// Test pass that rewrites one unified-alias presence gate to a missing column.
+    /// </summary>
+    private sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelSetPass
+    {
+        private static readonly DbColumnName InvalidPresenceGateColumn = new("MissingPresenceGate");
+
+        /// <summary>
+        /// Execute.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            for (
+                var resourceIndex = 0;
+                resourceIndex < context.ConcreteResourcesInNameOrder.Count;
+                resourceIndex++
+            )
+            {
+                var concreteResource = context.ConcreteResourcesInNameOrder[resourceIndex];
+
+                if (concreteResource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+                {
+                    continue;
+                }
+
+                var relationalModel = concreteResource.RelationalModel;
+
+                foreach (var table in relationalModel.TablesInDependencyOrder)
+                {
+                    var aliasColumn = table.Columns.FirstOrDefault(column =>
+                        column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: not null }
+                    );
+
+                    if (
+                        aliasColumn is null
+                        || aliasColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias
+                    )
+                    {
+                        continue;
+                    }
+
+                    var rewrittenAliasColumn = aliasColumn with
+                    {
+                        Storage = new ColumnStorage.UnifiedAlias(
+                            unifiedAlias.CanonicalColumn,
+                            InvalidPresenceGateColumn
+                        ),
+                    };
+                    var rewrittenTable = table with
+                    {
+                        Columns = table
+                            .Columns.Select(column =>
+                                column.ColumnName.Equals(aliasColumn.ColumnName)
+                                    ? rewrittenAliasColumn
+                                    : column
+                            )
+                            .ToArray(),
+                    };
+                    var rewrittenTables = relationalModel
+                        .TablesInDependencyOrder.Select(existingTable =>
+                            existingTable.Table.Equals(table.Table)
+                            && existingTable.JsonScope.Equals(table.JsonScope)
+                                ? rewrittenTable
+                                : existingTable
+                        )
+                        .ToArray();
+                    var rewrittenRoot =
+                        relationalModel.Root.Table.Equals(table.Table)
+                        && relationalModel.Root.JsonScope.Equals(table.JsonScope)
+                            ? rewrittenTable
+                            : relationalModel.Root;
+                    var rewrittenModel = relationalModel with
+                    {
+                        Root = rewrittenRoot,
+                        TablesInDependencyOrder = rewrittenTables,
+                    };
+
+                    context.ConcreteResourcesInNameOrder[resourceIndex] = concreteResource with
+                    {
+                        RelationalModel = rewrittenModel,
+                    };
+
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException(
+                "Test fixture requires at least one unified alias with a presence gate."
+            );
+        }
+    }
+}
+
+/// <summary>
 /// Test fixture for foreign-key storage invariant validation.
 /// </summary>
 [TestFixture]
