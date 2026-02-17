@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1042
+jira_url: https://edfi.atlassian.net/browse/DMS-1042
 ---
 
 # Story: Key Unification (Canonical Columns + Generated Aliases; Presence-Gated When Optional)

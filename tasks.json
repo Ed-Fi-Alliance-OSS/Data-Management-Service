@@ -201,5 +201,63 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Key Unification",
+    "description": "Fix root-table replacement in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` to key by `DbTableModel.JsonScope` (not just `DbTableName`) when selecting `updatedRoot` after per-table rewrites. Acceptance: the root replacement uses `tables.Single(table => table.JsonScope.Equals(updatedModel.Root.JsonScope))` (or equivalent), matching patterns in other passes (e.g., `DescriptorForeignKeyConstraintPass`), and a regression unit test demonstrates correct root selection when multiple `DbTableModel` entries share the same `DbTableName` but differ by `JsonScope`.",
+    "steps-to-verify": [
+      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` that constructs a resource model where two tables share a `DbTableName` but have different `JsonScope`, then asserts `RelationalResourceModel.Root.JsonScope` is preserved and the root table instance is the one updated by key-unification.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "De-duplicate identical `resourceSchema.equalityConstraints` when merging base + extension constraints in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` (`Execute`). Acceptance: the combined constraint list for a concrete resource is de-duped by an undirected canonical `(minPath,maxPath)` key (so `A==B` and `B==A` collapse) before graph-edge construction and diagnostics, preventing redundant edges and duplicate redundant/applied diagnostics when the same constraint appears in both base and extension schemas.",
+    "steps-to-verify": [
+      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` with a base resource + extension both defining the same equality constraint (including a reversed-endpoint variant) and assert only one constraint instance is processed (no duplicated diagnostics and no redundant edges).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Harden `ValidateUnificationMembers` in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` for descriptor endpoints. Acceptance: for `ColumnKind.DescriptorFk` unification classes, validation fails fast when any member has `TargetResource is null` (and continues to require exact `TargetResource` equality across members), producing an actionable error message that includes resource + table + column context.",
+    "steps-to-verify": [
+      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` that forces a `DescriptorFk` column with `TargetResource=null` into a unification class and asserts the pass throws with a message that identifies the offending column.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Remove redundant `ValidateConnectedComponentHasUniqueMembers` from `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`. Acceptance: delete the helper and its call site(s) since `BuildConnectedComponents` groups over distinct dictionary keys (duplicates cannot occur), and ensure connected-component derivation and deterministic ordering remain unchanged (tests remain green).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Reference Constraints",
+    "description": "Use strict unified-alias metadata in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` instead of building a pass-local non-strict metadata cache. Acceptance: remove `GetOrCreateTableMetadata(...)` and `tableMetadataCache` (or make them strict), and replace all metadata acquisition with `UnifiedAliasStrictMetadataCache.GetOrBuild(context, table)` so missing presence columns / invalid synthetic presence flags fail fast instead of silently continuing.",
+    "steps-to-verify": [
+      "Add/extend a unit test (e.g., in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/ConstraintDerivationRelationalModelSetPassTests.cs`) that introduces an invalid unified-alias presence gate (missing presence column or invalid synthetic presence flag) and assert `ReferenceConstraintPass` fails fast with an actionable message.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Centralize duplicated `BuildReferenceMappingContext(...)` helpers used for invariant error prefixes across passes. Acceptance: replace the private helpers in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ReferenceConstraintPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTriggerInventoryPass.cs` with a single shared helper (in an appropriate shared location) and ensure the formatted strings remain identical so existing tests and diagnostics do not change.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
