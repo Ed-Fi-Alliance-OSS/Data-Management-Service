@@ -202,7 +202,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 binding.FkColumn,
                 localTableMetadata,
                 UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
-                BuildReferenceMappingContext(mapping, resource),
+                ReferenceMappingContextFormatter.Build(mapping, resource),
                 "reference fk column",
                 "foreign keys"
             );
@@ -215,7 +215,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 RelationalNameConventions.DocumentIdColumnName,
                 targetTableMetadata,
                 UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
-                BuildReferenceMappingContext(mapping, targetInfo.Resource),
+                ReferenceMappingContextFormatter.Build(mapping, targetInfo.Resource),
                 "target document id column",
                 "foreign keys"
             );
@@ -294,8 +294,8 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
 
         var localTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, localTable);
         var targetTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, targetTable);
-        var localMappingContext = BuildReferenceMappingContext(mapping, resource);
-        var targetMappingContext = BuildReferenceMappingContext(mapping, mapping.TargetResource);
+        var localMappingContext = ReferenceMappingContextFormatter.Build(mapping, resource);
+        var targetMappingContext = ReferenceMappingContextFormatter.Build(mapping, mapping.TargetResource);
         Dictionary<DbColumnName, DbColumnName> targetByLocalStorageColumn = new();
         HashSet<(DbColumnName LocalStorageColumn, DbColumnName TargetStorageColumn)> seenPairs = [];
         List<DbColumnName> localStorageColumns = [];
@@ -635,17 +635,6 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
 
         identityBinding = default!;
         return false;
-    }
-
-    /// <summary>
-    /// Builds a consistent reference-mapping context prefix for invariant errors.
-    /// </summary>
-    private static string BuildReferenceMappingContext(
-        DocumentReferenceMapping mapping,
-        QualifiedResourceName resource
-    )
-    {
-        return $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}'";
     }
 
     /// <summary>

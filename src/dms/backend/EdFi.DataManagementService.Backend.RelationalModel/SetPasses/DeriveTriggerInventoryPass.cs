@@ -354,8 +354,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 context,
                 referencedTableModel
             );
-            var referrerMappingContext = BuildReferenceMappingContext(mapping, resource);
-            var referencedMappingContext = BuildReferenceMappingContext(mapping, mapping.TargetResource);
+            var referrerMappingContext = ReferenceMappingContextFormatter.Build(mapping, resource);
+            var referencedMappingContext = ReferenceMappingContextFormatter.Build(
+                mapping,
+                mapping.TargetResource
+            );
             HashSet<(
                 DbColumnName ReferrerStorageColumn,
                 DbColumnName ReferencedStorageColumn
@@ -513,17 +516,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
         referencedTableModel = targetModel.RelationalModel.Root;
         return true;
-    }
-
-    /// <summary>
-    /// Builds a consistent reference-mapping context prefix for invariant errors.
-    /// </summary>
-    private static string BuildReferenceMappingContext(
-        DocumentReferenceMapping mapping,
-        QualifiedResourceName resource
-    )
-    {
-        return $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}'";
     }
 
     /// <summary>
