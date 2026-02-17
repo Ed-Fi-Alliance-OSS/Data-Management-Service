@@ -425,6 +425,54 @@ public class Given_Key_Unification_Constraint_Classification
 }
 
 /// <summary>
+/// Test fixture for de-duplicating identical base+extension equality constraints.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Duplicate_Base_And_Extension_Constraints
+{
+    private RelationalResourceModel _resourceModel = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            KeyUnificationPassTestSchemaBuilder.BuildExtensionConstraintDedupCoreProjectSchema();
+        var extensionProjectSchema =
+            KeyUnificationPassTestSchemaBuilder.BuildExtensionConstraintDedupExtensionProjectSchema();
+        var result = KeyUnificationPassTestSchemaBuilder.BuildDerivedSet([
+            (coreProjectSchema, IsExtensionProject: false),
+            (extensionProjectSchema, IsExtensionProject: true),
+        ]);
+        _resourceModel = result
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "ConstraintMergeExample"
+            )
+            .RelationalModel;
+    }
+
+    /// <summary>
+    /// It should process one undirected equality constraint when duplicated across base/extension.
+    /// </summary>
+    [Test]
+    public void It_should_process_one_undirected_constraint_when_duplicated_across_base_and_extension()
+    {
+        var diagnostics = _resourceModel.KeyUnificationEqualityConstraints;
+        var applied = diagnostics.Applied.Should().ContainSingle().Subject;
+        var keyUnificationClass = _resourceModel.Root.KeyUnificationClasses.Should().ContainSingle().Subject;
+
+        applied.EndpointAPath.Canonical.Should().Be("$.fiscalYear");
+        applied.EndpointBPath.Canonical.Should().Be("$.localFiscalYear");
+        applied.CanonicalColumn.Should().Be(keyUnificationClass.CanonicalColumn);
+        diagnostics.Redundant.Should().BeEmpty();
+        diagnostics.Ignored.Should().BeEmpty();
+        diagnostics.IgnoredByReason.Should().BeEmpty();
+    }
+}
+
+/// <summary>
 /// Test fixture for root selection when multiple tables share one DbTableName.
 /// </summary>
 [TestFixture]
@@ -925,11 +973,35 @@ file static class KeyUnificationPassTestSchemaBuilder
     /// </summary>
     internal static DerivedRelationalModelSet BuildDerivedSet(JsonObject projectSchema)
     {
-        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
-            projectSchema,
-            isExtensionProject: false
-        );
-        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        return BuildDerivedSet([(projectSchema, IsExtensionProject: false)]);
+    }
+
+    /// <summary>
+    /// Build a derived relational model set from in-memory project schemas.
+    /// </summary>
+    internal static DerivedRelationalModelSet BuildDerivedSet(
+        IReadOnlyList<(JsonObject ProjectSchema, bool IsExtensionProject)> projectSchemas
+    )
+    {
+        ArgumentNullException.ThrowIfNull(projectSchemas);
+
+        if (projectSchemas.Count == 0)
+        {
+            throw new ArgumentException(
+                "At least one project schema must be provided.",
+                nameof(projectSchemas)
+            );
+        }
+
+        var projects = projectSchemas
+            .Select(project =>
+                EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+                    project.ProjectSchema,
+                    project.IsExtensionProject
+                )
+            )
+            .ToArray();
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(projects);
         var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
 
         return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
@@ -998,6 +1070,40 @@ file static class KeyUnificationPassTestSchemaBuilder
             ["resourceSchemas"] = new JsonObject
             {
                 ["constraintExamples"] = BuildConstraintClassificationResourceSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build core project schema for base+extension constraint de-dup testing.
+    /// </summary>
+    internal static JsonObject BuildExtensionConstraintDedupCoreProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["constraintMergeExamples"] = BuildExtensionConstraintDedupCoreResourceSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build extension project schema for base+extension constraint de-dup testing.
+    /// </summary>
+    internal static JsonObject BuildExtensionConstraintDedupExtensionProjectSchema()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Sample",
+            ["projectEndpointName"] = "sample",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["constraintMergeExamples"] = BuildExtensionConstraintDedupExtensionResourceSchema(),
             },
         };
     }
@@ -1341,6 +1447,74 @@ file static class KeyUnificationPassTestSchemaBuilder
                             ["properties"] = new JsonObject
                             {
                                 ["fiscalYear"] = new JsonObject { ["type"] = "integer" },
+                            },
+                        },
+                    },
+                },
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build core resource schema for base+extension constraint de-dup testing.
+    /// </summary>
+    private static JsonObject BuildExtensionConstraintDedupCoreResourceSchema()
+    {
+        var schema = BuildOptionalScalarResourceSchema();
+        schema["resourceName"] = "ConstraintMergeExample";
+        schema["equalityConstraints"] = new JsonArray
+        {
+            new JsonObject { ["sourceJsonPath"] = "$.localFiscalYear", ["targetJsonPath"] = "$.fiscalYear" },
+        };
+
+        return schema;
+    }
+
+    /// <summary>
+    /// Build extension resource schema for base+extension constraint de-dup testing.
+    /// </summary>
+    private static JsonObject BuildExtensionConstraintDedupExtensionResourceSchema()
+    {
+        return new JsonObject
+        {
+            ["resourceName"] = "ConstraintMergeExample",
+            ["isDescriptor"] = false,
+            ["isResourceExtension"] = true,
+            ["isSubclass"] = false,
+            ["allowIdentityUpdates"] = false,
+            ["arrayUniquenessConstraints"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray(),
+            ["documentPathsMapping"] = new JsonObject(),
+            ["equalityConstraints"] = new JsonArray
+            {
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.localFiscalYear",
+                    ["targetJsonPath"] = "$.fiscalYear",
+                },
+                new JsonObject
+                {
+                    ["sourceJsonPath"] = "$.fiscalYear",
+                    ["targetJsonPath"] = "$.localFiscalYear",
+                },
+            },
+            ["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = new JsonObject
+                {
+                    ["_ext"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["sample"] = new JsonObject
+                            {
+                                ["type"] = "object",
+                                ["properties"] = new JsonObject
+                                {
+                                    ["extensionOnlyValue"] = new JsonObject { ["type"] = "integer" },
+                                },
                             },
                         },
                     },

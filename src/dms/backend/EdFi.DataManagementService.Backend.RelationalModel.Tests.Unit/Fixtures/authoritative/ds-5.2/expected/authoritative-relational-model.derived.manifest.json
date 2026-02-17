@@ -16913,29 +16913,10 @@
                 },
                 "column": "StudentAcademicRecord_SchoolYear"
               }
-            },
-            {
-              "endpoint_a_path": "$.sections[*].sectionReference.schoolYear",
-              "endpoint_b_path": "$.studentAcademicRecordReference.schoolYear",
-              "reason": "cross_table",
-              "endpoint_a_binding": {
-                "table": {
-                  "schema": "edfi",
-                  "name": "CourseTranscriptSection"
-                },
-                "column": "Section_SchoolYear"
-              },
-              "endpoint_b_binding": {
-                "table": {
-                  "schema": "edfi",
-                  "name": "CourseTranscript"
-                },
-                "column": "StudentAcademicRecord_SchoolYear"
-              }
             }
           ],
           "ignored_by_reason": {
-            "cross_table": 3
+            "cross_table": 2
           }
         },
         "descriptor_edge_sources": [
