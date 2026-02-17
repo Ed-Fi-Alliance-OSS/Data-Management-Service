@@ -71,10 +71,11 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         foreach (var entry in constraintsByResourceIndex.OrderBy(item => item.Key))
         {
             var concreteResource = context.ConcreteResourcesInNameOrder[entry.Key];
+            var deduplicatedConstraints = DeduplicateUndirectedConstraints(entry.Value);
             var updatedModel = ApplyKeyUnification(
                 concreteResource.RelationalModel,
                 concreteResource.ResourceKey.Resource,
-                entry.Value
+                deduplicatedConstraints
             );
 
             context.ConcreteResourcesInNameOrder[entry.Key] = concreteResource with
@@ -167,6 +168,52 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         }
 
         return constraints;
+    }
+
+    /// <summary>
+    /// De-duplicates merged constraints by undirected canonical endpoint-path key.
+    /// </summary>
+    private static IReadOnlyList<EqualityConstraintInput> DeduplicateUndirectedConstraints(
+        IReadOnlyList<EqualityConstraintInput> constraints
+    )
+    {
+        if (constraints.Count < 2)
+        {
+            return constraints;
+        }
+
+        HashSet<UndirectedConstraintKey> seenConstraints = [];
+        List<EqualityConstraintInput> deduplicatedConstraints = new(constraints.Count);
+
+        foreach (var constraint in constraints)
+        {
+            var key = BuildUndirectedConstraintKey(
+                constraint.SourcePath.Canonical,
+                constraint.TargetPath.Canonical
+            );
+
+            if (!seenConstraints.Add(key))
+            {
+                continue;
+            }
+
+            deduplicatedConstraints.Add(constraint);
+        }
+
+        return deduplicatedConstraints;
+    }
+
+    /// <summary>
+    /// Builds a deterministic undirected key for one equality constraint.
+    /// </summary>
+    private static UndirectedConstraintKey BuildUndirectedConstraintKey(
+        string sourcePathCanonical,
+        string targetPathCanonical
+    )
+    {
+        return string.CompareOrdinal(sourcePathCanonical, targetPathCanonical) <= 0
+            ? new UndirectedConstraintKey(sourcePathCanonical, targetPathCanonical)
+            : new UndirectedConstraintKey(targetPathCanonical, sourcePathCanonical);
     }
 
     /// <summary>
@@ -1253,6 +1300,11 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         JsonPathExpression SourcePath,
         JsonPathExpression TargetPath
     );
+
+    /// <summary>
+    /// Canonical undirected key for equality-constraint de-duplication.
+    /// </summary>
+    private readonly record struct UndirectedConstraintKey(string EndpointAPath, string EndpointBPath);
 
     /// <summary>
     /// One source-path column binding with table context.
