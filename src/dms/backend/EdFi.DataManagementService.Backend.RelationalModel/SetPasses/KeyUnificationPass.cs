@@ -293,7 +293,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return updatedModel;
         }
 
-        var updatedRoot = tables.Single(table => table.Table.Equals(updatedModel.Root.Table));
+        var updatedRoot = tables.Single(table => table.JsonScope.Equals(updatedModel.Root.JsonScope));
 
         return updatedModel with
         {
