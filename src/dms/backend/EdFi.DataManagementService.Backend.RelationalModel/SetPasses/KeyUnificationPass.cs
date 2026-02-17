@@ -680,8 +680,8 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
             ValidateUnificationMembers(memberColumns, resource, table);
 
-            var baseName = ResolveCanonicalBaseName(
-                memberColumns,
+            var baseName = BuildMemberBaseToken(
+                memberColumns[0],
                 table,
                 referenceBindingByIdentityPath,
                 resource
@@ -969,19 +969,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                 );
             }
         }
-    }
-
-    /// <summary>
-    /// Resolves the canonical base token from member source paths.
-    /// </summary>
-    private static string ResolveCanonicalBaseName(
-        IReadOnlyList<DbColumnModel> members,
-        DbTableModel table,
-        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingByIdentityPath,
-        QualifiedResourceName resource
-    )
-    {
-        return BuildMemberBaseToken(members[0], table, referenceBindingByIdentityPath, resource);
     }
 
     /// <summary>
