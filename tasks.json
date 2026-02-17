@@ -81,5 +81,71 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Key Unification",
+    "description": "Fix fail-fast ambiguity handling ordering in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` so ambiguous/unresolved endpoints cannot be silently downgraded to `ignored(cross_table)`. Acceptance: for each equality-constraint endpoint, enforce the authoritative resolution rules in `reference/design/backend-redesign/design-docs/key-unification.md` before any cross-table classification: (1) resolve candidates strictly by exact `DbColumnModel.SourceJsonPath.Canonical` match, (2) de-duplicate only when all candidates are the same `(table,column)` binding, (3) fail fast when candidate count is 0 or >1 after de-dup, (4) validate supported endpoint kinds (`Scalar`, `DescriptorFk`) on the uniquely resolved bindings, and only then (5) classify as `ignored(cross_table)` when both endpoints resolve uniquely but bind to different physical tables.",
+    "steps-to-verify": [
+      "Add a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` where a cross-table equality constraint endpoint is also ambiguous (duplicate `SourceJsonPath` bindings across different tables) and assert the derived-model build fails fast (no `ignored(cross_table)` classification).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Remove foreign key mutation from key unification and replace it with a set-level invariant. Acceptance: delete `RewriteForeignKeyColumnsToStorage` (and helper `ResolveForeignKeyStorageColumn`) from `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs` so the pass no longer rewrites any pre-existing PK/UK/FK/all-or-none constraints (per `reference/design/backend-redesign/design-docs/key-unification.md`, step 9). Enforce the contract via `ValidateForeignKeyStorageInvariantPass` (or a new invariant pass): fail fast deterministically if any FK local or target column is a `ColumnStorage.UnifiedAlias` or a synthetic `..._Present` presence-flag column, and ensure the diagnostic includes constraint name, table, and offending column(s).",
+    "steps-to-verify": [
+      "Add/extend unit tests that exercise an FK referencing an alias column and assert the invariant pass fails fast with an actionable message.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Make `DbColumnModel.Storage` a positional record component to match the `reference/design/backend-redesign/design-docs/key-unification.md` contract and avoid equality/deconstruction footguns. Acceptance: update `src/dms/backend/EdFi.DataManagementService.Backend.External/RelationalModelTypes.cs` so `DbColumnModel` primary constructor includes `ColumnStorage Storage`, preserving a backwards-compatible constructor that defaults `Storage` to `new ColumnStorage.Stored()` for existing call sites. Ensure `record` equality, `Deconstruct`, and `with`-expressions all include `Storage`, and update all call sites/serializers accordingly so unit tests and goldens remain green.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Remove the dead/pointless branch in `ResolveCanonicalBaseName` in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`. Acceptance: either simplify to the spec behavior (canonical base token is deterministically the first ordered member’s base token per `reference/design/backend-redesign/design-docs/key-unification.md`) without allocating/validating unused token arrays, or implement a meaningful divergent rule with explicit unit tests; current behavior must not remain as an indistinguishable conditional.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Key Unification",
+    "description": "Eliminate redundant sorting and allocations in connected-component ordering in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`. Acceptance: remove the second per-component `OrderBy(...)` inside `string.Join(\"|\", ...)` since components are already sorted by `BuildConnectedComponents`, and replace the `string.Join` sorting key with a clearer/cheaper deterministic comparer (e.g., compare by first element then length then sequence) so ordering remains stable without unnecessary string allocations.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Refactoring",
+    "description": "Consolidate FK validation logic to a single authoritative implementation. Acceptance: remove or refactor the duplicate FK-column validation currently implemented in both `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ValidateForeignKeyStorageInvariantPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs` by extracting a shared validator (or by relying solely on the invariant pass with explicit pass-ordering guarantees). Ensure both local and target column validation consistently rejects `UnifiedAlias` columns and synthetic presence-flag columns, and that error messages remain deterministic and actionable.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Dialect Shortening",
+    "description": "Simplify UnifiedAlias change detection in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ApplyDialectIdentifierShorteningPass.cs`. Acceptance: replace the current multi-branch `changed` computation for `ColumnStorage.UnifiedAlias` with an equivalent expression that is easier to audit, e.g. `changed = !updatedCanonicalColumn.Equals(unifiedAlias.CanonicalColumn) || !Nullable.Equals(updatedPresenceColumn, unifiedAlias.PresenceColumn)`, and ensure behavior is unchanged via unit tests/goldens.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
