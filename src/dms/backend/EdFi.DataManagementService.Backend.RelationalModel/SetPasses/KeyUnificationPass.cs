@@ -914,15 +914,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         QualifiedResourceName resource
     )
     {
-        var memberTokens = members
-            .Select(member => BuildMemberBaseToken(member, table, referenceBindingByIdentityPath, resource))
-            .ToArray();
-
-        var firstToken = memberTokens[0];
-
-        return memberTokens.All(token => string.Equals(token, firstToken, StringComparison.Ordinal))
-            ? firstToken
-            : firstToken;
+        return BuildMemberBaseToken(members[0], table, referenceBindingByIdentityPath, resource);
     }
 
     /// <summary>
