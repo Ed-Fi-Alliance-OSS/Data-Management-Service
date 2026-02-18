@@ -171,6 +171,9 @@ public sealed class SqlWriter
         }
     }
 
+    /// <summary>
+    /// Writes indentation spaces when starting a new line and indentation is non-zero.
+    /// </summary>
     private void WriteIndentIfNeeded()
     {
         if (_atLineStart && _indentLevel > 0)
@@ -256,6 +259,9 @@ public readonly struct IndentScope : IDisposable
 {
     private readonly SqlWriter? _writer;
 
+    /// <summary>
+    /// Initializes a new indentation scope for the supplied writer.
+    /// </summary>
     internal IndentScope(SqlWriter writer)
     {
         _writer = writer;
