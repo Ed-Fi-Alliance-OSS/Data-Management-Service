@@ -330,27 +330,27 @@ public static class DerivedModelSetManifestEmitter
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            var targetTable = trigger.Parameters switch
-            {
-                TriggerKindParameters.AbstractIdentityMaintenance a => (DbTableName?)a.TargetTable,
-                TriggerKindParameters.IdentityPropagationFallback p => p.TargetTable,
-                _ => null,
-            };
-
-            if (targetTable is { } tt)
-            {
-                writer.WritePropertyName("target_table");
-                WriteTableReference(writer, tt);
-            }
-
             if (trigger.Parameters is TriggerKindParameters.AbstractIdentityMaintenance abstractId)
             {
+                writer.WritePropertyName("target_table");
+                WriteTableReference(writer, abstractId.TargetTable);
                 WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
                 writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
             }
             else if (trigger.Parameters is TriggerKindParameters.IdentityPropagationFallback propagation)
             {
-                WriteTargetColumnMappings(writer, propagation.TargetColumnMappings);
+                writer.WritePropertyName("referrer_updates");
+                writer.WriteStartArray();
+                foreach (var referrer in propagation.ReferrerUpdates)
+                {
+                    writer.WriteStartObject();
+                    writer.WritePropertyName("referrer_table");
+                    WriteTableReference(writer, referrer.ReferrerTable);
+                    writer.WriteString("referrer_fk_column", referrer.ReferrerFkColumn.Value);
+                    WriteTargetColumnMappings(writer, referrer.ColumnMappings);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
             }
             else if (trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance refId)
             {

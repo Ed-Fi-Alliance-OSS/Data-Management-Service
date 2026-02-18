@@ -103,17 +103,18 @@ BEGIN
 END;
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Propagation_School]
-ON [edfi].[StudentSchoolAssociation]
+CREATE OR ALTER TRIGGER [edfi].[TR_School_Propagation]
+ON [edfi].[School]
 AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    UPDATE t
-    SET t.[SchoolId] = i.[SchoolId]
-    FROM [edfi].[School] t
-    INNER JOIN deleted d ON t.[SchoolId] = d.[SchoolId]
+    UPDATE r
+    SET r.[SchoolId] = i.[SchoolId]
+    FROM [edfi].[StudentSchoolAssociation] r
+    INNER JOIN deleted d ON r.[School_DocumentId] = d.[DocumentId]
     INNER JOIN inserted i ON i.[DocumentId] = d.[DocumentId]
     WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
+
 END;
 

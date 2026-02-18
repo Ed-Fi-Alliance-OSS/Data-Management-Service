@@ -257,14 +257,24 @@ public abstract record TriggerKindParameters
 
     /// <summary>
     /// Parameters for trigger-based fallback for identity propagation when cascade paths are constrained.
+    /// The trigger is placed on the referenced entity and propagates identity updates to all referrers.
     /// </summary>
-    /// <param name="TargetTable">The target table whose columns are updated.</param>
-    /// <param name="TargetColumnMappings">Column mappings from the source table to the target table.</param>
-    public sealed record IdentityPropagationFallback(
-        DbTableName TargetTable,
-        IReadOnlyList<TriggerColumnMapping> TargetColumnMappings
-    ) : TriggerKindParameters;
+    /// <param name="ReferrerUpdates">The list of referrer tables to update when identity changes.</param>
+    public sealed record IdentityPropagationFallback(IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates)
+        : TriggerKindParameters;
 }
+
+/// <summary>
+/// Describes a single referrer table to update during identity propagation fallback.
+/// </summary>
+/// <param name="ReferrerTable">The referrer table containing stored identity columns.</param>
+/// <param name="ReferrerFkColumn">The FK column on the referrer pointing to the source DocumentId.</param>
+/// <param name="ColumnMappings">Maps source identity columns to referrer stored identity columns.</param>
+public sealed record PropagationReferrerTarget(
+    DbTableName ReferrerTable,
+    DbColumnName ReferrerFkColumn,
+    IReadOnlyList<TriggerColumnMapping> ColumnMappings
+);
 
 /// <summary>
 /// Represents a physical database trigger name.

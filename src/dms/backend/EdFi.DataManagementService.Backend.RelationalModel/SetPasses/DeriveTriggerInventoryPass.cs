@@ -230,22 +230,19 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     )
                 )
             );
+        }
 
-            // IdentityPropagationFallback — MSSQL only: emits triggers for reference FKs that
-            // would use ON UPDATE CASCADE on PostgreSQL but must use NO ACTION on SQL Server.
-            if (context.Dialect == SqlDialect.Mssql && builderContext.DocumentReferenceMappings.Count > 0)
-            {
-                EmitPropagationFallbackTriggers(
-                    context,
-                    builderContext,
-                    resourceModel,
-                    rootTable,
-                    abstractTablesByResource,
-                    resourceContextsByResource,
-                    resourcesByKey,
-                    resource
-                );
-            }
+        // IdentityPropagationFallback — MSSQL only: emits triggers on referenced entities to propagate
+        // identity updates to all referrers. This replaces ON UPDATE CASCADE which SQL Server rejects
+        // due to multiple cascade paths.
+        if (context.Dialect == SqlDialect.Mssql)
+        {
+            EmitPropagationFallbackTriggers(
+                context,
+                abstractTablesByResource,
+                resourceContextsByResource,
+                resourcesByKey
+            );
         }
     }
 
@@ -298,142 +295,200 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Emits <see cref="TriggerKindParameters.IdentityPropagationFallback"/> triggers for each root-table
-    /// reference binding whose target is abstract or allows identity updates. These replace the
-    /// <c>ON UPDATE CASCADE</c> that PostgreSQL handles natively but SQL Server rejects due to
-    /// multiple cascade paths.
+    /// Helper record for reverse reference index entries.
+    /// </summary>
+    private sealed record ReverseReferenceEntry(
+        QualifiedResourceName ReferrerResource,
+        DbTableModel ReferrerRootTable,
+        DocumentReferenceBinding Binding,
+        DocumentReferenceMapping Mapping
+    );
+
+    /// <summary>
+    /// Emits <see cref="TriggerKindParameters.IdentityPropagationFallback"/> triggers on referenced
+    /// entities to propagate identity updates to all referrers. These replace the <c>ON UPDATE CASCADE</c>
+    /// that PostgreSQL handles natively but SQL Server rejects due to multiple cascade paths.
     /// </summary>
     private static void EmitPropagationFallbackTriggers(
         RelationalModelSetBuilderContext context,
-        RelationalModelBuilderContext builderContext,
-        RelationalResourceModel resourceModel,
-        DbTableModel rootTable,
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
-        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteResourcesByName,
-        QualifiedResourceName resource
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteResourcesByName
     )
     {
-        var bindingByReferencePath = resourceModel.DocumentReferenceBindings.ToDictionary(
-            binding => binding.ReferenceObjectPath.Canonical,
-            StringComparer.Ordinal
+        // Build reverse reference index: for each target resource, collect all referrer entries.
+        var reverseIndex = BuildReverseReferenceIndex(
+            context,
+            resourceContextsByResource,
+            concreteResourcesByName
         );
 
-        foreach (var mapping in builderContext.DocumentReferenceMappings)
+        // For each target resource in the reverse index, emit a single trigger with all referrers.
+        foreach (var (targetResource, referrerEntries) in reverseIndex)
         {
-            if (!bindingByReferencePath.TryGetValue(mapping.ReferenceObjectPath.Canonical, out var binding))
+            // Determine trigger table: abstract identity table OR concrete root table.
+            DbTableName triggerTable;
+            IReadOnlyList<DbColumnName> identityProjectionColumns;
+
+            if (abstractTablesByResource.TryGetValue(targetResource, out var abstractTableInfo))
             {
-                continue;
+                triggerTable = abstractTableInfo.TableModel.Table;
+
+                // Identity projection columns are all columns with SourceJsonPath (identity columns).
+                identityProjectionColumns = abstractTableInfo
+                    .TableModel.Columns.Where(c => c.SourceJsonPath is not null)
+                    .Select(c => c.ColumnName)
+                    .ToArray();
             }
-
-            // Only consider root-table bindings.
-            if (!binding.Table.Equals(rootTable.Table))
+            else if (concreteResourcesByName.TryGetValue(targetResource, out var concreteModel))
             {
-                continue;
-            }
-
-            DbTableName targetTable;
-            DbTableModel targetTableModel;
-
-            if (abstractTablesByResource.TryGetValue(mapping.TargetResource, out var abstractTableInfo))
-            {
-                targetTable = abstractTableInfo.TableModel.Table;
-                targetTableModel = abstractTableInfo.TableModel;
-            }
-            else if (
-                resourceContextsByResource.TryGetValue(mapping.TargetResource, out var targetResourceContext)
-            )
-            {
-                var targetBuilderContext = context.GetOrCreateResourceBuilderContext(targetResourceContext);
-
-                if (!targetBuilderContext.AllowIdentityUpdates)
+                // Concrete target must allow identity updates.
+                if (
+                    !resourceContextsByResource.TryGetValue(targetResource, out var targetContext)
+                    || !context.GetOrCreateResourceBuilderContext(targetContext).AllowIdentityUpdates
+                )
                 {
                     continue;
                 }
 
-                if (!concreteResourcesByName.TryGetValue(mapping.TargetResource, out var targetEntry))
-                {
-                    continue;
-                }
+                triggerTable = concreteModel.RelationalModel.Root.Table;
 
-                targetTable = targetEntry.RelationalModel.Root.Table;
-                targetTableModel = targetEntry.RelationalModel.Root;
+                // Identity projection columns from the root table.
+                identityProjectionColumns = concreteModel
+                    .RelationalModel.Root.Columns.Where(c => c.SourceJsonPath is not null)
+                    .Select(c => c.ColumnName)
+                    .ToArray();
             }
             else
             {
                 continue;
             }
 
-            var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn);
-            var propagatedColumns = binding.IdentityBindings.Select(ib => ib.Column).ToArray();
+            // Build referrer updates by mapping source identity columns to referrer stored columns.
+            var referrerUpdates = new List<PropagationReferrerTarget>();
 
-            // Build column mappings from source to target for identity propagation,
-            // resolving target column names via the identity JSON path rather than
-            // assuming source and target column names are identical.
-            var targetColumnMappings = BuildPropagationTargetColumnMappings(
-                binding,
-                mapping,
-                targetTableModel,
-                resource
-            );
+            foreach (var entry in referrerEntries)
+            {
+                var columnMappings = BuildPropagationColumnMappings(
+                    entry.Binding,
+                    entry.Mapping,
+                    entry.ReferrerResource
+                );
+
+                referrerUpdates.Add(
+                    new PropagationReferrerTarget(
+                        entry.ReferrerRootTable.Table,
+                        entry.Binding.FkColumn,
+                        columnMappings
+                    )
+                );
+            }
 
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
-                    new DbTriggerName(
-                        BuildTriggerName(rootTable.Table, $"{PropagationFallbackPrefix}_{referenceBaseName}")
-                    ),
-                    rootTable.Table,
-                    [binding.FkColumn],
-                    propagatedColumns,
-                    new TriggerKindParameters.IdentityPropagationFallback(targetTable, targetColumnMappings)
+                    new DbTriggerName(BuildTriggerName(triggerTable, PropagationFallbackPrefix)),
+                    triggerTable,
+                    [RelationalNameConventions.DocumentIdColumnName],
+                    identityProjectionColumns,
+                    new TriggerKindParameters.IdentityPropagationFallback(referrerUpdates)
                 )
             );
         }
     }
 
     /// <summary>
-    /// Resolves the base reference name from a reference FK column by trimming the <c>_DocumentId</c> suffix.
+    /// Builds a reverse reference index mapping target resources to their referrer entries.
     /// </summary>
-    private static string ResolveReferenceBaseName(DbColumnName fkColumn)
+    private static Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>> BuildReverseReferenceIndex(
+        RelationalModelSetBuilderContext context,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteResourcesByName
+    )
     {
-        const string DocumentIdSuffix = "_DocumentId";
+        var reverseIndex = new Dictionary<QualifiedResourceName, List<ReverseReferenceEntry>>();
 
-        return fkColumn.Value.EndsWith(DocumentIdSuffix, StringComparison.Ordinal)
-            ? fkColumn.Value[..^DocumentIdSuffix.Length]
-            : fkColumn.Value;
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            if (IsResourceExtension(resourceContext))
+            {
+                continue;
+            }
+
+            var referrerResource = new QualifiedResourceName(
+                resourceContext.Project.ProjectSchema.ProjectName,
+                resourceContext.ResourceName
+            );
+
+            if (!concreteResourcesByName.TryGetValue(referrerResource, out var referrerModel))
+            {
+                continue;
+            }
+
+            if (referrerModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
+                continue;
+            }
+
+            var referrerBuilderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
+            var referrerRootTable = referrerModel.RelationalModel.Root;
+
+            var bindingByReferencePath = referrerModel.RelationalModel.DocumentReferenceBindings.ToDictionary(
+                binding => binding.ReferenceObjectPath.Canonical,
+                StringComparer.Ordinal
+            );
+
+            foreach (var mapping in referrerBuilderContext.DocumentReferenceMappings)
+            {
+                if (
+                    !bindingByReferencePath.TryGetValue(
+                        mapping.ReferenceObjectPath.Canonical,
+                        out var binding
+                    )
+                )
+                {
+                    continue;
+                }
+
+                // Only consider root-table bindings (references from the root table).
+                if (!binding.Table.Equals(referrerRootTable.Table))
+                {
+                    continue;
+                }
+
+                var targetResource = mapping.TargetResource;
+
+                if (!reverseIndex.TryGetValue(targetResource, out var entries))
+                {
+                    entries = [];
+                    reverseIndex[targetResource] = entries;
+                }
+
+                entries.Add(new ReverseReferenceEntry(referrerResource, referrerRootTable, binding, mapping));
+            }
+        }
+
+        return reverseIndex;
     }
 
     /// <summary>
-    /// Resolves target column mappings for identity propagation by mapping each identity binding's
-    /// reference JSON path through the target resource's identity path to the physical target column.
-    /// Source column names (on the referencing table) include a reference prefix (e.g.,
-    /// <c>School_SchoolId</c>) that differs from the target table's own column name (e.g.,
-    /// <c>SchoolId</c>), so the mapping cannot assume source and target names are identical.
+    /// Builds column mappings for identity propagation: source identity columns → referrer stored columns.
+    /// The direction is now source (trigger table) → referrer (what we update).
     /// </summary>
-    private static IReadOnlyList<TriggerColumnMapping> BuildPropagationTargetColumnMappings(
+    private static IReadOnlyList<TriggerColumnMapping> BuildPropagationColumnMappings(
         DocumentReferenceBinding binding,
         DocumentReferenceMapping mapping,
-        DbTableModel targetTableModel,
-        QualifiedResourceName resource
+        QualifiedResourceName referrerResource
     )
     {
-        // Build lookup: reference JSON path → target identity JSON path.
+        // Build lookup: reference JSON path → identity JSON path.
         var identityPathByReferencePath = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in mapping.ReferenceJsonPaths)
         {
             identityPathByReferencePath[entry.ReferenceJsonPath.Canonical] = entry.IdentityJsonPath.Canonical;
         }
 
-        // Build lookup: identity JSON path → target table column name.
-        var targetColumnByIdentityPath = new Dictionary<string, DbColumnName>(StringComparer.Ordinal);
-        foreach (var column in targetTableModel.Columns)
-        {
-            if (column.SourceJsonPath is not null)
-            {
-                targetColumnByIdentityPath[column.SourceJsonPath.Value.Canonical] = column.ColumnName;
-            }
-        }
-
+        // For each identity binding, map source identity column to referrer stored column.
+        // Direction: SourceColumn = target identity column, TargetColumn = referrer stored column.
         return binding
             .IdentityBindings.Select(ib =>
             {
@@ -445,24 +500,40 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 )
                 {
                     throw new InvalidOperationException(
-                        $"Propagation fallback trigger derivation for resource '{FormatResource(resource)}': "
+                        $"Propagation fallback trigger derivation for referrer '{FormatResource(referrerResource)}': "
                             + $"reference JSON path '{ib.ReferenceJsonPath.Canonical}' did not map to "
                             + "a target identity path."
                     );
                 }
 
-                if (!targetColumnByIdentityPath.TryGetValue(identityPath, out var targetColumn))
-                {
-                    throw new InvalidOperationException(
-                        $"Propagation fallback trigger derivation for resource '{FormatResource(resource)}': "
-                            + $"target identity path '{identityPath}' did not resolve to a column on "
-                            + $"target table '{targetTableModel.Table.Schema.Value}.{targetTableModel.Table.Name}'."
-                    );
-                }
+                // Extract column name from identity path: $.schoolId → SchoolId
+                var sourceColumnName = ExtractColumnNameFromIdentityPath(identityPath);
+                var sourceColumn = new DbColumnName(sourceColumnName);
 
-                return new TriggerColumnMapping(ib.Column, targetColumn);
+                // Target column is the referrer's stored identity column (e.g., School_SchoolId).
+                var targetColumn = ib.Column;
+
+                return new TriggerColumnMapping(sourceColumn, targetColumn);
             })
             .ToArray();
+    }
+
+    /// <summary>
+    /// Extracts a column name from an identity JSON path by converting the last path segment to PascalCase.
+    /// </summary>
+    private static string ExtractColumnNameFromIdentityPath(string identityPath)
+    {
+        // Identity path format: $.fieldName or $.path.to.fieldName
+        var lastDotIndex = identityPath.LastIndexOf('.');
+        var fieldName = lastDotIndex >= 0 ? identityPath[(lastDotIndex + 1)..] : identityPath;
+
+        // Convert first char to uppercase (camelCase → PascalCase).
+        if (fieldName.Length > 0 && char.IsLower(fieldName[0]))
+        {
+            return char.ToUpperInvariant(fieldName[0]) + fieldName[1..];
+        }
+
+        return fieldName;
     }
 
     /// <summary>

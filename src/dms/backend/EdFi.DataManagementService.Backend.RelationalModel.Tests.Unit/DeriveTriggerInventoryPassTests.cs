@@ -332,18 +332,18 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     }
 
     /// <summary>
-    /// It should emit propagation trigger for allowIdentityUpdates target.
+    /// It should emit propagation trigger on referenced resource.
     /// </summary>
     [Test]
-    public void It_should_emit_propagation_trigger_for_allowIdentityUpdates_target()
+    public void It_should_emit_propagation_trigger_on_referenced_resource()
     {
         var schoolPropagation = _triggers.SingleOrDefault(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_Propagation"
         );
 
         schoolPropagation.Should().NotBeNull();
-        schoolPropagation!.Table.Name.Should().Be("Enrollment");
+        schoolPropagation!.Table.Name.Should().Be("School");
     }
 
     /// <summary>
@@ -354,60 +354,69 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var studentPropagation = _triggers.SingleOrDefault(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_Student"
+            && t.Name.Value == "TR_Student_Propagation"
         );
 
         studentPropagation.Should().BeNull();
     }
 
     /// <summary>
-    /// It should use FK column as key column.
+    /// It should use DocumentId as key column on referenced table.
     /// </summary>
     [Test]
-    public void It_should_use_FK_column_as_key_column()
+    public void It_should_use_DocumentId_as_key_column()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_Propagation"
         );
 
         schoolPropagation.KeyColumns.Should().ContainSingle();
-        schoolPropagation.KeyColumns[0].Value.Should().Be("School_DocumentId");
+        schoolPropagation.KeyColumns[0].Value.Should().Be("DocumentId");
     }
 
     /// <summary>
-    /// It should include propagated identity columns.
+    /// It should include identity projection columns from referenced table.
     /// </summary>
     [Test]
-    public void It_should_include_propagated_identity_columns()
+    public void It_should_include_identity_projection_columns()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_Propagation"
         );
 
         schoolPropagation
             .IdentityProjectionColumns.Select(c => c.Value)
             .Should()
-            .Contain("School_EducationOrganizationId")
-            .And.Contain("School_SchoolId");
+            .Contain("EducationOrganizationId")
+            .And.Contain("SchoolId");
     }
 
     /// <summary>
-    /// It should set target table to referenced resource root.
+    /// It should include referrer updates for Enrollment.
     /// </summary>
     [Test]
-    public void It_should_set_target_table_to_referenced_resource_root()
+    public void It_should_include_referrer_updates()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_Propagation"
         );
 
         var propagationParams =
             schoolPropagation.Parameters as TriggerKindParameters.IdentityPropagationFallback;
         propagationParams.Should().NotBeNull();
-        propagationParams!.TargetTable.Name.Should().Be("School");
+        propagationParams!.ReferrerUpdates.Should().ContainSingle();
+
+        var referrerUpdate = propagationParams.ReferrerUpdates[0];
+        referrerUpdate.ReferrerTable.Name.Should().Be("Enrollment");
+        referrerUpdate.ReferrerFkColumn.Value.Should().Be("School_DocumentId");
+        referrerUpdate
+            .ColumnMappings.Select(m => m.TargetColumn.Value)
+            .Should()
+            .Contain("School_EducationOrganizationId")
+            .And.Contain("School_SchoolId");
     }
 }
 
@@ -441,49 +450,53 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     }
 
     /// <summary>
-    /// It should emit propagation trigger for abstract target.
+    /// It should emit propagation trigger on abstract identity table.
     /// </summary>
     [Test]
-    public void It_should_emit_propagation_trigger_for_abstract_target()
+    public void It_should_emit_propagation_trigger_on_abstract_identity_table()
     {
         var propagation = _triggers.SingleOrDefault(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
         );
 
         propagation.Should().NotBeNull();
-        propagation!.Table.Name.Should().Be("Enrollment");
+        propagation!.Table.Name.Should().Be("EducationOrganizationIdentity");
     }
 
     /// <summary>
-    /// It should target the abstract identity table.
+    /// It should include referrer updates for Enrollment.
     /// </summary>
     [Test]
-    public void It_should_target_the_abstract_identity_table()
+    public void It_should_include_referrer_updates_for_enrollment()
     {
         var propagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
         );
 
         var propagationParams = propagation.Parameters as TriggerKindParameters.IdentityPropagationFallback;
         propagationParams.Should().NotBeNull();
-        propagationParams!.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
+        propagationParams!.ReferrerUpdates.Should().ContainSingle();
+
+        var referrerUpdate = propagationParams.ReferrerUpdates[0];
+        referrerUpdate.ReferrerTable.Name.Should().Be("Enrollment");
+        referrerUpdate.ReferrerFkColumn.Value.Should().Be("EducationOrganization_DocumentId");
     }
 
     /// <summary>
-    /// It should use FK column as key column for abstract reference.
+    /// It should use DocumentId as key column for abstract identity table.
     /// </summary>
     [Test]
-    public void It_should_use_FK_column_as_key_column_for_abstract_reference()
+    public void It_should_use_DocumentId_as_key_column_for_abstract_identity_table()
     {
         var propagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
         );
 
         propagation.KeyColumns.Should().ContainSingle();
-        propagation.KeyColumns[0].Value.Should().Be("EducationOrganization_DocumentId");
+        propagation.KeyColumns[0].Value.Should().Be("DocumentId");
     }
 }
 

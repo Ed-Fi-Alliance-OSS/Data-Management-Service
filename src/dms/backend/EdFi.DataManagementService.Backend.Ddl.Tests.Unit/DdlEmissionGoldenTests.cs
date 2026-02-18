@@ -1415,19 +1415,22 @@ internal static class IdentityPropagationFixture
             ),
         ];
 
-        // IdentityPropagationFallback — MSSQL only
+        // IdentityPropagationFallback — MSSQL only, trigger on referenced entity (School)
         if (dialect == SqlDialect.Mssql)
         {
             triggers.Add(
                 new DbTriggerInfo(
-                    new DbTriggerName("TR_StudentSchoolAssociation_Propagation_School"),
-                    assocTableName,
+                    new DbTriggerName("TR_School_Propagation"),
+                    schoolTableName,
+                    [new DbColumnName("DocumentId")],
                     [schoolIdColumn],
-                    [schoolIdColumn],
-                    new TriggerKindParameters.IdentityPropagationFallback(
-                        schoolTableName,
-                        [new TriggerColumnMapping(schoolIdColumn, schoolIdColumn)]
-                    )
+                    new TriggerKindParameters.IdentityPropagationFallback([
+                        new PropagationReferrerTarget(
+                            assocTableName,
+                            new DbColumnName("School_DocumentId"),
+                            [new TriggerColumnMapping(schoolIdColumn, schoolIdColumn)]
+                        ),
+                    ])
                 )
             );
         }

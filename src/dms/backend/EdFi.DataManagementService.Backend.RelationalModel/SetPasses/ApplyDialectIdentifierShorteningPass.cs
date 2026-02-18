@@ -781,20 +781,13 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             }
             case TriggerKindParameters.IdentityPropagationFallback propagation:
             {
-                var updatedTargetTable = ShortenTable(propagation.TargetTable, dialectRules);
-                var updatedMappings = ShortenTriggerColumnMappings(
-                    propagation.TargetColumnMappings,
+                var updatedReferrers = ShortenPropagationReferrerTargets(
+                    propagation.ReferrerUpdates,
                     dialectRules,
-                    out var mappingsChanged
+                    out var referrersChanged
                 );
-                changed = mappingsChanged || !updatedTargetTable.Equals(propagation.TargetTable);
-                return changed
-                    ? propagation with
-                    {
-                        TargetTable = updatedTargetTable,
-                        TargetColumnMappings = updatedMappings,
-                    }
-                    : parameters;
+                changed = referrersChanged;
+                return changed ? propagation with { ReferrerUpdates = updatedReferrers } : parameters;
             }
             case TriggerKindParameters.DocumentStamping:
                 changed = false;
@@ -833,6 +826,47 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
 
         return changed ? updated : mappings;
+    }
+
+    /// <summary>
+    /// Shortens identifiers in propagation referrer targets using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<PropagationReferrerTarget> ShortenPropagationReferrerTargets(
+        IReadOnlyList<PropagationReferrerTarget> referrers,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new PropagationReferrerTarget[referrers.Count];
+
+        for (var i = 0; i < referrers.Count; i++)
+        {
+            var referrer = referrers[i];
+            var updatedReferrerTable = ShortenTable(referrer.ReferrerTable, dialectRules);
+            var updatedFkColumn = ShortenColumn(referrer.ReferrerFkColumn, dialectRules);
+            var updatedMappings = ShortenTriggerColumnMappings(
+                referrer.ColumnMappings,
+                dialectRules,
+                out var mappingsChanged
+            );
+
+            var referrerChanged =
+                mappingsChanged
+                || !updatedReferrerTable.Equals(referrer.ReferrerTable)
+                || !updatedFkColumn.Equals(referrer.ReferrerFkColumn);
+
+            if (referrerChanged)
+            {
+                changed = true;
+            }
+
+            updated[i] = referrerChanged
+                ? new PropagationReferrerTarget(updatedReferrerTable, updatedFkColumn, updatedMappings)
+                : referrer;
+        }
+
+        return changed ? updated : referrers;
     }
 
     /// <summary>
