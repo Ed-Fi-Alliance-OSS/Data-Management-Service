@@ -259,5 +259,34 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Key Unification",
+    "description": "Reduce duplicated guard logic in `ValidateUnificationMembers(...)` in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/KeyUnificationPass.cs`. Acceptance: remove redundant per-member rechecks that repeat the first-member kind guard, validate `ColumnKind` compatibility once per class, and consolidate kind-specific checks into a single branch (scalar: exact `ScalarType` match; descriptor: non-null + exact `TargetResource` match) without changing pass behavior for valid models.",
+    "steps-to-verify": [
+      "Add/extend a unit test in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/KeyUnificationPassTests.cs` that covers mixed-kind classes, scalar-type mismatch, and descriptor target mismatch, and assert exception messages still include resource + table + column context.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Remove unused over-parameterization in `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/UnifiedAliasStorageResolver.cs` around scalar presence-gate classification. Acceptance: delete `ScalarPresenceGateClassification.AnyScalarPresenceGate` and the associated branching in `BuildTableMetadata(...)`, simplify `PresenceGateMetadataOptions` so it only supports the strict synthetic presence-flag interpretation currently used by `UnifiedAliasStrictMetadataCache`, and keep strict-metadata behavior unchanged (still throws on missing presence columns and invalid synthetic presence flags).",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Maintainability",
+    "description": "Eliminate duplicated FK endpoint storage validation between `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/ValidateForeignKeyStorageInvariantPass.cs` and `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveIndexInventoryPass.cs`. Acceptance: remove the `ForeignKeyStorageValidator.ValidateEndpointColumns(...)` call from `DeriveIndexInventoryPass` (since `ValidateForeignKeyStorageInvariantPass` already enforces the invariant and runs earlier in `RelationalModelSetPasses.CreateDefault()`), and add a short comment in `DeriveIndexInventoryPass` documenting the dependency on pass ordering so future reordering does not reintroduce the duplication.",
+    "steps-to-verify": [
+      "Add/extend a unit test that constructs a model with an FK referencing a unified-alias or presence-gate column and assert `ValidateForeignKeyStorageInvariantPass` fails before `DeriveIndexInventoryPass` runs (i.e., the failure is attributed to the invariant pass, not index derivation).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
