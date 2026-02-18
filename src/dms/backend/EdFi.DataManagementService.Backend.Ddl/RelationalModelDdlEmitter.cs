@@ -911,6 +911,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         TriggerKindParameters.IdentityPropagationFallback propagation
     )
     {
+        if (_dialectRules.Dialect != SqlDialect.Mssql)
+        {
+            throw new InvalidOperationException(
+                $"Identity propagation fallback triggers are only supported for MSSQL, but dialect is {_dialectRules.Dialect}."
+            );
+        }
+
         var targetTable = Quote(propagation.TargetTable);
         var fkColumn = trigger.KeyColumns[0];
 
