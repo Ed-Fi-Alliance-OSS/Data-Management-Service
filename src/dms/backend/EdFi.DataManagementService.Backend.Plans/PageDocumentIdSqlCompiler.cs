@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -15,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Predicates over unified alias columns are rewritten to canonical storage columns and,
 /// when required, include an explicit non-null presence gate.
 /// </remarks>
-public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
+public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
 
@@ -234,7 +235,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Validates that a parameter name is non-empty before emitting it into SQL.
+    /// Validates that a parameter name is safe to emit into SQL.
     /// </summary>
     private static void ValidateParameterName(string parameterName, string parameterNameArgumentName)
     {
@@ -245,5 +246,16 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 parameterNameArgumentName
             );
         }
+
+        if (!ParameterNameRegex().IsMatch(parameterName))
+        {
+            throw new ArgumentException(
+                "Parameter name must match pattern '^@[a-zA-Z_][a-zA-Z0-9_]*$'.",
+                parameterNameArgumentName
+            );
+        }
     }
+
+    [GeneratedRegex("^@[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
+    private static partial Regex ParameterNameRegex();
 }

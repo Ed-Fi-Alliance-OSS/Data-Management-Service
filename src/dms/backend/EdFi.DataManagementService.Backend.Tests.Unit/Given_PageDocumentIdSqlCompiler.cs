@@ -137,15 +137,47 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().Contain("OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY");
     }
 
+    [Test]
+    public void It_should_reject_predicate_parameter_names_that_are_not_safe_to_emit()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.Equal,
+                            "1; DROP TABLE foo--"
+                        ),
+                    ],
+                    []
+                )
+            );
+
+        act.Should().Throw<ArgumentException>().WithParameterName("ParameterName");
+    }
+
+    [Test]
+    public void It_should_reject_paging_parameter_names_that_are_not_safe_to_emit()
+    {
+        var act = () => _compiler.Compile(CreateSpec([], [], offsetParameterName: "1; DROP TABLE foo--"));
+
+        act.Should().Throw<ArgumentException>().WithParameterName("OffsetParameterName");
+    }
+
     private static PageDocumentIdQuerySpec CreateSpec(
         IReadOnlyList<QueryValuePredicate> predicates,
-        IReadOnlyList<UnifiedAliasColumnMapping> unifiedAliasMappings
+        IReadOnlyList<UnifiedAliasColumnMapping> unifiedAliasMappings,
+        string offsetParameterName = "@offset",
+        string limitParameterName = "@limit"
     )
     {
         return new PageDocumentIdQuerySpec(
             RootTable: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             Predicates: predicates,
-            UnifiedAliasMappings: unifiedAliasMappings
+            UnifiedAliasMappings: unifiedAliasMappings,
+            OffsetParameterName: offsetParameterName,
+            LimitParameterName: limitParameterName
         );
     }
 }
