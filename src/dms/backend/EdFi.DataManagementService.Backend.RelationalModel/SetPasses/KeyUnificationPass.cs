@@ -1123,7 +1123,10 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return new DbColumnName(disambiguatedName);
         }
 
-        for (var suffixIndex = 2; ; suffixIndex++)
+        var maxSuffixIndex = existingColumnNames.Count + 2;
+
+        // Bound attempts: since candidates are unique per suffix and the set is finite, a free name must exist within Count + 1 tries.
+        for (var suffixIndex = 2; suffixIndex <= maxSuffixIndex; suffixIndex++)
         {
             var fallbackName =
                 firstMember.Kind == ColumnKind.DescriptorFk
@@ -1137,6 +1140,10 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
             return new DbColumnName(fallbackName);
         }
+
+        throw new InvalidOperationException(
+            $"Could not allocate unique canonical column name for base '{baseName}' after {maxSuffixIndex - 1} attempts."
+        );
     }
 
     /// <summary>
@@ -1204,7 +1211,10 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             return new DbColumnName(disambiguatedName);
         }
 
-        for (var suffixIndex = 2; ; suffixIndex++)
+        var maxSuffixIndex = existingColumnNames.Count + 2;
+
+        // Bound attempts: since candidates are unique per suffix and the set is finite, a free name must exist within Count + 1 tries.
+        for (var suffixIndex = 2; suffixIndex <= maxSuffixIndex; suffixIndex++)
         {
             var fallbackName = $"{memberColumnName.Value}_U{hash}_{suffixIndex}_Present";
 
@@ -1215,6 +1225,10 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
 
             return new DbColumnName(fallbackName);
         }
+
+        throw new InvalidOperationException(
+            $"Could not allocate unique presence column name for '{memberColumnName.Value}' after {maxSuffixIndex - 1} attempts."
+        );
     }
 
     /// <summary>

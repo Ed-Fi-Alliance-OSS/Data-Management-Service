@@ -593,7 +593,7 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes a single table constraint (Unique, ForeignKey, or AllOrNoneNullability).
+    /// Writes a single table constraint (Unique, ForeignKey, AllOrNoneNullability, or NullOrTrue).
     /// </summary>
     private static void WriteConstraint(Utf8JsonWriter writer, TableConstraint constraint)
     {
@@ -625,6 +625,11 @@ public static class DerivedModelSetManifestEmitter
                 writer.WriteString("fk_column", allOrNone.FkColumn.Value);
                 writer.WritePropertyName("dependent_columns");
                 WriteColumnNameList(writer, allOrNone.DependentColumns);
+                break;
+            case TableConstraint.NullOrTrue nullOrTrue:
+                writer.WriteString("kind", "NullOrTrue");
+                writer.WriteString("name", nullOrTrue.Name);
+                writer.WriteString("column", nullOrTrue.Column.Value);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(

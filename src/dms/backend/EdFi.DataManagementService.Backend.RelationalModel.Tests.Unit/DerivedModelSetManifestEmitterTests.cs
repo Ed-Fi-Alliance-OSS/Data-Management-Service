@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
 using EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 using FluentAssertions;
@@ -216,5 +217,160 @@ public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
         detailedManifest.Should().Contain("\"document_reference_bindings\":");
         detailedManifest.Should().Contain("\"descriptor_edge_sources\":");
         detailedManifest.Should().Contain("\"extension_sites\":");
+    }
+}
+
+[TestFixture]
+public class Given_A_Model_Set_With_NullOrTrue_Constraint_When_Emitting_Detailed_Manifest
+{
+    private string _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var derivedSet = CreateDerivedModelSetWithNullOrTrueConstraint();
+
+        _manifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "School") }
+        );
+    }
+
+    [Test]
+    public void It_should_emit_null_or_true_constraints()
+    {
+        var root =
+            JsonNode.Parse(_manifest) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+
+        var resourceDetails =
+            root["resource_details"] as JsonArray
+            ?? throw new InvalidOperationException("Expected resource_details to be a JSON array.");
+
+        var resourceDetail =
+            resourceDetails.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected resource detail entry to be a JSON object.");
+
+        var tables =
+            resourceDetail["tables"] as JsonArray
+            ?? throw new InvalidOperationException("Expected tables to be a JSON array.");
+
+        var table =
+            tables.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected table to be a JSON object.");
+
+        var constraints =
+            table["constraints"] as JsonArray
+            ?? throw new InvalidOperationException("Expected constraints to be a JSON array.");
+
+        var constraint =
+            constraints.Single() as JsonObject
+            ?? throw new InvalidOperationException("Expected constraint to be a JSON object.");
+
+        constraint["kind"]!.GetValue<string>().Should().Be("NullOrTrue");
+        constraint["name"]!.GetValue<string>().Should().Be("CK_School_FiscalYear_Present_NullOrTrue");
+        constraint["column"]!.GetValue<string>().Should().Be("FiscalYear_Present");
+    }
+
+    private static DerivedRelationalModelSet CreateDerivedModelSetWithNullOrTrueConstraint()
+    {
+        var schema = new DbSchemaName("edfi");
+        var resource = new QualifiedResourceName("Ed-Fi", "School");
+
+        var resourceKeyEntry = new ResourceKeyEntry(
+            ResourceKeyId: 1,
+            Resource: resource,
+            ResourceVersion: "1.0.0",
+            IsAbstractResource: false
+        );
+
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "hash",
+            ResourceKeyCount: 1,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    ProjectHash: "hash"
+                ),
+            ],
+            ResourceKeysInIdOrder: [resourceKeyEntry]
+        );
+
+        var projectSchema = new ProjectSchemaInfo(
+            ProjectEndpointName: "ed-fi",
+            ProjectName: "Ed-Fi",
+            ProjectVersion: "1.0.0",
+            IsExtensionProject: false,
+            PhysicalSchema: schema
+        );
+
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+        var presenceColumn = new DbColumnName("FiscalYear_Present");
+
+        var table = new DbTableModel(
+            new DbTableName(schema, "School"),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey("PK_School", [keyColumn]),
+            Columns:
+            [
+                new DbColumnModel(
+                    RelationalNameConventions.DocumentIdColumnName,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    presenceColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            Constraints:
+            [
+                new TableConstraint.NullOrTrue("CK_School_FiscalYear_Present_NullOrTrue", presenceColumn),
+            ]
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            TablesInDependencyOrder: [table],
+            DocumentReferenceBindings: [],
+            DescriptorEdgeSources: []
+        );
+
+        var concreteResource = new ConcreteResourceModel(
+            resourceKeyEntry,
+            ResourceStorageKind.RelationalTables,
+            relationalModel
+        );
+
+        return new DerivedRelationalModelSet(
+            effectiveSchema,
+            SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder: [projectSchema],
+            ConcreteResourcesInNameOrder: [concreteResource],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: []
+        );
     }
 }
