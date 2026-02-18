@@ -12,8 +12,7 @@ internal static class UnifiedAliasStrictMetadataCache
 {
     private static readonly UnifiedAliasStorageResolver.PresenceGateMetadataOptions _strictOptions = new(
         ThrowIfPresenceColumnMissing: true,
-        ThrowIfInvalidStrictSyntheticCandidate: true,
-        UnifiedAliasStorageResolver.ScalarPresenceGateClassification.StrictSyntheticPresenceFlag
+        ThrowIfInvalidStrictSyntheticCandidate: true
     );
 
     /// <summary>

@@ -19,16 +19,9 @@ internal static class UnifiedAliasStorageResolver
         RejectAllPresenceGates,
     }
 
-    internal enum ScalarPresenceGateClassification
-    {
-        AnyScalarPresenceGate,
-        StrictSyntheticPresenceFlag,
-    }
-
     internal readonly record struct PresenceGateMetadataOptions(
         bool ThrowIfPresenceColumnMissing,
-        bool ThrowIfInvalidStrictSyntheticCandidate,
-        ScalarPresenceGateClassification ScalarClassification
+        bool ThrowIfInvalidStrictSyntheticCandidate
     );
 
     internal sealed record TableMetadata(
@@ -80,16 +73,6 @@ internal static class UnifiedAliasStorageResolver
                             + $"invalid reference presence-gate column '{presenceColumn.Value}'. Reference "
                             + "presence-gate columns must be stored."
                     );
-                }
-
-                continue;
-            }
-
-            if (options.ScalarClassification == ScalarPresenceGateClassification.AnyScalarPresenceGate)
-            {
-                if (presenceColumnModel.Kind == ColumnKind.Scalar)
-                {
-                    syntheticScalarPresenceColumns.Add(presenceColumn);
                 }
 
                 continue;
