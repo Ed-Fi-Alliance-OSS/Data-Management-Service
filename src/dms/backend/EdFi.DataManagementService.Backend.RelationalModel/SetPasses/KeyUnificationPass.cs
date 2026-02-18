@@ -950,54 +950,70 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             );
         }
 
-        foreach (var member in members)
+        var unsupportedMember = members
+            .Skip(1)
+            .FirstOrDefault(member => member.Kind is not ColumnKind.Scalar and not ColumnKind.DescriptorFk);
+
+        if (unsupportedMember is not null)
         {
-            if (member.Kind is not ColumnKind.Scalar and not ColumnKind.DescriptorFk)
-            {
-                throw new InvalidOperationException(
-                    $"Key unification only supports scalar/descriptor columns, but '{member.ColumnName.Value}' "
-                        + $"on resource '{FormatResource(resource)}' table '{table.Table}' has kind "
-                        + $"'{member.Kind}'."
-                );
-            }
+            throw new InvalidOperationException(
+                $"Key unification only supports scalar/descriptor columns, but '{unsupportedMember.ColumnName.Value}' "
+                    + $"on resource '{FormatResource(resource)}' table '{table.Table}' has kind "
+                    + $"'{unsupportedMember.Kind}'."
+            );
+        }
 
-            if (member.Kind != first.Kind)
-            {
-                throw new InvalidOperationException(
-                    $"Key unification class on resource '{FormatResource(resource)}' table '{table.Table}' "
-                        + "cannot mix scalar and descriptor members."
-                );
-            }
+        var mixedKindMember = members.Skip(1).FirstOrDefault(member => member.Kind != first.Kind);
 
-            if (member.Kind == ColumnKind.Scalar && !Equals(member.ScalarType, first.ScalarType))
+        if (mixedKindMember is not null)
+        {
+            throw new InvalidOperationException(
+                $"Key unification class on resource '{FormatResource(resource)}' table '{table.Table}' "
+                    + $"cannot mix scalar and descriptor members: '{mixedKindMember.ColumnName.Value}' has kind "
+                    + $"'{mixedKindMember.Kind}' but '{first.ColumnName.Value}' has kind '{first.Kind}'."
+            );
+        }
+
+        if (first.Kind == ColumnKind.Scalar)
+        {
+            var scalarTypeMismatchMember = members
+                .Skip(1)
+                .FirstOrDefault(member => !Equals(member.ScalarType, first.ScalarType));
+
+            if (scalarTypeMismatchMember is not null)
             {
                 throw new InvalidOperationException(
                     $"Key unification scalar type mismatch on resource '{FormatResource(resource)}' table "
-                        + $"'{table.Table}': '{member.ColumnName.Value}' does not match "
+                        + $"'{table.Table}': '{scalarTypeMismatchMember.ColumnName.Value}' does not match "
                         + $"'{first.ColumnName.Value}'."
                 );
             }
 
-            if (member.Kind == ColumnKind.DescriptorFk && member.TargetResource is null)
-            {
-                throw new InvalidOperationException(
-                    $"Key unification descriptor target resource is required on resource "
-                        + $"'{FormatResource(resource)}' table '{table.Table}' for column "
-                        + $"'{member.ColumnName.Value}'."
-                );
-            }
+            return;
+        }
 
-            if (
-                member.Kind == ColumnKind.DescriptorFk
-                && !Equals(member.TargetResource, first.TargetResource)
-            )
-            {
-                throw new InvalidOperationException(
-                    $"Key unification descriptor target mismatch on resource '{FormatResource(resource)}' "
-                        + $"table '{table.Table}': '{member.ColumnName.Value}' does not match "
-                        + $"'{first.ColumnName.Value}'."
-                );
-            }
+        var missingDescriptorTargetMember = members.FirstOrDefault(member => member.TargetResource is null);
+
+        if (missingDescriptorTargetMember is not null)
+        {
+            throw new InvalidOperationException(
+                $"Key unification descriptor target resource is required on resource "
+                    + $"'{FormatResource(resource)}' table '{table.Table}' for column "
+                    + $"'{missingDescriptorTargetMember.ColumnName.Value}'."
+            );
+        }
+
+        var descriptorTargetMismatchMember = members
+            .Skip(1)
+            .FirstOrDefault(member => !Equals(member.TargetResource, first.TargetResource));
+
+        if (descriptorTargetMismatchMember is not null)
+        {
+            throw new InvalidOperationException(
+                $"Key unification descriptor target mismatch on resource '{FormatResource(resource)}' "
+                    + $"table '{table.Table}': '{descriptorTargetMismatchMember.ColumnName.Value}' does not match "
+                    + $"'{first.ColumnName.Value}'."
+            );
         }
     }
 

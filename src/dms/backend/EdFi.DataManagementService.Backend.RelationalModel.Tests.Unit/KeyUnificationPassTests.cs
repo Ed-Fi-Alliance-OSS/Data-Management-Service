@@ -691,6 +691,160 @@ public class Given_Key_Unification_With_A_Null_Descriptor_Target_Resource
 }
 
 /// <summary>
+/// Test fixture for key-unification member compatibility validation.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_With_Incompatible_Class_Members
+{
+    private static readonly QualifiedResourceName Resource = new("Ed-Fi", "Example");
+
+    /// <summary>
+    /// It should fail fast when a class mixes descriptor and scalar members.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_for_mixed_scalar_and_descriptor_members()
+    {
+        IReadOnlyList<DbColumnModel> members =
+        [
+            CreateDescriptorColumn(
+                "PrimaryDescriptor_DescriptorId",
+                new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            ),
+            CreateScalarColumn("LocalFiscalYear", ScalarKind.Int32),
+        ];
+
+        Action act = () => InvokeValidateUnificationMembers(members);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*resource 'Ed-Fi:Example'*table 'edfi.Example'*cannot mix scalar and descriptor members*'LocalFiscalYear'*'PrimaryDescriptor_DescriptorId'*"
+            );
+    }
+
+    /// <summary>
+    /// It should fail fast when scalar members do not share one scalar type.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_for_scalar_type_mismatch()
+    {
+        IReadOnlyList<DbColumnModel> members =
+        [
+            CreateScalarColumn("FiscalYear", ScalarKind.Int32),
+            CreateScalarColumn("LocalFiscalYear", ScalarKind.Int64),
+        ];
+
+        Action act = () => InvokeValidateUnificationMembers(members);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*scalar type mismatch*resource 'Ed-Fi:Example'*table 'edfi.Example'*'LocalFiscalYear'*'FiscalYear'*"
+            );
+    }
+
+    /// <summary>
+    /// It should fail fast when descriptor members resolve to different descriptor resources.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_for_descriptor_target_resource_mismatch()
+    {
+        IReadOnlyList<DbColumnModel> members =
+        [
+            CreateDescriptorColumn(
+                "PrimaryDescriptor_DescriptorId",
+                new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
+            ),
+            CreateDescriptorColumn(
+                "SecondaryDescriptor_DescriptorId",
+                new QualifiedResourceName("Ed-Fi", "ProgramDescriptor")
+            ),
+        ];
+
+        Action act = () => InvokeValidateUnificationMembers(members);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "*descriptor target mismatch*resource 'Ed-Fi:Example'*table 'edfi.Example'*'SecondaryDescriptor_DescriptorId'*'PrimaryDescriptor_DescriptorId'*"
+            );
+    }
+
+    /// <summary>
+    /// Invoke private ValidateUnificationMembers and unwrap invocation exceptions.
+    /// </summary>
+    private static void InvokeValidateUnificationMembers(IReadOnlyList<DbColumnModel> members)
+    {
+        var method = typeof(KeyUnificationPass).GetMethod(
+            "ValidateUnificationMembers",
+            BindingFlags.NonPublic | BindingFlags.Static
+        );
+
+        method.Should().NotBeNull();
+
+        try
+        {
+            _ = method!.Invoke(null, [members, Resource, CreateTable()]);
+        }
+        catch (TargetInvocationException exception) when (exception.InnerException is not null)
+        {
+            ExceptionDispatchInfo.Capture(exception.InnerException).Throw();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Create one scalar member column for validation tests.
+    /// </summary>
+    private static DbColumnModel CreateScalarColumn(string columnName, ScalarKind scalarKind)
+    {
+        return new DbColumnModel(
+            new DbColumnName(columnName),
+            ColumnKind.Scalar,
+            new RelationalScalarType(scalarKind),
+            IsNullable: true,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+    }
+
+    /// <summary>
+    /// Create one descriptor member column for validation tests.
+    /// </summary>
+    private static DbColumnModel CreateDescriptorColumn(
+        string columnName,
+        QualifiedResourceName? targetResource
+    )
+    {
+        return new DbColumnModel(
+            new DbColumnName(columnName),
+            ColumnKind.DescriptorFk,
+            new RelationalScalarType(ScalarKind.Int64),
+            IsNullable: true,
+            SourceJsonPath: null,
+            targetResource
+        );
+    }
+
+    /// <summary>
+    /// Create a minimal table for validation context.
+    /// </summary>
+    private static DbTableModel CreateTable()
+    {
+        return new DbTableModel(
+            new DbTableName(new DbSchemaName("edfi"), "Example"),
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_Example",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            [],
+            []
+        );
+    }
+}
+
+/// <summary>
 /// Test fixture for canonical base-token derivation.
 /// </summary>
 [TestFixture]
