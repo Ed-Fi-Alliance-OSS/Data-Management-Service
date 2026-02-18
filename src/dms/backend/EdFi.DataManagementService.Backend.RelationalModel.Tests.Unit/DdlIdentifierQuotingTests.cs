@@ -99,9 +99,15 @@ internal static class ReservedIdentifierAssertions
 
     /// <summary>
     /// Asserts that the emitted DDL contains no unquoted occurrences of the reserved identifier for the given dialect.
+    /// String literals (e.g., N'Select' in MSSQL or 'Select' in Pgsql) are excluded from this check because
+    /// they are values for name-based lookups, not identifiers.
     /// </summary>
     private static void AssertNoUnquotedIdentifier(string sql, SqlDialect dialect)
     {
+        // Strip string literals before checking for unquoted identifiers.
+        // This removes N'...' and '...' sequences to avoid false positives from idempotency checks.
+        var sqlWithoutStringLiterals = Regex.Replace(sql, @"N?'(?:[^']|'')*'", "");
+
         var pattern = dialect switch
         {
             SqlDialect.Pgsql => $@"(?<!\"")\b{Regex.Escape(Identifier)}\b(?!\"")",
@@ -109,7 +115,10 @@ internal static class ReservedIdentifierAssertions
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
 
-        Regex.IsMatch(sql, pattern).Should().BeFalse($"Expected all {Identifier} identifiers to be quoted.");
+        Regex
+            .IsMatch(sqlWithoutStringLiterals, pattern)
+            .Should()
+            .BeFalse($"Expected all {Identifier} identifiers to be quoted.");
     }
 }
 
