@@ -741,22 +741,146 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     {
         switch (parameters)
         {
+            case TriggerKindParameters.ReferentialIdentityMaintenance refId:
+            {
+                var updatedElements = ShortenIdentityElementMappings(
+                    refId.IdentityElements,
+                    dialectRules,
+                    out var elementsChanged
+                );
+                var updatedAlias = ShortenSuperclassAlias(
+                    refId.SuperclassAlias,
+                    dialectRules,
+                    out var aliasChanged
+                );
+                changed = elementsChanged || aliasChanged;
+                return changed
+                    ? refId with
+                    {
+                        IdentityElements = updatedElements,
+                        SuperclassAlias = updatedAlias,
+                    }
+                    : parameters;
+            }
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
             {
                 var updatedTargetTable = ShortenTable(abstractId.TargetTable, dialectRules);
-                changed = !updatedTargetTable.Equals(abstractId.TargetTable);
-                return changed ? abstractId with { TargetTable = updatedTargetTable } : parameters;
+                var updatedMappings = ShortenTriggerColumnMappings(
+                    abstractId.TargetColumnMappings,
+                    dialectRules,
+                    out var mappingsChanged
+                );
+                changed = mappingsChanged || !updatedTargetTable.Equals(abstractId.TargetTable);
+                return changed
+                    ? abstractId with
+                    {
+                        TargetTable = updatedTargetTable,
+                        TargetColumnMappings = updatedMappings,
+                    }
+                    : parameters;
             }
             case TriggerKindParameters.IdentityPropagationFallback propagation:
             {
                 var updatedTargetTable = ShortenTable(propagation.TargetTable, dialectRules);
-                changed = !updatedTargetTable.Equals(propagation.TargetTable);
-                return changed ? propagation with { TargetTable = updatedTargetTable } : parameters;
+                var updatedMappings = ShortenTriggerColumnMappings(
+                    propagation.TargetColumnMappings,
+                    dialectRules,
+                    out var mappingsChanged
+                );
+                changed = mappingsChanged || !updatedTargetTable.Equals(propagation.TargetTable);
+                return changed
+                    ? propagation with
+                    {
+                        TargetTable = updatedTargetTable,
+                        TargetColumnMappings = updatedMappings,
+                    }
+                    : parameters;
             }
             default:
                 changed = false;
                 return parameters;
         }
+    }
+
+    /// <summary>
+    /// Shortens column names in trigger column mappings using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<TriggerColumnMapping> ShortenTriggerColumnMappings(
+        IReadOnlyList<TriggerColumnMapping> mappings,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new TriggerColumnMapping[mappings.Count];
+
+        for (var i = 0; i < mappings.Count; i++)
+        {
+            var mapping = mappings[i];
+            var updatedSource = ShortenColumn(mapping.SourceColumn, dialectRules);
+            var updatedTarget = ShortenColumn(mapping.TargetColumn, dialectRules);
+
+            if (!updatedSource.Equals(mapping.SourceColumn) || !updatedTarget.Equals(mapping.TargetColumn))
+            {
+                changed = true;
+            }
+
+            updated[i] = new TriggerColumnMapping(updatedSource, updatedTarget);
+        }
+
+        return changed ? updated : mappings;
+    }
+
+    /// <summary>
+    /// Shortens column names in identity element mappings using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<IdentityElementMapping> ShortenIdentityElementMappings(
+        IReadOnlyList<IdentityElementMapping> elements,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new IdentityElementMapping[elements.Count];
+
+        for (var i = 0; i < elements.Count; i++)
+        {
+            var element = elements[i];
+            var updatedColumn = ShortenColumn(element.Column, dialectRules);
+
+            if (!updatedColumn.Equals(element.Column))
+            {
+                changed = true;
+            }
+
+            updated[i] = element with { Column = updatedColumn };
+        }
+
+        return changed ? updated : elements;
+    }
+
+    /// <summary>
+    /// Shortens column names in a superclass alias's identity elements using dialect rules.
+    /// </summary>
+    private static SuperclassAliasInfo? ShortenSuperclassAlias(
+        SuperclassAliasInfo? alias,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        if (alias is null)
+        {
+            changed = false;
+            return null;
+        }
+
+        var updatedElements = ShortenIdentityElementMappings(
+            alias.IdentityElements,
+            dialectRules,
+            out changed
+        );
+
+        return changed ? alias with { IdentityElements = updatedElements } : alias;
     }
 
     /// <summary>

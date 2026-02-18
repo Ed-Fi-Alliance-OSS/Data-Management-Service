@@ -553,6 +553,181 @@ public class Given_Short_Identifier_Limit
 }
 
 /// <summary>
+/// Test fixture verifying that dialect shortening applies to column names inside trigger parameter subtypes.
+/// </summary>
+[TestFixture]
+public class Given_Trigger_Parameter_Column_Shortening
+{
+    private DerivedRelationalModelSet _result = default!;
+    private ISqlDialectRules _dialectRules = default!;
+    private TriggerParameterColumnIdentifiers _identifiers = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialectRules = new PgsqlDialectRules();
+        _identifiers = TriggerParameterColumnIdentifiers.Create(_dialectRules.MaxIdentifierLength + 12);
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TriggerParameterColumnFixturePass(_identifiers),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
+
+        _result = builder.Build(effectiveSchemaSet, _dialectRules.Dialect, _dialectRules);
+    }
+
+    [Test]
+    public void It_should_shorten_abstract_identity_maintenance_target_column_mappings()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.AbstractIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.AbstractIdentityMaintenance)trigger.Parameters;
+        var mapping = parameters.TargetColumnMappings.Single();
+
+        mapping.SourceColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.SourceColumn));
+        mapping.TargetColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.TargetColumn));
+    }
+
+    [Test]
+    public void It_should_shorten_identity_propagation_fallback_target_column_mappings()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+        );
+        var parameters = (TriggerKindParameters.IdentityPropagationFallback)trigger.Parameters;
+        var mapping = parameters.TargetColumnMappings.Single();
+
+        mapping.SourceColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.SourceColumn));
+        mapping.TargetColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.TargetColumn));
+    }
+
+    [Test]
+    public void It_should_shorten_referential_identity_maintenance_identity_elements()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.ReferentialIdentityMaintenance)trigger.Parameters;
+        var element = parameters.IdentityElements.Single();
+
+        element.Column.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.IdentityColumn));
+    }
+
+    [Test]
+    public void It_should_shorten_superclass_alias_identity_elements()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.ReferentialIdentityMaintenance)trigger.Parameters;
+        var aliasElement = parameters.SuperclassAlias!.IdentityElements.Single();
+
+        aliasElement.Column.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.AliasColumn));
+    }
+}
+
+/// <summary>
+/// Long identifier values for trigger parameter column shortening tests.
+/// </summary>
+internal sealed record TriggerParameterColumnIdentifiers(
+    string SourceColumn,
+    string TargetColumn,
+    string IdentityColumn,
+    string AliasColumn
+)
+{
+    public static TriggerParameterColumnIdentifiers Create(int length)
+    {
+        return new TriggerParameterColumnIdentifiers(
+            SourceColumn: BuildLong("SourceCol", length),
+            TargetColumn: BuildLong("TargetCol", length),
+            IdentityColumn: BuildLong("IdentityCol", length),
+            AliasColumn: BuildLong("AliasCol", length)
+        );
+    }
+
+    private static string BuildLong(string label, int length)
+    {
+        return label.Length >= length ? label : label + new string('A', length - label.Length);
+    }
+}
+
+/// <summary>
+/// Fixture pass that seeds triggers with each non-DocumentStamping parameter subtype containing long column names.
+/// </summary>
+file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdentifiers identifiers)
+    : IRelationalModelSetPass
+{
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var schema = new DbSchemaName("edfi");
+        var table = new DbTableName(schema, "School");
+        var targetTable = new DbTableName(schema, "EducationOrganization");
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_AbstractId"),
+                table,
+                [],
+                [],
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    targetTable,
+                    [
+                        new TriggerColumnMapping(
+                            new DbColumnName(identifiers.SourceColumn),
+                            new DbColumnName(identifiers.TargetColumn)
+                        ),
+                    ],
+                    "School"
+                )
+            )
+        );
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_Propagation"),
+                table,
+                [],
+                [],
+                new TriggerKindParameters.IdentityPropagationFallback(
+                    targetTable,
+                    [
+                        new TriggerColumnMapping(
+                            new DbColumnName(identifiers.SourceColumn),
+                            new DbColumnName(identifiers.TargetColumn)
+                        ),
+                    ]
+                )
+            )
+        );
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_RefIdentity"),
+                table,
+                [],
+                [],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(new DbColumnName(identifiers.IdentityColumn), "$.id")],
+                    new SuperclassAliasInfo(
+                        2,
+                        "Ed-Fi",
+                        "EducationOrganization",
+                        [new IdentityElementMapping(new DbColumnName(identifiers.AliasColumn), "$.parentId")]
+                    )
+                )
+            )
+        );
+    }
+}
+
+/// <summary>
 /// Captures a single identifier-shortening test run, including the derived model and the long identifiers
 /// used as inputs.
 /// </summary>
