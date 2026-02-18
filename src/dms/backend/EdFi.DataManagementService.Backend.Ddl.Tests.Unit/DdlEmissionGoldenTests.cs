@@ -123,9 +123,8 @@ public abstract class DdlEmissionGoldenTestBase
             $"{fixtureName}.sql"
         );
 
-        var dialectRules =
-            dialect == SqlDialect.Pgsql ? (ISqlDialectRules)new PgsqlDialectRules() : new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var dialectInstance = SqlDialectFactory.Create(dialect);
+        var emitter = new RelationalModelDdlEmitter(dialectInstance);
         var ddl = emitter.Emit(modelSet);
 
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);

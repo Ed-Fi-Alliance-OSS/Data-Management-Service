@@ -1,19 +1,22 @@
-CREATE SCHEMA "edfi";
+CREATE SCHEMA IF NOT EXISTS "edfi";
 
-CREATE TABLE "edfi"."School" (
+CREATE TABLE IF NOT EXISTS "edfi"."School"
+(
     "DocumentId" bigint NOT NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE "edfi"."SchoolAddress" (
+CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
+(
     "DocumentId" bigint NOT NULL,
     "AddressOrdinal" integer NOT NULL,
     "Street" varchar(100) NOT NULL,
     CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("DocumentId", "AddressOrdinal")
 );
 
-CREATE TABLE "edfi"."SchoolAddressPhoneNumber" (
+CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddressPhoneNumber"
+(
     "DocumentId" bigint NOT NULL,
     "AddressOrdinal" integer NOT NULL,
     "PhoneNumberOrdinal" integer NOT NULL,
@@ -21,9 +24,39 @@ CREATE TABLE "edfi"."SchoolAddressPhoneNumber" (
     CONSTRAINT "PK_SchoolAddressPhoneNumber" PRIMARY KEY ("DocumentId", "AddressOrdinal", "PhoneNumberOrdinal")
 );
 
-ALTER TABLE "edfi"."SchoolAddress" ADD CONSTRAINT "FK_SchoolAddress_School" FOREIGN KEY ("DocumentId") REFERENCES "edfi"."School" ("DocumentId") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SchoolAddress_School'
+        AND conrelid = to_regclass('edfi.SchoolAddress')
+    )
+    THEN
+        ALTER TABLE "edfi"."SchoolAddress"
+        ADD CONSTRAINT "FK_SchoolAddress_School"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "edfi"."School" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
-ALTER TABLE "edfi"."SchoolAddressPhoneNumber" ADD CONSTRAINT "FK_SchoolAddressPhoneNumber_SchoolAddress" FOREIGN KEY ("DocumentId", "AddressOrdinal") REFERENCES "edfi"."SchoolAddress" ("DocumentId", "AddressOrdinal") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SchoolAddressPhoneNumber_SchoolAddress'
+        AND conrelid = to_regclass('edfi.SchoolAddressPhoneNumber')
+    )
+    THEN
+        ALTER TABLE "edfi"."SchoolAddressPhoneNumber"
+        ADD CONSTRAINT "FK_SchoolAddressPhoneNumber_SchoolAddress"
+        FOREIGN KEY ("DocumentId", "AddressOrdinal")
+        REFERENCES "edfi"."SchoolAddress" ("DocumentId", "AddressOrdinal")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $$

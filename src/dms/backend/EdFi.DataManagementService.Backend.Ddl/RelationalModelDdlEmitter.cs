@@ -3,21 +3,19 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
 /// <summary>
-/// Emits dialect-specific DDL (schemas, tables, indexes, and triggers) from a derived relational model set.
+/// Emits dialect-specific DDL (schemas, tables, indexes, views, and triggers) from a derived relational model set.
 /// </summary>
-public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
+public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 {
-    private readonly ISqlDialectRules _dialectRules =
-        dialectRules ?? throw new ArgumentNullException(nameof(dialectRules));
+    private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
     /// <summary>
-    /// Builds a SQL script that creates all schemas, tables, indexes, and triggers in the model set.
+    /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
     /// </summary>
     /// <param name="modelSet">The derived relational model set to emit.</param>
     /// <returns>The emitted DDL script.</returns>
@@ -28,79 +26,76 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     {
         ArgumentNullException.ThrowIfNull(modelSet);
 
-        if (modelSet.Dialect != _dialectRules.Dialect)
+        if (modelSet.Dialect != _dialect.Rules.Dialect)
         {
             throw new InvalidOperationException(
-                $"Dialect mismatch: model={modelSet.Dialect}, rules={_dialectRules.Dialect}."
+                $"Dialect mismatch: model={modelSet.Dialect}, rules={_dialect.Rules.Dialect}."
             );
         }
 
-        var builder = new StringBuilder();
+        var writer = new SqlWriter(_dialect);
 
         // Phase 1: Schemas
-        AppendSchemas(builder, modelSet.ProjectSchemasInEndpointOrder);
+        EmitSchemas(writer, modelSet.ProjectSchemasInEndpointOrder);
 
         // Phase 2: Tables (PK/UK/CHECK only, no cross-table FKs)
-        AppendTables(builder, modelSet.ConcreteResourcesInNameOrder);
+        EmitTables(writer, modelSet.ConcreteResourcesInNameOrder);
 
         // Phase 3: Abstract Identity Tables (must precede FKs that reference them)
-        AppendAbstractIdentityTables(builder, modelSet.AbstractIdentityTablesInNameOrder);
+        EmitAbstractIdentityTables(writer, modelSet.AbstractIdentityTablesInNameOrder);
 
         // Phase 4: Foreign Keys (separate ALTER TABLE statements)
-        AppendForeignKeys(builder, modelSet.ConcreteResourcesInNameOrder);
+        EmitForeignKeys(writer, modelSet.ConcreteResourcesInNameOrder);
 
         // Phase 5: Indexes
-        AppendIndexes(builder, modelSet.IndexesInCreateOrder);
+        EmitIndexes(writer, modelSet.IndexesInCreateOrder);
 
-        // Phase 6: Triggers
-        AppendTriggers(builder, modelSet.TriggersInCreateOrder);
+        // Phase 6: Abstract Union Views (must precede Triggers per design)
+        EmitAbstractUnionViews(writer, modelSet.AbstractUnionViewsInNameOrder);
 
-        // Phase 7: Abstract Union Views
-        AppendAbstractUnionViews(builder, modelSet.AbstractUnionViewsInNameOrder);
+        // Phase 7: Triggers
+        EmitTriggers(writer, modelSet.TriggersInCreateOrder);
 
-        return builder.ToString();
+        return writer.ToString();
     }
 
     /// <summary>
-    /// Appends <c>CREATE SCHEMA</c> statements for each project schema.
+    /// Emits <c>CREATE SCHEMA IF NOT EXISTS</c> statements for each project schema.
     /// </summary>
-    private void AppendSchemas(StringBuilder builder, IReadOnlyList<ProjectSchemaInfo> schemas)
+    private void EmitSchemas(SqlWriter writer, IReadOnlyList<ProjectSchemaInfo> schemas)
     {
         foreach (var schema in schemas)
         {
-            builder.Append("CREATE SCHEMA ");
-            builder.Append(Quote(schema.PhysicalSchema));
-            builder.AppendLine(";");
+            writer.AppendLine(_dialect.CreateSchemaIfNotExists(schema.PhysicalSchema));
         }
 
         if (schemas.Count > 0)
         {
-            builder.AppendLine();
+            writer.AppendLine();
         }
     }
 
     /// <summary>
-    /// Appends <c>CREATE TABLE</c> statements for each table in each concrete resource model.
+    /// Emits <c>CREATE TABLE IF NOT EXISTS</c> statements for each table in each concrete resource model.
     /// </summary>
-    private void AppendTables(StringBuilder builder, IReadOnlyList<ConcreteResourceModel> resources)
+    private void EmitTables(SqlWriter writer, IReadOnlyList<ConcreteResourceModel> resources)
     {
         foreach (var resource in resources)
         {
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
-                AppendCreateTable(builder, table);
+                EmitCreateTable(writer, table);
             }
         }
     }
 
     /// <summary>
-    /// Appends a <c>CREATE TABLE</c> statement including columns, key, and table constraints.
+    /// Emits a <c>CREATE TABLE IF NOT EXISTS</c> statement including columns, key, and table constraints.
     /// </summary>
-    private void AppendCreateTable(StringBuilder builder, DbTableModel table)
+    private void EmitCreateTable(SqlWriter writer, DbTableModel table)
     {
-        builder.Append("CREATE TABLE ");
-        builder.Append(Quote(table.Table));
-        builder.AppendLine(" (");
+        writer.AppendLine(_dialect.CreateTableHeader(table.Table));
+        writer.AppendLine("(");
 
         var definitions = new List<string>();
 
@@ -127,27 +122,31 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             }
         }
 
-        for (var i = 0; i < definitions.Count; i++)
+        using (writer.Indent())
         {
-            builder.Append("    ");
-            builder.Append(definitions[i]);
-
-            if (i < definitions.Count - 1)
+            for (var i = 0; i < definitions.Count; i++)
             {
-                builder.Append(',');
-            }
+                writer.Append(definitions[i]);
 
-            builder.AppendLine();
+                if (i < definitions.Count - 1)
+                {
+                    writer.AppendLine(",");
+                }
+                else
+                {
+                    writer.AppendLine();
+                }
+            }
         }
 
-        builder.AppendLine(");");
-        builder.AppendLine();
+        writer.AppendLine(");");
+        writer.AppendLine();
     }
 
     /// <summary>
-    /// Appends <c>ALTER TABLE ADD CONSTRAINT</c> statements for all foreign keys.
+    /// Emits idempotent <c>ALTER TABLE ADD CONSTRAINT</c> statements for all foreign keys.
     /// </summary>
-    private void AppendForeignKeys(StringBuilder builder, IReadOnlyList<ConcreteResourceModel> resources)
+    private void EmitForeignKeys(SqlWriter writer, IReadOnlyList<ConcreteResourceModel> resources)
     {
         foreach (var resource in resources)
         {
@@ -155,163 +154,158 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             {
                 foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
                 {
-                    builder.Append("ALTER TABLE ");
-                    builder.Append(Quote(table.Table));
-                    builder.Append(" ADD CONSTRAINT ");
-                    builder.Append(Quote(fk.Name));
-                    builder.Append(" FOREIGN KEY (");
-                    builder.Append(FormatColumnList(fk.Columns));
-                    builder.Append(") REFERENCES ");
-                    builder.Append(Quote(fk.TargetTable));
-                    builder.Append(" (");
-                    builder.Append(FormatColumnList(fk.TargetColumns));
-                    builder.Append(")");
-                    builder.Append(FormatReferentialActions(fk));
-                    builder.AppendLine(";");
-                    builder.AppendLine();
+                    writer.AppendLine(
+                        _dialect.AddForeignKeyConstraint(
+                            table.Table,
+                            fk.Name,
+                            fk.Columns,
+                            fk.TargetTable,
+                            fk.TargetColumns,
+                            fk.OnDelete,
+                            fk.OnUpdate
+                        )
+                    );
+                    writer.AppendLine();
                 }
             }
         }
     }
 
     /// <summary>
-    /// Appends <c>CREATE TABLE</c> statements for abstract identity tables.
+    /// Emits <c>CREATE TABLE IF NOT EXISTS</c> statements for abstract identity tables.
     /// </summary>
-    private void AppendAbstractIdentityTables(
-        StringBuilder builder,
-        IReadOnlyList<AbstractIdentityTableInfo> tables
-    )
+    private void EmitAbstractIdentityTables(SqlWriter writer, IReadOnlyList<AbstractIdentityTableInfo> tables)
     {
         foreach (var tableInfo in tables)
         {
-            // Reuse existing AppendCreateTable - it already handles all table types
-            AppendCreateTable(builder, tableInfo.TableModel);
+            // Reuse existing EmitCreateTable - it already handles all table types
+            EmitCreateTable(writer, tableInfo.TableModel);
         }
     }
 
     /// <summary>
-    /// Appends <c>CREATE INDEX</c> statements for each index in create-order.
+    /// Emits <c>CREATE INDEX IF NOT EXISTS</c> statements for each index in create-order.
     /// </summary>
-    private void AppendIndexes(StringBuilder builder, IReadOnlyList<DbIndexInfo> indexes)
+    private void EmitIndexes(SqlWriter writer, IReadOnlyList<DbIndexInfo> indexes)
     {
         foreach (var index in indexes)
         {
-            var unique = index.IsUnique ? "UNIQUE " : string.Empty;
-            builder.Append("CREATE ");
-            builder.Append(unique);
-            builder.Append("INDEX ");
-            builder.Append(Quote(index.Name));
-            builder.Append(" ON ");
-            builder.Append(Quote(index.Table));
-            builder.Append(" (");
-            builder.Append(FormatColumnList(index.KeyColumns));
-            builder.AppendLine(");");
-            builder.AppendLine();
+            writer.AppendLine(
+                _dialect.CreateIndexIfNotExists(
+                    index.Table,
+                    index.Name.Value,
+                    index.KeyColumns,
+                    index.IsUnique
+                )
+            );
+            writer.AppendLine();
         }
     }
 
     /// <summary>
-    /// Appends <c>CREATE TRIGGER</c> statements for each trigger in create-order.
+    /// Emits <c>CREATE TRIGGER</c> statements for each trigger in create-order.
     /// </summary>
-    private void AppendTriggers(StringBuilder builder, IReadOnlyList<DbTriggerInfo> triggers)
+    private void EmitTriggers(SqlWriter writer, IReadOnlyList<DbTriggerInfo> triggers)
     {
         foreach (var trigger in triggers)
         {
-            if (_dialectRules.Dialect == SqlDialect.Pgsql)
+            if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
-                AppendPgsqlTrigger(builder, trigger);
+                EmitPgsqlTrigger(writer, trigger);
             }
             else
             {
-                AppendMssqlTrigger(builder, trigger);
+                EmitMssqlTrigger(writer, trigger);
             }
         }
     }
 
     /// <summary>
-    /// Appends a PostgreSQL trigger (function + trigger).
+    /// Emits a PostgreSQL trigger (function + trigger).
     /// </summary>
-    private void AppendPgsqlTrigger(StringBuilder builder, DbTriggerInfo trigger)
+    private void EmitPgsqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
     {
-        var funcName = _dialectRules.ShortenIdentifier($"TF_{trigger.Name.Value}");
+        var funcName = _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}");
         var schema = trigger.Table.Schema;
 
         // Function
-        builder.Append("CREATE OR REPLACE FUNCTION ");
-        builder.Append(Quote(schema));
-        builder.Append('.');
-        builder.Append(Quote(funcName));
-        builder.AppendLine("()");
-        builder.AppendLine("RETURNS TRIGGER AS $$");
-        builder.AppendLine("BEGIN");
-        AppendTriggerBody(builder, trigger, "    ");
-        builder.AppendLine("    RETURN NEW;");
-        builder.AppendLine("END;");
-        builder.AppendLine("$$ LANGUAGE plpgsql;");
-        builder.AppendLine();
+        writer.Append("CREATE OR REPLACE FUNCTION ");
+        writer.Append(Quote(schema));
+        writer.Append(".");
+        writer.Append(Quote(funcName));
+        writer.AppendLine("()");
+        writer.AppendLine("RETURNS TRIGGER AS $$");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            EmitTriggerBody(writer, trigger);
+            writer.AppendLine("RETURN NEW;");
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine("$$ LANGUAGE plpgsql;");
+        writer.AppendLine();
 
         // Trigger
-        builder.Append("CREATE OR REPLACE TRIGGER ");
-        builder.Append(Quote(trigger.Name));
-        builder.AppendLine();
-        builder.Append("BEFORE INSERT OR UPDATE ON ");
-        builder.Append(Quote(trigger.Table));
-        builder.AppendLine();
-        builder.AppendLine("FOR EACH ROW");
-        builder.Append("EXECUTE FUNCTION ");
-        builder.Append(Quote(schema));
-        builder.Append('.');
-        builder.Append(Quote(funcName));
-        builder.AppendLine("();");
-        builder.AppendLine();
+        writer.Append("CREATE OR REPLACE TRIGGER ");
+        writer.AppendLine(Quote(trigger.Name));
+        writer.Append("BEFORE INSERT OR UPDATE ON ");
+        writer.AppendLine(Quote(trigger.Table));
+        writer.AppendLine("FOR EACH ROW");
+        writer.Append("EXECUTE FUNCTION ");
+        writer.Append(Quote(schema));
+        writer.Append(".");
+        writer.Append(Quote(funcName));
+        writer.AppendLine("();");
+        writer.AppendLine();
     }
 
     /// <summary>
-    /// Appends a SQL Server trigger.
+    /// Emits a SQL Server trigger.
     /// </summary>
-    private void AppendMssqlTrigger(StringBuilder builder, DbTriggerInfo trigger)
+    private void EmitMssqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
     {
         // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
-        builder.AppendLine("GO");
-        builder.Append("CREATE OR ALTER TRIGGER ");
-        builder.Append(Quote(trigger.Table.Schema));
-        builder.Append('.');
-        builder.Append(Quote(trigger.Name));
-        builder.AppendLine();
-        builder.Append("ON ");
-        builder.Append(Quote(trigger.Table));
-        builder.AppendLine();
-        builder.AppendLine(
+        writer.AppendLine("GO");
+        writer.Append("CREATE OR ALTER TRIGGER ");
+        writer.Append(Quote(trigger.Table.Schema));
+        writer.Append(".");
+        writer.AppendLine(Quote(trigger.Name));
+        writer.Append("ON ");
+        writer.AppendLine(Quote(trigger.Table));
+        writer.AppendLine(
             trigger.Parameters is TriggerKindParameters.IdentityPropagationFallback
                 ? "AFTER UPDATE"
                 : "AFTER INSERT, UPDATE"
         );
-        builder.AppendLine("AS");
-        builder.AppendLine("BEGIN");
-        builder.AppendLine("    SET NOCOUNT ON;");
-        AppendTriggerBody(builder, trigger, "    ");
-        builder.AppendLine("END;");
-        builder.AppendLine();
+        writer.AppendLine("AS");
+        writer.AppendLine("BEGIN");
+        using (writer.Indent())
+        {
+            writer.AppendLine("SET NOCOUNT ON;");
+            EmitTriggerBody(writer, trigger);
+        }
+        writer.AppendLine("END;");
+        writer.AppendLine();
     }
 
     /// <summary>
-    /// Appends the trigger body logic based on trigger kind.
+    /// Emits the trigger body logic based on trigger kind.
     /// </summary>
-    private void AppendTriggerBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
+    private void EmitTriggerBody(SqlWriter writer, DbTriggerInfo trigger)
     {
         switch (trigger.Parameters)
         {
             case TriggerKindParameters.DocumentStamping:
-                AppendDocumentStampingBody(builder, trigger, indent);
+                EmitDocumentStampingBody(writer, trigger);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-                AppendReferentialIdentityBody(builder, trigger, indent, refId);
+                EmitReferentialIdentityBody(writer, trigger, refId);
                 break;
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
-                AppendAbstractIdentityBody(builder, trigger, indent, abstractId);
+                EmitAbstractIdentityBody(writer, trigger, abstractId);
                 break;
             case TriggerKindParameters.IdentityPropagationFallback propagation:
-                AppendIdentityPropagationBody(builder, trigger, indent, propagation);
+                EmitIdentityPropagationBody(writer, trigger, propagation);
                 break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(trigger.Parameters));
@@ -319,10 +313,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     }
 
     /// <summary>
-    /// Appends document stamping trigger body that stamps <c>dms.Document.ContentVersion</c>
+    /// Emits document stamping trigger body that stamps <c>dms.Document.ContentVersion</c>
     /// and (for root tables with identity projection columns) <c>IdentityVersion</c> on writes.
     /// </summary>
-    private void AppendDocumentStampingBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
+    private void EmitDocumentStampingBody(SqlWriter writer, DbTriggerInfo trigger)
     {
         if (trigger.KeyColumns.Count != 1)
             throw new InvalidOperationException(
@@ -333,210 +327,188 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         var sequenceName = FormatSequenceName();
         var keyColumn = trigger.KeyColumns[0];
 
-        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            AppendPgsqlDocumentStampingBody(builder, trigger, indent, documentTable, sequenceName, keyColumn);
+            EmitPgsqlDocumentStampingBody(writer, trigger, documentTable, sequenceName, keyColumn);
         }
         else
         {
-            AppendMssqlDocumentStampingBody(builder, trigger, indent, documentTable, sequenceName, keyColumn);
+            EmitMssqlDocumentStampingBody(writer, trigger, documentTable, sequenceName, keyColumn);
         }
     }
 
-    private void AppendPgsqlDocumentStampingBody(
-        StringBuilder builder,
+    private void EmitPgsqlDocumentStampingBody(
+        SqlWriter writer,
         DbTriggerInfo trigger,
-        string indent,
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn
     )
     {
         // ContentVersion stamp
-        builder.Append(indent);
-        builder.Append("UPDATE ");
-        builder.AppendLine(documentTable);
-        builder.Append(indent);
-        builder.Append("SET ");
-        builder.Append(Quote(new DbColumnName("ContentVersion")));
-        builder.Append(" = nextval('");
-        builder.Append(sequenceName);
-        builder.Append("'), ");
-        builder.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
-        builder.AppendLine(" = now()");
-        builder.Append(indent);
-        builder.Append("WHERE ");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" = NEW.");
-        builder.Append(Quote(keyColumn));
-        builder.AppendLine(";");
+        writer.Append("UPDATE ");
+        writer.AppendLine(documentTable);
+        writer.Append("SET ");
+        writer.Append(Quote(new DbColumnName("ContentVersion")));
+        writer.Append(" = nextval('");
+        writer.Append(sequenceName);
+        writer.Append("'), ");
+        writer.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+        writer.AppendLine(" = now()");
+        writer.Append("WHERE ");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" = NEW.");
+        writer.Append(Quote(keyColumn));
+        writer.AppendLine(";");
 
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)
         {
-            builder.Append(indent);
-            builder.Append("IF TG_OP = 'UPDATE' AND (");
+            writer.Append("IF TG_OP = 'UPDATE' AND (");
             for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
             {
                 if (i > 0)
-                    builder.Append(" OR ");
+                    writer.Append(" OR ");
                 var col = Quote(trigger.IdentityProjectionColumns[i]);
-                builder.Append("OLD.");
-                builder.Append(col);
-                builder.Append(" IS DISTINCT FROM NEW.");
-                builder.Append(col);
+                writer.Append("OLD.");
+                writer.Append(col);
+                writer.Append(" IS DISTINCT FROM NEW.");
+                writer.Append(col);
             }
-            builder.AppendLine(") THEN");
+            writer.AppendLine(") THEN");
 
-            var innerIndent = indent + "    ";
-            builder.Append(innerIndent);
-            builder.Append("UPDATE ");
-            builder.AppendLine(documentTable);
-            builder.Append(innerIndent);
-            builder.Append("SET ");
-            builder.Append(Quote(new DbColumnName("IdentityVersion")));
-            builder.Append(" = nextval('");
-            builder.Append(sequenceName);
-            builder.Append("'), ");
-            builder.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
-            builder.AppendLine(" = now()");
-            builder.Append(innerIndent);
-            builder.Append("WHERE ");
-            builder.Append(Quote(new DbColumnName("DocumentId")));
-            builder.Append(" = NEW.");
-            builder.Append(Quote(keyColumn));
-            builder.AppendLine(";");
+            using (writer.Indent())
+            {
+                writer.Append("UPDATE ");
+                writer.AppendLine(documentTable);
+                writer.Append("SET ");
+                writer.Append(Quote(new DbColumnName("IdentityVersion")));
+                writer.Append(" = nextval('");
+                writer.Append(sequenceName);
+                writer.Append("'), ");
+                writer.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
+                writer.AppendLine(" = now()");
+                writer.Append("WHERE ");
+                writer.Append(Quote(new DbColumnName("DocumentId")));
+                writer.Append(" = NEW.");
+                writer.Append(Quote(keyColumn));
+                writer.AppendLine(";");
+            }
 
-            builder.Append(indent);
-            builder.AppendLine("END IF;");
+            writer.AppendLine("END IF;");
         }
     }
 
-    private void AppendMssqlDocumentStampingBody(
-        StringBuilder builder,
+    private void EmitMssqlDocumentStampingBody(
+        SqlWriter writer,
         DbTriggerInfo trigger,
-        string indent,
         string documentTable,
         string sequenceName,
         DbColumnName keyColumn
     )
     {
         // ContentVersion stamp
-        builder.Append(indent);
-        builder.AppendLine("UPDATE d");
-        builder.Append(indent);
-        builder.Append("SET d.");
-        builder.Append(Quote(new DbColumnName("ContentVersion")));
-        builder.Append(" = NEXT VALUE FOR ");
-        builder.Append(sequenceName);
-        builder.Append(", d.");
-        builder.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
-        builder.AppendLine(" = sysutcdatetime()");
-        builder.Append(indent);
-        builder.Append("FROM ");
-        builder.Append(documentTable);
-        builder.AppendLine(" d");
-        builder.Append(indent);
-        builder.Append("INNER JOIN inserted i ON d.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" = i.");
-        builder.Append(Quote(keyColumn));
-        builder.AppendLine(";");
+        writer.AppendLine("UPDATE d");
+        writer.Append("SET d.");
+        writer.Append(Quote(new DbColumnName("ContentVersion")));
+        writer.Append(" = NEXT VALUE FOR ");
+        writer.Append(sequenceName);
+        writer.Append(", d.");
+        writer.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+        writer.AppendLine(" = sysutcdatetime()");
+        writer.Append("FROM ");
+        writer.Append(documentTable);
+        writer.AppendLine(" d");
+        writer.Append("INNER JOIN inserted i ON d.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" = i.");
+        writer.Append(Quote(keyColumn));
+        writer.AppendLine(";");
 
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)
         {
-            builder.Append(indent);
-            builder.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
+            writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
             for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
             {
                 if (i > 0)
-                    builder.Append(" OR ");
-                builder.Append("UPDATE(");
-                builder.Append(Quote(trigger.IdentityProjectionColumns[i]));
-                builder.Append(')');
+                    writer.Append(" OR ");
+                writer.Append("UPDATE(");
+                writer.Append(Quote(trigger.IdentityProjectionColumns[i]));
+                writer.Append(")");
             }
-            builder.AppendLine(")");
+            writer.AppendLine(")");
 
-            builder.Append(indent);
-            builder.AppendLine("BEGIN");
+            writer.AppendLine("BEGIN");
 
-            var innerIndent = indent + "    ";
-            builder.Append(innerIndent);
-            builder.AppendLine("UPDATE d");
-            builder.Append(innerIndent);
-            builder.Append("SET d.");
-            builder.Append(Quote(new DbColumnName("IdentityVersion")));
-            builder.Append(" = NEXT VALUE FOR ");
-            builder.Append(sequenceName);
-            builder.Append(", d.");
-            builder.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
-            builder.AppendLine(" = sysutcdatetime()");
-            builder.Append(innerIndent);
-            builder.Append("FROM ");
-            builder.Append(documentTable);
-            builder.AppendLine(" d");
-            builder.Append(innerIndent);
-            builder.Append("INNER JOIN inserted i ON d.");
-            builder.Append(Quote(new DbColumnName("DocumentId")));
-            builder.Append(" = i.");
-            builder.AppendLine(Quote(keyColumn));
-            builder.Append(innerIndent);
-            builder.Append("INNER JOIN deleted del ON del.");
-            builder.Append(Quote(keyColumn));
-            builder.Append(" = i.");
-            builder.AppendLine(Quote(keyColumn));
-            builder.Append(innerIndent);
-            builder.Append("WHERE ");
-            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
+            using (writer.Indent())
             {
-                if (i > 0)
+                writer.AppendLine("UPDATE d");
+                writer.Append("SET d.");
+                writer.Append(Quote(new DbColumnName("IdentityVersion")));
+                writer.Append(" = NEXT VALUE FOR ");
+                writer.Append(sequenceName);
+                writer.Append(", d.");
+                writer.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
+                writer.AppendLine(" = sysutcdatetime()");
+                writer.Append("FROM ");
+                writer.Append(documentTable);
+                writer.AppendLine(" d");
+                writer.Append("INNER JOIN inserted i ON d.");
+                writer.Append(Quote(new DbColumnName("DocumentId")));
+                writer.Append(" = i.");
+                writer.AppendLine(Quote(keyColumn));
+                writer.Append("INNER JOIN deleted del ON del.");
+                writer.Append(Quote(keyColumn));
+                writer.Append(" = i.");
+                writer.AppendLine(Quote(keyColumn));
+                writer.Append("WHERE ");
+                for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
                 {
-                    builder.Append(" OR ");
+                    if (i > 0)
+                    {
+                        writer.Append(" OR ");
+                    }
+                    var col = Quote(trigger.IdentityProjectionColumns[i]);
+                    EmitMssqlNullSafeNotEqual(writer, "i", col, "del", col);
                 }
-                var col = Quote(trigger.IdentityProjectionColumns[i]);
-                AppendMssqlNullSafeNotEqual(builder, "i", col, "del", col);
+                writer.AppendLine(";");
             }
-            builder.AppendLine(";");
 
-            builder.Append(indent);
-            builder.AppendLine("END");
+            writer.AppendLine("END");
         }
     }
 
     /// <summary>
-    /// Appends referential identity maintenance trigger body that maintains
+    /// Emits referential identity maintenance trigger body that maintains
     /// <c>dms.ReferentialIdentity</c> rows via UUIDv5 computation.
     /// </summary>
-    private void AppendReferentialIdentityBody(
-        StringBuilder builder,
+    private void EmitReferentialIdentityBody(
+        SqlWriter writer,
         DbTriggerInfo trigger,
-        string indent,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
-        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            AppendPgsqlReferentialIdentityBody(builder, indent, refId);
+            EmitPgsqlReferentialIdentityBody(writer, refId);
         }
         else
         {
-            AppendMssqlReferentialIdentityBody(builder, indent, refId);
+            EmitMssqlReferentialIdentityBody(writer, refId);
         }
     }
 
-    private void AppendPgsqlReferentialIdentityBody(
-        StringBuilder builder,
-        string indent,
+    private void EmitPgsqlReferentialIdentityBody(
+        SqlWriter writer,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
         var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
 
         // Primary referential identity
-        AppendPgsqlReferentialIdentityBlock(
-            builder,
-            indent,
+        EmitPgsqlReferentialIdentityBlock(
+            writer,
             refIdTable,
             refId.ResourceKeyId,
             refId.ProjectName,
@@ -547,9 +519,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         // Superclass alias
         if (refId.SuperclassAlias is { } alias)
         {
-            AppendPgsqlReferentialIdentityBlock(
-                builder,
-                indent,
+            EmitPgsqlReferentialIdentityBlock(
+                writer,
                 refIdTable,
                 alias.ResourceKeyId,
                 alias.ProjectName,
@@ -559,9 +530,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         }
     }
 
-    private void AppendPgsqlReferentialIdentityBlock(
-        StringBuilder builder,
-        string indent,
+    private void EmitPgsqlReferentialIdentityBlock(
+        SqlWriter writer,
         string refIdTable,
         short resourceKeyId,
         string projectName,
@@ -579,79 +549,73 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         var uuidv5Func = FormatUuidv5FunctionName();
 
         // DELETE existing row
-        builder.Append(indent);
-        builder.Append("DELETE FROM ");
-        builder.AppendLine(refIdTable);
-        builder.Append(indent);
-        builder.Append("WHERE ");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" = NEW.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" AND ");
-        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
-        builder.Append(" = ");
-        builder.Append(resourceKeyId);
-        builder.AppendLine(";");
+        writer.Append("DELETE FROM ");
+        writer.AppendLine(refIdTable);
+        writer.Append("WHERE ");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" = NEW.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" AND ");
+        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.Append(" = ");
+        writer.Append(resourceKeyId.ToString());
+        writer.AppendLine(";");
 
         // INSERT new row with UUIDv5
-        builder.Append(indent);
-        builder.Append("INSERT INTO ");
-        builder.Append(refIdTable);
-        builder.Append(" (");
-        builder.Append(Quote(new DbColumnName("ReferentialId")));
-        builder.Append(", ");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(", ");
-        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
-        builder.AppendLine(")");
-        builder.Append(indent);
-        builder.Append("VALUES (");
-        builder.Append(uuidv5Func);
-        builder.Append("('");
-        builder.Append(Uuidv5Namespace);
+        writer.Append("INSERT INTO ");
+        writer.Append(refIdTable);
+        writer.Append(" (");
+        writer.Append(Quote(new DbColumnName("ReferentialId")));
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.AppendLine(")");
+        writer.Append("VALUES (");
+        writer.Append(uuidv5Func);
+        writer.Append("('");
+        writer.Append(Uuidv5Namespace);
         // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
         // with no separator — do not add one without updating the calculator.
-        builder.Append("'::uuid, '");
-        builder.Append(EscapeSqlLiteral(projectName));
-        builder.Append(EscapeSqlLiteral(resourceName));
-        builder.Append("' || ");
-        AppendPgsqlIdentityHashExpression(builder, identityElements);
-        builder.Append("), NEW.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(", ");
-        builder.Append(resourceKeyId);
-        builder.AppendLine(");");
+        writer.Append("'::uuid, '");
+        writer.Append(EscapeSqlLiteral(projectName));
+        writer.Append(EscapeSqlLiteral(resourceName));
+        writer.Append("' || ");
+        EmitPgsqlIdentityHashExpression(writer, identityElements);
+        writer.Append("), NEW.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(", ");
+        writer.Append(resourceKeyId.ToString());
+        writer.AppendLine(");");
     }
 
-    private void AppendPgsqlIdentityHashExpression(
-        StringBuilder builder,
+    private void EmitPgsqlIdentityHashExpression(
+        SqlWriter writer,
         IReadOnlyList<IdentityElementMapping> elements
     )
     {
         for (int i = 0; i < elements.Count; i++)
         {
             if (i > 0)
-                builder.Append(" || '#' || ");
-            builder.Append("'$");
-            builder.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
-            builder.Append("=' || NEW.");
-            builder.Append(Quote(elements[i].Column));
-            builder.Append("::text");
+                writer.Append(" || '#' || ");
+            writer.Append("'$");
+            writer.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
+            writer.Append("=' || NEW.");
+            writer.Append(Quote(elements[i].Column));
+            writer.Append("::text");
         }
     }
 
-    private void AppendMssqlReferentialIdentityBody(
-        StringBuilder builder,
-        string indent,
+    private void EmitMssqlReferentialIdentityBody(
+        SqlWriter writer,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
         var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
 
         // Primary referential identity
-        AppendMssqlReferentialIdentityBlock(
-            builder,
-            indent,
+        EmitMssqlReferentialIdentityBlock(
+            writer,
             refIdTable,
             refId.ResourceKeyId,
             refId.ProjectName,
@@ -662,9 +626,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         // Superclass alias
         if (refId.SuperclassAlias is { } alias)
         {
-            AppendMssqlReferentialIdentityBlock(
-                builder,
-                indent,
+            EmitMssqlReferentialIdentityBlock(
+                writer,
                 refIdTable,
                 alias.ResourceKeyId,
                 alias.ProjectName,
@@ -674,9 +637,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         }
     }
 
-    private void AppendMssqlReferentialIdentityBlock(
-        StringBuilder builder,
-        string indent,
+    private void EmitMssqlReferentialIdentityBlock(
+        SqlWriter writer,
         string refIdTable,
         short resourceKeyId,
         string projectName,
@@ -694,84 +656,77 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         var uuidv5Func = FormatUuidv5FunctionName();
 
         // DELETE existing row
-        builder.Append(indent);
-        builder.Append("DELETE FROM ");
-        builder.AppendLine(refIdTable);
-        builder.Append(indent);
-        builder.Append("WHERE ");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" IN (SELECT ");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" FROM inserted) AND ");
-        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
-        builder.Append(" = ");
-        builder.Append(resourceKeyId);
-        builder.AppendLine(";");
+        writer.Append("DELETE FROM ");
+        writer.AppendLine(refIdTable);
+        writer.Append("WHERE ");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" IN (SELECT ");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" FROM inserted) AND ");
+        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.Append(" = ");
+        writer.Append(resourceKeyId.ToString());
+        writer.AppendLine(";");
 
         // INSERT new rows from inserted table with UUIDv5
-        builder.Append(indent);
-        builder.Append("INSERT INTO ");
-        builder.Append(refIdTable);
-        builder.Append(" (");
-        builder.Append(Quote(new DbColumnName("ReferentialId")));
-        builder.Append(", ");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(", ");
-        builder.Append(Quote(new DbColumnName("ResourceKeyId")));
-        builder.AppendLine(")");
-        builder.Append(indent);
-        builder.Append("SELECT ");
-        builder.Append(uuidv5Func);
-        builder.Append("('");
-        builder.Append(Uuidv5Namespace);
+        writer.Append("INSERT INTO ");
+        writer.Append(refIdTable);
+        writer.Append(" (");
+        writer.Append(Quote(new DbColumnName("ReferentialId")));
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.AppendLine(")");
+        writer.Append("SELECT ");
+        writer.Append(uuidv5Func);
+        writer.Append("('");
+        writer.Append(Uuidv5Namespace);
         // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
         // with no separator — do not add one without updating the calculator.
-        builder.Append("', N'");
-        builder.Append(EscapeSqlLiteral(projectName));
-        builder.Append(EscapeSqlLiteral(resourceName));
-        builder.Append("' + ");
-        AppendMssqlIdentityHashExpression(builder, identityElements);
-        builder.Append("), i.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(", ");
-        builder.AppendLine(resourceKeyId.ToString());
-        builder.Append(indent);
-        builder.AppendLine("FROM inserted i;");
+        writer.Append("', N'");
+        writer.Append(EscapeSqlLiteral(projectName));
+        writer.Append(EscapeSqlLiteral(resourceName));
+        writer.Append("' + ");
+        EmitMssqlIdentityHashExpression(writer, identityElements);
+        writer.Append("), i.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(", ");
+        writer.AppendLine(resourceKeyId.ToString());
+        writer.AppendLine("FROM inserted i;");
     }
 
-    private void AppendMssqlIdentityHashExpression(
-        StringBuilder builder,
+    private void EmitMssqlIdentityHashExpression(
+        SqlWriter writer,
         IReadOnlyList<IdentityElementMapping> elements
     )
     {
         for (int i = 0; i < elements.Count; i++)
         {
             if (i > 0)
-                builder.Append(" + N'#' + ");
-            builder.Append("N'$");
-            builder.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
-            builder.Append("=' + CAST(i.");
-            builder.Append(Quote(elements[i].Column));
-            builder.Append(" AS nvarchar(max))");
+                writer.Append(" + N'#' + ");
+            writer.Append("N'$");
+            writer.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
+            writer.Append("=' + CAST(i.");
+            writer.Append(Quote(elements[i].Column));
+            writer.Append(" AS nvarchar(max))");
         }
     }
 
     /// <summary>
-    /// Appends abstract identity maintenance trigger body that maintains abstract identity
+    /// Emits abstract identity maintenance trigger body that maintains abstract identity
     /// tables from concrete resource root tables.
     /// </summary>
-    private void AppendAbstractIdentityBody(
-        StringBuilder builder,
+    private void EmitAbstractIdentityBody(
+        SqlWriter writer,
         DbTriggerInfo trigger,
-        string indent,
         TriggerKindParameters.AbstractIdentityMaintenance abstractId
     )
     {
-        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            AppendPgsqlAbstractIdentityBody(
-                builder,
-                indent,
+            EmitPgsqlAbstractIdentityBody(
+                writer,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
                 abstractId.DiscriminatorValue
@@ -779,9 +734,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         }
         else
         {
-            AppendMssqlAbstractIdentityBody(
-                builder,
-                indent,
+            EmitMssqlAbstractIdentityBody(
+                writer,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
                 abstractId.DiscriminatorValue
@@ -789,9 +743,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         }
     }
 
-    private void AppendPgsqlAbstractIdentityBody(
-        StringBuilder builder,
-        string indent,
+    private void EmitPgsqlAbstractIdentityBody(
+        SqlWriter writer,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
         string discriminatorValue
@@ -800,53 +753,48 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         var targetTable = Quote(targetTableName);
 
         // INSERT ... ON CONFLICT DO UPDATE
-        builder.Append(indent);
-        builder.Append("INSERT INTO ");
-        builder.Append(targetTable);
-        builder.Append(" (");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append("INSERT INTO ");
+        writer.Append(targetTable);
+        writer.Append(" (");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
         foreach (var mapping in mappings)
         {
-            builder.Append(", ");
-            builder.Append(Quote(mapping.TargetColumn));
+            writer.Append(", ");
+            writer.Append(Quote(mapping.TargetColumn));
         }
-        builder.Append(", ");
-        builder.Append(Quote(new DbColumnName("Discriminator")));
-        builder.AppendLine(")");
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("Discriminator")));
+        writer.AppendLine(")");
 
-        builder.Append(indent);
-        builder.Append("VALUES (NEW.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append("VALUES (NEW.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
         foreach (var mapping in mappings)
         {
-            builder.Append(", NEW.");
-            builder.Append(Quote(mapping.SourceColumn));
+            writer.Append(", NEW.");
+            writer.Append(Quote(mapping.SourceColumn));
         }
-        builder.Append(", '");
-        builder.Append(EscapeSqlLiteral(discriminatorValue));
-        builder.AppendLine("')");
+        writer.Append(", '");
+        writer.Append(EscapeSqlLiteral(discriminatorValue));
+        writer.AppendLine("')");
 
-        builder.Append(indent);
-        builder.Append("ON CONFLICT (");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.AppendLine(")");
+        writer.Append("ON CONFLICT (");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.AppendLine(")");
 
-        builder.Append(indent);
-        builder.Append("DO UPDATE SET ");
+        writer.Append("DO UPDATE SET ");
         for (int i = 0; i < mappings.Count; i++)
         {
             if (i > 0)
-                builder.Append(", ");
-            builder.Append(Quote(mappings[i].TargetColumn));
-            builder.Append(" = EXCLUDED.");
-            builder.Append(Quote(mappings[i].TargetColumn));
+                writer.Append(", ");
+            writer.Append(Quote(mappings[i].TargetColumn));
+            writer.Append(" = EXCLUDED.");
+            writer.Append(Quote(mappings[i].TargetColumn));
         }
-        builder.AppendLine(";");
+        writer.AppendLine(";");
     }
 
-    private void AppendMssqlAbstractIdentityBody(
-        StringBuilder builder,
-        string indent,
+    private void EmitMssqlAbstractIdentityBody(
+        SqlWriter writer,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
         string discriminatorValue
@@ -855,71 +803,65 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         var targetTable = Quote(targetTableName);
 
         // MERGE statement
-        builder.Append(indent);
-        builder.Append("MERGE ");
-        builder.Append(targetTable);
-        builder.AppendLine(" AS t");
-        builder.Append(indent);
-        builder.Append("USING inserted AS s ON t.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
-        builder.Append(" = s.");
-        builder.AppendLine(Quote(new DbColumnName("DocumentId")));
+        writer.Append("MERGE ");
+        writer.Append(targetTable);
+        writer.AppendLine(" AS t");
+        writer.Append("USING inserted AS s ON t.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(" = s.");
+        writer.AppendLine(Quote(new DbColumnName("DocumentId")));
 
         // WHEN MATCHED THEN UPDATE
-        builder.Append(indent);
-        builder.Append("WHEN MATCHED THEN UPDATE SET ");
+        writer.Append("WHEN MATCHED THEN UPDATE SET ");
         for (int i = 0; i < mappings.Count; i++)
         {
             if (i > 0)
-                builder.Append(", ");
-            builder.Append("t.");
-            builder.Append(Quote(mappings[i].TargetColumn));
-            builder.Append(" = s.");
-            builder.Append(Quote(mappings[i].SourceColumn));
+                writer.Append(", ");
+            writer.Append("t.");
+            writer.Append(Quote(mappings[i].TargetColumn));
+            writer.Append(" = s.");
+            writer.Append(Quote(mappings[i].SourceColumn));
         }
-        builder.AppendLine();
+        writer.AppendLine();
 
         // WHEN NOT MATCHED THEN INSERT
-        builder.Append(indent);
-        builder.Append("WHEN NOT MATCHED THEN INSERT (");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append("WHEN NOT MATCHED THEN INSERT (");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
         foreach (var mapping in mappings)
         {
-            builder.Append(", ");
-            builder.Append(Quote(mapping.TargetColumn));
+            writer.Append(", ");
+            writer.Append(Quote(mapping.TargetColumn));
         }
-        builder.Append(", ");
-        builder.Append(Quote(new DbColumnName("Discriminator")));
-        builder.AppendLine(")");
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("Discriminator")));
+        writer.AppendLine(")");
 
-        builder.Append(indent);
-        builder.Append("VALUES (s.");
-        builder.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append("VALUES (s.");
+        writer.Append(Quote(new DbColumnName("DocumentId")));
         foreach (var mapping in mappings)
         {
-            builder.Append(", s.");
-            builder.Append(Quote(mapping.SourceColumn));
+            writer.Append(", s.");
+            writer.Append(Quote(mapping.SourceColumn));
         }
-        builder.Append(", N'");
-        builder.Append(EscapeSqlLiteral(discriminatorValue));
-        builder.AppendLine("');");
+        writer.Append(", N'");
+        writer.Append(EscapeSqlLiteral(discriminatorValue));
+        writer.AppendLine("');");
     }
 
     /// <summary>
-    /// Appends identity propagation fallback trigger body (MSSQL only) that cascades
+    /// Emits identity propagation fallback trigger body (MSSQL only) that cascades
     /// identity column updates to target tables when <c>ON UPDATE CASCADE</c> is not available.
     /// </summary>
-    private void AppendIdentityPropagationBody(
-        StringBuilder builder,
+    private void EmitIdentityPropagationBody(
+        SqlWriter writer,
         DbTriggerInfo trigger,
-        string indent,
         TriggerKindParameters.IdentityPropagationFallback propagation
     )
     {
-        if (_dialectRules.Dialect != SqlDialect.Mssql)
+        if (_dialect.Rules.Dialect != SqlDialect.Mssql)
         {
             throw new InvalidOperationException(
-                $"Identity propagation fallback triggers are only supported for MSSQL, but dialect is {_dialectRules.Dialect}."
+                $"Identity propagation fallback triggers are only supported for MSSQL, but dialect is {_dialect.Rules.Dialect}."
             );
         }
 
@@ -931,89 +873,83 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         var targetTable = Quote(propagation.TargetTable);
         var fkColumn = trigger.KeyColumns[0];
 
-        builder.Append(indent);
-        builder.AppendLine("UPDATE t");
-        builder.Append(indent);
-        builder.Append("SET ");
+        writer.AppendLine("UPDATE t");
+        writer.Append("SET ");
         for (int i = 0; i < propagation.TargetColumnMappings.Count; i++)
         {
             if (i > 0)
-                builder.Append(", ");
-            builder.Append("t.");
-            builder.Append(Quote(propagation.TargetColumnMappings[i].TargetColumn));
-            builder.Append(" = i.");
-            builder.Append(Quote(propagation.TargetColumnMappings[i].SourceColumn));
+                writer.Append(", ");
+            writer.Append("t.");
+            writer.Append(Quote(propagation.TargetColumnMappings[i].TargetColumn));
+            writer.Append(" = i.");
+            writer.Append(Quote(propagation.TargetColumnMappings[i].SourceColumn));
         }
-        builder.AppendLine();
+        writer.AppendLine();
 
-        builder.Append(indent);
-        builder.Append("FROM ");
-        builder.Append(targetTable);
-        builder.AppendLine(" t");
+        writer.Append("FROM ");
+        writer.Append(targetTable);
+        writer.AppendLine(" t");
         // Join target to the OLD FK value (from deleted) so we find the row that needs updating.
-        builder.Append(indent);
-        builder.Append("INNER JOIN deleted d ON t.");
-        builder.Append(Quote(fkColumn));
-        builder.Append(" = d.");
-        builder.AppendLine(Quote(fkColumn));
+        writer.Append("INNER JOIN deleted d ON t.");
+        writer.Append(Quote(fkColumn));
+        writer.Append(" = d.");
+        writer.AppendLine(Quote(fkColumn));
         // Correlate old/new rows of the trigger's owning table by DocumentId (the universal PK),
         // not by the FK column — the FK column is what changes, so it cannot be the join key.
         var documentIdCol = Quote(new DbColumnName("DocumentId"));
-        builder.Append(indent);
-        builder.Append("INNER JOIN inserted i ON i.");
-        builder.Append(documentIdCol);
-        builder.Append(" = d.");
-        builder.AppendLine(documentIdCol);
+        writer.Append("INNER JOIN inserted i ON i.");
+        writer.Append(documentIdCol);
+        writer.Append(" = d.");
+        writer.AppendLine(documentIdCol);
 
-        builder.Append(indent);
-        builder.Append("WHERE ");
+        writer.Append("WHERE ");
         for (int i = 0; i < propagation.TargetColumnMappings.Count; i++)
         {
             if (i > 0)
-                builder.Append(" OR ");
+                writer.Append(" OR ");
             var col = Quote(propagation.TargetColumnMappings[i].SourceColumn);
-            AppendMssqlNullSafeNotEqual(builder, "i", col, "d", col);
+            EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
         }
-        builder.AppendLine(";");
+        writer.AppendLine(";");
     }
 
     /// <summary>
-    /// Appends a NULL-safe inequality comparison for MSSQL, equivalent to PostgreSQL's
+    /// Emits a NULL-safe inequality comparison for MSSQL, equivalent to PostgreSQL's
     /// <c>IS DISTINCT FROM</c>. Emits <c>(left.col &lt;&gt; right.col OR (left.col IS NULL AND right.col IS NOT NULL) OR (left.col IS NOT NULL AND right.col IS NULL))</c>.
     /// </summary>
-    private static void AppendMssqlNullSafeNotEqual(
-        StringBuilder builder,
+    private static void EmitMssqlNullSafeNotEqual(
+        SqlWriter writer,
         string leftAlias,
         string quotedColumn,
         string rightAlias,
         string rightQuotedColumn
     )
     {
-        builder.Append('(');
-        builder.Append(leftAlias);
-        builder.Append('.');
-        builder.Append(quotedColumn);
-        builder.Append(" <> ");
-        builder.Append(rightAlias);
-        builder.Append('.');
-        builder.Append(rightQuotedColumn);
-        builder.Append(" OR (");
-        builder.Append(leftAlias);
-        builder.Append('.');
-        builder.Append(quotedColumn);
-        builder.Append(" IS NULL AND ");
-        builder.Append(rightAlias);
-        builder.Append('.');
-        builder.Append(rightQuotedColumn);
-        builder.Append(" IS NOT NULL) OR (");
-        builder.Append(leftAlias);
-        builder.Append('.');
-        builder.Append(quotedColumn);
-        builder.Append(" IS NOT NULL AND ");
-        builder.Append(rightAlias);
-        builder.Append('.');
-        builder.Append(rightQuotedColumn);
-        builder.Append(" IS NULL))");
+        writer.Append("(");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" <> ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(" OR (");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" IS NULL AND ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(" IS NOT NULL) OR (");
+        writer.Append(leftAlias);
+        writer.Append(".");
+        writer.Append(quotedColumn);
+        writer.Append(" IS NOT NULL AND ");
+        writer.Append(rightAlias);
+        writer.Append(".");
+        writer.Append(rightQuotedColumn);
+        writer.Append(" IS NULL))");
     }
 
     /// <summary>
@@ -1027,8 +963,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             return column.Kind switch
             {
-                ColumnKind.Ordinal => _dialectRules.ScalarTypeDefaults.Int32Type,
-                ColumnKind.DocumentFk or ColumnKind.DescriptorFk or ColumnKind.ParentKeyPart => _dialectRules
+                ColumnKind.Ordinal => _dialect.Rules.ScalarTypeDefaults.Int32Type,
+                ColumnKind.DocumentFk or ColumnKind.DescriptorFk or ColumnKind.ParentKeyPart => _dialect
+                    .Rules
                     .ScalarTypeDefaults
                     .Int64Type,
                 _ => throw new InvalidOperationException(
@@ -1049,12 +986,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             ScalarKind.String => FormatStringType(scalarType),
             ScalarKind.Decimal => FormatDecimalType(scalarType),
-            ScalarKind.Int32 => _dialectRules.ScalarTypeDefaults.Int32Type,
-            ScalarKind.Int64 => _dialectRules.ScalarTypeDefaults.Int64Type,
-            ScalarKind.Boolean => _dialectRules.ScalarTypeDefaults.BooleanType,
-            ScalarKind.Date => _dialectRules.ScalarTypeDefaults.DateType,
-            ScalarKind.DateTime => _dialectRules.ScalarTypeDefaults.DateTimeType,
-            ScalarKind.Time => _dialectRules.ScalarTypeDefaults.TimeType,
+            ScalarKind.Int32 => _dialect.Rules.ScalarTypeDefaults.Int32Type,
+            ScalarKind.Int64 => _dialect.Rules.ScalarTypeDefaults.Int64Type,
+            ScalarKind.Boolean => _dialect.Rules.ScalarTypeDefaults.BooleanType,
+            ScalarKind.Date => _dialect.Rules.ScalarTypeDefaults.DateType,
+            ScalarKind.DateTime => _dialect.Rules.ScalarTypeDefaults.DateTimeType,
+            ScalarKind.Time => _dialect.Rules.ScalarTypeDefaults.TimeType,
             _ => throw new ArgumentOutOfRangeException(
                 nameof(scalarType.Kind),
                 scalarType.Kind,
@@ -1072,12 +1009,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         if (scalarType.MaxLength is null)
         {
             // Unbounded string - use (max) for SQL Server
-            return _dialectRules.Dialect == SqlDialect.Mssql
-                ? $"{_dialectRules.ScalarTypeDefaults.StringType}(max)"
-                : _dialectRules.ScalarTypeDefaults.StringType;
+            return _dialect.Rules.Dialect == SqlDialect.Mssql
+                ? $"{_dialect.Rules.ScalarTypeDefaults.StringType}(max)"
+                : _dialect.Rules.ScalarTypeDefaults.StringType;
         }
 
-        return $"{_dialectRules.ScalarTypeDefaults.StringType}({scalarType.MaxLength.Value})";
+        return $"{_dialect.Rules.ScalarTypeDefaults.StringType}({scalarType.MaxLength.Value})";
     }
 
     /// <summary>
@@ -1087,16 +1024,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     {
         if (scalarType.Decimal is null)
         {
-            return _dialectRules.ScalarTypeDefaults.DecimalType;
+            return _dialect.Rules.ScalarTypeDefaults.DecimalType;
         }
 
         var (precision, scale) = scalarType.Decimal.Value;
-        return $"{_dialectRules.ScalarTypeDefaults.DecimalType}({precision},{scale})";
+        return $"{_dialect.Rules.ScalarTypeDefaults.DecimalType}({precision},{scale})";
     }
 
     /// <summary>
     /// Formats a table constraint for inclusion within a <c>CREATE TABLE</c> statement.
-    /// Returns null for FK constraints which are emitted separately in Phase 3.
+    /// Returns null for FK constraints which are emitted separately in Phase 4.
     /// </summary>
     private string? FormatConstraint(TableConstraint constraint)
     {
@@ -1104,7 +1041,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             TableConstraint.Unique unique =>
                 $"CONSTRAINT {Quote(unique.Name)} UNIQUE ({FormatColumnList(unique.Columns)})",
-            TableConstraint.ForeignKey => null, // Skip FKs, emit in Phase 3
+            TableConstraint.ForeignKey => null, // Skip FKs, emit in Phase 4
             TableConstraint.AllOrNoneNullability allOrNone =>
                 $"CONSTRAINT {Quote(allOrNone.Name)} CHECK ({FormatAllOrNoneCheck(allOrNone)})",
             _ => throw new ArgumentOutOfRangeException(
@@ -1129,34 +1066,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     }
 
     /// <summary>
-    /// Formats <c>ON DELETE</c> and <c>ON UPDATE</c> clauses for a foreign key constraint.
-    /// </summary>
-    private string FormatReferentialActions(TableConstraint.ForeignKey foreignKey)
-    {
-        var deleteAction = FormatReferentialAction("DELETE", foreignKey.OnDelete);
-        var updateAction = FormatReferentialAction("UPDATE", foreignKey.OnUpdate);
-
-        return $"{deleteAction}{updateAction}";
-    }
-
-    /// <summary>
-    /// Formats a referential action keyword clause when the action is not the dialect default.
-    /// </summary>
-    private static string FormatReferentialAction(string keyword, ReferentialAction action)
-    {
-        return action switch
-        {
-            ReferentialAction.NoAction => string.Empty,
-            ReferentialAction.Cascade => $" ON {keyword} CASCADE",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(action),
-                action,
-                "Unsupported referential action."
-            ),
-        };
-    }
-
-    /// <summary>
     /// Formats a comma-separated list of quoted column names.
     /// </summary>
     private string FormatColumnList(IReadOnlyList<DbColumnName> columns)
@@ -1173,43 +1082,43 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     }
 
     /// <summary>
-    /// Appends <c>CREATE VIEW</c> statements for abstract union views.
+    /// Emits <c>CREATE VIEW</c> statements for abstract union views.
     /// </summary>
-    private void AppendAbstractUnionViews(StringBuilder builder, IReadOnlyList<AbstractUnionViewInfo> views)
+    private void EmitAbstractUnionViews(SqlWriter writer, IReadOnlyList<AbstractUnionViewInfo> views)
     {
         foreach (var viewInfo in views)
         {
-            AppendCreateView(builder, viewInfo);
+            EmitCreateView(writer, viewInfo);
         }
     }
 
     /// <summary>
-    /// Appends a <c>CREATE VIEW</c> statement for a single abstract union view.
+    /// Emits a <c>CREATE VIEW</c> statement for a single abstract union view.
     /// </summary>
-    private void AppendCreateView(StringBuilder builder, AbstractUnionViewInfo viewInfo)
+    private void EmitCreateView(SqlWriter writer, AbstractUnionViewInfo viewInfo)
     {
         // MSSQL: CREATE OR ALTER VIEW must be the first statement in a T-SQL batch.
-        if (_dialectRules.Dialect == SqlDialect.Mssql)
+        if (_dialect.Rules.Dialect == SqlDialect.Mssql)
         {
-            builder.AppendLine("GO");
+            writer.AppendLine("GO");
         }
 
         // Determine view creation pattern based on dialect
-        var createKeyword = _dialectRules.Dialect switch
+        var createKeyword = _dialect.ViewCreationPattern switch
         {
-            SqlDialect.Pgsql => "CREATE OR REPLACE VIEW",
-            SqlDialect.Mssql => "CREATE OR ALTER VIEW",
+            DdlPattern.CreateOrReplace => "CREATE OR REPLACE VIEW",
+            DdlPattern.CreateOrAlter => "CREATE OR ALTER VIEW",
             _ => throw new ArgumentOutOfRangeException(
-                nameof(_dialectRules.Dialect),
-                _dialectRules.Dialect,
-                "Unsupported SQL dialect."
+                nameof(_dialect.ViewCreationPattern),
+                _dialect.ViewCreationPattern,
+                "Unsupported view creation pattern."
             ),
         };
 
-        builder.Append(createKeyword);
-        builder.Append(" ");
-        builder.Append(Quote(viewInfo.ViewName));
-        builder.AppendLine(" AS");
+        writer.Append(createKeyword);
+        writer.Append(" ");
+        writer.Append(Quote(viewInfo.ViewName));
+        writer.AppendLine(" AS");
 
         // Emit UNION ALL arms
         if (viewInfo.UnionArmsInOrder.Count == 0)
@@ -1230,39 +1139,39 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
             if (i > 0)
             {
-                builder.AppendLine("UNION ALL");
+                writer.AppendLine("UNION ALL");
             }
 
-            builder.Append("SELECT ");
+            writer.Append("SELECT ");
 
             // Emit projection expressions
             for (int j = 0; j < arm.ProjectionExpressionsInSelectOrder.Count; j++)
             {
                 if (j > 0)
-                    builder.Append(", ");
+                    writer.Append(", ");
 
                 var expr = arm.ProjectionExpressionsInSelectOrder[j];
                 var outputColumn = viewInfo.OutputColumnsInSelectOrder[j];
 
-                AppendProjectionExpression(builder, expr, outputColumn.ScalarType);
-                builder.Append(" AS ");
-                builder.Append(Quote(outputColumn.ColumnName));
+                EmitProjectionExpression(writer, expr, outputColumn.ScalarType);
+                writer.Append(" AS ");
+                writer.Append(Quote(outputColumn.ColumnName));
             }
 
-            builder.AppendLine();
-            builder.Append("FROM ");
-            builder.AppendLine(Quote(arm.FromTable));
+            writer.AppendLine();
+            writer.Append("FROM ");
+            writer.AppendLine(Quote(arm.FromTable));
         }
 
-        builder.AppendLine(";");
-        builder.AppendLine();
+        writer.AppendLine(";");
+        writer.AppendLine();
     }
 
     /// <summary>
-    /// Appends a projection expression for an abstract union view select list.
+    /// Emits a projection expression for an abstract union view select list.
     /// </summary>
-    private void AppendProjectionExpression(
-        StringBuilder builder,
+    private void EmitProjectionExpression(
+        SqlWriter writer,
         AbstractUnionViewProjectionExpression expr,
         RelationalScalarType targetType
     )
@@ -1270,11 +1179,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         switch (expr)
         {
             case AbstractUnionViewProjectionExpression.SourceColumn sourceCol:
-                builder.Append(Quote(sourceCol.ColumnName));
+                writer.Append(Quote(sourceCol.ColumnName));
                 break;
 
             case AbstractUnionViewProjectionExpression.StringLiteral literal:
-                AppendStringLiteralWithCast(builder, literal.Value, targetType);
+                EmitStringLiteralWithCast(writer, literal.Value, targetType);
                 break;
 
             default:
@@ -1287,32 +1196,28 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     }
 
     /// <summary>
-    /// Appends a string literal with dialect-specific CAST expression.
+    /// Emits a string literal with dialect-specific CAST expression.
     /// </summary>
-    private void AppendStringLiteralWithCast(
-        StringBuilder builder,
-        string value,
-        RelationalScalarType targetType
-    )
+    private void EmitStringLiteralWithCast(SqlWriter writer, string value, RelationalScalarType targetType)
     {
         var sqlType = ResolveColumnType(targetType);
 
-        if (_dialectRules.Dialect == SqlDialect.Pgsql)
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             // PostgreSQL: 'literal'::type
-            builder.Append('\'');
-            builder.Append(EscapeSqlLiteral(value));
-            builder.Append("'::");
-            builder.Append(sqlType);
+            writer.Append("'");
+            writer.Append(EscapeSqlLiteral(value));
+            writer.Append("'::");
+            writer.Append(sqlType);
         }
         else
         {
             // SQL Server: CAST(N'literal' AS type)
-            builder.Append("CAST(N'");
-            builder.Append(EscapeSqlLiteral(value));
-            builder.Append("' AS ");
-            builder.Append(sqlType);
-            builder.Append(')');
+            writer.Append("CAST(N'");
+            writer.Append(EscapeSqlLiteral(value));
+            writer.Append("' AS ");
+            writer.Append(sqlType);
+            writer.Append(")");
         }
     }
 
@@ -1322,57 +1227,39 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     private string ResolvePrimaryKeyConstraintName(DbTableModel table)
     {
         return string.IsNullOrWhiteSpace(table.Key.ConstraintName)
-            ? _dialectRules.ShortenIdentifier($"PK_{table.Table.Schema.Value}_{table.Table.Name}")
+            ? _dialect.Rules.ShortenIdentifier($"PK_{table.Table.Schema.Value}_{table.Table.Name}")
             : table.Key.ConstraintName;
     }
 
     /// <summary>
-    /// Quotes a raw identifier using the configured dialect rules.
+    /// Quotes a raw identifier using the configured dialect.
     /// </summary>
-    private string Quote(string identifier)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, identifier);
-    }
+    private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
 
     /// <summary>
-    /// Quotes a schema name using the configured dialect rules.
+    /// Quotes a schema name using the configured dialect.
     /// </summary>
-    private string Quote(DbSchemaName schema)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, schema);
-    }
+    private string Quote(DbSchemaName schema) => _dialect.QuoteIdentifier(schema.Value);
 
     /// <summary>
-    /// Quotes a fully-qualified table name using the configured dialect rules.
+    /// Quotes a fully-qualified table name using the configured dialect.
     /// </summary>
-    private string Quote(DbTableName table)
-    {
-        return SqlIdentifierQuoter.QuoteTableName(_dialectRules.Dialect, table);
-    }
+    private string Quote(DbTableName table) => _dialect.QualifyTable(table);
 
     /// <summary>
-    /// Quotes a column name using the configured dialect rules.
+    /// Quotes a column name using the configured dialect.
     /// </summary>
-    private string Quote(DbColumnName column)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, column);
-    }
+    private string Quote(DbColumnName column) => _dialect.QuoteIdentifier(column.Value);
 
     /// <summary>
-    /// Quotes an index name using the configured dialect rules.
+    /// Quotes an index name using the configured dialect.
     /// </summary>
-    private string Quote(DbIndexName index)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, index);
-    }
+    private string Quote(DbIndexName index) => _dialect.QuoteIdentifier(index.Value);
 
     /// <summary>
-    /// Quotes a trigger name using the configured dialect rules.
+    /// Quotes a trigger name using the configured dialect.
     /// </summary>
-    private string Quote(DbTriggerName trigger)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialectRules.Dialect, trigger);
-    }
+    private string Quote(DbTriggerName trigger) => _dialect.QuoteIdentifier(trigger.Value);
 
     /// <summary>
     /// The UUIDv5 namespace used for referential identity computation.

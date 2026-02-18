@@ -1,27 +1,68 @@
-CREATE SCHEMA "edfi";
+CREATE SCHEMA IF NOT EXISTS "edfi";
 
-CREATE TABLE "edfi"."School" (
+CREATE TABLE IF NOT EXISTS "edfi"."School"
+(
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE "edfi"."LocalEducationAgency" (
+CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
+(
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE "edfi"."EducationOrganizationIdentity" (
+CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
+(
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
     "Discriminator" varchar(50) NOT NULL,
     CONSTRAINT "PK_EducationOrganizationIdentity" PRIMARY KEY ("DocumentId")
 );
 
-ALTER TABLE "edfi"."School" ADD CONSTRAINT "FK_School_EducationOrganizationIdentity" FOREIGN KEY ("DocumentId") REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_School_EducationOrganizationIdentity'
+        AND conrelid = to_regclass('edfi.School')
+    )
+    THEN
+        ALTER TABLE "edfi"."School"
+        ADD CONSTRAINT "FK_School_EducationOrganizationIdentity"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
-ALTER TABLE "edfi"."LocalEducationAgency" ADD CONSTRAINT "FK_LocalEducationAgency_EducationOrganizationIdentity" FOREIGN KEY ("DocumentId") REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_LocalEducationAgency_EducationOrganizationIdentity'
+        AND conrelid = to_regclass('edfi.LocalEducationAgency')
+    )
+    THEN
+        ALTER TABLE "edfi"."LocalEducationAgency"
+        ADD CONSTRAINT "FK_LocalEducationAgency_EducationOrganizationIdentity"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
+
+CREATE OR REPLACE VIEW "edfi"."EducationOrganization" AS
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'School'::varchar(50) AS "Discriminator"
+FROM "edfi"."School"
+UNION ALL
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'LocalEducationAgency'::varchar(50) AS "Discriminator"
+FROM "edfi"."LocalEducationAgency"
+;
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
 RETURNS TRIGGER AS $$
@@ -134,12 +175,4 @@ CREATE OR REPLACE TRIGGER "TR_School_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
-
-CREATE OR REPLACE VIEW "edfi"."EducationOrganization" AS
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'School'::varchar(50) AS "Discriminator"
-FROM "edfi"."School"
-UNION ALL
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'LocalEducationAgency'::varchar(50) AS "Discriminator"
-FROM "edfi"."LocalEducationAgency"
-;
 

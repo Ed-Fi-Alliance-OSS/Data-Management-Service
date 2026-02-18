@@ -1,19 +1,26 @@
-CREATE SCHEMA [edfi];
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
+    EXEC('CREATE SCHEMA [edfi]');
 
-CREATE TABLE [edfi].[School] (
+IF OBJECT_ID(N'edfi.School', N'U') IS NULL
+CREATE TABLE [edfi].[School]
+(
     [DocumentId] bigint NOT NULL,
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId])
 );
 
-CREATE TABLE [edfi].[SchoolAddress] (
+IF OBJECT_ID(N'edfi.SchoolAddress', N'U') IS NULL
+CREATE TABLE [edfi].[SchoolAddress]
+(
     [DocumentId] bigint NOT NULL,
     [AddressOrdinal] int NOT NULL,
     [Street] nvarchar(100) NOT NULL,
     CONSTRAINT [PK_SchoolAddress] PRIMARY KEY ([DocumentId], [AddressOrdinal])
 );
 
-CREATE TABLE [edfi].[SchoolAddressPhoneNumber] (
+IF OBJECT_ID(N'edfi.SchoolAddressPhoneNumber', N'U') IS NULL
+CREATE TABLE [edfi].[SchoolAddressPhoneNumber]
+(
     [DocumentId] bigint NOT NULL,
     [AddressOrdinal] int NOT NULL,
     [PhoneNumberOrdinal] int NOT NULL,
@@ -21,9 +28,27 @@ CREATE TABLE [edfi].[SchoolAddressPhoneNumber] (
     CONSTRAINT [PK_SchoolAddressPhoneNumber] PRIMARY KEY ([DocumentId], [AddressOrdinal], [PhoneNumberOrdinal])
 );
 
-ALTER TABLE [edfi].[SchoolAddress] ADD CONSTRAINT [FK_SchoolAddress_School] FOREIGN KEY ([DocumentId]) REFERENCES [edfi].[School] ([DocumentId]) ON DELETE CASCADE;
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_SchoolAddress_School' AND parent_object_id = OBJECT_ID(N'edfi.SchoolAddress')
+)
+ALTER TABLE [edfi].[SchoolAddress]
+ADD CONSTRAINT [FK_SchoolAddress_School]
+FOREIGN KEY ([DocumentId])
+REFERENCES [edfi].[School] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
 
-ALTER TABLE [edfi].[SchoolAddressPhoneNumber] ADD CONSTRAINT [FK_SchoolAddressPhoneNumber_SchoolAddress] FOREIGN KEY ([DocumentId], [AddressOrdinal]) REFERENCES [edfi].[SchoolAddress] ([DocumentId], [AddressOrdinal]) ON DELETE CASCADE;
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_SchoolAddressPhoneNumber_SchoolAddress' AND parent_object_id = OBJECT_ID(N'edfi.SchoolAddressPhoneNumber')
+)
+ALTER TABLE [edfi].[SchoolAddressPhoneNumber]
+ADD CONSTRAINT [FK_SchoolAddressPhoneNumber_SchoolAddress]
+FOREIGN KEY ([DocumentId], [AddressOrdinal])
+REFERENCES [edfi].[SchoolAddress] ([DocumentId], [AddressOrdinal])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]

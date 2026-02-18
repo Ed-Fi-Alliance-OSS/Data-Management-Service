@@ -1,27 +1,61 @@
-CREATE SCHEMA [edfi];
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
+    EXEC('CREATE SCHEMA [edfi]');
 
-CREATE TABLE [edfi].[School] (
+IF OBJECT_ID(N'edfi.School', N'U') IS NULL
+CREATE TABLE [edfi].[School]
+(
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId])
 );
 
-CREATE TABLE [edfi].[LocalEducationAgency] (
+IF OBJECT_ID(N'edfi.LocalEducationAgency', N'U') IS NULL
+CREATE TABLE [edfi].[LocalEducationAgency]
+(
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] int NOT NULL,
     CONSTRAINT [PK_LocalEducationAgency] PRIMARY KEY ([DocumentId])
 );
 
-CREATE TABLE [edfi].[EducationOrganizationIdentity] (
+IF OBJECT_ID(N'edfi.EducationOrganizationIdentity', N'U') IS NULL
+CREATE TABLE [edfi].[EducationOrganizationIdentity]
+(
     [DocumentId] bigint NOT NULL,
     [EducationOrganizationId] int NOT NULL,
     [Discriminator] nvarchar(50) NOT NULL,
     CONSTRAINT [PK_EducationOrganizationIdentity] PRIMARY KEY ([DocumentId])
 );
 
-ALTER TABLE [edfi].[School] ADD CONSTRAINT [FK_School_EducationOrganizationIdentity] FOREIGN KEY ([DocumentId]) REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId]) ON DELETE CASCADE;
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_School_EducationOrganizationIdentity' AND parent_object_id = OBJECT_ID(N'edfi.School')
+)
+ALTER TABLE [edfi].[School]
+ADD CONSTRAINT [FK_School_EducationOrganizationIdentity]
+FOREIGN KEY ([DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
 
-ALTER TABLE [edfi].[LocalEducationAgency] ADD CONSTRAINT [FK_LocalEducationAgency_EducationOrganizationIdentity] FOREIGN KEY ([DocumentId]) REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId]) ON DELETE CASCADE;
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_LocalEducationAgency_EducationOrganizationIdentity' AND parent_object_id = OBJECT_ID(N'edfi.LocalEducationAgency')
+)
+ALTER TABLE [edfi].[LocalEducationAgency]
+ADD CONSTRAINT [FK_LocalEducationAgency_EducationOrganizationIdentity]
+FOREIGN KEY ([DocumentId])
+REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
+GO
+CREATE OR ALTER VIEW [edfi].[EducationOrganization] AS
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'School' AS nvarchar(50)) AS [Discriminator]
+FROM [edfi].[School]
+UNION ALL
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
+FROM [edfi].[LocalEducationAgency]
+;
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_LocalEducationAgency_Stamp]
@@ -132,13 +166,4 @@ BEGIN
     SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiEducationOrganization' + N'$$.educationOrganizationId=' + CAST(i.[EducationOrganizationId] AS nvarchar(max))), i.[DocumentId], 1
     FROM inserted i;
 END;
-
-GO
-CREATE OR ALTER VIEW [edfi].[EducationOrganization] AS
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'School' AS nvarchar(50)) AS [Discriminator]
-FROM [edfi].[School]
-UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
-FROM [edfi].[LocalEducationAgency]
-;
 

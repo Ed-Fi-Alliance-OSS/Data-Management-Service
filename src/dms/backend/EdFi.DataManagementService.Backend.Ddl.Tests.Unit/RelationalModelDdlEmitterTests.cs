@@ -21,9 +21,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Foreign_Keys
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = ForeignKeyFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -31,7 +31,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Foreign_Keys
     [Test]
     public void It_should_emit_schemas_first()
     {
-        _ddl.Should().Contain("CREATE SCHEMA");
+        _ddl.Should().Contain("CREATE SCHEMA IF NOT EXISTS");
     }
 
     [Test]
@@ -76,9 +76,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Foreign_Keys
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = ForeignKeyFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -107,6 +107,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Foreign_Keys
     [Test]
     public void It_should_emit_schemas_first()
     {
+        // MSSQL uses IF NOT EXISTS pattern wrapped in EXEC
         _ddl.Should().Contain("CREATE SCHEMA");
     }
 
@@ -132,9 +133,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Unbounded_String
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = UnboundedStringFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = UnboundedStringFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -160,9 +161,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Unbounded_String
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = UnboundedStringFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = UnboundedStringFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -192,9 +193,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = AbstractIdentityTableFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractIdentityTableFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -202,7 +203,7 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     [Test]
     public void It_should_emit_abstract_identity_table()
     {
-        _ddl.Should().Contain("CREATE TABLE \"edfi\".\"EducationOrganizationIdentity\"");
+        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"edfi\".\"EducationOrganizationIdentity\"");
     }
 
     [Test]
@@ -226,9 +227,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = AbstractIdentityTableFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractIdentityTableFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -236,7 +237,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     [Test]
     public void It_should_emit_abstract_identity_table()
     {
-        _ddl.Should().Contain("CREATE TABLE [edfi].[EducationOrganizationIdentity]");
+        // MSSQL uses IF OBJECT_ID for table existence check
+        _ddl.Should().Contain("[EducationOrganizationIdentity]");
+        _ddl.Should().Contain("IF OBJECT_ID");
     }
 
     [Test]
@@ -264,9 +267,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Union_View
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = AbstractUnionViewFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractUnionViewFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -309,9 +312,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = AbstractUnionViewFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractUnionViewFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -358,9 +361,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Triggers
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = TriggerFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = TriggerFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -400,9 +403,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Triggers
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = TriggerFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = TriggerFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -439,9 +442,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_Emitting_Twice
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = ForeignKeyFixture.Build(dialect.Rules.Dialect);
 
         _first = emitter.Emit(modelSet);
         _second = emitter.Emit(modelSet);
@@ -463,9 +466,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_Emitting_Twice
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = ForeignKeyFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = ForeignKeyFixture.Build(dialect.Rules.Dialect);
 
         _first = emitter.Emit(modelSet);
         _second = emitter.Emit(modelSet);
@@ -490,9 +493,9 @@ public class Given_Pgsql_Ddl_Emitter_With_Primary_Key_Constraint_Name
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = PrimaryKeyFixture.Build(dialectRules.Dialect, "PK_School");
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = PrimaryKeyFixture.Build(dialect.Rules.Dialect, "PK_School");
 
         _sql = emitter.Emit(modelSet);
     }
@@ -512,9 +515,9 @@ public class Given_Mssql_Ddl_Emitter_With_Primary_Key_Constraint_Name
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = PrimaryKeyFixture.Build(dialectRules.Dialect, "PK_School");
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = PrimaryKeyFixture.Build(dialect.Rules.Dialect, "PK_School");
 
         _sql = emitter.Emit(modelSet);
     }
@@ -973,9 +976,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Extension_Tables
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = ExtensionTableFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = ExtensionTableFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -983,19 +986,19 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Extension_Tables
     [Test]
     public void It_should_create_core_schema()
     {
-        _ddl.Should().Contain("CREATE SCHEMA \"edfi\"");
+        _ddl.Should().Contain("CREATE SCHEMA IF NOT EXISTS \"edfi\"");
     }
 
     [Test]
     public void It_should_create_extension_schema()
     {
-        _ddl.Should().Contain("CREATE SCHEMA \"sample\"");
+        _ddl.Should().Contain("CREATE SCHEMA IF NOT EXISTS \"sample\"");
     }
 
     [Test]
     public void It_should_create_extension_table_in_extension_schema()
     {
-        _ddl.Should().Contain("CREATE TABLE \"sample\".\"SchoolExtension\"");
+        _ddl.Should().Contain("CREATE TABLE IF NOT EXISTS \"sample\".\"SchoolExtension\"");
     }
 
     [Test]
@@ -1009,26 +1012,36 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Extension_Tables
     [Test]
     public void It_should_emit_extension_schema_before_extension_tables()
     {
-        var sampleSchemaIndex = _ddl.IndexOf("CREATE SCHEMA \"sample\"");
-        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE \"sample\".\"SchoolExtension\"");
+        var sampleSchemaIndex = _ddl.IndexOf("CREATE SCHEMA IF NOT EXISTS \"sample\"");
+        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"sample\".\"SchoolExtension\"");
 
-        sampleSchemaIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE SCHEMA \"sample\" in DDL");
+        sampleSchemaIndex
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected CREATE SCHEMA IF NOT EXISTS \"sample\" in DDL");
         extensionTableIndex
             .Should()
-            .BeGreaterOrEqualTo(0, "expected CREATE TABLE \"sample\".\"SchoolExtension\" in DDL");
+            .BeGreaterOrEqualTo(
+                0,
+                "expected CREATE TABLE IF NOT EXISTS \"sample\".\"SchoolExtension\" in DDL"
+            );
         sampleSchemaIndex.Should().BeLessThan(extensionTableIndex);
     }
 
     [Test]
     public void It_should_emit_base_table_before_extension_table()
     {
-        var baseTableIndex = _ddl.IndexOf("CREATE TABLE \"edfi\".\"School\"");
-        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE \"sample\".\"SchoolExtension\"");
+        var baseTableIndex = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"edfi\".\"School\"");
+        var extensionTableIndex = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"sample\".\"SchoolExtension\"");
 
-        baseTableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE \"edfi\".\"School\" in DDL");
+        baseTableIndex
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected CREATE TABLE IF NOT EXISTS \"edfi\".\"School\" in DDL");
         extensionTableIndex
             .Should()
-            .BeGreaterOrEqualTo(0, "expected CREATE TABLE \"sample\".\"SchoolExtension\" in DDL");
+            .BeGreaterOrEqualTo(
+                0,
+                "expected CREATE TABLE IF NOT EXISTS \"sample\".\"SchoolExtension\" in DDL"
+            );
         baseTableIndex.Should().BeLessThan(extensionTableIndex);
     }
 }
@@ -1041,9 +1054,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Extension_Tables
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
-        var modelSet = ExtensionTableFixture.Build(dialectRules.Dialect);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = ExtensionTableFixture.Build(dialect.Rules.Dialect);
 
         _ddl = emitter.Emit(modelSet);
     }
@@ -1051,7 +1064,9 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Extension_Tables
     [Test]
     public void It_should_create_extension_table_in_extension_schema()
     {
+        // MSSQL uses IF OBJECT_ID() IS NULL pattern for idempotent table creation
         _ddl.Should().Contain("CREATE TABLE [sample].[SchoolExtension]");
+        _ddl.Should().Contain("IF OBJECT_ID(N'sample.SchoolExtension', N'U') IS NULL");
     }
 
     [Test]
@@ -1065,6 +1080,7 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Extension_Tables
     [Test]
     public void It_should_emit_base_table_before_extension_table()
     {
+        // MSSQL uses IF OBJECT_ID() IS NULL pattern for idempotent table creation
         var baseTableIndex = _ddl.IndexOf("CREATE TABLE [edfi].[School]");
         var extensionTableIndex = _ddl.IndexOf("CREATE TABLE [sample].[SchoolExtension]");
 

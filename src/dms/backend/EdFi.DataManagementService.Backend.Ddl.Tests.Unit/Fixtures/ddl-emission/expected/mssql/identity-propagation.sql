@@ -1,12 +1,17 @@
-CREATE SCHEMA [edfi];
+IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'edfi')
+    EXEC('CREATE SCHEMA [edfi]');
 
-CREATE TABLE [edfi].[School] (
+IF OBJECT_ID(N'edfi.School', N'U') IS NULL
+CREATE TABLE [edfi].[School]
+(
     [DocumentId] bigint NOT NULL,
     [SchoolId] int NOT NULL,
     CONSTRAINT [PK_School] PRIMARY KEY ([DocumentId])
 );
 
-CREATE TABLE [edfi].[StudentSchoolAssociation] (
+IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
+CREATE TABLE [edfi].[StudentSchoolAssociation]
+(
     [DocumentId] bigint NOT NULL,
     [SchoolId] int NOT NULL,
     [StudentUniqueId] nvarchar(32) NOT NULL,
@@ -14,7 +19,16 @@ CREATE TABLE [edfi].[StudentSchoolAssociation] (
     CONSTRAINT [PK_StudentSchoolAssociation] PRIMARY KEY ([DocumentId])
 );
 
-ALTER TABLE [edfi].[StudentSchoolAssociation] ADD CONSTRAINT [FK_StudentSchoolAssociation_School] FOREIGN KEY ([SchoolId]) REFERENCES [edfi].[School] ([SchoolId]);
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_StudentSchoolAssociation_School' AND parent_object_id = OBJECT_ID(N'edfi.StudentSchoolAssociation')
+)
+ALTER TABLE [edfi].[StudentSchoolAssociation]
+ADD CONSTRAINT [FK_StudentSchoolAssociation_School]
+FOREIGN KEY ([SchoolId])
+REFERENCES [edfi].[School] ([SchoolId])
+ON DELETE NO ACTION
+ON UPDATE NO ACTION;
 
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]

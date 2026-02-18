@@ -1,12 +1,14 @@
-CREATE SCHEMA "edfi";
+CREATE SCHEMA IF NOT EXISTS "edfi";
 
-CREATE TABLE "edfi"."School" (
+CREATE TABLE IF NOT EXISTS "edfi"."School"
+(
     "DocumentId" bigint NOT NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE "edfi"."StudentSchoolAssociation" (
+CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
+(
     "DocumentId" bigint NOT NULL,
     "SchoolId" integer NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
@@ -14,7 +16,22 @@ CREATE TABLE "edfi"."StudentSchoolAssociation" (
     CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId")
 );
 
-ALTER TABLE "edfi"."StudentSchoolAssociation" ADD CONSTRAINT "FK_StudentSchoolAssociation_School" FOREIGN KEY ("SchoolId") REFERENCES "edfi"."School" ("SchoolId");
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_StudentSchoolAssociation_School'
+        AND conrelid = to_regclass('edfi.StudentSchoolAssociation')
+    )
+    THEN
+        ALTER TABLE "edfi"."StudentSchoolAssociation"
+        ADD CONSTRAINT "FK_StudentSchoolAssociation_School"
+        FOREIGN KEY ("SchoolId")
+        REFERENCES "edfi"."School" ("SchoolId")
+        ON DELETE NO ACTION
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $$

@@ -1,37 +1,86 @@
-CREATE SCHEMA "edfi";
-CREATE SCHEMA "sample";
+CREATE SCHEMA IF NOT EXISTS "edfi";
+CREATE SCHEMA IF NOT EXISTS "sample";
 
-CREATE TABLE "edfi"."School" (
+CREATE TABLE IF NOT EXISTS "edfi"."School"
+(
     "DocumentId" bigint NOT NULL,
     "SchoolId" integer NOT NULL,
     CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE "edfi"."SchoolAddress" (
+CREATE TABLE IF NOT EXISTS "edfi"."SchoolAddress"
+(
     "DocumentId" bigint NOT NULL,
     "AddressOrdinal" integer NOT NULL,
     "Street" varchar(100) NOT NULL,
     CONSTRAINT "PK_SchoolAddress" PRIMARY KEY ("DocumentId", "AddressOrdinal")
 );
 
-CREATE TABLE "sample"."SchoolExtension" (
+CREATE TABLE IF NOT EXISTS "sample"."SchoolExtension"
+(
     "DocumentId" bigint NOT NULL,
     "ExtensionData" varchar(200) NULL,
     CONSTRAINT "PK_SchoolExtension" PRIMARY KEY ("DocumentId")
 );
 
-CREATE TABLE "sample"."SchoolAddressExtension" (
+CREATE TABLE IF NOT EXISTS "sample"."SchoolAddressExtension"
+(
     "DocumentId" bigint NOT NULL,
     "AddressOrdinal" integer NOT NULL,
     "AddressExtensionData" varchar(100) NULL,
     CONSTRAINT "PK_SchoolAddressExtension" PRIMARY KEY ("DocumentId", "AddressOrdinal")
 );
 
-ALTER TABLE "edfi"."SchoolAddress" ADD CONSTRAINT "FK_SchoolAddress_School" FOREIGN KEY ("DocumentId") REFERENCES "edfi"."School" ("DocumentId") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SchoolAddress_School'
+        AND conrelid = to_regclass('edfi.SchoolAddress')
+    )
+    THEN
+        ALTER TABLE "edfi"."SchoolAddress"
+        ADD CONSTRAINT "FK_SchoolAddress_School"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "edfi"."School" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
-ALTER TABLE "sample"."SchoolExtension" ADD CONSTRAINT "FK_SchoolExtension_School" FOREIGN KEY ("DocumentId") REFERENCES "edfi"."School" ("DocumentId") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SchoolExtension_School'
+        AND conrelid = to_regclass('sample.SchoolExtension')
+    )
+    THEN
+        ALTER TABLE "sample"."SchoolExtension"
+        ADD CONSTRAINT "FK_SchoolExtension_School"
+        FOREIGN KEY ("DocumentId")
+        REFERENCES "edfi"."School" ("DocumentId")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
-ALTER TABLE "sample"."SchoolAddressExtension" ADD CONSTRAINT "FK_SchoolAddressExtension_SchoolAddress" FOREIGN KEY ("DocumentId", "AddressOrdinal") REFERENCES "edfi"."SchoolAddress" ("DocumentId", "AddressOrdinal") ON DELETE CASCADE;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'FK_SchoolAddressExtension_SchoolAddress'
+        AND conrelid = to_regclass('sample.SchoolAddressExtension')
+    )
+    THEN
+        ALTER TABLE "sample"."SchoolAddressExtension"
+        ADD CONSTRAINT "FK_SchoolAddressExtension_SchoolAddress"
+        FOREIGN KEY ("DocumentId", "AddressOrdinal")
+        REFERENCES "edfi"."SchoolAddress" ("DocumentId", "AddressOrdinal")
+        ON DELETE CASCADE
+        ON UPDATE NO ACTION;
+    END IF;
+END $$;
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $$

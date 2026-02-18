@@ -25,9 +25,9 @@ public class Given_Pgsql_Ddl_Emission_With_Reserved_Identifiers
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var modelSet = ReservedIdentifierFixture.Build(dialectRules.Dialect);
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var modelSet = ReservedIdentifierFixture.Build(dialect.Rules.Dialect);
+        var emitter = new RelationalModelDdlEmitter(dialect);
 
         _sql = emitter.Emit(modelSet);
     }
@@ -56,9 +56,9 @@ public class Given_Mssql_Ddl_Emission_With_Reserved_Identifiers
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var modelSet = ReservedIdentifierFixture.Build(dialectRules.Dialect);
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var modelSet = ReservedIdentifierFixture.Build(dialect.Rules.Dialect);
+        var emitter = new RelationalModelDdlEmitter(dialect);
 
         _sql = emitter.Emit(modelSet);
     }
