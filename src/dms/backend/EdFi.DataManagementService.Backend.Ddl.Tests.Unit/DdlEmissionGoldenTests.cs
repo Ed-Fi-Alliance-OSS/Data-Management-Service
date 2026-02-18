@@ -333,6 +333,74 @@ public class Given_DdlEmitter_With_ExtensionMapping_For_Mssql : DdlEmissionGolde
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - FK Support Indexes
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_With_FkSupportIndex_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = FkSupportIndexFixture.Build(SqlDialect.Pgsql);
+        _paths = EmitDdl("fk-support-index", SqlDialect.Pgsql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_fk_support_index_exactly_once()
+    {
+        var indexMatches = System.Text.RegularExpressions.Regex.Matches(
+            _ddlContent,
+            @"CREATE\s+INDEX.*IX_Enrollment_SchoolId",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+        indexMatches.Count.Should().Be(1, "FK-support index should be emitted exactly once");
+    }
+}
+
+[TestFixture]
+public class Given_DdlEmitter_With_FkSupportIndex_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = FkSupportIndexFixture.Build(SqlDialect.Mssql);
+        _paths = EmitDdl("fk-support-index", SqlDialect.Mssql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_fk_support_index_exactly_once()
+    {
+        var indexMatches = System.Text.RegularExpressions.Regex.Matches(
+            _ddlContent,
+            @"CREATE\s+INDEX.*IX_Enrollment_SchoolId",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+        );
+        indexMatches.Count.Should().Be(1, "FK-support index should be emitted exactly once");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Fixture Builders
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1399,6 +1467,188 @@ internal static class IdentityPropagationFixture
             [],
             [],
             [],
+            triggers
+        );
+    }
+}
+
+/// <summary>
+/// Fixture for FK-support index scenario:
+/// Enrollment references School via SchoolId FK, with an explicit FK-support index.
+/// Tests that FK-support indexes are emitted exactly once and not duplicated.
+/// </summary>
+internal static class FkSupportIndexFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var schoolIdColumn = new DbColumnName("SchoolId");
+        var enrollmentIdColumn = new DbColumnName("EnrollmentId");
+
+        // School resource (parent)
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var schoolResourceKey = new ResourceKeyEntry(1, schoolResource, "1.0.0", false);
+
+        var schoolTableName = new DbTableName(schema, "School");
+        var schoolTable = new DbTableModel(
+            schoolTableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        // Enrollment resource (child with FK to School)
+        var enrollmentResource = new QualifiedResourceName("Ed-Fi", "Enrollment");
+        var enrollmentResourceKey = new ResourceKeyEntry(2, enrollmentResource, "1.0.0", false);
+
+        var enrollmentTableName = new DbTableName(schema, "Enrollment");
+        var enrollmentTable = new DbTableModel(
+            enrollmentTableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_Enrollment", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    enrollmentIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_Enrollment_School",
+                    [schoolIdColumn],
+                    schoolTableName,
+                    [schoolIdColumn],
+                    ReferentialAction.NoAction,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        var schoolRelationalModel = new RelationalResourceModel(
+            schoolResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            schoolTable,
+            [schoolTable],
+            [],
+            []
+        );
+
+        var enrollmentRelationalModel = new RelationalResourceModel(
+            enrollmentResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            enrollmentTable,
+            [enrollmentTable],
+            [],
+            []
+        );
+
+        // FK-support index on Enrollment.SchoolId for join performance
+        List<DbIndexInfo> indexes =
+        [
+            new(
+                new DbIndexName("IX_Enrollment_SchoolId"),
+                enrollmentTableName,
+                [schoolIdColumn],
+                IsUnique: false,
+                DbIndexKind.ForeignKeySupport
+            ),
+        ];
+
+        // Minimal triggers (document stamping only)
+        List<DbTriggerInfo> triggers =
+        [
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                schoolTableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            new(
+                new DbTriggerName("TR_Enrollment_Stamp"),
+                enrollmentTableName,
+                [documentIdColumn],
+                [enrollmentIdColumn, schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+        ];
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                2,
+                [0x01, 0x02],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [schoolResourceKey, enrollmentResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [
+                new ConcreteResourceModel(
+                    schoolResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    schoolRelationalModel
+                ),
+                new ConcreteResourceModel(
+                    enrollmentResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    enrollmentRelationalModel
+                ),
+            ],
+            [],
+            [],
+            indexes,
             triggers
         );
     }
