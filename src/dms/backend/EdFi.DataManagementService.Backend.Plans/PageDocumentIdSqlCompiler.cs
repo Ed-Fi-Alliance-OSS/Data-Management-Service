@@ -166,6 +166,13 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string parameterName
     )
     {
+        if (@operator is QueryComparisonOperator.In)
+        {
+            throw new NotSupportedException(
+                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)}."
+            );
+        }
+
         return $"r.{QuoteColumn(column)} {ToSqlOperator(@operator)} {parameterName}";
     }
 
@@ -200,7 +207,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         return _dialect switch
         {
-            SqlDialect.Pgsql => $"OFFSET {offsetParameterName} LIMIT {limitParameterName}",
+            SqlDialect.Pgsql => $"LIMIT {limitParameterName} OFFSET {offsetParameterName}",
             SqlDialect.Mssql =>
                 $"OFFSET {offsetParameterName} ROWS FETCH NEXT {limitParameterName} ROWS ONLY",
             _ => throw new ArgumentOutOfRangeException(

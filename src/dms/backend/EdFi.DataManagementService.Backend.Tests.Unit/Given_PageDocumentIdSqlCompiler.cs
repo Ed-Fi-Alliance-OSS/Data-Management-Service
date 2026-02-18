@@ -129,6 +129,37 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    public void It_should_reject_in_operator_until_supported()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("SchoolId"),
+                            QueryComparisonOperator.In,
+                            "@schoolIds"
+                        ),
+                    ],
+                    []
+                )
+            );
+
+        act.Should()
+            .Throw<NotSupportedException>()
+            .WithMessage("Operator 'In' is not supported by PageDocumentIdSqlCompiler.");
+    }
+
+    [Test]
+    public void It_should_emit_pgsql_paging_clause_with_limit_offset()
+    {
+        var plan = _compiler.Compile(CreateSpec([], []));
+
+        plan.PageDocumentIdSql.Should().Contain("LIMIT @limit OFFSET @offset");
+        plan.PageDocumentIdSql.Should().NotContain("OFFSET @offset LIMIT @limit");
+    }
+
+    [Test]
     public void It_should_emit_mssql_paging_clause_with_offset_fetch()
     {
         var compiler = new PageDocumentIdSqlCompiler(SqlDialect.Mssql);
