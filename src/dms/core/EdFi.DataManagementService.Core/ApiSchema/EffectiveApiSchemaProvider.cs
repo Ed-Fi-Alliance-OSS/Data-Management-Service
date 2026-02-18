@@ -6,6 +6,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
+using EdFi.DataManagementService.Core.Utilities;
 using EdFi.DataManagementService.Core.Validation;
 using Microsoft.Extensions.Logging;
 
@@ -111,6 +112,8 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 {
                     CopyResourceExtensionNodeToCore(extensionResources, coreResources, nodeKey);
                 }
+
+                ApplyCommonExtensionOverrides(extensionResources, coreResources);
             }
 
             _documents = new ApiSchemaDocuments(
@@ -158,15 +161,18 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// Merges extension resource data into core resources by copying specific nodes identified
     /// by the nodeKey.
     /// </summary>
-    private void CopyResourceExtensionNodeToCore(
+    private static void CopyResourceExtensionNodeToCore(
         List<JsonNode> extensionResources,
         List<JsonNode> coreResources,
         string nodeKey
     )
     {
-        Dictionary<string, JsonNode> coreResourceByName = coreResources.ToDictionary(coreResource =>
-            coreResource.GetRequiredNode("resourceName").GetValue<string>()
-        );
+        Dictionary<string, JsonNode> coreResourceByName = [];
+        foreach (var coreResource in coreResources)
+        {
+            var name = coreResource.GetRequiredNode("resourceName").GetValue<string>();
+            coreResourceByName[name] = coreResource;
+        }
 
         foreach (
             JsonNode extensionResource in extensionResources.Where(extensionResource =>
@@ -189,9 +195,16 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                     break;
                 case JsonValueKind.Array:
                     var targetArray = targetCoreNode.AsArray();
-                    foreach (var sourceItem in sourceExtensionNode.AsArray())
+                    if (nodeKey == "arrayUniquenessConstraints")
                     {
-                        targetArray.Add(sourceItem?.DeepClone());
+                        MergeArrayUniquenessConstraints(sourceExtensionNode.AsArray(), targetArray);
+                    }
+                    else
+                    {
+                        foreach (var sourceItem in sourceExtensionNode.AsArray())
+                        {
+                            targetArray.Add(sourceItem?.DeepClone());
+                        }
                     }
                     break;
                 default:
@@ -205,43 +218,225 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// <summary>
     /// Merges JSON object properties from an extension schema into a core schema object.
     /// </summary>
-    private void MergeExtensionObjectIntoCore(JsonNode sourceExtensionNode, JsonNode targetCoreNode)
+    private static void MergeExtensionObjectIntoCore(JsonNode sourceExtensionNode, JsonNode targetCoreNode)
     {
         var targetObject = targetCoreNode.AsObject();
         foreach (KeyValuePair<string, JsonNode?> sourceObject in sourceExtensionNode.AsObject())
         {
-            // DMS-591 Ticket to fix duplicate key for Sample Extension in Common extension EdFi.Address in SampleMetaEd
-            // Remove this condition once DMS-591 is fixed
+            // If _ext exists in the target, merge its properties from the source.
             if (
-                targetObject.ContainsKey(sourceObject.Key)
-                && !string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase)
+                string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase)
+                && targetObject["_ext"]?["properties"] is JsonObject existingProps
+                && sourceObject.Value?.DeepClone()?["properties"] is JsonObject newProps
             )
             {
-                _logger.LogWarning(
-                    "Duplicate Key exists for Sample Extension related with Common extension EdFi.Address. Key:{Key}",
-                    sourceObject.Key
-                );
+                foreach (var item in newProps)
+                {
+                    existingProps[item.Key] = item.Value?.DeepClone();
+                }
+            }
+            else if (!targetObject.ContainsKey(sourceObject.Key))
+            {
+                targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
+            }
+            // Keys that already exist in core (e.g., "addresses") are common extension
+            // entries handled by ApplyCommonExtensionOverrides — skip them here.
+        }
+    }
+
+    /// <summary>
+    /// Merges extension arrayUniquenessConstraints into core, combining nestedConstraints
+    /// when the top-level paths match rather than creating duplicate entries.
+    /// </summary>
+    private static void MergeArrayUniquenessConstraints(JsonArray source, JsonArray target)
+    {
+        foreach (var sourceItem in source)
+        {
+            if (sourceItem is null)
+            {
+                continue;
+            }
+
+            var sourcePaths = sourceItem["paths"]?.ToJsonString();
+
+            // Find a matching core constraint with the same top-level paths
+            JsonNode? matchingTarget = null;
+            if (sourcePaths is not null)
+            {
+                foreach (var targetItem in target)
+                {
+                    if (targetItem?["paths"]?.ToJsonString() == sourcePaths)
+                    {
+                        matchingTarget = targetItem;
+                        break;
+                    }
+                }
+            }
+
+            if (matchingTarget is not null)
+            {
+                // Merge nestedConstraints from extension into the existing core constraint
+                var sourceNested = sourceItem["nestedConstraints"]?.AsArray();
+                if (sourceNested is not null)
+                {
+                    var targetNested = matchingTarget["nestedConstraints"]?.AsArray();
+                    if (targetNested is null)
+                    {
+                        matchingTarget.AsObject()["nestedConstraints"] = sourceNested.DeepClone();
+                    }
+                    else
+                    {
+                        foreach (var nestedItem in sourceNested)
+                        {
+                            targetNested.Add(nestedItem?.DeepClone());
+                        }
+                    }
+                }
             }
             else
             {
-                // If _ext exists in the target, merge its properties from the source.
-                // Otherwise, add _ext with its properties.
-                if (
-                    string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase)
-                    && targetObject["_ext"]?["properties"] is JsonObject existingProps
-                    && sourceObject.Value?.DeepClone()?["properties"] is JsonObject newProps
-                )
+                target.Add(sourceItem.DeepClone());
+            }
+        }
+    }
+
+    /// <summary>
+    /// Applies common extension overrides to insert _ext schema fragments into the core
+    /// jsonSchemaForInsert at specified insertion locations.
+    ///
+    /// When an extension project extends a common type (e.g., Sample extends EdFi.Address
+    /// used in Contact), the extension schema includes commonExtensionOverrides that specify:
+    /// - insertionLocations: JSONPath(s) into the core jsonSchemaForInsert where _ext should be added
+    ///   (e.g., $.properties.addresses.items targets the Address items within Contact)
+    /// - schemaFragment: the _ext schema to insert (e.g., Address extension fields like complex, onBusRoute)
+    /// </summary>
+    private void ApplyCommonExtensionOverrides(
+        List<JsonNode> extensionResources,
+        List<JsonNode> coreResources
+    )
+    {
+        Dictionary<string, JsonNode> coreResourceByName = [];
+        foreach (var coreResource in coreResources)
+        {
+            var name = coreResource.GetRequiredNode("resourceName").GetValue<string>();
+            coreResourceByName[name] = coreResource;
+        }
+
+        foreach (
+            JsonNode extensionResource in extensionResources.Where(extensionResource =>
+                extensionResource.GetRequiredNode("isResourceExtension").GetValue<bool>()
+            )
+        )
+        {
+            var overrides = extensionResource["commonExtensionOverrides"]?.AsArray();
+            if (overrides is null || overrides.Count == 0)
+            {
+                continue;
+            }
+
+            var resourceName = extensionResource.GetRequiredNode("resourceName").GetValue<string>();
+            if (!coreResourceByName.TryGetValue(resourceName, out var coreResource))
+            {
+                continue;
+            }
+
+            var coreJsonSchemaForInsert = coreResource["jsonSchemaForInsert"];
+            if (coreJsonSchemaForInsert is null)
+            {
+                continue;
+            }
+
+            foreach (JsonNode? overrideEntry in overrides)
+            {
+                if (overrideEntry is null)
                 {
-                    foreach (var item in newProps)
-                    {
-                        existingProps[item.Key] = item.Value?.DeepClone();
-                    }
+                    continue;
                 }
-                else
+
+                var insertionLocations = overrideEntry["insertionLocations"]?.AsArray();
+                var schemaFragment = overrideEntry["schemaFragment"];
+
+                if (insertionLocations is null || schemaFragment is null)
                 {
-                    targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
+                    continue;
+                }
+
+                foreach (JsonNode? location in insertionLocations)
+                {
+                    var jsonPath = location?.GetValue<string>();
+                    if (string.IsNullOrEmpty(jsonPath))
+                    {
+                        continue;
+                    }
+
+                    // Navigate the JSONPath (e.g., "$.properties.addresses.items")
+                    // to find the target node in the core jsonSchemaForInsert
+                    var targetNode = NavigateJsonPath(coreJsonSchemaForInsert, jsonPath);
+                    if (targetNode is null)
+                    {
+                        _logger.LogDebug(
+                            "Could not navigate to '{JsonPath}' in core jsonSchemaForInsert for resource '{ResourceName}'",
+                            LoggingSanitizer.SanitizeForLogging(jsonPath),
+                            LoggingSanitizer.SanitizeForLogging(resourceName)
+                        );
+                        continue;
+                    }
+
+                    // Insert or merge the _ext property at the target location
+                    var targetProperties = targetNode["properties"]?.AsObject();
+                    if (targetProperties is null)
+                    {
+                        continue;
+                    }
+
+                    if (targetProperties.ContainsKey("_ext"))
+                    {
+                        // Merge into existing _ext
+                        var existingExtProps = targetProperties["_ext"]?["properties"]?.AsObject();
+                        var newExtProps = schemaFragment.DeepClone()["properties"]?.AsObject();
+                        if (existingExtProps is not null && newExtProps is not null)
+                        {
+                            foreach (var prop in newExtProps)
+                            {
+                                existingExtProps[prop.Key] = prop.Value?.DeepClone();
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Add _ext property
+                        targetProperties.Add("_ext", schemaFragment.DeepClone());
+                    }
+
+                    _logger.LogDebug(
+                        "Applied common extension override at '{JsonPath}' for resource '{ResourceName}'",
+                        LoggingSanitizer.SanitizeForLogging(jsonPath),
+                        LoggingSanitizer.SanitizeForLogging(resourceName)
+                    );
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Navigates a simple JSONPath (e.g., "$.properties.addresses.items") starting from the given node.
+    /// Supports only dot-notation property access (no wildcards, filters, or array indices).
+    /// </summary>
+    private static JsonNode? NavigateJsonPath(JsonNode root, string jsonPath)
+    {
+        // Strip leading "$." prefix
+        var path = jsonPath.StartsWith("$.") ? jsonPath[2..] : jsonPath;
+
+        JsonNode? current = root;
+        foreach (var segment in path.Split('.'))
+        {
+            current = current?[segment];
+            if (current is null)
+            {
+                return null;
+            }
+        }
+
+        return current;
     }
 }
