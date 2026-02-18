@@ -337,10 +337,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             }
 
             DbTableName targetTable;
+            DbTableModel targetTableModel;
 
             if (abstractTablesByResource.TryGetValue(mapping.TargetResource, out var abstractTableInfo))
             {
                 targetTable = abstractTableInfo.TableModel.Table;
+                targetTableModel = abstractTableInfo.TableModel;
             }
             else if (
                 resourceContextsByResource.TryGetValue(mapping.TargetResource, out var targetResourceContext)
@@ -359,6 +361,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 }
 
                 targetTable = targetEntry.RelationalModel.Root.Table;
+                targetTableModel = targetEntry.RelationalModel.Root;
             }
             else
             {
@@ -368,10 +371,15 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn);
             var propagatedColumns = binding.IdentityBindings.Select(ib => ib.Column).ToArray();
 
-            // Build column mappings from source to target for identity propagation.
-            var targetColumnMappings = binding
-                .IdentityBindings.Select(ib => new TriggerColumnMapping(ib.Column, ib.Column))
-                .ToArray();
+            // Build column mappings from source to target for identity propagation,
+            // resolving target column names via the identity JSON path rather than
+            // assuming source and target column names are identical.
+            var targetColumnMappings = BuildPropagationTargetColumnMappings(
+                binding,
+                mapping,
+                targetTableModel,
+                resource
+            );
 
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
@@ -397,6 +405,68 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         return fkColumn.Value.EndsWith(DocumentIdSuffix, StringComparison.Ordinal)
             ? fkColumn.Value[..^DocumentIdSuffix.Length]
             : fkColumn.Value;
+    }
+
+    /// <summary>
+    /// Resolves target column mappings for identity propagation by mapping each identity binding's
+    /// reference JSON path through the target resource's identity path to the physical target column.
+    /// Source column names (on the referencing table) include a reference prefix (e.g.,
+    /// <c>School_SchoolId</c>) that differs from the target table's own column name (e.g.,
+    /// <c>SchoolId</c>), so the mapping cannot assume source and target names are identical.
+    /// </summary>
+    private static IReadOnlyList<TriggerColumnMapping> BuildPropagationTargetColumnMappings(
+        DocumentReferenceBinding binding,
+        DocumentReferenceMapping mapping,
+        DbTableModel targetTableModel,
+        QualifiedResourceName resource
+    )
+    {
+        // Build lookup: reference JSON path → target identity JSON path.
+        var identityPathByReferencePath = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var entry in mapping.ReferenceJsonPaths)
+        {
+            identityPathByReferencePath[entry.ReferenceJsonPath.Canonical] = entry.IdentityJsonPath.Canonical;
+        }
+
+        // Build lookup: identity JSON path → target table column name.
+        var targetColumnByIdentityPath = new Dictionary<string, DbColumnName>(StringComparer.Ordinal);
+        foreach (var column in targetTableModel.Columns)
+        {
+            if (column.SourceJsonPath is not null)
+            {
+                targetColumnByIdentityPath[column.SourceJsonPath.Value.Canonical] = column.ColumnName;
+            }
+        }
+
+        return binding
+            .IdentityBindings.Select(ib =>
+            {
+                if (
+                    !identityPathByReferencePath.TryGetValue(
+                        ib.ReferenceJsonPath.Canonical,
+                        out var identityPath
+                    )
+                )
+                {
+                    throw new InvalidOperationException(
+                        $"Propagation fallback trigger derivation for resource '{FormatResource(resource)}': "
+                            + $"reference JSON path '{ib.ReferenceJsonPath.Canonical}' did not map to "
+                            + "a target identity path."
+                    );
+                }
+
+                if (!targetColumnByIdentityPath.TryGetValue(identityPath, out var targetColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Propagation fallback trigger derivation for resource '{FormatResource(resource)}': "
+                            + $"target identity path '{identityPath}' did not resolve to a column on "
+                            + $"target table '{targetTableModel.Table.Schema.Value}.{targetTableModel.Table.Name}'."
+                    );
+                }
+
+                return new TriggerColumnMapping(ib.Column, targetColumn);
+            })
+            .ToArray();
     }
 
     /// <summary>
