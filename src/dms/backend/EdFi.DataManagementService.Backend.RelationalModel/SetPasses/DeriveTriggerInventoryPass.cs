@@ -42,9 +42,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     {
         ArgumentNullException.ThrowIfNull(context);
 
-        var resourcesByKey = context
-            .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
-            .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
+        var resourcesByKey = context.ConcreteResourcesInNameOrder.ToDictionary(model =>
+            model.ResourceKey.Resource
+        );
 
         var abstractTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>
             table.AbstractResourceKey.Resource
@@ -64,14 +64,12 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 resourceContext.ResourceName
             );
 
-            if (!resourcesByKey.TryGetValue(resource, out var entry))
+            if (!resourcesByKey.TryGetValue(resource, out var concreteModel))
             {
                 throw new InvalidOperationException(
                     $"Concrete resource '{FormatResource(resource)}' was not found for trigger derivation."
                 );
             }
-
-            var concreteModel = entry.Model;
 
             if (concreteModel.StorageKind == ResourceStorageKind.SharedDescriptorTable)
             {
@@ -244,6 +242,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     rootTable,
                     abstractTablesByResource,
                     resourceContextsByResource,
+                    resourcesByKey,
                     resource
                 );
             }
@@ -311,16 +310,13 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         DbTableModel rootTable,
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
+        IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceModel> concreteResourcesByName,
         QualifiedResourceName resource
     )
     {
         var bindingByReferencePath = resourceModel.DocumentReferenceBindings.ToDictionary(
             binding => binding.ReferenceObjectPath.Canonical,
             StringComparer.Ordinal
-        );
-
-        var concreteResourcesByName = context.ConcreteResourcesInNameOrder.ToDictionary(model =>
-            model.ResourceKey.Resource
         );
 
         foreach (var mapping in builderContext.DocumentReferenceMappings)

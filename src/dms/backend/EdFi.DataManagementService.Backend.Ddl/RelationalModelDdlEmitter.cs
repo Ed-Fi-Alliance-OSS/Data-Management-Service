@@ -281,7 +281,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.Append("ON ");
         builder.Append(Quote(trigger.Table));
         builder.AppendLine();
-        builder.AppendLine("AFTER INSERT, UPDATE");
+        builder.AppendLine(
+            trigger.Parameters is TriggerKindParameters.IdentityPropagationFallback
+                ? "AFTER UPDATE"
+                : "AFTER INSERT, UPDATE"
+        );
         builder.AppendLine("AS");
         builder.AppendLine("BEGIN");
         builder.AppendLine("    SET NOCOUNT ON;");
@@ -320,6 +324,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// </summary>
     private void AppendDocumentStampingBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
+        if (trigger.KeyColumns.Count == 0)
+            throw new InvalidOperationException(
+                $"Trigger '{trigger.Name.Value}' requires at least one key column."
+            );
+
         var documentTable = Quote(DmsTableNames.Document);
         var sequenceName = FormatSequenceName();
         var keyColumn = trigger.KeyColumns[0];
@@ -762,7 +771,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             AppendPgsqlAbstractIdentityBody(
                 builder,
-                trigger,
                 indent,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
@@ -773,7 +781,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             AppendMssqlAbstractIdentityBody(
                 builder,
-                trigger,
                 indent,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
@@ -784,7 +791,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
     private void AppendPgsqlAbstractIdentityBody(
         StringBuilder builder,
-        DbTriggerInfo trigger,
         string indent,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
@@ -840,7 +846,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
     private void AppendMssqlAbstractIdentityBody(
         StringBuilder builder,
-        DbTriggerInfo trigger,
         string indent,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
@@ -917,6 +922,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
                 $"Identity propagation fallback triggers are only supported for MSSQL, but dialect is {_dialectRules.Dialect}."
             );
         }
+
+        if (trigger.KeyColumns.Count == 0)
+            throw new InvalidOperationException(
+                $"Trigger '{trigger.Name.Value}' requires at least one key column."
+            );
 
         var targetTable = Quote(propagation.TargetTable);
         var fkColumn = trigger.KeyColumns[0];
@@ -1018,7 +1028,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             return column.Kind switch
             {
                 ColumnKind.Ordinal => _dialectRules.ScalarTypeDefaults.Int32Type,
-                _ => _dialectRules.ScalarTypeDefaults.Int64Type,
+                ColumnKind.DocumentFk or ColumnKind.DescriptorFk or ColumnKind.ParentKeyPart => _dialectRules
+                    .ScalarTypeDefaults
+                    .Int64Type,
+                _ => throw new InvalidOperationException(
+                    $"Column '{column.ColumnName.Value}' of kind {column.Kind} has no ScalarType."
+                ),
             };
         }
 

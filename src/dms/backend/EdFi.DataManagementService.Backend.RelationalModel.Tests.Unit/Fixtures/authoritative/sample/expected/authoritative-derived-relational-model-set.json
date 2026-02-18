@@ -30146,7 +30146,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "CommunityOrganizationId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:CommunityOrganization"
     },
     {
       "name": "TR_CommunityOrganization_ReferentialIdentity",
@@ -30288,7 +30295,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "CommunityProviderId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:CommunityProvider"
     },
     {
       "name": "TR_CommunityProvider_ReferentialIdentity",
@@ -31332,7 +31346,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "EducationOrganizationNetworkId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:EducationOrganizationNetwork"
     },
     {
       "name": "TR_EducationOrganizationNetwork_ReferentialIdentity",
@@ -31534,7 +31555,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "EducationServiceCenterId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:EducationServiceCenter"
     },
     {
       "name": "TR_EducationServiceCenter_ReferentialIdentity",
@@ -32680,7 +32708,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "LocalEducationAgencyId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:LocalEducationAgency"
     },
     {
       "name": "TR_LocalEducationAgency_ReferentialIdentity",
@@ -33154,7 +33189,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "OrganizationDepartmentId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:OrganizationDepartment"
     },
     {
       "name": "TR_OrganizationDepartment_ReferentialIdentity",
@@ -33358,7 +33400,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "PostSecondaryInstitutionId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:PostSecondaryInstitution"
     },
     {
       "name": "TR_PostSecondaryInstitution_ReferentialIdentity",
@@ -33918,7 +33967,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "SchoolId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:School"
     },
     {
       "name": "TR_School_ReferentialIdentity",
@@ -34944,7 +35000,14 @@
       "target_table": {
         "schema": "edfi",
         "name": "EducationOrganizationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "StateEducationAgencyId",
+          "target_column": "EducationOrganizationId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StateEducationAgency"
     },
     {
       "name": "TR_StateEducationAgency_ReferentialIdentity",
@@ -35479,7 +35542,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentCTEProgramAssociation"
     },
     {
       "name": "TR_StudentCTEProgramAssociation_ReferentialIdentity",
@@ -36228,7 +36318,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentHomelessProgramAssociation"
     },
     {
       "name": "TR_StudentHomelessProgramAssociation_ReferentialIdentity",
@@ -36395,7 +36512,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentLanguageInstructionProgramAssociation"
     },
     {
       "name": "TR_StudentLanguageInstructionProgramAssociation_Refe_8658d721a3",
@@ -36486,7 +36630,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentMigrantEducationProgramAssociation"
     },
     {
       "name": "TR_StudentMigrantEducationProgramAssociation_Referen_654de036cb",
@@ -36565,7 +36736,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation"
     },
     {
       "name": "TR_StudentNeglectedOrDelinquentProgramAssociation_Re_699dcdd09c",
@@ -36668,7 +36866,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentProgramAssociation"
     },
     {
       "name": "TR_StudentProgramAssociation_ReferentialIdentity",
@@ -36943,7 +37168,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentSchoolFoodServiceProgramAssociation"
     },
     {
       "name": "TR_StudentSchoolFoodServiceProgramAssociation_Refere_e2f2b09b1b",
@@ -37022,7 +37274,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentSection504ProgramAssociation"
     },
     {
       "name": "TR_StudentSection504ProgramAssociation_ReferentialIdentity",
@@ -37179,7 +37458,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentSpecialEducationProgramAssociation"
     },
     {
       "name": "TR_StudentSpecialEducationProgramAssociation_Referen_e816d5e0e9",
@@ -37340,7 +37646,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Ed-Fi:StudentTitleIPartAProgramAssociation"
     },
     {
       "name": "TR_StudentTitleIPartAProgramAssociation_ReferentialIdentity",
@@ -38209,7 +38542,34 @@
       "target_table": {
         "schema": "edfi",
         "name": "GeneralStudentProgramAssociationIdentity"
-      }
+      },
+      "target_column_mappings": [
+        {
+          "source_column": "BeginDate",
+          "target_column": "BeginDate"
+        },
+        {
+          "source_column": "EducationOrganization_DocumentId",
+          "target_column": "EducationOrganizationReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceEducationOrganizationId"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramName"
+        },
+        {
+          "source_column": "ProgramProgram_DocumentId",
+          "target_column": "ProgramReferenceProgramTypeDescriptor"
+        },
+        {
+          "source_column": "Student_DocumentId",
+          "target_column": "StudentReferenceStudentUniqueId"
+        }
+      ],
+      "discriminator_value": "Sample:StudentArtProgramAssociation"
     },
     {
       "name": "TR_StudentArtProgramAssociation_ReferentialIdentity",

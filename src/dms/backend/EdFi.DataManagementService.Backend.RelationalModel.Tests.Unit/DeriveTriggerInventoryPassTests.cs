@@ -125,6 +125,10 @@ public class Given_Trigger_Set_Composition
         refIdentity!.Name.Value.Should().Be("TR_School_ReferentialIdentity");
         refIdentity.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
         refIdentity.IdentityProjectionColumns.Should().NotBeEmpty();
+        var refIdParams = refIdentity.Parameters as TriggerKindParameters.ReferentialIdentityMaintenance;
+        refIdParams.Should().NotBeNull();
+        refIdParams!.IdentityElements.Should().NotBeEmpty();
+        refIdParams.IdentityElements.Select(e => e.Column.Value).Should().Contain("EducationOrganizationId");
     }
 
     /// <summary>
@@ -144,6 +148,12 @@ public class Given_Trigger_Set_Composition
             abstractMaintenance.Parameters as TriggerKindParameters.AbstractIdentityMaintenance;
         abstractParams.Should().NotBeNull();
         abstractParams!.TargetTable.Name.Should().Be("EducationOrganizationIdentity");
+        abstractParams.TargetColumnMappings.Should().NotBeEmpty();
+        abstractParams
+            .TargetColumnMappings.Select(m => m.TargetColumn.Value)
+            .Should()
+            .Contain("EducationOrganizationId");
+        abstractParams.DiscriminatorValue.Should().Be("Ed-Fi:School");
     }
 }
 

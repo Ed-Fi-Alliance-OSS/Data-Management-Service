@@ -343,9 +343,39 @@ public static class DerivedModelSetManifestEmitter
                 WriteTableReference(writer, tt);
             }
 
+            if (trigger.Parameters is TriggerKindParameters.AbstractIdentityMaintenance abstractId)
+            {
+                WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
+                writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
+            }
+            else if (trigger.Parameters is TriggerKindParameters.IdentityPropagationFallback propagation)
+            {
+                WriteTargetColumnMappings(writer, propagation.TargetColumnMappings);
+            }
+
             writer.WriteEndObject();
         }
 
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Writes a <c>target_column_mappings</c> array of source/target column pairs.
+    /// </summary>
+    private static void WriteTargetColumnMappings(
+        Utf8JsonWriter writer,
+        IReadOnlyList<TriggerColumnMapping> mappings
+    )
+    {
+        writer.WritePropertyName("target_column_mappings");
+        writer.WriteStartArray();
+        foreach (var mapping in mappings)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("source_column", mapping.SourceColumn.Value);
+            writer.WriteString("target_column", mapping.TargetColumn.Value);
+            writer.WriteEndObject();
+        }
         writer.WriteEndArray();
     }
 

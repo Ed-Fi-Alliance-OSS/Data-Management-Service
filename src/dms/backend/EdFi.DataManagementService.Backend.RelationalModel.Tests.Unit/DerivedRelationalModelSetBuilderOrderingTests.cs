@@ -127,9 +127,21 @@ public class Given_Unordered_Derived_Collections
         /// </summary>
         public PopulateUnorderedCollectionsPass(EffectiveSchemaSet effectiveSchemaSet)
         {
-            _school = FindResourceKey(effectiveSchemaSet, "Ed-Fi", "School");
-            _schoolTypeDescriptor = FindResourceKey(effectiveSchemaSet, "Ed-Fi", "SchoolTypeDescriptor");
-            _section = FindResourceKey(effectiveSchemaSet, "Sample", "Section");
+            _school = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "School"
+            );
+            _schoolTypeDescriptor = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "SchoolTypeDescriptor"
+            );
+            _section = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Sample",
+                "Section"
+            );
         }
 
         /// <summary>
@@ -308,24 +320,6 @@ public class Given_Unordered_Derived_Collections
                     ),
                 ]
             );
-        }
-
-        /// <summary>
-        /// Find resource key.
-        /// </summary>
-        private static ResourceKeyEntry FindResourceKey(
-            EffectiveSchemaSet effectiveSchemaSet,
-            string projectName,
-            string resourceName
-        )
-        {
-            ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
-
-            var resourceKey = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Single(entry =>
-                entry.Resource.ProjectName == projectName && entry.Resource.ResourceName == resourceName
-            );
-
-            return resourceKey;
         }
     }
 }

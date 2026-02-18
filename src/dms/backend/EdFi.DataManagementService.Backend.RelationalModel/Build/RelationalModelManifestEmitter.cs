@@ -24,10 +24,7 @@ public static class RelationalModelManifestEmitter
     /// <returns>The JSON manifest.</returns>
     public static string Emit(RelationalModelBuildResult buildResult)
     {
-        if (buildResult is null)
-        {
-            throw new ArgumentNullException(nameof(buildResult));
-        }
+        ArgumentNullException.ThrowIfNull(buildResult);
 
         return Emit(buildResult.ResourceModel, buildResult.ExtensionSites);
     }

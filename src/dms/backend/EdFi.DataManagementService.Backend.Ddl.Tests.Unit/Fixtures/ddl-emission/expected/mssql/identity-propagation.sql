@@ -91,7 +91,7 @@ END;
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Propagation_School]
 ON [edfi].[StudentSchoolAssociation]
-AFTER INSERT, UPDATE
+AFTER UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;

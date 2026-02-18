@@ -51,11 +51,8 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Foreign_Keys
         var createTableEndIndex = _ddl.IndexOf(");", _ddl.IndexOf("CREATE TABLE"));
         var firstFkIndex = _ddl.IndexOf("FOREIGN KEY");
 
-        // FK should not appear before the first CREATE TABLE ends
-        if (firstFkIndex > 0)
-        {
-            firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
-        }
+        firstFkIndex.Should().BeGreaterOrEqualTo(0, "expected at least one FOREIGN KEY in emitted DDL");
+        firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
     }
 
     [Test]
@@ -98,11 +95,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Foreign_Keys
         var createTableEndIndex = _ddl.IndexOf(");", _ddl.IndexOf("CREATE TABLE"));
         var firstFkIndex = _ddl.IndexOf("FOREIGN KEY");
 
-        // FK should not appear before the first CREATE TABLE ends
-        if (firstFkIndex > 0)
-        {
-            firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
-        }
+        firstFkIndex.Should().BeGreaterOrEqualTo(0, "expected at least one FOREIGN KEY in emitted DDL");
+        firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
     }
 }
 

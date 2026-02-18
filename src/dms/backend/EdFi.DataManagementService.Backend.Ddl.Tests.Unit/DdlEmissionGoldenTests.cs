@@ -67,7 +67,12 @@ public abstract class DdlEmissionGoldenTestBase
         var errorTask = process.StandardError.ReadToEndAsync();
         var output = outputTask.GetAwaiter().GetResult();
         var error = errorTask.GetAwaiter().GetResult();
-        process.WaitForExit(30_000);
+
+        if (!process.WaitForExit(30_000))
+        {
+            process.Kill();
+            return "git diff timed out after 30 seconds";
+        }
 
         if (process.ExitCode == 0)
         {
@@ -104,7 +109,12 @@ public abstract class DdlEmissionGoldenTestBase
     {
         var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "ddl-emission");
-        var dialectName = dialect == SqlDialect.Pgsql ? "pgsql" : "mssql";
+        var dialectName = dialect switch
+        {
+            SqlDialect.Pgsql => "pgsql",
+            SqlDialect.Mssql => "mssql",
+            _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect."),
+        };
         var expectedPath = Path.Combine(fixtureRoot, "expected", dialectName, $"{fixtureName}.sql");
         var actualPath = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
