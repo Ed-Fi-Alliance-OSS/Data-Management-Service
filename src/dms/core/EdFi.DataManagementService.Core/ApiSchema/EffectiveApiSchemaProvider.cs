@@ -20,7 +20,7 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
 {
     private readonly ILogger _logger;
     private readonly ICompiledSchemaCache _compiledSchemaCache;
-    private readonly object _initLock = new();
+    private readonly Lock _initLock = new();
 
     private ApiSchemaDocuments? _documents;
     private Guid _schemaId;

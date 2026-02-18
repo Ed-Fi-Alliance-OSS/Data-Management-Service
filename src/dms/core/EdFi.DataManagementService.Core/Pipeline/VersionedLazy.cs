@@ -19,7 +19,7 @@ internal class VersionedLazy<T>(Func<T> valueFactory, Func<Guid> versionProvider
         valueFactory ?? throw new ArgumentNullException(nameof(valueFactory));
     private readonly Func<Guid> _versionProvider =
         versionProvider ?? throw new ArgumentNullException(nameof(versionProvider));
-    private readonly object _lock = new();
+    private readonly Lock _lock = new();
     private T? _cachedValue;
     private Guid _cachedVersion;
     private bool _hasValue;
