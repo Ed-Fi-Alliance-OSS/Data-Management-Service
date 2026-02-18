@@ -183,6 +183,145 @@ public class ResolveDmsInstanceMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Request_With_Tenant : ResolveDmsInstanceMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = false;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontendRequest = new FrontendRequest(
+                Path: "/ed-fi/students",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("123"),
+                RouteQualifiers: [],
+                Tenant: "TenantA"
+            );
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            {
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClientId: "client123",
+                    ClaimSetName: "test",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: [],
+                    DmsInstanceIds: [new DmsInstanceId(1)]
+                ),
+            };
+
+            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            _dmsInstanceProvider = dmsInstanceProvider;
+
+            A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
+                .Returns(Task.CompletedTask);
+
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "test-connection",
+                        RouteContext: []
+                    )
+                );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_calls_refresh_for_the_tenant()
+        {
+            _nextCalled.Should().BeTrue();
+            A.CallTo(() => _dmsInstanceProvider.RefreshInstancesIfExpiredAsync("TenantA")).MustHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Refresh_Throws : ResolveDmsInstanceMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = false;
+        private IDmsInstanceProvider _dmsInstanceProvider = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var frontendRequest = new FrontendRequest(
+                Path: "/ed-fi/students",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: [],
+                TraceId: new TraceId("123"),
+                RouteQualifiers: []
+            );
+
+            _requestInfo = new RequestInfo(frontendRequest, RequestMethod.GET)
+            {
+                ClientAuthorizations = new ClientAuthorizations(
+                    TokenId: "token123",
+                    ClientId: "client123",
+                    ClaimSetName: "test",
+                    EducationOrganizationIds: [],
+                    NamespacePrefixes: [],
+                    DmsInstanceIds: [new DmsInstanceId(1)]
+                ),
+            };
+
+            var (middleware, dmsInstanceProvider, _) = CreateMiddleware();
+            _dmsInstanceProvider = dmsInstanceProvider;
+
+            A.CallTo(() => dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
+                .Throws<InvalidOperationException>();
+
+            A.CallTo(() => dmsInstanceProvider.GetById(1, A<string?>.Ignored))
+                .Returns(
+                    new DmsInstance(
+                        Id: 1,
+                        InstanceType: "Test",
+                        InstanceName: "Test Instance",
+                        ConnectionString: "test-connection",
+                        RouteContext: []
+                    )
+                );
+
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalled = true;
+                    return Task.CompletedTask;
+                }
+            );
+        }
+
+        [Test]
+        public void It_continues_when_refresh_fails()
+        {
+            _nextCalled.Should().BeTrue();
+            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            A.CallTo(() => _dmsInstanceProvider.RefreshInstancesIfExpiredAsync(A<string?>.Ignored))
+                .MustHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Matching_Instance_With_Route_Qualifiers : ResolveDmsInstanceMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();

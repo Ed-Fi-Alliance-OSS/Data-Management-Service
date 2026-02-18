@@ -51,6 +51,20 @@ internal class ResolveDmsInstanceMiddleware(
             return;
         }
 
+        try
+        {
+            await dmsInstanceProvider.RefreshInstancesIfExpiredAsync(requestInfo.FrontendRequest.Tenant);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "Failed to refresh DMS instance cache for tenant {Tenant} before route resolution - TraceId: {TraceId}",
+                LoggingSanitizer.SanitizeForLogging(requestInfo.FrontendRequest.Tenant ?? "(default)"),
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+
         // Get route qualifiers from the request
         Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers = requestInfo
             .FrontendRequest
