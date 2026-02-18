@@ -420,9 +420,18 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
+            var referrerDocumentIdColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
+                binding.FkColumn,
+                referrerTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                referrerMappingContext,
+                "referrer document id column",
+                "trigger identity propagation"
+            );
+
             var referrerAction = new DbIdentityPropagationReferrerAction(
                 bindingTable.Table,
-                binding.FkColumn,
+                referrerDocumentIdColumn,
                 RelationalNameConventions.DocumentIdColumnName,
                 identityColumnPairs.ToArray()
             );
