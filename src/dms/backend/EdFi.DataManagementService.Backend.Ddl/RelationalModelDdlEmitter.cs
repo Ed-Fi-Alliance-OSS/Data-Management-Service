@@ -191,11 +191,19 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits <c>CREATE INDEX IF NOT EXISTS</c> statements for each index in create-order.
+    /// Only FK-support and explicit indexes are emitted, since PK and UK indexes are
+    /// already created by their respective constraint definitions.
     /// </summary>
     private void EmitIndexes(SqlWriter writer, IReadOnlyList<DbIndexInfo> indexes)
     {
         foreach (var index in indexes)
         {
+            // Skip PK and UK indexes - they are already created by constraint definitions
+            if (index.Kind is DbIndexKind.PrimaryKey or DbIndexKind.UniqueConstraint)
+            {
+                continue;
+            }
+
             writer.AppendLine(
                 _dialect.CreateIndexIfNotExists(
                     index.Table,
