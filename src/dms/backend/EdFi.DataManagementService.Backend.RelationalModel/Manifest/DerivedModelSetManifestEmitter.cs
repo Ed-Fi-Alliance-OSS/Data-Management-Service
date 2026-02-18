@@ -311,7 +311,20 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteString("name", trigger.Name.Value);
             writer.WritePropertyName("table");
             WriteTableReference(writer, trigger.Table);
-            writer.WriteString("kind", trigger.Parameters.GetType().Name);
+            writer.WriteString(
+                "kind",
+                trigger.Parameters switch
+                {
+                    TriggerKindParameters.DocumentStamping => "DocumentStamping",
+                    TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
+                    TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
+                    TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(trigger),
+                        "Unsupported trigger kind parameters type."
+                    ),
+                }
+            );
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, trigger.KeyColumns);
             writer.WritePropertyName("identity_projection_columns");

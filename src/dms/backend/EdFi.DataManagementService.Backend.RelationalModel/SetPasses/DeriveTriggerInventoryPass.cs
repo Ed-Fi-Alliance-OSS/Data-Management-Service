@@ -164,6 +164,14 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 {
                     // When superclassIdentityJsonPath is set, the subclass has exactly one identity path
                     // that maps to the superclass's single identity path.
+                    if (identityElements.Count != 1)
+                    {
+                        throw new InvalidOperationException(
+                            $"Subclass resource '{FormatResource(resource)}' with superclassIdentityJsonPath "
+                                + $"must have exactly one identity element, but found {identityElements.Count}."
+                        );
+                    }
+
                     superclassIdentityElements =
                     [
                         new IdentityElementMapping(identityElements[0].Column, superclassIdentityJsonPath),

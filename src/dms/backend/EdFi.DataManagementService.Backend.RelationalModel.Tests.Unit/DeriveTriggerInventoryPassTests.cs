@@ -690,11 +690,24 @@ public class Given_Deterministic_Trigger_Ordering
     [Test]
     public void It_should_produce_identical_trigger_sequence_on_repeated_builds()
     {
+        static string KindLabel(TriggerKindParameters p) =>
+            p switch
+            {
+                TriggerKindParameters.DocumentStamping => "DocumentStamping",
+                TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
+                TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
+                TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(p),
+                    "Unsupported trigger kind parameters type."
+                ),
+            };
+
         var firstSequence = _triggersFirst
-            .Select(t => (t.Table.Name, t.Name.Value, t.Parameters.GetType().Name))
+            .Select(t => (t.Table.Name, t.Name.Value, KindLabel(t.Parameters)))
             .ToList();
         var secondSequence = _triggersSecond
-            .Select(t => (t.Table.Name, t.Name.Value, t.Parameters.GetType().Name))
+            .Select(t => (t.Table.Name, t.Name.Value, KindLabel(t.Parameters)))
             .ToList();
 
         firstSequence.Should().Equal(secondSequence);
