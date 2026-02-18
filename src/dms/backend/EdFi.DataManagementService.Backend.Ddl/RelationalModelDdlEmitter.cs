@@ -22,6 +22,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <exception cref="InvalidOperationException">
     /// Thrown when the model set dialect does not match the emitter dialect rules.
     /// </exception>
+    /// <remarks>
+    /// For SQL Server (MSSQL), the output contains <c>GO</c> batch separators required
+    /// for <c>CREATE OR ALTER</c> statements. These are processed by sqlcmd/SSMS but
+    /// are not valid T-SQL. ADO.NET consumers must split on <c>GO</c> lines and execute
+    /// each batch separately.
+    /// </remarks>
     public string Emit(DerivedRelationalModelSet modelSet)
     {
         ArgumentNullException.ThrowIfNull(modelSet);
