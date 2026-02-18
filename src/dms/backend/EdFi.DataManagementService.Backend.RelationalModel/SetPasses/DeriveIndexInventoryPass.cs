@@ -31,13 +31,13 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 
             foreach (var table in concreteResource.RelationalModel.TablesInDependencyOrder)
             {
-                DeriveIndexesForTable(table, context.IndexInventory, context);
+                DeriveIndexesForTable(table, context.IndexInventory);
             }
         }
 
         foreach (var abstractTable in context.AbstractIdentityTablesInNameOrder)
         {
-            DeriveIndexesForTable(abstractTable.TableModel, context.IndexInventory, context);
+            DeriveIndexesForTable(abstractTable.TableModel, context.IndexInventory);
         }
     }
 
@@ -45,14 +45,9 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     /// Derives PK-implied, UK-implied, and FK-support indexes for a single table and appends
     /// them to the inventory.
     /// </summary>
-    private static void DeriveIndexesForTable(
-        DbTableModel table,
-        List<DbIndexInfo> inventory,
-        RelationalModelSetBuilderContext context
-    )
+    private static void DeriveIndexesForTable(DbTableModel table, List<DbIndexInfo> inventory)
     {
         List<DbIndexInfo> tableIndexes = [];
-        var tableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(context, table);
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
         var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
@@ -85,17 +80,10 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 
         // FK-support indexes: one per FK, non-unique, suppressed when FK columns are
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
+        // ValidateForeignKeyStorageInvariantPass runs earlier in the default pass order and
+        // guarantees FK endpoints map to direct stored columns before index derivation.
         foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
         {
-            ForeignKeyStorageValidator.ValidateEndpointColumns(
-                fk,
-                table.Table,
-                fk.TargetTable,
-                "local",
-                fk.Columns,
-                tableMetadata
-            );
-
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
             {
                 continue;

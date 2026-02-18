@@ -515,6 +515,7 @@ public class Given_Key_Unification_Alias_Columns_In_FKs
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder([
             new KeyUnificationAliasForeignKeyFixturePass(),
+            new ValidateForeignKeyStorageInvariantPass(),
             new DeriveIndexInventoryPass(),
         ]);
 
@@ -538,6 +539,9 @@ public class Given_Key_Unification_Alias_Columns_In_FKs
         _exception!.Message.Should().Contain("canonical storage column");
         _exception.Message.Should().Contain("School_SchoolId");
         _exception.Message.Should().Contain("School_SchoolId_Unified");
+        _exception.StackTrace.Should().NotBeNull();
+        _exception.StackTrace.Should().Contain(".ValidateForeignKeyStorageInvariantPass.Execute(");
+        _exception.StackTrace.Should().NotContain(".DeriveIndexInventoryPass.Execute(");
     }
 }
 
@@ -558,6 +562,7 @@ public class Given_Key_Unification_Alias_Columns_With_Custom_Canonical_Names_In_
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder([
             new KeyUnificationAliasCustomCanonicalForeignKeyFixturePass(),
+            new ValidateForeignKeyStorageInvariantPass(),
             new DeriveIndexInventoryPass(),
         ]);
 
@@ -601,6 +606,7 @@ public class Given_Key_Unification_Presence_Columns_In_FKs
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder([
             new KeyUnificationPresenceForeignKeyFixturePass(),
+            new ValidateForeignKeyStorageInvariantPass(),
             new DeriveIndexInventoryPass(),
         ]);
 
@@ -1070,12 +1076,42 @@ file static class KeyUnificationIndexInventoryFixtureBuilder
             constraints
         );
 
+        List<DbColumnModel> targetColumns =
+        [
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                targetCanonicalStorageColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+        var targetTableModel = new DbTableModel(
+            targetTable,
+            JsonPathExpressionCompiler.Compile("$.school"),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            targetColumns,
+            []
+        );
+
         var relationalModel = new RelationalResourceModel(
             resourceKey.Resource,
             schema,
             ResourceStorageKind.RelationalTables,
             rootTable,
-            [rootTable],
+            [targetTableModel, rootTable],
             [],
             []
         );
