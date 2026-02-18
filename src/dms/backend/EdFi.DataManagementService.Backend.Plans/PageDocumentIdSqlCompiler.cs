@@ -77,6 +77,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
     private const string DocumentIdColumnName = "DocumentId";
 
+    /// <summary>
+    /// Builds a lookup of unified-alias mappings keyed by the alias/binding column.
+    /// </summary>
     private static IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> BuildAliasMappingLookup(
         IReadOnlyList<UnifiedAliasColumnMapping> mappings
     )
@@ -98,6 +101,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         return lookup;
     }
 
+    /// <summary>
+    /// Builds a deterministic <c>WHERE</c> clause for the provided predicate set.
+    /// </summary>
     private string? BuildWhereClause(
         IReadOnlyList<QueryValuePredicate> predicates,
         IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> aliasMappingsByColumn
@@ -118,6 +124,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         return string.Join(" AND ", predicateSql);
     }
 
+    /// <summary>
+    /// Builds SQL for a single predicate, rewriting unified-alias bindings to canonical storage columns.
+    /// </summary>
     private string BuildPredicateSql(
         QueryValuePredicate predicate,
         IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> aliasMappingsByColumn
@@ -147,6 +156,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         return $"{BuildIsNotNullSql(mapping.PresenceColumn.Value)} AND {canonicalComparison}";
     }
 
+    /// <summary>
+    /// Builds a simple binary comparison predicate against a table column.
+    /// </summary>
     private string BuildComparisonSql(
         DbColumnName column,
         QueryComparisonOperator @operator,
@@ -156,21 +168,33 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         return $"r.{QuoteColumn(column)} {ToSqlOperator(@operator)} {parameterName}";
     }
 
+    /// <summary>
+    /// Builds an <c>IS NOT NULL</c> predicate against a table column.
+    /// </summary>
     private string BuildIsNotNullSql(DbColumnName column)
     {
         return $"r.{QuoteColumn(column)} IS NOT NULL";
     }
 
+    /// <summary>
+    /// Quotes a derived model column identifier for the configured dialect.
+    /// </summary>
     private string QuoteColumn(DbColumnName column)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialect, column);
     }
 
+    /// <summary>
+    /// Quotes a raw SQL column identifier for the configured dialect.
+    /// </summary>
     private string QuoteColumn(string column)
     {
         return SqlIdentifierQuoter.QuoteIdentifier(_dialect, column);
     }
 
+    /// <summary>
+    /// Builds the paging clause for the configured SQL dialect.
+    /// </summary>
     private string BuildPagingClause(string offsetParameterName, string limitParameterName)
     {
         return _dialect switch
@@ -186,6 +210,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         };
     }
 
+    /// <summary>
+    /// Converts a query comparison operator to its SQL token.
+    /// </summary>
     private static string ToSqlOperator(QueryComparisonOperator @operator)
     {
         return @operator switch
@@ -206,6 +233,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         };
     }
 
+    /// <summary>
+    /// Validates that a parameter name is non-empty before emitting it into SQL.
+    /// </summary>
     private static void ValidateParameterName(string parameterName, string parameterNameArgumentName)
     {
         if (string.IsNullOrWhiteSpace(parameterName))

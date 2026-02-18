@@ -10,12 +10,43 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 public enum QueryComparisonOperator
 {
+    /// <summary>
+    /// Equality comparison (<c>=</c>).
+    /// </summary>
     Equal,
+
+    /// <summary>
+    /// Inequality comparison (<c>&lt;&gt;</c>).
+    /// </summary>
     NotEqual,
+
+    /// <summary>
+    /// Strict less-than comparison (<c>&lt;</c>).
+    /// </summary>
     LessThan,
+
+    /// <summary>
+    /// Less-than-or-equal comparison (<c>&lt;=</c>).
+    /// </summary>
     LessThanOrEqual,
+
+    /// <summary>
+    /// Strict greater-than comparison (<c>&gt;</c>).
+    /// </summary>
     GreaterThan,
+
+    /// <summary>
+    /// Greater-than-or-equal comparison (<c>&gt;=</c>).
+    /// </summary>
     GreaterThanOrEqual,
+
+    /// <summary>
+    /// Pattern-match comparison (<c>LIKE</c>).
+    /// </summary>
     Like,
+
+    /// <summary>
+    /// Set-membership comparison (<c>IN</c>).
+    /// </summary>
     In,
 }

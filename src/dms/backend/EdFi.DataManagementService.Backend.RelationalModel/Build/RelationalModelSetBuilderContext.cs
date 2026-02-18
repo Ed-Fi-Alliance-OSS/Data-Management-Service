@@ -244,6 +244,12 @@ public sealed class RelationalModelSetBuilderContext
         entries.Add(new StrictUnifiedAliasTableMetadataEntry(table.JsonScope, table.Columns, metadata));
     }
 
+    /// <summary>
+    /// Cache entry for strict unified-alias metadata keyed by a table's JSON scope and column snapshot.
+    /// </summary>
+    /// <param name="JsonScope">The table JSON scope used to disambiguate same-name tables across resources.</param>
+    /// <param name="Columns">The table columns snapshot used for cache invalidation.</param>
+    /// <param name="Metadata">The strict unified-alias metadata payload.</param>
     private sealed record StrictUnifiedAliasTableMetadataEntry(
         JsonPathExpression JsonScope,
         IReadOnlyList<DbColumnModel> Columns,

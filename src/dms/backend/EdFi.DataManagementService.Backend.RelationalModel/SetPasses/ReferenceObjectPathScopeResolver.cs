@@ -139,11 +139,17 @@ internal static class ReferenceObjectPathScopeResolver
         return bestMatch;
     }
 
+    /// <summary>
+    /// Returns true when the segment list contains an <c>_ext</c> property segment.
+    /// </summary>
     private static bool ContainsExtensionSegment(IReadOnlyList<JsonPathSegment> segments)
     {
         return segments.Any(segment => segment is JsonPathSegment.Property { Name: ExtensionPropertyName });
     }
 
+    /// <summary>
+    /// Builds a formatted candidate-scope list string for diagnostics.
+    /// </summary>
     private static string BuildScopeList<T>(
         IReadOnlyList<T> scopeCandidates,
         Func<T, JsonPathExpression> scopeSelector
@@ -158,6 +164,9 @@ internal static class ReferenceObjectPathScopeResolver
         return FormatScopeList(scopes);
     }
 
+    /// <summary>
+    /// Formats a list of scope strings as a stable quoted comma-separated list.
+    /// </summary>
     private static string FormatScopeList(IReadOnlyList<string> scopes)
     {
         if (scopes.Count == 0)

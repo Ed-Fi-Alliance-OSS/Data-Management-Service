@@ -78,12 +78,18 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
         }
     }
 
+    /// <summary>
+    /// Returns true when the referenced table is the shared core <c>dms.Document</c> table.
+    /// </summary>
     private static bool IsDocumentTable(DbTableName table)
     {
         return string.Equals(table.Schema.Value, "dms", StringComparison.Ordinal)
             && string.Equals(table.Name, "Document", StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Builds a lookup of all derived tables by physical name across concrete resources and abstract identity tables.
+    /// </summary>
     private static Dictionary<DbTableName, DbTableModel> BuildTablesByName(
         RelationalModelSetBuilderContext context
     )

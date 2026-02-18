@@ -416,6 +416,9 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             .ToArray();
     }
 
+    /// <summary>
+    /// Resolves an equality-constraint endpoint to a unique table index, failing fast when bindings span tables.
+    /// </summary>
     private static int ResolveEndpointTableIndex(
         JsonPathExpression endpointPath,
         IReadOnlyList<TableBoundColumn> candidates,
@@ -432,6 +435,9 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         return ThrowAmbiguousEndpointBinding(endpointPath, candidates, resource);
     }
 
+    /// <summary>
+    /// Throws an exception that reports all distinct bindings for an ambiguous endpoint.
+    /// </summary>
     [DoesNotReturn]
     private static int ThrowAmbiguousEndpointBinding(
         JsonPathExpression endpointPath,

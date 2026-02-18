@@ -49,6 +49,9 @@ internal static class UnifiedAliasStrictMetadataCache
         return metadata;
     }
 
+    /// <summary>
+    /// Enumerates all schema-derived tables that participate in strict unified-alias metadata validation.
+    /// </summary>
     private static IEnumerable<DbTableModel> EnumerateTables(RelationalModelSetBuilderContext context)
     {
         HashSet<DbTableName> seenTables = [];

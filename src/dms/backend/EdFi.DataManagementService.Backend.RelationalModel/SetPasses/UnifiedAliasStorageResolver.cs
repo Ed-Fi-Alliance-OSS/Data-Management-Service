@@ -13,17 +13,45 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 internal static class UnifiedAliasStorageResolver
 {
+    /// <summary>
+    /// Defines which presence-gated columns are rejected for a given storage-resolution usage.
+    /// </summary>
     internal enum PresenceGateRejectionPolicy
     {
+        /// <summary>
+        /// Reject synthetic scalar presence flags (e.g., <c>..._Present</c>), but allow reference-site
+        /// <c>..._DocumentId</c> presence gates.
+        /// </summary>
         RejectSyntheticScalarPresence,
+
+        /// <summary>
+        /// Reject all presence-gate columns, including both reference-site <c>..._DocumentId</c> columns and
+        /// synthetic scalar presence flags.
+        /// </summary>
         RejectAllPresenceGates,
     }
 
+    /// <summary>
+    /// Options that control strict validation behavior while building unified-alias metadata.
+    /// </summary>
+    /// <param name="ThrowIfPresenceColumnMissing">
+    /// When true, throws if a unified-alias column references a presence-gate column that does not exist on the table.
+    /// </param>
+    /// <param name="ThrowIfInvalidStrictSyntheticCandidate">
+    /// When true, throws if a referenced presence-gate column is not a valid strict synthetic presence flag.
+    /// </param>
     internal readonly record struct PresenceGateMetadataOptions(
         bool ThrowIfPresenceColumnMissing,
         bool ThrowIfInvalidStrictSyntheticCandidate
     );
 
+    /// <summary>
+    /// Cached per-table metadata used for storage-column resolution and presence-gate validation.
+    /// </summary>
+    /// <param name="Table">The owning table name.</param>
+    /// <param name="ColumnsByName">All columns keyed by column name.</param>
+    /// <param name="AllPresenceGateColumns">All presence-gate columns referenced by unified aliases.</param>
+    /// <param name="SyntheticScalarPresenceColumns">Presence-gate columns that are strict synthetic scalar flags.</param>
     internal sealed record TableMetadata(
         DbTableName Table,
         IReadOnlyDictionary<DbColumnName, DbColumnModel> ColumnsByName,
@@ -194,16 +222,25 @@ internal static class UnifiedAliasStorageResolver
         }
     }
 
+    /// <summary>
+    /// Identifies reference-site presence gates (<c>..._DocumentId</c>) by naming convention.
+    /// </summary>
     private static bool IsReferenceSitePresenceGate(DbColumnModel column)
     {
         return RelationalNameConventions.IsDocumentIdColumn(column.ColumnName);
     }
 
+    /// <summary>
+    /// Returns true when the column is a strict synthetic presence flag (nullable stored scalar boolean with null source path).
+    /// </summary>
     private static bool IsStrictSyntheticPresenceFlag(DbColumnModel column)
     {
         return !TryGetStrictSyntheticPresenceViolation(column, out _);
     }
 
+    /// <summary>
+    /// Determines whether a column violates strict synthetic presence-flag requirements and returns a reason when it does.
+    /// </summary>
     private static bool TryGetStrictSyntheticPresenceViolation(
         DbColumnModel column,
         [NotNullWhen(true)] out string? reason
@@ -243,6 +280,9 @@ internal static class UnifiedAliasStorageResolver
         return false;
     }
 
+    /// <summary>
+    /// Returns true when a column should be rejected as a presence gate for the specified policy.
+    /// </summary>
     private static bool IsRejectedPresenceGate(
         DbColumnName column,
         TableMetadata tableMetadata,
@@ -261,6 +301,9 @@ internal static class UnifiedAliasStorageResolver
         };
     }
 
+    /// <summary>
+    /// Builds a human-readable description of a presence-gate rejection policy for diagnostics.
+    /// </summary>
     private static string DescribePresenceGateRejection(
         PresenceGateRejectionPolicy presenceGateRejectionPolicy
     )

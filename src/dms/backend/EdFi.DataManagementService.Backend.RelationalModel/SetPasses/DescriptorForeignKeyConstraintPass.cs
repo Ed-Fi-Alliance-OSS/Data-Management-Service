@@ -37,6 +37,9 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         }
     }
 
+    /// <summary>
+    /// Applies descriptor FK derivation to a single concrete resource model, collecting any de-duplication diagnostics.
+    /// </summary>
     private static RelationalResourceModel ApplyToResource(
         RelationalModelSetBuilderContext context,
         RelationalResourceModel resourceModel,
@@ -67,6 +70,9 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         };
     }
 
+    /// <summary>
+    /// Replaces descriptor FK constraints on a single table with a de-duplicated storage-column set.
+    /// </summary>
     private static DbTableModel ApplyToTable(
         RelationalModelSetBuilderContext context,
         DbTableModel table,
@@ -141,6 +147,9 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
             };
     }
 
+    /// <summary>
+    /// Creates the canonical descriptor FK constraint targeting <c>dms.Descriptor(DocumentId)</c> for one storage column.
+    /// </summary>
     private static TableConstraint.ForeignKey CreateDescriptorForeignKey(
         DbTableName table,
         DbColumnName storageColumn
@@ -156,6 +165,9 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
         );
     }
 
+    /// <summary>
+    /// Returns true when a constraint is a descriptor FK targeting the shared <c>dms.Descriptor(DocumentId)</c> contract.
+    /// </summary>
     private static bool IsDescriptorForeignKeyConstraint(TableConstraint constraint)
     {
         if (constraint is not TableConstraint.ForeignKey foreignKey)
@@ -172,8 +184,14 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
             && foreignKey.TargetColumns[0].Equals(RelationalNameConventions.DocumentIdColumnName);
     }
 
+    /// <summary>
+    /// Groups descriptor binding/path columns by their resolved storage column for FK de-duplication.
+    /// </summary>
     private sealed record DescriptorStorageGroup(DbColumnName StorageColumn)
     {
+        /// <summary>
+        /// Binding/path columns that map to <see cref="StorageColumn"/> for this table.
+        /// </summary>
         public HashSet<DbColumnName> BindingColumns { get; } = [];
     }
 }
