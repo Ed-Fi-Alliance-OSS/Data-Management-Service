@@ -796,9 +796,13 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     }
                     : parameters;
             }
-            default:
+            case TriggerKindParameters.DocumentStamping:
                 changed = false;
                 return parameters;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported trigger kind parameters type '{parameters.GetType().Name}'."
+                );
         }
     }
 

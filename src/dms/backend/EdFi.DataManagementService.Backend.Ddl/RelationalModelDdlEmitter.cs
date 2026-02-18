@@ -233,7 +233,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// </summary>
     private void AppendPgsqlTrigger(StringBuilder builder, DbTriggerInfo trigger)
     {
-        var funcName = $"TF_{trigger.Name.Value}";
+        var funcName = _dialectRules.ShortenIdentifier($"TF_{trigger.Name.Value}");
         var schema = trigger.Table.Schema;
 
         // Function
@@ -324,9 +324,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// </summary>
     private void AppendDocumentStampingBody(StringBuilder builder, DbTriggerInfo trigger, string indent)
     {
-        if (trigger.KeyColumns.Count == 0)
+        if (trigger.KeyColumns.Count != 1)
             throw new InvalidOperationException(
-                $"Trigger '{trigger.Name.Value}' requires at least one key column."
+                $"DocumentStamping trigger '{trigger.Name.Value}' requires exactly one key column, but has {trigger.KeyColumns.Count}."
             );
 
         var documentTable = Quote(DmsTableNames.Document);
@@ -923,9 +923,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
             );
         }
 
-        if (trigger.KeyColumns.Count == 0)
+        if (trigger.KeyColumns.Count != 1)
             throw new InvalidOperationException(
-                $"Trigger '{trigger.Name.Value}' requires at least one key column."
+                $"IdentityPropagationFallback trigger '{trigger.Name.Value}' requires exactly one key column, but has {trigger.KeyColumns.Count}."
             );
 
         var targetTable = Quote(propagation.TargetTable);
@@ -1199,7 +1199,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         {
             SqlDialect.Pgsql => "CREATE OR REPLACE VIEW",
             SqlDialect.Mssql => "CREATE OR ALTER VIEW",
-            _ => throw new ArgumentOutOfRangeException(),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_dialectRules.Dialect),
+                _dialectRules.Dialect,
+                "Unsupported SQL dialect."
+            ),
         };
 
         builder.Append(createKeyword);
@@ -1208,9 +1212,21 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
         builder.AppendLine(" AS");
 
         // Emit UNION ALL arms
+        if (viewInfo.UnionArmsInOrder.Count == 0)
+            throw new InvalidOperationException(
+                $"Abstract union view '{viewInfo.ViewName.Schema.Value}.{viewInfo.ViewName.Name}' has no union arms."
+            );
+
         for (int i = 0; i < viewInfo.UnionArmsInOrder.Count; i++)
         {
             var arm = viewInfo.UnionArmsInOrder[i];
+
+            if (arm.ProjectionExpressionsInSelectOrder.Count != viewInfo.OutputColumnsInSelectOrder.Count)
+                throw new InvalidOperationException(
+                    $"Union arm from table '{arm.FromTable.Schema.Value}.{arm.FromTable.Name}' has "
+                        + $"{arm.ProjectionExpressionsInSelectOrder.Count} projection expressions but the view expects "
+                        + $"{viewInfo.OutputColumnsInSelectOrder.Count} output columns."
+                );
 
             if (i > 0)
             {
@@ -1303,10 +1319,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
     /// <summary>
     /// Resolves the primary key constraint name, falling back to a conventional default when unset.
     /// </summary>
-    private static string ResolvePrimaryKeyConstraintName(DbTableModel table)
+    private string ResolvePrimaryKeyConstraintName(DbTableModel table)
     {
         return string.IsNullOrWhiteSpace(table.Key.ConstraintName)
-            ? $"PK_{table.Table.Schema.Value}_{table.Table.Name}"
+            ? _dialectRules.ShortenIdentifier($"PK_{table.Table.Schema.Value}_{table.Table.Name}")
             : table.Key.ConstraintName;
     }
 
@@ -1384,6 +1400,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialectRules dialectRules)
 
     /// <summary>
     /// Escapes single quotes in a value for safe embedding in a SQL string literal.
+    /// Assumes <c>standard_conforming_strings = on</c> (PostgreSQL default since 9.1),
+    /// so backslashes are treated as literal characters and do not need escaping.
     /// </summary>
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 }

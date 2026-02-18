@@ -41,6 +41,9 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Foreign_Keys
         var tableIndex = _ddl.IndexOf("CREATE TABLE");
         var fkIndex = _ddl.IndexOf("ALTER TABLE");
 
+        schemaIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE SCHEMA in DDL");
+        tableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE in DDL");
+        fkIndex.Should().BeGreaterOrEqualTo(0, "expected ALTER TABLE in DDL");
         schemaIndex.Should().BeLessThan(tableIndex);
         tableIndex.Should().BeLessThan(fkIndex);
     }
@@ -86,6 +89,8 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Foreign_Keys
         var tableIndex = _ddl.IndexOf("CREATE TABLE");
         var fkIndex = _ddl.IndexOf("ALTER TABLE");
 
+        tableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE in DDL");
+        fkIndex.Should().BeGreaterOrEqualTo(0, "expected ALTER TABLE in DDL");
         tableIndex.Should().BeLessThan(fkIndex);
     }
 
@@ -97,6 +102,21 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Foreign_Keys
 
         firstFkIndex.Should().BeGreaterOrEqualTo(0, "expected at least one FOREIGN KEY in emitted DDL");
         firstFkIndex.Should().BeGreaterThan(createTableEndIndex);
+    }
+
+    [Test]
+    public void It_should_emit_schemas_first()
+    {
+        _ddl.Should().Contain("CREATE SCHEMA");
+    }
+
+    [Test]
+    public void It_should_emit_foreign_keys_with_alter_table()
+    {
+        _ddl.Should().Contain("ALTER TABLE");
+        _ddl.Should().Contain("ADD CONSTRAINT");
+        _ddl.Should().Contain("FOREIGN KEY");
+        _ddl.Should().Contain("REFERENCES");
     }
 }
 
@@ -224,6 +244,12 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     {
         _ddl.Should().Contain("[Discriminator]");
     }
+
+    [Test]
+    public void It_should_include_primary_key()
+    {
+        _ddl.Should().Contain("PRIMARY KEY");
+    }
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -263,6 +289,8 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Union_View
         var tableIndex = _ddl.IndexOf("CREATE TABLE");
         var viewIndex = _ddl.IndexOf("CREATE OR REPLACE VIEW");
 
+        tableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE in DDL");
+        viewIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE OR REPLACE VIEW in DDL");
         viewIndex.Should().BeGreaterThan(tableIndex);
     }
 
@@ -304,6 +332,17 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
     public void It_should_emit_discriminator_literal_with_sql_server_cast()
     {
         _ddl.Should().Contain("CAST(N'School' AS nvarchar(");
+    }
+
+    [Test]
+    public void It_should_emit_views_after_tables()
+    {
+        var tableIndex = _ddl.IndexOf("CREATE TABLE");
+        var viewIndex = _ddl.IndexOf("CREATE OR ALTER VIEW");
+
+        tableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE in DDL");
+        viewIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE OR ALTER VIEW in DDL");
+        viewIndex.Should().BeGreaterThan(tableIndex);
     }
 }
 
@@ -973,6 +1012,10 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Extension_Tables
         var sampleSchemaIndex = _ddl.IndexOf("CREATE SCHEMA \"sample\"");
         var extensionTableIndex = _ddl.IndexOf("CREATE TABLE \"sample\".\"SchoolExtension\"");
 
+        sampleSchemaIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE SCHEMA \"sample\" in DDL");
+        extensionTableIndex
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected CREATE TABLE \"sample\".\"SchoolExtension\" in DDL");
         sampleSchemaIndex.Should().BeLessThan(extensionTableIndex);
     }
 
@@ -982,6 +1025,10 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Extension_Tables
         var baseTableIndex = _ddl.IndexOf("CREATE TABLE \"edfi\".\"School\"");
         var extensionTableIndex = _ddl.IndexOf("CREATE TABLE \"sample\".\"SchoolExtension\"");
 
+        baseTableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE \"edfi\".\"School\" in DDL");
+        extensionTableIndex
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected CREATE TABLE \"sample\".\"SchoolExtension\" in DDL");
         baseTableIndex.Should().BeLessThan(extensionTableIndex);
     }
 }
@@ -1021,6 +1068,10 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Extension_Tables
         var baseTableIndex = _ddl.IndexOf("CREATE TABLE [edfi].[School]");
         var extensionTableIndex = _ddl.IndexOf("CREATE TABLE [sample].[SchoolExtension]");
 
+        baseTableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE [edfi].[School] in DDL");
+        extensionTableIndex
+            .Should()
+            .BeGreaterOrEqualTo(0, "expected CREATE TABLE [sample].[SchoolExtension] in DDL");
         baseTableIndex.Should().BeLessThan(extensionTableIndex);
     }
 }

@@ -352,6 +352,42 @@ public static class DerivedModelSetManifestEmitter
             {
                 WriteTargetColumnMappings(writer, propagation.TargetColumnMappings);
             }
+            else if (trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance refId)
+            {
+                writer.WriteNumber("resource_key_id", refId.ResourceKeyId);
+                writer.WriteString("project_name", refId.ProjectName);
+                writer.WriteString("resource_name", refId.ResourceName);
+                writer.WritePropertyName("identity_elements");
+                writer.WriteStartArray();
+                foreach (var element in refId.IdentityElements)
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("column", element.Column.Value);
+                    writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                    writer.WriteEndObject();
+                }
+                writer.WriteEndArray();
+
+                if (refId.SuperclassAlias is { } alias)
+                {
+                    writer.WritePropertyName("superclass_alias");
+                    writer.WriteStartObject();
+                    writer.WriteNumber("resource_key_id", alias.ResourceKeyId);
+                    writer.WriteString("project_name", alias.ProjectName);
+                    writer.WriteString("resource_name", alias.ResourceName);
+                    writer.WritePropertyName("identity_elements");
+                    writer.WriteStartArray();
+                    foreach (var element in alias.IdentityElements)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("column", element.Column.Value);
+                        writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                    writer.WriteEndObject();
+                }
+            }
 
             writer.WriteEndObject();
         }

@@ -560,6 +560,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             {
                 // When superclassIdentityJsonPath is set, the first concrete identity path
                 // maps to the superclass identity path.
+                if (builderContext.IdentityJsonPaths.Count == 0)
+                    throw new InvalidOperationException(
+                        $"Resource '{FormatResource(resource)}' has superclassIdentityJsonPath set but no identity JSON paths."
+                    );
+
                 concretePath = builderContext.IdentityJsonPaths[0].Canonical;
             }
             else

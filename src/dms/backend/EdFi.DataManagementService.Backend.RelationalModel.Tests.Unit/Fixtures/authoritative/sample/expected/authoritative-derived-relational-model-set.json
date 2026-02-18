@@ -29361,6 +29361,19 @@
       "identity_projection_columns": [
         "School_DocumentId",
         "WeekIdentifier"
+      ],
+      "resource_key_id": 4,
+      "project_name": "Ed-Fi",
+      "resource_name": "AcademicWeek",
+      "identity_elements": [
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "WeekIdentifier",
+          "identity_json_path": "$.weekIdentifier"
+        }
       ]
     },
     {
@@ -29392,6 +29405,23 @@
         "EducationOrganization_DocumentId",
         "RatingTitle",
         "SchoolYear_DocumentId"
+      ],
+      "resource_key_id": 7,
+      "project_name": "Ed-Fi",
+      "resource_name": "AccountabilityRating",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "RatingTitle",
+          "identity_json_path": "$.ratingTitle"
+        },
+        {
+          "column": "SchoolYear_DocumentId",
+          "identity_json_path": "$.schoolYearTypeReference.schoolYear"
+        }
       ]
     },
     {
@@ -29423,6 +29453,19 @@
       "identity_projection_columns": [
         "AssessmentIdentifier",
         "Namespace"
+      ],
+      "resource_key_id": 14,
+      "project_name": "Ed-Fi",
+      "resource_name": "Assessment",
+      "identity_elements": [
+        {
+          "column": "AssessmentIdentifier",
+          "identity_json_path": "$.assessmentIdentifier"
+        },
+        {
+          "column": "Namespace",
+          "identity_json_path": "$.namespace"
+        }
       ]
     },
     {
@@ -29466,6 +29509,23 @@
         "AdministrationIdentifier",
         "Assessment_DocumentId",
         "AssigningEducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 15,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentAdministration",
+      "identity_elements": [
+        {
+          "column": "AdministrationIdentifier",
+          "identity_json_path": "$.administrationIdentifier"
+        },
+        {
+          "column": "Assessment_DocumentId",
+          "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "AssigningEducationOrganization_DocumentId",
+          "identity_json_path": "$.assigningEducationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -29509,6 +29569,19 @@
       "identity_projection_columns": [
         "AssessmentAdministration_DocumentId",
         "ParticipatingEducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 16,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentAdministrationParticipation",
+      "identity_elements": [
+        {
+          "column": "AssessmentAdministration_DocumentId",
+          "identity_json_path": "$.assessmentAdministrationReference.administrationIdentifier"
+        },
+        {
+          "column": "ParticipatingEducationOrganization_DocumentId",
+          "identity_json_path": "$.participatingEducationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -29587,6 +29660,19 @@
       "identity_projection_columns": [
         "AssessmentBatteryPartName",
         "Assessment_DocumentId"
+      ],
+      "resource_key_id": 17,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentBatteryPart",
+      "identity_elements": [
+        {
+          "column": "AssessmentBatteryPartName",
+          "identity_json_path": "$.assessmentBatteryPartName"
+        },
+        {
+          "column": "Assessment_DocumentId",
+          "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        }
       ]
     },
     {
@@ -29641,6 +29727,19 @@
       "identity_projection_columns": [
         "Assessment_DocumentId",
         "IdentificationCode"
+      ],
+      "resource_key_id": 20,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentItem",
+      "identity_elements": [
+        {
+          "column": "Assessment_DocumentId",
+          "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "IdentificationCode",
+          "identity_json_path": "$.identificationCode"
+        }
       ]
     },
     {
@@ -29767,6 +29866,19 @@
       "identity_projection_columns": [
         "Assessment_DocumentId",
         "ScoreRangeId"
+      ],
+      "resource_key_id": 25,
+      "project_name": "Ed-Fi",
+      "resource_name": "AssessmentScoreRangeLearningStandard",
+      "identity_elements": [
+        {
+          "column": "Assessment_DocumentId",
+          "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "ScoreRangeId",
+          "identity_json_path": "$.scoreRangeId"
+        }
       ]
     },
     {
@@ -29821,6 +29933,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 29,
+      "project_name": "Ed-Fi",
+      "resource_name": "BalanceSheetDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -29863,6 +29988,19 @@
       "identity_projection_columns": [
         "BellScheduleName",
         "School_DocumentId"
+      ],
+      "resource_key_id": 32,
+      "project_name": "Ed-Fi",
+      "resource_name": "BellSchedule",
+      "identity_elements": [
+        {
+          "column": "BellScheduleName",
+          "identity_json_path": "$.bellScheduleName"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        }
       ]
     },
     {
@@ -29930,6 +30068,23 @@
         "CalendarCode",
         "School_DocumentId",
         "SchoolYear_DocumentId"
+      ],
+      "resource_key_id": 35,
+      "project_name": "Ed-Fi",
+      "resource_name": "Calendar",
+      "identity_elements": [
+        {
+          "column": "CalendarCode",
+          "identity_json_path": "$.calendarCode"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "SchoolYear_DocumentId",
+          "identity_json_path": "$.schoolYearTypeReference.schoolYear"
+        }
       ]
     },
     {
@@ -29961,6 +30116,19 @@
       "identity_projection_columns": [
         "Calendar_DocumentId",
         "Date"
+      ],
+      "resource_key_id": 36,
+      "project_name": "Ed-Fi",
+      "resource_name": "CalendarDate",
+      "identity_elements": [
+        {
+          "column": "Calendar_DocumentId",
+          "identity_json_path": "$.calendarReference.calendarCode"
+        },
+        {
+          "column": "Date",
+          "identity_json_path": "$.date"
+        }
       ]
     },
     {
@@ -30016,6 +30184,23 @@
         "AccountIdentifier",
         "EducationOrganization_DocumentId",
         "FiscalYear"
+      ],
+      "resource_key_id": 40,
+      "project_name": "Ed-Fi",
+      "resource_name": "ChartOfAccount",
+      "identity_elements": [
+        {
+          "column": "AccountIdentifier",
+          "identity_json_path": "$.accountIdentifier"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -30059,6 +30244,19 @@
       "identity_projection_columns": [
         "ClassPeriodName",
         "School_DocumentId"
+      ],
+      "resource_key_id": 44,
+      "project_name": "Ed-Fi",
+      "resource_name": "ClassPeriod",
+      "identity_elements": [
+        {
+          "column": "ClassPeriodName",
+          "identity_json_path": "$.classPeriodName"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        }
       ]
     },
     {
@@ -30101,6 +30299,19 @@
       "identity_projection_columns": [
         "CohortIdentifier",
         "EducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 46,
+      "project_name": "Ed-Fi",
+      "resource_name": "Cohort",
+      "identity_elements": [
+        {
+          "column": "CohortIdentifier",
+          "identity_json_path": "$.cohortIdentifier"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -30167,7 +30378,27 @@
       ],
       "identity_projection_columns": [
         "CommunityOrganizationId"
-      ]
+      ],
+      "resource_key_id": 50,
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityOrganization",
+      "identity_elements": [
+        {
+          "column": "CommunityOrganizationId",
+          "identity_json_path": "$.communityOrganizationId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "CommunityOrganizationId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_CommunityOrganization_Stamp",
@@ -30316,7 +30547,27 @@
       ],
       "identity_projection_columns": [
         "CommunityProviderId"
-      ]
+      ],
+      "resource_key_id": 51,
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityProvider",
+      "identity_elements": [
+        {
+          "column": "CommunityProviderId",
+          "identity_json_path": "$.communityProviderId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "CommunityProviderId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_CommunityProvider_Stamp",
@@ -30442,6 +30693,23 @@
         "CommunityProvider_DocumentId",
         "LicenseIdentifier",
         "LicensingOrganization"
+      ],
+      "resource_key_id": 52,
+      "project_name": "Ed-Fi",
+      "resource_name": "CommunityProviderLicense",
+      "identity_elements": [
+        {
+          "column": "CommunityProvider_DocumentId",
+          "identity_json_path": "$.communityProviderReference.communityProviderId"
+        },
+        {
+          "column": "LicenseIdentifier",
+          "identity_json_path": "$.licenseIdentifier"
+        },
+        {
+          "column": "LicensingOrganization",
+          "identity_json_path": "$.licensingOrganization"
+        }
       ]
     },
     {
@@ -30474,6 +30742,23 @@
         "EducationOrganization_DocumentId",
         "Objective",
         "ObjectiveGradeLevelDescriptor_DescriptorId"
+      ],
+      "resource_key_id": 54,
+      "project_name": "Ed-Fi",
+      "resource_name": "CompetencyObjective",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "Objective",
+          "identity_json_path": "$.objective"
+        },
+        {
+          "column": "ObjectiveGradeLevelDescriptor_DescriptorId",
+          "identity_json_path": "$.objectiveGradeLevelDescriptor"
+        }
       ]
     },
     {
@@ -30504,6 +30789,15 @@
       ],
       "identity_projection_columns": [
         "ContactUniqueId"
+      ],
+      "resource_key_id": 55,
+      "project_name": "Ed-Fi",
+      "resource_name": "Contact",
+      "identity_elements": [
+        {
+          "column": "ContactUniqueId",
+          "identity_json_path": "$.contactUniqueId"
+        }
       ]
     },
     {
@@ -30641,6 +30935,19 @@
       "identity_projection_columns": [
         "CourseCode",
         "EducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 61,
+      "project_name": "Ed-Fi",
+      "resource_name": "Course",
+      "identity_elements": [
+        {
+          "column": "CourseCode",
+          "identity_json_path": "$.courseCode"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -30744,6 +31051,23 @@
         "LocalCourseCode",
         "School_DocumentId",
         "Session_DocumentId"
+      ],
+      "resource_key_id": 67,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseOffering",
+      "identity_elements": [
+        {
+          "column": "LocalCourseCode",
+          "identity_json_path": "$.localCourseCode"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "Session_DocumentId",
+          "identity_json_path": "$.sessionReference.schoolId"
+        }
       ]
     },
     {
@@ -30812,6 +31136,23 @@
         "CourseAttemptResultDescriptor_DescriptorId",
         "CourseCourse_DocumentId",
         "StudentAcademicRecord_DocumentId"
+      ],
+      "resource_key_id": 69,
+      "project_name": "Ed-Fi",
+      "resource_name": "CourseTranscript",
+      "identity_elements": [
+        {
+          "column": "CourseAttemptResultDescriptor_DescriptorId",
+          "identity_json_path": "$.courseAttemptResultDescriptor"
+        },
+        {
+          "column": "CourseCourse_DocumentId",
+          "identity_json_path": "$.courseReference.courseCode"
+        },
+        {
+          "column": "StudentAcademicRecord_DocumentId",
+          "identity_json_path": "$.studentAcademicRecordReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -30927,6 +31268,19 @@
       "identity_projection_columns": [
         "CredentialIdentifier",
         "StateOfIssueStateAbbreviationDescriptor_DescriptorId"
+      ],
+      "resource_key_id": 70,
+      "project_name": "Ed-Fi",
+      "resource_name": "Credential",
+      "identity_elements": [
+        {
+          "column": "CredentialIdentifier",
+          "identity_json_path": "$.credentialIdentifier"
+        },
+        {
+          "column": "StateOfIssueStateAbbreviationDescriptor_DescriptorId",
+          "identity_json_path": "$.stateOfIssueStateAbbreviationDescriptor"
+        }
       ]
     },
     {
@@ -30992,6 +31346,15 @@
       ],
       "identity_projection_columns": [
         "CrisisEventName"
+      ],
+      "resource_key_id": 75,
+      "project_name": "Ed-Fi",
+      "resource_name": "CrisisEvent",
+      "identity_elements": [
+        {
+          "column": "CrisisEventName",
+          "identity_json_path": "$.crisisEventName"
+        }
       ]
     },
     {
@@ -31023,6 +31386,27 @@
         "MappedValue",
         "Namespace",
         "Value"
+      ],
+      "resource_key_id": 79,
+      "project_name": "Ed-Fi",
+      "resource_name": "DescriptorMapping",
+      "identity_elements": [
+        {
+          "column": "MappedNamespace",
+          "identity_json_path": "$.mappedNamespace"
+        },
+        {
+          "column": "MappedValue",
+          "identity_json_path": "$.mappedValue"
+        },
+        {
+          "column": "Namespace",
+          "identity_json_path": "$.namespace"
+        },
+        {
+          "column": "Value",
+          "identity_json_path": "$.value"
+        }
       ]
     },
     {
@@ -31068,6 +31452,23 @@
         "DisciplineActionIdentifier",
         "DisciplineDate",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 86,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineAction",
+      "identity_elements": [
+        {
+          "column": "DisciplineActionIdentifier",
+          "identity_json_path": "$.disciplineActionIdentifier"
+        },
+        {
+          "column": "DisciplineDate",
+          "identity_json_path": "$.disciplineDate"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -31135,6 +31536,19 @@
       "identity_projection_columns": [
         "IncidentIdentifier",
         "School_DocumentId"
+      ],
+      "resource_key_id": 89,
+      "project_name": "Ed-Fi",
+      "resource_name": "DisciplineIncident",
+      "identity_elements": [
+        {
+          "column": "IncidentIdentifier",
+          "identity_json_path": "$.incidentIdentifier"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        }
       ]
     },
     {
@@ -31200,6 +31614,15 @@
       ],
       "identity_projection_columns": [
         "ContentIdentifier"
+      ],
+      "resource_key_id": 94,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationContent",
+      "identity_elements": [
+        {
+          "column": "ContentIdentifier",
+          "identity_json_path": "$.contentIdentifier"
+        }
       ]
     },
     {
@@ -31328,6 +31751,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "InterventionPrescriptionInterventionPrescription_DocumentId"
+      ],
+      "resource_key_id": 99,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationInterventionPrescriptionAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "InterventionPrescriptionInterventionPrescription_DocumentId",
+          "identity_json_path": "$.interventionPrescriptionReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -31367,7 +31803,27 @@
       ],
       "identity_projection_columns": [
         "EducationOrganizationNetworkId"
-      ]
+      ],
+      "resource_key_id": 100,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationNetwork",
+      "identity_elements": [
+        {
+          "column": "EducationOrganizationNetworkId",
+          "identity_json_path": "$.educationOrganizationNetworkId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "EducationOrganizationNetworkId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_EducationOrganizationNetwork_Stamp",
@@ -31420,6 +31876,19 @@
       "identity_projection_columns": [
         "EducationOrganizationNetwork_DocumentId",
         "MemberEducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 101,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationNetworkAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganizationNetwork_DocumentId",
+          "identity_json_path": "$.educationOrganizationNetworkReference.educationOrganizationNetworkId"
+        },
+        {
+          "column": "MemberEducationOrganization_DocumentId",
+          "identity_json_path": "$.memberEducationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -31522,6 +31991,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "PeerEducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 102,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationOrganizationPeerAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "PeerEducationOrganization_DocumentId",
+          "identity_json_path": "$.peerEducationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -31576,7 +32058,27 @@
       ],
       "identity_projection_columns": [
         "EducationServiceCenterId"
-      ]
+      ],
+      "resource_key_id": 104,
+      "project_name": "Ed-Fi",
+      "resource_name": "EducationServiceCenter",
+      "identity_elements": [
+        {
+          "column": "EducationServiceCenterId",
+          "identity_json_path": "$.educationServiceCenterId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "EducationServiceCenterId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_EducationServiceCenter_Stamp",
@@ -31701,6 +32203,19 @@
       "identity_projection_columns": [
         "EvaluationRubricRating",
         "ProgramEvaluationElement_DocumentId"
+      ],
+      "resource_key_id": 114,
+      "project_name": "Ed-Fi",
+      "resource_name": "EvaluationRubricDimension",
+      "identity_elements": [
+        {
+          "column": "EvaluationRubricRating",
+          "identity_json_path": "$.evaluationRubricRating"
+        },
+        {
+          "column": "ProgramEvaluationElement_DocumentId",
+          "identity_json_path": "$.programEvaluationElementReference.programEducationOrganizationId"
+        }
       ]
     },
     {
@@ -31732,6 +32247,23 @@
         "BeginDate",
         "FeederSchool_DocumentId",
         "School_DocumentId"
+      ],
+      "resource_key_id": 117,
+      "project_name": "Ed-Fi",
+      "resource_name": "FeederSchoolAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "FeederSchool_DocumentId",
+          "identity_json_path": "$.feederSchoolReference.schoolId"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        }
       ]
     },
     {
@@ -31763,6 +32295,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 119,
+      "project_name": "Ed-Fi",
+      "resource_name": "FunctionDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -31805,6 +32350,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 120,
+      "project_name": "Ed-Fi",
+      "resource_name": "FundDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -31848,6 +32406,23 @@
         "GradeTypeDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_DocumentId",
         "StudentSectionAssociation_DocumentId"
+      ],
+      "resource_key_id": 122,
+      "project_name": "Ed-Fi",
+      "resource_name": "Grade",
+      "identity_elements": [
+        {
+          "column": "GradeTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.gradeTypeDescriptor"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_DocumentId",
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+        },
+        {
+          "column": "StudentSectionAssociation_DocumentId",
+          "identity_json_path": "$.studentSectionAssociationReference.beginDate"
+        }
       ]
     },
     {
@@ -31891,6 +32466,19 @@
       "identity_projection_columns": [
         "GradebookEntryIdentifier",
         "Namespace"
+      ],
+      "resource_key_id": 126,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradebookEntry",
+      "identity_elements": [
+        {
+          "column": "GradebookEntryIdentifier",
+          "identity_json_path": "$.gradebookEntryIdentifier"
+        },
+        {
+          "column": "Namespace",
+          "identity_json_path": "$.namespace"
+        }
       ]
     },
     {
@@ -31935,6 +32523,27 @@
         "GradingPeriodName",
         "School_DocumentId",
         "SchoolYear_DocumentId"
+      ],
+      "resource_key_id": 128,
+      "project_name": "Ed-Fi",
+      "resource_name": "GradingPeriod",
+      "identity_elements": [
+        {
+          "column": "GradingPeriodDescriptor_DescriptorId",
+          "identity_json_path": "$.gradingPeriodDescriptor"
+        },
+        {
+          "column": "GradingPeriodName",
+          "identity_json_path": "$.gradingPeriodName"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "SchoolYear_DocumentId",
+          "identity_json_path": "$.schoolYearTypeReference.schoolYear"
+        }
       ]
     },
     {
@@ -31968,6 +32577,23 @@
         "EducationOrganization_DocumentId",
         "GraduationPlanTypeDescriptor_DescriptorId",
         "GraduationSchoolYear_DocumentId"
+      ],
+      "resource_key_id": 130,
+      "project_name": "Ed-Fi",
+      "resource_name": "GraduationPlan",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "GraduationPlanTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.graduationPlanTypeDescriptor"
+        },
+        {
+          "column": "GraduationSchoolYear_DocumentId",
+          "identity_json_path": "$.graduationSchoolYearTypeReference.schoolYear"
+        }
       ]
     },
     {
@@ -32071,6 +32697,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "InterventionIdentificationCode"
+      ],
+      "resource_key_id": 147,
+      "project_name": "Ed-Fi",
+      "resource_name": "Intervention",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "InterventionIdentificationCode",
+          "identity_json_path": "$.interventionIdentificationCode"
+        }
       ]
     },
     {
@@ -32197,6 +32836,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "InterventionPrescriptionIdentificationCode"
+      ],
+      "resource_key_id": 150,
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionPrescription",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "InterventionPrescriptionIdentificationCode",
+          "identity_json_path": "$.interventionPrescriptionIdentificationCode"
+        }
       ]
     },
     {
@@ -32323,6 +32975,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "InterventionStudyIdentificationCode"
+      ],
+      "resource_key_id": 151,
+      "project_name": "Ed-Fi",
+      "resource_name": "InterventionStudy",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "InterventionStudyIdentificationCode",
+          "identity_json_path": "$.interventionStudyIdentificationCode"
+        }
       ]
     },
     {
@@ -32460,6 +33125,15 @@
       ],
       "identity_projection_columns": [
         "LearningStandardId"
+      ],
+      "resource_key_id": 155,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandard",
+      "identity_elements": [
+        {
+          "column": "LearningStandardId",
+          "identity_json_path": "$.learningStandardId"
+        }
       ]
     },
     {
@@ -32514,6 +33188,23 @@
         "Namespace",
         "SourceLearningStandard_DocumentId",
         "TargetLearningStandard_DocumentId"
+      ],
+      "resource_key_id": 157,
+      "project_name": "Ed-Fi",
+      "resource_name": "LearningStandardEquivalenceAssociation",
+      "identity_elements": [
+        {
+          "column": "Namespace",
+          "identity_json_path": "$.namespace"
+        },
+        {
+          "column": "SourceLearningStandard_DocumentId",
+          "identity_json_path": "$.sourceLearningStandardReference.learningStandardId"
+        },
+        {
+          "column": "TargetLearningStandard_DocumentId",
+          "identity_json_path": "$.targetLearningStandardReference.learningStandardId"
+        }
       ]
     },
     {
@@ -32570,6 +33261,23 @@
         "AccountIdentifier",
         "EducationOrganization_DocumentId",
         "FiscalYear"
+      ],
+      "resource_key_id": 164,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalAccount",
+      "identity_elements": [
+        {
+          "column": "AccountIdentifier",
+          "identity_json_path": "$.accountIdentifier"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -32613,6 +33321,19 @@
       "identity_projection_columns": [
         "AsOfDate",
         "LocalAccount_DocumentId"
+      ],
+      "resource_key_id": 165,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalActual",
+      "identity_elements": [
+        {
+          "column": "AsOfDate",
+          "identity_json_path": "$.asOfDate"
+        },
+        {
+          "column": "LocalAccount_DocumentId",
+          "identity_json_path": "$.localAccountReference.accountIdentifier"
+        }
       ]
     },
     {
@@ -32643,6 +33364,19 @@
       "identity_projection_columns": [
         "AsOfDate",
         "LocalAccount_DocumentId"
+      ],
+      "resource_key_id": 166,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalBudget",
+      "identity_elements": [
+        {
+          "column": "AsOfDate",
+          "identity_json_path": "$.asOfDate"
+        },
+        {
+          "column": "LocalAccount_DocumentId",
+          "identity_json_path": "$.localAccountReference.accountIdentifier"
+        }
       ]
     },
     {
@@ -32674,6 +33408,23 @@
         "AsOfDate",
         "LocalAccount_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 167,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalContractedStaff",
+      "identity_elements": [
+        {
+          "column": "AsOfDate",
+          "identity_json_path": "$.asOfDate"
+        },
+        {
+          "column": "LocalAccount_DocumentId",
+          "identity_json_path": "$.localAccountReference.accountIdentifier"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -32729,7 +33480,27 @@
       ],
       "identity_projection_columns": [
         "LocalEducationAgencyId"
-      ]
+      ],
+      "resource_key_id": 168,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEducationAgency",
+      "identity_elements": [
+        {
+          "column": "LocalEducationAgencyId",
+          "identity_json_path": "$.localEducationAgencyId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "LocalEducationAgencyId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_LocalEducationAgency_Stamp",
@@ -32878,6 +33649,19 @@
       "identity_projection_columns": [
         "AsOfDate",
         "LocalAccount_DocumentId"
+      ],
+      "resource_key_id": 170,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalEncumbrance",
+      "identity_elements": [
+        {
+          "column": "AsOfDate",
+          "identity_json_path": "$.asOfDate"
+        },
+        {
+          "column": "LocalAccount_DocumentId",
+          "identity_json_path": "$.localAccountReference.accountIdentifier"
+        }
       ]
     },
     {
@@ -32909,6 +33693,23 @@
         "AsOfDate",
         "LocalAccount_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 171,
+      "project_name": "Ed-Fi",
+      "resource_name": "LocalPayroll",
+      "identity_elements": [
+        {
+          "column": "AsOfDate",
+          "identity_json_path": "$.asOfDate"
+        },
+        {
+          "column": "LocalAccount_DocumentId",
+          "identity_json_path": "$.localAccountReference.accountIdentifier"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -32940,6 +33741,19 @@
       "identity_projection_columns": [
         "ClassroomIdentificationCode",
         "School_DocumentId"
+      ],
+      "resource_key_id": 173,
+      "project_name": "Ed-Fi",
+      "resource_name": "Location",
+      "identity_elements": [
+        {
+          "column": "ClassroomIdentificationCode",
+          "identity_json_path": "$.classroomIdentificationCode"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        }
       ]
     },
     {
@@ -32970,6 +33784,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 184,
+      "project_name": "Ed-Fi",
+      "resource_name": "ObjectDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -33012,6 +33839,19 @@
       "identity_projection_columns": [
         "Assessment_DocumentId",
         "IdentificationCode"
+      ],
+      "resource_key_id": 185,
+      "project_name": "Ed-Fi",
+      "resource_name": "ObjectiveAssessment",
+      "identity_elements": [
+        {
+          "column": "Assessment_DocumentId",
+          "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "IdentificationCode",
+          "identity_json_path": "$.identificationCode"
+        }
       ]
     },
     {
@@ -33090,6 +33930,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "RequisitionNumber"
+      ],
+      "resource_key_id": 186,
+      "project_name": "Ed-Fi",
+      "resource_name": "OpenStaffPosition",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "RequisitionNumber",
+          "identity_json_path": "$.requisitionNumber"
+        }
       ]
     },
     {
@@ -33144,6 +33997,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 188,
+      "project_name": "Ed-Fi",
+      "resource_name": "OperationalUnitDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -33210,7 +34076,27 @@
       ],
       "identity_projection_columns": [
         "OrganizationDepartmentId"
-      ]
+      ],
+      "resource_key_id": 189,
+      "project_name": "Ed-Fi",
+      "resource_name": "OrganizationDepartment",
+      "identity_elements": [
+        {
+          "column": "OrganizationDepartmentId",
+          "identity_json_path": "$.organizationDepartmentId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "OrganizationDepartmentId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_OrganizationDepartment_Stamp",
@@ -33335,6 +34221,19 @@
       "identity_projection_columns": [
         "PersonId",
         "SourceSystemDescriptor_DescriptorId"
+      ],
+      "resource_key_id": 195,
+      "project_name": "Ed-Fi",
+      "resource_name": "Person",
+      "identity_elements": [
+        {
+          "column": "PersonId",
+          "identity_json_path": "$.personId"
+        },
+        {
+          "column": "SourceSystemDescriptor_DescriptorId",
+          "identity_json_path": "$.sourceSystemDescriptor"
+        }
       ]
     },
     {
@@ -33366,6 +34265,23 @@
         "EventDate",
         "PostSecondaryEventCategoryDescriptor_DescriptorId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 199,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryEvent",
+      "identity_elements": [
+        {
+          "column": "EventDate",
+          "identity_json_path": "$.eventDate"
+        },
+        {
+          "column": "PostSecondaryEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.postSecondaryEventCategoryDescriptor"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -33421,7 +34337,27 @@
       ],
       "identity_projection_columns": [
         "PostSecondaryInstitutionId"
-      ]
+      ],
+      "resource_key_id": 201,
+      "project_name": "Ed-Fi",
+      "resource_name": "PostSecondaryInstitution",
+      "identity_elements": [
+        {
+          "column": "PostSecondaryInstitutionId",
+          "identity_json_path": "$.postSecondaryInstitutionId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "PostSecondaryInstitutionId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_PostSecondaryInstitution_Stamp",
@@ -33559,6 +34495,23 @@
         "EducationOrganization_DocumentId",
         "ProgramName",
         "ProgramTypeDescriptor_DescriptorId"
+      ],
+      "resource_key_id": 208,
+      "project_name": "Ed-Fi",
+      "resource_name": "Program",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramName",
+          "identity_json_path": "$.programName"
+        },
+        {
+          "column": "ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programTypeDescriptor"
+        }
       ]
     },
     {
@@ -33602,6 +34555,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 211,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -33646,6 +34612,27 @@
         "ProgramEvaluationTitle",
         "ProgramEvaluationTypeDescriptor_DescriptorId",
         "ProgramProgram_DocumentId"
+      ],
+      "resource_key_id": 212,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluation",
+      "identity_elements": [
+        {
+          "column": "ProgramEvaluationPeriodDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationPeriodDescriptor"
+        },
+        {
+          "column": "ProgramEvaluationTitle",
+          "identity_json_path": "$.programEvaluationTitle"
+        },
+        {
+          "column": "ProgramEvaluationTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationTypeDescriptor"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -33678,6 +34665,19 @@
       "identity_projection_columns": [
         "ProgramEvaluationElementTitle",
         "ProgramEvaluation_DocumentId"
+      ],
+      "resource_key_id": 213,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationElement",
+      "identity_elements": [
+        {
+          "column": "ProgramEvaluationElementTitle",
+          "identity_json_path": "$.programEvaluationElementTitle"
+        },
+        {
+          "column": "ProgramEvaluation_DocumentId",
+          "identity_json_path": "$.programEvaluationReference.programEducationOrganizationId"
+        }
       ]
     },
     {
@@ -33732,6 +34732,19 @@
       "identity_projection_columns": [
         "ProgramEvaluationObjectiveTitle",
         "ProgramEvaluation_DocumentId"
+      ],
+      "resource_key_id": 214,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProgramEvaluationObjective",
+      "identity_elements": [
+        {
+          "column": "ProgramEvaluationObjectiveTitle",
+          "identity_json_path": "$.programEvaluationObjectiveTitle"
+        },
+        {
+          "column": "ProgramEvaluation_DocumentId",
+          "identity_json_path": "$.programEvaluationReference.programEducationOrganizationId"
+        }
       ]
     },
     {
@@ -33798,6 +34811,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 221,
+      "project_name": "Ed-Fi",
+      "resource_name": "ProjectDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -33841,6 +34867,23 @@
         "EducationOrganization_DocumentId",
         "GradingPeriodGradingPeriod_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 234,
+      "project_name": "Ed-Fi",
+      "resource_name": "ReportCard",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_DocumentId",
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -33909,6 +34952,23 @@
         "RestraintEventIdentifier",
         "School_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 240,
+      "project_name": "Ed-Fi",
+      "resource_name": "RestraintEvent",
+      "identity_elements": [
+        {
+          "column": "RestraintEventIdentifier",
+          "identity_json_path": "$.restraintEventIdentifier"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -33988,7 +35048,27 @@
       ],
       "identity_projection_columns": [
         "SchoolId"
-      ]
+      ],
+      "resource_key_id": 244,
+      "project_name": "Ed-Fi",
+      "resource_name": "School",
+      "identity_elements": [
+        {
+          "column": "SchoolId",
+          "identity_json_path": "$.schoolId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "SchoolId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_School_Stamp",
@@ -34136,6 +35216,15 @@
       ],
       "identity_projection_columns": [
         "SchoolYear"
+      ],
+      "resource_key_id": 250,
+      "project_name": "Ed-Fi",
+      "resource_name": "SchoolYearType",
+      "identity_elements": [
+        {
+          "column": "SchoolYear",
+          "identity_json_path": "$.schoolYear"
+        }
       ]
     },
     {
@@ -34165,6 +35254,19 @@
       "identity_projection_columns": [
         "CourseOffering_DocumentId",
         "SectionIdentifier"
+      ],
+      "resource_key_id": 251,
+      "project_name": "Ed-Fi",
+      "resource_name": "Section",
+      "identity_elements": [
+        {
+          "column": "CourseOffering_DocumentId",
+          "identity_json_path": "$.courseOfferingReference.localCourseCode"
+        },
+        {
+          "column": "SectionIdentifier",
+          "identity_json_path": "$.sectionIdentifier"
+        }
       ]
     },
     {
@@ -34195,6 +35297,19 @@
       "identity_projection_columns": [
         "CalendarDate_DocumentId",
         "Section_DocumentId"
+      ],
+      "resource_key_id": 253,
+      "project_name": "Ed-Fi",
+      "resource_name": "SectionAttendanceTakenEvent",
+      "identity_elements": [
+        {
+          "column": "CalendarDate_DocumentId",
+          "identity_json_path": "$.calendarDateReference.calendarCode"
+        },
+        {
+          "column": "Section_DocumentId",
+          "identity_json_path": "$.sectionReference.localCourseCode"
+        }
       ]
     },
     {
@@ -34286,6 +35401,23 @@
         "School_DocumentId",
         "SchoolYear_DocumentId",
         "SessionName"
+      ],
+      "resource_key_id": 259,
+      "project_name": "Ed-Fi",
+      "resource_name": "Session",
+      "identity_elements": [
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "SchoolYear_DocumentId",
+          "identity_json_path": "$.schoolYearTypeReference.schoolYear"
+        },
+        {
+          "column": "SessionName",
+          "identity_json_path": "$.sessionName"
+        }
       ]
     },
     {
@@ -34341,6 +35473,19 @@
       "identity_projection_columns": [
         "Code",
         "FiscalYear"
+      ],
+      "resource_key_id": 261,
+      "project_name": "Ed-Fi",
+      "resource_name": "SourceDimension",
+      "identity_elements": [
+        {
+          "column": "Code",
+          "identity_json_path": "$.code"
+        },
+        {
+          "column": "FiscalYear",
+          "identity_json_path": "$.fiscalYear"
+        }
       ]
     },
     {
@@ -34382,6 +35527,15 @@
       ],
       "identity_projection_columns": [
         "StaffUniqueId"
+      ],
+      "resource_key_id": 266,
+      "project_name": "Ed-Fi",
+      "resource_name": "Staff",
+      "identity_elements": [
+        {
+          "column": "StaffUniqueId",
+          "identity_json_path": "$.staffUniqueId"
+        }
       ]
     },
     {
@@ -34412,6 +35566,23 @@
         "AbsenceEventCategoryDescriptor_DescriptorId",
         "EventDate",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 267,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffAbsenceEvent",
+      "identity_elements": [
+        {
+          "column": "AbsenceEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.absenceEventCategoryDescriptor"
+        },
+        {
+          "column": "EventDate",
+          "identity_json_path": "$.eventDate"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34480,6 +35651,23 @@
         "BeginDate",
         "Cohort_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 269,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffCohortAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "Cohort_DocumentId",
+          "identity_json_path": "$.cohortReference.cohortIdentifier"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34523,6 +35711,19 @@
       "identity_projection_columns": [
         "DisciplineIncident_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 270,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffDisciplineIncidentAssociation",
+      "identity_elements": [
+        {
+          "column": "DisciplineIncident_DocumentId",
+          "identity_json_path": "$.disciplineIncidentReference.incidentIdentifier"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34567,6 +35768,27 @@
         "EducationOrganization_DocumentId",
         "StaffClassificationDescriptor_DescriptorId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 271,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationAssignmentAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "StaffClassificationDescriptor_DescriptorId",
+          "identity_json_path": "$.staffClassificationDescriptor"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34600,6 +35822,23 @@
         "ContactTitle",
         "EducationOrganization_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 272,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationContactAssociation",
+      "identity_elements": [
+        {
+          "column": "ContactTitle",
+          "identity_json_path": "$.contactTitle"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34657,6 +35896,27 @@
         "EmploymentStatusDescriptor_DescriptorId",
         "HireDate",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 273,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffEducationOrganizationEmploymentAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "EmploymentStatusDescriptor_DescriptorId",
+          "identity_json_path": "$.employmentStatusDescriptor"
+        },
+        {
+          "column": "HireDate",
+          "identity_json_path": "$.hireDate"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34762,6 +36022,23 @@
         "BeginDate",
         "StaffLeaveEventCategoryDescriptor_DescriptorId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 275,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffLeave",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "StaffLeaveEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.staffLeaveEventCategoryDescriptor"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34818,6 +36095,23 @@
         "BeginDate",
         "ProgramProgram_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 277,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34874,6 +36168,23 @@
         "ProgramAssignmentDescriptor_DescriptorId",
         "School_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 278,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffSchoolAssociation",
+      "identity_elements": [
+        {
+          "column": "ProgramAssignmentDescriptor_DescriptorId",
+          "identity_json_path": "$.programAssignmentDescriptor"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -34930,6 +36241,23 @@
         "BeginDate",
         "Section_DocumentId",
         "Staff_DocumentId"
+      ],
+      "resource_key_id": 279,
+      "project_name": "Ed-Fi",
+      "resource_name": "StaffSectionAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "Section_DocumentId",
+          "identity_json_path": "$.sectionReference.localCourseCode"
+        },
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        }
       ]
     },
     {
@@ -35021,7 +36349,27 @@
       ],
       "identity_projection_columns": [
         "StateEducationAgencyId"
-      ]
+      ],
+      "resource_key_id": 281,
+      "project_name": "Ed-Fi",
+      "resource_name": "StateEducationAgency",
+      "identity_elements": [
+        {
+          "column": "StateEducationAgencyId",
+          "identity_json_path": "$.stateEducationAgencyId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 95,
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization",
+        "identity_elements": [
+          {
+            "column": "StateEducationAgencyId",
+            "identity_json_path": "$.educationOrganizationId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StateEducationAgency_Stamp",
@@ -35169,6 +36517,15 @@
       ],
       "identity_projection_columns": [
         "StudentUniqueId"
+      ],
+      "resource_key_id": 282,
+      "project_name": "Ed-Fi",
+      "resource_name": "Student",
+      "identity_elements": [
+        {
+          "column": "StudentUniqueId",
+          "identity_json_path": "$.studentUniqueId"
+        }
       ]
     },
     {
@@ -35200,6 +36557,27 @@
         "SchoolYear_DocumentId",
         "Student_DocumentId",
         "TermDescriptor_DescriptorId"
+      ],
+      "resource_key_id": 283,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAcademicRecord",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "SchoolYear_DocumentId",
+          "identity_json_path": "$.schoolYearTypeReference.schoolYear"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        },
+        {
+          "column": "TermDescriptor_DescriptorId",
+          "identity_json_path": "$.termDescriptor"
+        }
       ]
     },
     {
@@ -35293,6 +36671,23 @@
         "Assessment_DocumentId",
         "StudentAssessmentIdentifier",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 284,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessment",
+      "identity_elements": [
+        {
+          "column": "Assessment_DocumentId",
+          "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "StudentAssessmentIdentifier",
+          "identity_json_path": "$.studentAssessmentIdentifier"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35337,6 +36732,23 @@
         "EducationOrganizationAssociationTypeDescriptor_DescriptorId",
         "EducationOrganization_DocumentId",
         "StudentAssessment_DocumentId"
+      ],
+      "resource_key_id": 285,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentEducationOrganizationAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganizationAssociationTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.educationOrganizationAssociationTypeDescriptor"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "StudentAssessment_DocumentId",
+          "identity_json_path": "$.studentAssessmentReference.assessmentIdentifier"
+        }
       ]
     },
     {
@@ -35392,6 +36804,19 @@
       "identity_projection_columns": [
         "AssessmentAdministration_DocumentId",
         "StudentEducationOrganizationAssociation_DocumentId"
+      ],
+      "resource_key_id": 286,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentRegistration",
+      "identity_elements": [
+        {
+          "column": "AssessmentAdministration_DocumentId",
+          "identity_json_path": "$.assessmentAdministrationReference.administrationIdentifier"
+        },
+        {
+          "column": "StudentEducationOrganizationAssociation_DocumentId",
+          "identity_json_path": "$.studentEducationOrganizationAssociationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -35446,6 +36871,19 @@
       "identity_projection_columns": [
         "AssessmentBatteryPart_DocumentId",
         "StudentAssessmentRegistration_DocumentId"
+      ],
+      "resource_key_id": 287,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentAssessmentRegistrationBatteryPartAssociation",
+      "identity_elements": [
+        {
+          "column": "AssessmentBatteryPart_DocumentId",
+          "identity_json_path": "$.assessmentBatteryPartReference.assessmentBatteryPartName"
+        },
+        {
+          "column": "StudentAssessmentRegistration_DocumentId",
+          "identity_json_path": "$.studentAssessmentRegistrationReference.administrationIdentifier"
+        }
       ]
     },
     {
@@ -35586,7 +37024,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 288,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCTEProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentCTEProgramAssociation_Stamp",
@@ -35643,6 +37125,23 @@
         "BeginDate",
         "Cohort_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 290,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCohortAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "Cohort_DocumentId",
+          "identity_json_path": "$.cohortReference.cohortIdentifier"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35687,6 +37186,23 @@
         "GradingPeriodGradingPeriod_DocumentId",
         "ObjectiveCompetencyObjective_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 291,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentCompetencyObjective",
+      "identity_elements": [
+        {
+          "column": "GradingPeriodGradingPeriod_DocumentId",
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
+        },
+        {
+          "column": "ObjectiveCompetencyObjective_DocumentId",
+          "identity_json_path": "$.objectiveCompetencyObjectiveReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35742,6 +37258,19 @@
       "identity_projection_columns": [
         "Contact_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 292,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentContactAssociation",
+      "identity_elements": [
+        {
+          "column": "Contact_DocumentId",
+          "identity_json_path": "$.contactReference.contactUniqueId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35773,6 +37302,23 @@
         "BehaviorDescriptor_DescriptorId",
         "DisciplineIncident_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 293,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentDisciplineIncidentBehaviorAssociation",
+      "identity_elements": [
+        {
+          "column": "BehaviorDescriptor_DescriptorId",
+          "identity_json_path": "$.behaviorDescriptor"
+        },
+        {
+          "column": "DisciplineIncident_DocumentId",
+          "identity_json_path": "$.disciplineIncidentReference.incidentIdentifier"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35828,6 +37374,19 @@
       "identity_projection_columns": [
         "DisciplineIncident_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 294,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentDisciplineIncidentNonOffenderAssociation",
+      "identity_elements": [
+        {
+          "column": "DisciplineIncident_DocumentId",
+          "identity_json_path": "$.disciplineIncidentReference.incidentIdentifier"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35870,6 +37429,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 295,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationAssessmentAccommodation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -35912,6 +37484,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 296,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -36172,6 +37757,27 @@
         "EducationOrganization_DocumentId",
         "ResponsibilityDescriptor_DescriptorId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 297,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentEducationOrganizationResponsibilityAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ResponsibilityDescriptor_DescriptorId",
+          "identity_json_path": "$.responsibilityDescriptor"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -36204,6 +37810,19 @@
       "identity_projection_columns": [
         "GradebookEntry_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 298,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentGradebookEntry",
+      "identity_elements": [
+        {
+          "column": "GradebookEntry_DocumentId",
+          "identity_json_path": "$.gradebookEntryReference.gradebookEntryIdentifier"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -36234,6 +37853,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 299,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentHealth",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -36362,7 +37994,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 300,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentHomelessProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentHomelessProgramAssociation_Stamp",
@@ -36430,6 +38106,19 @@
       "identity_projection_columns": [
         "Intervention_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 302,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentInterventionAssociation",
+      "identity_elements": [
+        {
+          "column": "Intervention_DocumentId",
+          "identity_json_path": "$.interventionReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -36474,6 +38163,27 @@
         "EventDate",
         "Intervention_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 303,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentInterventionAttendanceEvent",
+      "identity_elements": [
+        {
+          "column": "AttendanceEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+        },
+        {
+          "column": "EventDate",
+          "identity_json_path": "$.eventDate"
+        },
+        {
+          "column": "Intervention_DocumentId",
+          "identity_json_path": "$.interventionReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -36556,7 +38266,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 304,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentLanguageInstructionProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentLanguageInstructionProgramAssociation_Stamp",
@@ -36674,7 +38428,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 305,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentMigrantEducationProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentMigrantEducationProgramAssociation_Stamp",
@@ -36780,7 +38578,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 306,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentNeglectedOrDelinquentProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentNeglectedOrDelinquentProgramAssociation_Stamp",
@@ -36910,7 +38752,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 307,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentProgramAssociation_Stamp",
@@ -36969,6 +38855,31 @@
         "EventDate",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 308,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramAttendanceEvent",
+      "identity_elements": [
+        {
+          "column": "AttendanceEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "EventDate",
+          "identity_json_path": "$.eventDate"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37003,6 +38914,23 @@
         "EvaluationDate",
         "ProgramEvaluation_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 309,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentProgramEvaluation",
+      "identity_elements": [
+        {
+          "column": "EvaluationDate",
+          "identity_json_path": "$.evaluationDate"
+        },
+        {
+          "column": "ProgramEvaluation_DocumentId",
+          "identity_json_path": "$.programEvaluationReference.programEducationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37071,6 +38999,23 @@
         "EntryDate",
         "School_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 310,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAssociation",
+      "identity_elements": [
+        {
+          "column": "EntryDate",
+          "identity_json_path": "$.entryDate"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37129,6 +39074,31 @@
         "School_DocumentId",
         "Session_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 311,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolAttendanceEvent",
+      "identity_elements": [
+        {
+          "column": "AttendanceEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+        },
+        {
+          "column": "EventDate",
+          "identity_json_path": "$.eventDate"
+        },
+        {
+          "column": "School_DocumentId",
+          "identity_json_path": "$.schoolReference.schoolId"
+        },
+        {
+          "column": "Session_DocumentId",
+          "identity_json_path": "$.sessionReference.schoolId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37212,7 +39182,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 312,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSchoolFoodServiceProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentSchoolFoodServiceProgramAssociation_Stamp",
@@ -37318,7 +39332,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 313,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSection504ProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentSection504ProgramAssociation_Stamp",
@@ -37363,6 +39421,23 @@
         "BeginDate",
         "Section_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 314,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSectionAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "Section_DocumentId",
+          "identity_json_path": "$.sectionReference.localCourseCode"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37408,6 +39483,27 @@
         "EventDate",
         "Section_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 315,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSectionAttendanceEvent",
+      "identity_elements": [
+        {
+          "column": "AttendanceEventCategoryDescriptor_DescriptorId",
+          "identity_json_path": "$.attendanceEventCategoryDescriptor"
+        },
+        {
+          "column": "EventDate",
+          "identity_json_path": "$.eventDate"
+        },
+        {
+          "column": "Section_DocumentId",
+          "identity_json_path": "$.sectionReference.localCourseCode"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37502,7 +39598,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 316,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSpecialEducationProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentSpecialEducationProgramAssociation_Stamp",
@@ -37608,6 +39748,27 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 317,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentSpecialEducationProgramEligibilityAssociation",
+      "identity_elements": [
+        {
+          "column": "ConsentToEvaluationReceivedDate",
+          "identity_json_path": "$.consentToEvaluationReceivedDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
@@ -37690,7 +39851,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 318,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentTitleIPartAProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentTitleIPartAProgramAssociation_Stamp",
@@ -37746,6 +39951,19 @@
       "identity_projection_columns": [
         "Student_DocumentId",
         "TransportationEducationOrganization_DocumentId"
+      ],
+      "resource_key_id": 319,
+      "project_name": "Ed-Fi",
+      "resource_name": "StudentTransportation",
+      "identity_elements": [
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        },
+        {
+          "column": "TransportationEducationOrganization_DocumentId",
+          "identity_json_path": "$.transportationEducationOrganizationReference.educationOrganizationId"
+        }
       ]
     },
     {
@@ -37812,6 +40030,19 @@
       "identity_projection_columns": [
         "Namespace",
         "SurveyIdentifier"
+      ],
+      "resource_key_id": 322,
+      "project_name": "Ed-Fi",
+      "resource_name": "Survey",
+      "identity_elements": [
+        {
+          "column": "Namespace",
+          "identity_json_path": "$.namespace"
+        },
+        {
+          "column": "SurveyIdentifier",
+          "identity_json_path": "$.surveyIdentifier"
+        }
       ]
     },
     {
@@ -37842,6 +40073,19 @@
       "identity_projection_columns": [
         "Course_DocumentId",
         "Survey_DocumentId"
+      ],
+      "resource_key_id": 324,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyCourseAssociation",
+      "identity_elements": [
+        {
+          "column": "Course_DocumentId",
+          "identity_json_path": "$.courseReference.courseCode"
+        },
+        {
+          "column": "Survey_DocumentId",
+          "identity_json_path": "$.surveyReference.namespace"
+        }
       ]
     },
     {
@@ -37872,6 +40116,19 @@
       "identity_projection_columns": [
         "Program_DocumentId",
         "Survey_DocumentId"
+      ],
+      "resource_key_id": 326,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "Program_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Survey_DocumentId",
+          "identity_json_path": "$.surveyReference.namespace"
+        }
       ]
     },
     {
@@ -37902,6 +40159,19 @@
       "identity_projection_columns": [
         "QuestionCode",
         "Survey_DocumentId"
+      ],
+      "resource_key_id": 327,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyQuestion",
+      "identity_elements": [
+        {
+          "column": "QuestionCode",
+          "identity_json_path": "$.questionCode"
+        },
+        {
+          "column": "Survey_DocumentId",
+          "identity_json_path": "$.surveyReference.namespace"
+        }
       ]
     },
     {
@@ -37944,6 +40214,19 @@
       "identity_projection_columns": [
         "SurveyQuestion_DocumentId",
         "SurveyResponse_DocumentId"
+      ],
+      "resource_key_id": 328,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyQuestionResponse",
+      "identity_elements": [
+        {
+          "column": "SurveyQuestion_DocumentId",
+          "identity_json_path": "$.surveyQuestionReference.namespace"
+        },
+        {
+          "column": "SurveyResponse_DocumentId",
+          "identity_json_path": "$.surveyResponseReference.namespace"
+        }
       ]
     },
     {
@@ -38010,6 +40293,19 @@
       "identity_projection_columns": [
         "Survey_DocumentId",
         "SurveyResponseIdentifier"
+      ],
+      "resource_key_id": 329,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponse",
+      "identity_elements": [
+        {
+          "column": "Survey_DocumentId",
+          "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "SurveyResponseIdentifier",
+          "identity_json_path": "$.surveyResponseIdentifier"
+        }
       ]
     },
     {
@@ -38040,6 +40336,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "SurveyResponse_DocumentId"
+      ],
+      "resource_key_id": 330,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponseEducationOrganizationTargetAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "SurveyResponse_DocumentId",
+          "identity_json_path": "$.surveyResponseReference.namespace"
+        }
       ]
     },
     {
@@ -38070,6 +40379,19 @@
       "identity_projection_columns": [
         "Staff_DocumentId",
         "SurveyResponse_DocumentId"
+      ],
+      "resource_key_id": 331,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveyResponseStaffTargetAssociation",
+      "identity_elements": [
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        },
+        {
+          "column": "SurveyResponse_DocumentId",
+          "identity_json_path": "$.surveyResponseReference.namespace"
+        }
       ]
     },
     {
@@ -38112,6 +40434,19 @@
       "identity_projection_columns": [
         "Survey_DocumentId",
         "SurveySectionTitle"
+      ],
+      "resource_key_id": 332,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySection",
+      "identity_elements": [
+        {
+          "column": "Survey_DocumentId",
+          "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "SurveySectionTitle",
+          "identity_json_path": "$.surveySectionTitle"
+        }
       ]
     },
     {
@@ -38142,6 +40477,19 @@
       "identity_projection_columns": [
         "Section_DocumentId",
         "Survey_DocumentId"
+      ],
+      "resource_key_id": 333,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionAssociation",
+      "identity_elements": [
+        {
+          "column": "Section_DocumentId",
+          "identity_json_path": "$.sectionReference.localCourseCode"
+        },
+        {
+          "column": "Survey_DocumentId",
+          "identity_json_path": "$.surveyReference.namespace"
+        }
       ]
     },
     {
@@ -38172,6 +40520,19 @@
       "identity_projection_columns": [
         "SurveyResponse_DocumentId",
         "SurveySection_DocumentId"
+      ],
+      "resource_key_id": 334,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponse",
+      "identity_elements": [
+        {
+          "column": "SurveyResponse_DocumentId",
+          "identity_json_path": "$.surveyResponseReference.namespace"
+        },
+        {
+          "column": "SurveySection_DocumentId",
+          "identity_json_path": "$.surveySectionReference.namespace"
+        }
       ]
     },
     {
@@ -38217,6 +40578,19 @@
       "identity_projection_columns": [
         "EducationOrganization_DocumentId",
         "SurveySectionResponse_DocumentId"
+      ],
+      "resource_key_id": 335,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponseEducationOrganizationTargetAssociation",
+      "identity_elements": [
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "SurveySectionResponse_DocumentId",
+          "identity_json_path": "$.surveySectionResponseReference.namespace"
+        }
       ]
     },
     {
@@ -38232,6 +40606,19 @@
       "identity_projection_columns": [
         "Staff_DocumentId",
         "SurveySectionResponse_DocumentId"
+      ],
+      "resource_key_id": 336,
+      "project_name": "Ed-Fi",
+      "resource_name": "SurveySectionResponseStaffTargetAssociation",
+      "identity_elements": [
+        {
+          "column": "Staff_DocumentId",
+          "identity_json_path": "$.staffReference.staffUniqueId"
+        },
+        {
+          "column": "SurveySectionResponse_DocumentId",
+          "identity_json_path": "$.surveySectionResponseReference.namespace"
+        }
       ]
     },
     {
@@ -38261,6 +40648,15 @@
       ],
       "identity_projection_columns": [
         "BusId"
+      ],
+      "resource_key_id": 353,
+      "project_name": "Sample",
+      "resource_name": "Bus",
+      "identity_elements": [
+        {
+          "column": "BusId",
+          "identity_json_path": "$.busId"
+        }
       ]
     },
     {
@@ -38290,6 +40686,19 @@
       "identity_projection_columns": [
         "Bus_DocumentId",
         "BusRouteNumber"
+      ],
+      "resource_key_id": 354,
+      "project_name": "Sample",
+      "resource_name": "BusRoute",
+      "identity_elements": [
+        {
+          "column": "Bus_DocumentId",
+          "identity_json_path": "$.busReference.busId"
+        },
+        {
+          "column": "BusRouteNumber",
+          "identity_json_path": "$.busRouteNumber"
+        }
       ]
     },
     {
@@ -38586,7 +40995,51 @@
         "EducationOrganization_DocumentId",
         "ProgramProgram_DocumentId",
         "Student_DocumentId"
-      ]
+      ],
+      "resource_key_id": 361,
+      "project_name": "Sample",
+      "resource_name": "StudentArtProgramAssociation",
+      "identity_elements": [
+        {
+          "column": "BeginDate",
+          "identity_json_path": "$.beginDate"
+        },
+        {
+          "column": "EducationOrganization_DocumentId",
+          "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_DocumentId",
+          "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
+      ],
+      "superclass_alias": {
+        "resource_key_id": 121,
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation",
+        "identity_elements": [
+          {
+            "column": "BeginDate",
+            "identity_json_path": "$.beginDate"
+          },
+          {
+            "column": "EducationOrganization_DocumentId",
+            "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
+          },
+          {
+            "column": "ProgramProgram_DocumentId",
+            "identity_json_path": "$.programReference.educationOrganizationId"
+          },
+          {
+            "column": "Student_DocumentId",
+            "identity_json_path": "$.studentReference.studentUniqueId"
+          }
+        ]
+      }
     },
     {
       "name": "TR_StudentArtProgramAssociation_Stamp",
@@ -38906,6 +41359,19 @@
       "identity_projection_columns": [
         "GraduationPlan_DocumentId",
         "Student_DocumentId"
+      ],
+      "resource_key_id": 365,
+      "project_name": "Sample",
+      "resource_name": "StudentGraduationPlanAssociation",
+      "identity_elements": [
+        {
+          "column": "GraduationPlan_DocumentId",
+          "identity_json_path": "$.graduationPlanReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_DocumentId",
+          "identity_json_path": "$.studentReference.studentUniqueId"
+        }
       ]
     },
     {
