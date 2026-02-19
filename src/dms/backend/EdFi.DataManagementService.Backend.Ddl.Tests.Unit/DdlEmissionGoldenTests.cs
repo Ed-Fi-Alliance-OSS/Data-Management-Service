@@ -1266,6 +1266,7 @@ internal static class IdentityPropagationFixture
         var schema = new DbSchemaName("edfi");
         var documentIdColumn = new DbColumnName("DocumentId");
         var schoolIdColumn = new DbColumnName("SchoolId");
+        var schoolDocumentIdColumn = new DbColumnName("School_DocumentId");
         var studentIdColumn = new DbColumnName("StudentUniqueId");
         var entryDateColumn = new DbColumnName("EntryDate");
 
@@ -1321,6 +1322,14 @@ internal static class IdentityPropagationFixture
                     TargetResource: null
                 ),
                 new DbColumnModel(
+                    schoolDocumentIdColumn,
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: schoolResource
+                ),
+                new DbColumnModel(
                     schoolIdColumn,
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.Int32),
@@ -1348,9 +1357,9 @@ internal static class IdentityPropagationFixture
             [
                 new TableConstraint.ForeignKey(
                     "FK_StudentSchoolAssociation_School",
-                    [schoolIdColumn],
+                    [schoolDocumentIdColumn],
                     schoolTableName,
-                    [schoolIdColumn],
+                    [documentIdColumn],
                     ReferentialAction.NoAction,
                     ReferentialAction.NoAction
                 ),

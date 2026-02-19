@@ -539,15 +539,18 @@ public class Given_Key_Unification_Alias_Dependencies
 
     /// <summary>
     /// It should keep existing grouping stable when dependencies do not require reordering.
+    /// Per spec: key → unification support → DocumentFk → DescriptorFk → Scalar.
     /// </summary>
     [Test]
     public void It_should_keep_existing_grouping_stable_when_dependencies_allow()
     {
         _columnIndexByName["DocumentId"].Should().Be(0);
+        // DescriptorFk (group 3) < Scalar (group 4)
         _columnIndexByName["GradeLevelDescriptor_DescriptorId"]
             .Should()
             .BeLessThan(_columnIndexByName["AcademicYear"]);
-        _columnIndexByName["LocalSchoolId"].Should().BeLessThan(_columnIndexByName["School_DocumentId"]);
+        // DocumentFk (group 2) < Scalar (group 4), so School_DocumentId comes before LocalSchoolId
+        _columnIndexByName["School_DocumentId"].Should().BeLessThan(_columnIndexByName["LocalSchoolId"]);
     }
 }
 

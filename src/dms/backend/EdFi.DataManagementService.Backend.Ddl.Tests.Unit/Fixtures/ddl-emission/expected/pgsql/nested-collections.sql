@@ -29,7 +29,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_SchoolAddress_School'
-        AND conrelid = to_regclass('edfi.SchoolAddress')
+        AND conrelid = to_regclass('"edfi"."SchoolAddress"')
     )
     THEN
         ALTER TABLE "edfi"."SchoolAddress"
@@ -46,7 +46,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_SchoolAddressPhoneNumber_SchoolAddress'
-        AND conrelid = to_regclass('edfi.SchoolAddressPhoneNumber')
+        AND conrelid = to_regclass('"edfi"."SchoolAddressPhoneNumber"')
     )
     THEN
         ALTER TABLE "edfi"."SchoolAddressPhoneNumber"

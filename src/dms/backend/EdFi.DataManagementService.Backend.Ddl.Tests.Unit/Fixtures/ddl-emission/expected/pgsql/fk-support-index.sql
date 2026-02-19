@@ -20,7 +20,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_Enrollment_School'
-        AND conrelid = to_regclass('edfi.Enrollment')
+        AND conrelid = to_regclass('"edfi"."Enrollment"')
     )
     THEN
         ALTER TABLE "edfi"."Enrollment"

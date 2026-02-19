@@ -111,9 +111,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         foreach (var column in table.Columns)
         {
-            var type = ResolveColumnType(column);
-            var nullability = column.IsNullable ? "NULL" : "NOT NULL";
-            definitions.Add($"{Quote(column.ColumnName)} {type} {nullability}");
+            definitions.Add(RenderColumnDefinition(column));
         }
 
         if (table.Key.Columns.Count > 0)
@@ -151,6 +149,28 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         writer.AppendLine(");");
         writer.AppendLine();
+    }
+
+    /// <summary>
+    /// Renders a column definition based on its storage type.
+    /// Stored columns emit a normal column definition; UnifiedAlias columns emit a computed column.
+    /// </summary>
+    private string RenderColumnDefinition(DbColumnModel column)
+    {
+        var type = ResolveColumnType(column);
+
+        if (column.Storage is ColumnStorage.UnifiedAlias alias)
+        {
+            return _dialect.RenderComputedColumnDefinition(
+                column.ColumnName,
+                type,
+                alias.CanonicalColumn,
+                alias.PresenceColumn
+            );
+        }
+
+        var nullability = column.IsNullable ? "NULL" : "NOT NULL";
+        return $"{Quote(column.ColumnName)} {type} {nullability}";
     }
 
     /// <summary>
@@ -247,9 +267,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         foreach (var trigger in triggers)
         {
             // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
-            // Adding a new dialect requires updating this site and: EmitDocumentStampingBody (line ~371),
-            // EmitReferentialIdentityBody (line ~533), EmitAbstractIdentityBody (line ~767),
-            // FormatNullOrTrueCheck (line ~1093), EmitStringLiteralWithCast (line ~1244).
+            // Adding a new dialect requires updating this site and: EmitDocumentStampingBody,
+            // EmitReferentialIdentityBody, EmitAbstractIdentityBody, FormatNullOrTrueCheck,
+            // EmitStringLiteralWithCast.
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
                 EmitPgsqlTrigger(writer, trigger);
@@ -1296,11 +1316,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Quotes a column name using the configured dialect.
     /// </summary>
     private string Quote(DbColumnName column) => _dialect.QuoteIdentifier(column.Value);
-
-    /// <summary>
-    /// Quotes an index name using the configured dialect.
-    /// </summary>
-    private string Quote(DbIndexName index) => _dialect.QuoteIdentifier(index.Value);
 
     /// <summary>
     /// Quotes a trigger name using the configured dialect.

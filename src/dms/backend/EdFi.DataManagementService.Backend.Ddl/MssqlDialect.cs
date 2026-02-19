@@ -456,4 +456,30 @@ public sealed class MssqlDialect : SqlDialectBase
 
         return $"CONSTRAINT {QuoteIdentifier(constraintName)} PRIMARY KEY {clusterKeyword} ({columnList})";
     }
+
+    /// <inheritdoc />
+    public override string RenderComputedColumnDefinition(
+        DbColumnName columnName,
+        string sqlType,
+        DbColumnName canonicalColumn,
+        DbColumnName? presenceColumn
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sqlType);
+
+        var quotedColumn = QuoteIdentifier(columnName.Value);
+        var quotedCanonical = QuoteIdentifier(canonicalColumn.Value);
+
+        // SQL Server uses AS (...) PERSISTED for computed columns.
+        // When presenceColumn is provided, emit a CASE expression that returns NULL
+        // when the presence column is NULL; otherwise, return the canonical value.
+        if (presenceColumn is { Value: var presenceValue })
+        {
+            var quotedPresence = QuoteIdentifier(presenceValue);
+            return $"{quotedColumn} AS (CASE WHEN {quotedPresence} IS NULL THEN NULL ELSE {quotedCanonical} END) PERSISTED";
+        }
+
+        // No presence column — alias always returns the canonical value.
+        return $"{quotedColumn} AS ({quotedCanonical}) PERSISTED";
+    }
 }

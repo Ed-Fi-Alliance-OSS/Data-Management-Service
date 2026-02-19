@@ -36,7 +36,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_SchoolAddress_School'
-        AND conrelid = to_regclass('edfi.SchoolAddress')
+        AND conrelid = to_regclass('"edfi"."SchoolAddress"')
     )
     THEN
         ALTER TABLE "edfi"."SchoolAddress"
@@ -53,7 +53,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_SchoolExtension_School'
-        AND conrelid = to_regclass('sample.SchoolExtension')
+        AND conrelid = to_regclass('"sample"."SchoolExtension"')
     )
     THEN
         ALTER TABLE "sample"."SchoolExtension"
@@ -70,7 +70,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_SchoolAddressExtension_SchoolAddress'
-        AND conrelid = to_regclass('sample.SchoolAddressExtension')
+        AND conrelid = to_regclass('"sample"."SchoolAddressExtension"')
     )
     THEN
         ALTER TABLE "sample"."SchoolAddressExtension"
