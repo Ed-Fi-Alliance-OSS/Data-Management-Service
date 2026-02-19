@@ -324,6 +324,26 @@ public sealed class MssqlDialect : SqlDialectBase
             """;
     }
 
+    // ── Scalar type rendering ──────────────────────────────────────────
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Overrides base to emit <c>nvarchar(max)</c> for unbounded strings.
+    /// SQL Server requires an explicit length or <c>(max)</c> suffix.
+    /// </remarks>
+    public override string RenderColumnType(RelationalScalarType scalarType)
+    {
+        ArgumentNullException.ThrowIfNull(scalarType);
+
+        // Handle unbounded strings: SQL Server needs (max) suffix
+        if (scalarType.Kind == ScalarKind.String && !scalarType.MaxLength.HasValue)
+        {
+            return $"{Rules.ScalarTypeDefaults.StringType}(max)";
+        }
+
+        return base.RenderColumnType(scalarType);
+    }
+
     // ── Core-table type properties ──────────────────────────────────────
 
     /// <inheritdoc />

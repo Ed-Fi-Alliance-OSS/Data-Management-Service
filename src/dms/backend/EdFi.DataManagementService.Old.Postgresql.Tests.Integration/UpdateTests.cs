@@ -4,13 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using EdFi.DataManagementService.Old.Postgresql.Model;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Old.Postgresql.Model;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
-using EdFi.DataManagementService.Backend;
 
 namespace EdFi.DataManagementService.Old.Postgresql.Tests.Integration;
 
@@ -709,9 +709,9 @@ public class UpdateTests : DatabaseTest
                     "_lastModifiedDate": "2024-10-29T14:54:49+00:00"
                 }
                 """,
-                CreateDocumentReferences(
-                    [new("CourseOffering", sessionUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                ),
+                CreateDocumentReferences([
+                    new("CourseOffering", sessionUpsertRequest.DocumentInfo.ReferentialId.Value),
+                ]),
                 traceId: new("courseOfferingUpsertRequest")
             );
 
@@ -747,9 +747,9 @@ public class UpdateTests : DatabaseTest
                     }
                 }
                 """,
-                CreateDocumentReferences(
-                    [new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                ),
+                CreateDocumentReferences([
+                    new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value),
+                ]),
                 traceId: new("section1UpsertRequest")
             );
 
@@ -770,9 +770,9 @@ public class UpdateTests : DatabaseTest
                     }
                 }
                 """,
-                documentReferences: CreateDocumentReferences(
-                    [new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                ),
+                documentReferences: CreateDocumentReferences([
+                    new("Section", courseOfferingUpsertRequest.DocumentInfo.ReferentialId.Value),
+                ]),
                 traceId: new("section2UpsertRequest")
             );
 
@@ -954,9 +954,9 @@ public class UpdateTests : DatabaseTest
                         [],
                         []
                     ),
-                    documentReferences: CreateDocumentReferences(
-                        [new("Location", locationUpsertRequest.DocumentInfo.ReferentialId.Value)]
-                    )
+                    documentReferences: CreateDocumentReferences([
+                        new("Location", locationUpsertRequest.DocumentInfo.ReferentialId.Value),
+                    ])
                 );
 
                 await CreateUpsert().Upsert(xyzUpsertRequest, Connection!, Transaction!);

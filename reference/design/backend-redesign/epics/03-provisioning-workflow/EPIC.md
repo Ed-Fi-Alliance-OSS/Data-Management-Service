@@ -16,6 +16,15 @@ Provide an operational workflow for schema provisioning that matches the redesig
 
 Authorization objects remain out of scope.
 
+## Implementation Notes
+
+### SQL Server Batch Separators
+
+The emitted MSSQL DDL contains `GO` batch separators required for `CREATE OR ALTER` statements (triggers and views must be first in their T-SQL batch). `GO` is not valid T-SQL—it is a batch delimiter recognized by `sqlcmd` and SSMS.
+
+- **DB-apply smoke tests**: Use `sqlcmd -b -i ...` which handles `GO` natively.
+- **CLI `ddl provision`**: When executing via ADO.NET, the provisioner must split the script on `GO` lines and execute each batch separately.
+
 ## Stories
 
 - `DMS-950` — `00-ddl-emit-command.md` — CLI: `ddl emit` (files + manifests)

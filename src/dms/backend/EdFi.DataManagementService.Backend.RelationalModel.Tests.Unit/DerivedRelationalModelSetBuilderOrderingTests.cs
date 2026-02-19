@@ -99,7 +99,7 @@ public class Given_Unordered_Derived_Collections
     {
         var orderedTriggers = _derivedModelSet
             .TriggersInCreateOrder.Select(trigger =>
-                $"{trigger.TriggerTable.Schema.Value}.{trigger.TriggerTable.Name}:{trigger.Name.Value}"
+                $"{trigger.Table.Schema.Value}.{trigger.Table.Name}:{trigger.Name.Value}"
             )
             .ToArray();
 
@@ -127,9 +127,21 @@ public class Given_Unordered_Derived_Collections
         /// </summary>
         public PopulateUnorderedCollectionsPass(EffectiveSchemaSet effectiveSchemaSet)
         {
-            _school = FindResourceKey(effectiveSchemaSet, "Ed-Fi", "School");
-            _schoolTypeDescriptor = FindResourceKey(effectiveSchemaSet, "Ed-Fi", "SchoolTypeDescriptor");
-            _section = FindResourceKey(effectiveSchemaSet, "Sample", "Section");
+            _school = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "School"
+            );
+            _schoolTypeDescriptor = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Ed-Fi",
+                "SchoolTypeDescriptor"
+            );
+            _section = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
+                effectiveSchemaSet,
+                "Sample",
+                "Section"
+            );
         }
 
         /// <summary>
@@ -207,36 +219,36 @@ public class Given_Unordered_Derived_Collections
                 new DbTriggerInfo(
                     new DbTriggerName("TR_Section_B"),
                     new DbTableName(sampleSchema, "Section"),
-                    DbTriggerKind.DocumentStamping,
                     [],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 )
             );
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_School_B"),
                     new DbTableName(edfiSchema, "School"),
-                    DbTriggerKind.DocumentStamping,
                     [],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 )
             );
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_SchoolTypeDescriptor"),
                     new DbTableName(edfiSchema, "SchoolTypeDescriptor"),
-                    DbTriggerKind.DocumentStamping,
                     [],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 )
             );
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_School_A"),
                     new DbTableName(edfiSchema, "School"),
-                    DbTriggerKind.DocumentStamping,
                     [],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 )
             );
         }
@@ -306,22 +318,6 @@ public class Given_Unordered_Derived_Collections
                     ),
                 ]
             );
-        }
-
-        /// <summary>
-        /// Find resource key.
-        /// </summary>
-        private static ResourceKeyEntry FindResourceKey(
-            EffectiveSchemaSet effectiveSchemaSet,
-            string projectName,
-            string resourceName
-        )
-        {
-            var resourceKey = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Single(entry =>
-                entry.Resource.ProjectName == projectName && entry.Resource.ResourceName == resourceName
-            );
-
-            return resourceKey;
         }
     }
 }

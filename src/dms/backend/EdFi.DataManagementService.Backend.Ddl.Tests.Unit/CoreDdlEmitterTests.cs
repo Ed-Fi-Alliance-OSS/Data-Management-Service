@@ -846,6 +846,20 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
+    public void It_should_emit_go_batch_separator_before_trigger()
+    {
+        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch
+        var triggerIndex = _ddl.IndexOf("CREATE OR ALTER TRIGGER");
+        var goIndex = _ddl.LastIndexOf("GO\n", triggerIndex);
+
+        goIndex.Should().BeGreaterOrEqualTo(0, "expected GO batch separator in DDL");
+        triggerIndex.Should().BeGreaterThan(goIndex);
+        // The GO should be immediately before the trigger (only whitespace between)
+        var between = _ddl.Substring(goIndex + 3, triggerIndex - goIndex - 3);
+        between.Trim().Should().BeEmpty("GO should immediately precede CREATE OR ALTER TRIGGER");
+    }
+
+    [Test]
     public void It_should_attach_trigger_to_document_table()
     {
         _ddl.Should().Contain("ON [dms].[Document]");
