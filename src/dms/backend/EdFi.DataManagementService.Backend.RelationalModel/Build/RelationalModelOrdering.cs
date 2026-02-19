@@ -16,12 +16,7 @@ internal static class RelationalModelOrdering
     public static DbTableModel CanonicalizeTable(DbTableModel table)
     {
         var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
-
-        var orderedColumns = table
-            .Columns.OrderBy(column => GetColumnGroup(column, keyColumnOrder))
-            .ThenBy(column => GetColumnKeyIndex(column, keyColumnOrder))
-            .ThenBy(column => column.ColumnName.Value, StringComparer.Ordinal)
-            .ToArray();
+        var orderedColumns = OrderColumns(table, keyColumnOrder);
 
         var orderedConstraints = table
             .Constraints.OrderBy(GetConstraintGroup)
@@ -33,6 +28,204 @@ internal static class RelationalModelOrdering
             Columns = orderedColumns,
             Constraints = orderedConstraints,
         };
+    }
+
+    /// <summary>
+    /// Orders columns deterministically while honoring unified-alias dependency invariants:
+    /// canonical/presence columns always precede dependent aliases.
+    /// </summary>
+    private static DbColumnModel[] OrderColumns(
+        DbTableModel table,
+        IReadOnlyDictionary<string, int> keyColumnOrder
+    )
+    {
+        Dictionary<string, DbColumnModel> columnsByName = new(StringComparer.Ordinal);
+
+        foreach (var column in table.Columns)
+        {
+            if (columnsByName.TryAdd(column.ColumnName.Value, column))
+            {
+                continue;
+            }
+
+            throw new InvalidOperationException(
+                $"Duplicate column '{column.ColumnName.Value}' encountered while canonicalizing "
+                    + $"table '{table.Table}'."
+            );
+        }
+
+        Dictionary<string, int> dependencyCountByColumn = columnsByName.Keys.ToDictionary(
+            columnName => columnName,
+            _ => 0,
+            StringComparer.Ordinal
+        );
+        Dictionary<string, List<string>> dependentsByDependencyColumn = new(StringComparer.Ordinal);
+        HashSet<(string Dependency, string Dependent)> dependencyEdges = [];
+
+        foreach (var column in table.Columns)
+        {
+            if (column.Storage is not ColumnStorage.UnifiedAlias unifiedAlias)
+            {
+                continue;
+            }
+
+            AddAliasDependency(
+                table.Table,
+                column.ColumnName,
+                unifiedAlias.CanonicalColumn,
+                "canonical column",
+                dependencyCountByColumn,
+                dependentsByDependencyColumn,
+                dependencyEdges
+            );
+
+            if (unifiedAlias.PresenceColumn is not { } presenceColumn)
+            {
+                continue;
+            }
+
+            AddAliasDependency(
+                table.Table,
+                column.ColumnName,
+                presenceColumn,
+                "presence-gate column",
+                dependencyCountByColumn,
+                dependentsByDependencyColumn,
+                dependencyEdges
+            );
+        }
+
+        SortedSet<string> availableColumns = new(GetColumnOrderingComparer(columnsByName, keyColumnOrder));
+
+        foreach (var columnName in columnsByName.Keys)
+        {
+            if (dependencyCountByColumn[columnName] == 0)
+            {
+                availableColumns.Add(columnName);
+            }
+        }
+
+        List<DbColumnModel> orderedColumns = new(columnsByName.Count);
+
+        while (availableColumns.Count > 0)
+        {
+            var nextColumnName = availableColumns.Min!;
+            availableColumns.Remove(nextColumnName);
+            orderedColumns.Add(columnsByName[nextColumnName]);
+
+            if (!dependentsByDependencyColumn.TryGetValue(nextColumnName, out var dependents))
+            {
+                continue;
+            }
+
+            foreach (var dependent in dependents)
+            {
+                dependencyCountByColumn[dependent]--;
+
+                if (dependencyCountByColumn[dependent] == 0)
+                {
+                    availableColumns.Add(dependent);
+                }
+            }
+        }
+
+        if (orderedColumns.Count == table.Columns.Count)
+        {
+            return orderedColumns.ToArray();
+        }
+
+        var blockedColumns = dependencyCountByColumn
+            .Where(entry => entry.Value > 0)
+            .Select(entry => entry.Key)
+            .OrderBy(columnName => columnName, StringComparer.Ordinal);
+
+        throw new InvalidOperationException(
+            $"Detected circular unified alias column dependencies while canonicalizing "
+                + $"table '{table.Table}': {string.Join(", ", blockedColumns)}."
+        );
+    }
+
+    /// <summary>
+    /// Registers one alias dependency edge from <paramref name="dependencyColumn"/> to
+    /// <paramref name="aliasColumn"/>.
+    /// </summary>
+    private static void AddAliasDependency(
+        DbTableName table,
+        DbColumnName aliasColumn,
+        DbColumnName dependencyColumn,
+        string dependencyRole,
+        IDictionary<string, int> dependencyCountByColumn,
+        IDictionary<string, List<string>> dependentsByDependencyColumn,
+        ISet<(string Dependency, string Dependent)> dependencyEdges
+    )
+    {
+        var aliasColumnName = aliasColumn.Value;
+        var dependencyColumnName = dependencyColumn.Value;
+
+        if (!dependencyCountByColumn.ContainsKey(dependencyColumnName))
+        {
+            throw new InvalidOperationException(
+                $"Unified alias column '{aliasColumnName}' on table '{table}' references missing "
+                    + $"{dependencyRole} '{dependencyColumnName}'."
+            );
+        }
+
+        if (string.Equals(aliasColumnName, dependencyColumnName, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException(
+                $"Unified alias column '{aliasColumnName}' on table '{table}' cannot depend on itself."
+            );
+        }
+
+        if (!dependencyEdges.Add((dependencyColumnName, aliasColumnName)))
+        {
+            return;
+        }
+
+        dependencyCountByColumn[aliasColumnName] = dependencyCountByColumn[aliasColumnName] + 1;
+
+        if (!dependentsByDependencyColumn.TryGetValue(dependencyColumnName, out var dependents))
+        {
+            dependents = [];
+            dependentsByDependencyColumn[dependencyColumnName] = dependents;
+        }
+
+        dependents.Add(aliasColumnName);
+    }
+
+    /// <summary>
+    /// Builds a deterministic comparer aligned to existing key/descriptor/scalar grouping rules.
+    /// </summary>
+    private static IComparer<string> GetColumnOrderingComparer(
+        IReadOnlyDictionary<string, DbColumnModel> columnsByName,
+        IReadOnlyDictionary<string, int> keyColumnOrder
+    )
+    {
+        return Comparer<string>.Create(
+            (left, right) =>
+            {
+                var leftColumn = columnsByName[left];
+                var rightColumn = columnsByName[right];
+
+                var groupComparison = GetColumnGroup(leftColumn, keyColumnOrder)
+                    .CompareTo(GetColumnGroup(rightColumn, keyColumnOrder));
+
+                if (groupComparison != 0)
+                {
+                    return groupComparison;
+                }
+
+                var keyIndexComparison = GetColumnKeyIndex(leftColumn, keyColumnOrder)
+                    .CompareTo(GetColumnKeyIndex(rightColumn, keyColumnOrder));
+
+                if (keyIndexComparison != 0)
+                {
+                    return keyIndexComparison;
+                }
+
+                return string.Compare(left, right, StringComparison.Ordinal);
+            }
+        );
     }
 
     /// <summary>
@@ -89,6 +282,7 @@ internal static class RelationalModelOrdering
             TableConstraint.Unique => 1,
             TableConstraint.ForeignKey => 2,
             TableConstraint.AllOrNoneNullability => 3,
+            TableConstraint.NullOrTrue => 4,
             _ => 99,
         };
     }
@@ -103,6 +297,7 @@ internal static class RelationalModelOrdering
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => string.Empty,
         };
     }

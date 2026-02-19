@@ -80,6 +80,8 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 
         // FK-support indexes: one per FK, non-unique, suppressed when FK columns are
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
+        // ValidateForeignKeyStorageInvariantPass runs earlier in the default pass order and
+        // guarantees FK endpoints map to direct stored columns before index derivation.
         foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
         {
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))

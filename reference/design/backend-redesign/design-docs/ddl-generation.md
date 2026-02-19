@@ -167,19 +167,45 @@ For each abstract resource in `projectSchema.abstractResources`:
 
 The DDL generator must emit document-reference columns and constraints that enable identity propagation:
 - For every document reference site, persist:
-  - `..._DocumentId`, and
-  - `{RefBaseName}_{IdentityPart}` propagated identity columns.
+  - `..._DocumentId` (stored/writable), and
+  - `{RefBaseName}_{IdentityPart}` per-site identity-part **binding columns** (API-bound path columns).
+    - Under key unification, binding columns MAY be persisted/stored generated aliases of canonical storage columns (see “Key unification” below).
 - Enforce “all-or-none” for the reference group via a CHECK constraint (to avoid null-bypassing of composite FKs).
-- Enforce a composite FK to:
-  - a concrete target root table key `(DocumentId, <IdentityParts...>)`, using `ON UPDATE CASCADE` only when the target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), or
-  - an abstract target identity table key `(DocumentId, <IdentityParts...>)`, using `ON UPDATE CASCADE` (identity tables are trigger-maintained).
+  - All-or-none constraints are defined over:
+    - the reference group’s `..._DocumentId`, and
+    - the per-site identity-part binding columns (even when those columns are generated aliases).
+- Enforce a composite FK over **storage columns only**:
+  - Local FK columns:
+    - the reference group’s `..._DocumentId`, and
+    - the identity-part **storage** columns, derived by mapping each identity-part binding column through `DbColumnModel.Storage`.
+  - Target columns:
+    - `DocumentId`, and
+    - the target identity **storage** columns, derived by mapping each target identity binding column through `DbColumnModel.Storage`.
+  - Use `ON UPDATE CASCADE` only when the referenced target has `allowIdentityUpdates=true` (otherwise `ON UPDATE NO ACTION`), and use `ON DELETE NO ACTION`.
 - Emit the required referenced-key UNIQUE constraint on the target table so the composite FK is legal (typically a redundant UNIQUE over `(DocumentId, <IdentityParts...>)` because `DocumentId` is already unique).
+  - Under key unification, the UNIQUE must be defined over the target’s identity **storage** columns (never over generated aliases).
+
+**Descriptor foreign keys (required)**
+
+Descriptor endpoints are stored as `DescriptorFk` columns (`..._DescriptorId`) referencing `dms.Descriptor(DocumentId)`.
+
+- Descriptor FK constraints MUST be anchored on the column’s **storage** column (after mapping through `DbColumnModel.Storage`), and MUST NOT reference `UnifiedAlias` columns directly.
+- If multiple descriptor binding columns map to the same storage column on the same table (because they are unified), emit exactly one descriptor FK constraint for that `(table, storage column)` pair (de-duplication).
 
 **Key unification note (overlapping reference identity fields)**
 
 ApiSchema supports “key unification” via `resourceSchema.equalityConstraints`: the same logical natural-key field can appear in multiple reference objects (e.g., `studentUniqueId` appears in both `studentEducationOrganizationAssociationReference` and `studentSchoolAssociationReference` on `StudentAssessmentRegistration` in Ed-Fi DS 5.2).
 
-The baseline relational mapping treats each reference site as self-contained and therefore persists *separate* propagated identity columns per site (e.g., `StudentEducationOrganizationAssociation_StudentUniqueId` and `StudentSchoolAssociation_StudentUniqueId`), relying on request validation to reject mismatched values. This avoids having to share columns across reference groups, which would break “all-or-none” nullability checks and complicate query compilation for optional references.
+Under this redesign, equality-constrained identity values on the same table row scope have a **single physical source of truth**:
+
+- A single canonical stored column is created for the unification class (writable; participates in composite FKs and cascades).
+- Existing per-site / per-path columns remain in the table shape, but become persisted/stored generated **aliases** of the canonical column (read-only).
+  - For reference-site identity-part aliases, the alias is presence-gated using the reference group’s `..._DocumentId` column so an absent site yields `NULL` for its identity parts.
+  - For optional non-reference unified endpoints, aliases are presence-gated using a synthetic `..._Present` flag column (stored nullable `bool`/`bit`) to preserve “absent path implies NULL at the binding column” semantics.
+- Composite reference FKs and descriptor FKs are emitted over **storage columns** only (canonical stored columns) and MUST NOT reference alias columns.
+- The DDL generator MUST NOT attempt to enforce equality by emitting `CHECK (colA = colB)` across two independently-writable columns; key unification removes that unsafe pattern by construction.
+
+See [key-unification.md](key-unification.md) for the normative rules and dialect-specific DDL syntax for persisted/stored generated aliases and synthetic presence flags.
 
 **Triggers (required)**
 
@@ -346,11 +372,14 @@ Within each phase:
   - then by physical table name as a final tie-breaker.
 - **Columns within a table**:
   1. key columns in key order (`DocumentId` / parent key parts in order, then `Ordinal`)
-  2. document reference groups (by reference base name):
+  2. key-unification support columns (when present), ordered by column name:
+     - canonical storage columns for unification classes, and
+     - synthetic `..._Present` presence-flag columns used for presence-gated unified aliases
+  3. document reference groups (by reference base name):
      - `..._DocumentId`
-     - `{RefBaseName}_{IdentityPart}` propagated identity columns in the referenced identity path order
-  3. descriptor FKs (`..._DescriptorId`) by column name
-  4. scalar columns by column name
+     - `{RefBaseName}_{IdentityPart}` per-site identity-part binding columns in the referenced identity path order
+  4. descriptor FKs (`..._DescriptorId`) by column name
+  5. scalar columns by column name
 - **Constraints**: group by kind in fixed order `PK → UNIQUE → FK → CHECK`, then order by constraint name (ordinal).
 - **Indexes**: order by table name, then index name (ordinal).
 - **Views**: order by view name (ordinal).

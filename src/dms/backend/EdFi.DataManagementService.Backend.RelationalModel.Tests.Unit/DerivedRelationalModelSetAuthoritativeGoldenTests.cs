@@ -23,6 +23,8 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
     private static readonly QualifiedResourceName[] _detailedResources =
     [
         new QualifiedResourceName("Ed-Fi", "AssessmentAdministration"),
+        new QualifiedResourceName("Ed-Fi", "ProgramEvaluationElement"),
+        new QualifiedResourceName("Ed-Fi", "StudentAssessmentRegistration"),
         new QualifiedResourceName("Ed-Fi", "StudentSchoolAssociation"),
     ];
 

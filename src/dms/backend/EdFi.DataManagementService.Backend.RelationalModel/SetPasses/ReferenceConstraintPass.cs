@@ -149,13 +149,6 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             );
             var referenceBaseName = ResolveReferenceBaseName(binding.FkColumn, mapping, resource);
 
-            EnsureTargetUnique(
-                targetInfo,
-                identityColumns.TargetColumns,
-                context.ResourcesByKey,
-                context.Mutations
-            );
-
             var bindingTable = ResolveReferenceBindingTable(binding, resourceModel, resource);
             var tableAccumulator = mutation.GetTableAccumulator(bindingTable, resource);
 
@@ -185,17 +178,59 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 }
             }
 
-            var localColumns = new List<DbColumnName>(1 + identityColumns.LocalColumns.Count)
-            {
-                binding.FkColumn,
-            };
-            localColumns.AddRange(identityColumns.LocalColumns);
+            var mappedIdentityColumns = MapReferenceIdentityColumnsToStorage(
+                identityColumns,
+                bindingTable,
+                targetInfo.TableModel,
+                mapping,
+                resource,
+                context.SetContext
+            );
 
-            var targetColumns = new List<DbColumnName>(1 + identityColumns.TargetColumns.Count)
-            {
+            EnsureTargetUnique(
+                targetInfo,
+                mappedIdentityColumns.TargetColumns,
+                context.ResourcesByKey,
+                context.Mutations
+            );
+
+            var localTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(
+                context.SetContext,
+                bindingTable
+            );
+            var localReferenceFkColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
+                binding.FkColumn,
+                localTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                ReferenceMappingContextFormatter.Build(mapping, resource),
+                "reference fk column",
+                "foreign keys"
+            );
+
+            var targetTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(
+                context.SetContext,
+                targetInfo.TableModel
+            );
+            var targetDocumentIdColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
                 RelationalNameConventions.DocumentIdColumnName,
+                targetTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                ReferenceMappingContextFormatter.Build(mapping, targetInfo.Resource),
+                "target document id column",
+                "foreign keys"
+            );
+
+            var localColumns = new List<DbColumnName>(1 + mappedIdentityColumns.LocalColumns.Count)
+            {
+                localReferenceFkColumn,
             };
-            targetColumns.AddRange(identityColumns.TargetColumns);
+            localColumns.AddRange(mappedIdentityColumns.LocalColumns);
+
+            var targetColumns = new List<DbColumnName>(1 + mappedIdentityColumns.TargetColumns.Count)
+            {
+                targetDocumentIdColumn,
+            };
+            targetColumns.AddRange(mappedIdentityColumns.TargetColumns);
 
             var onUpdate =
                 context.SetContext.Dialect == SqlDialect.Mssql ? ReferentialAction.NoAction
@@ -234,6 +269,87 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 mutation.MarkTableMutated(bindingTable);
             }
         }
+    }
+
+    /// <summary>
+    /// Maps (optional) local and target identity columns to canonical storage columns and de-duplicates pairs
+    /// after storage mapping while preserving first-seen identity-path order. Identity columns may be empty,
+    /// in which case reference constraints are derived solely from the document id column.
+    /// </summary>
+    private static ReferenceIdentityColumnSet MapReferenceIdentityColumnsToStorage(
+        ReferenceIdentityColumnSet identityColumns,
+        DbTableModel localTable,
+        DbTableModel targetTable,
+        DocumentReferenceMapping mapping,
+        QualifiedResourceName resource,
+        RelationalModelSetBuilderContext setContext
+    )
+    {
+        if (identityColumns.LocalColumns.Count != identityColumns.TargetColumns.Count)
+        {
+            throw new InvalidOperationException(
+                $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                    + "produced mismatched local and target identity-column counts."
+            );
+        }
+
+        if (identityColumns.LocalColumns.Count == 0)
+        {
+            return identityColumns;
+        }
+
+        var localTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, localTable);
+        var targetTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, targetTable);
+        var localMappingContext = ReferenceMappingContextFormatter.Build(mapping, resource);
+        var targetMappingContext = ReferenceMappingContextFormatter.Build(mapping, mapping.TargetResource);
+        Dictionary<DbColumnName, DbColumnName> targetByLocalStorageColumn = new();
+        HashSet<(DbColumnName LocalStorageColumn, DbColumnName TargetStorageColumn)> seenPairs = [];
+        List<DbColumnName> localStorageColumns = [];
+        List<DbColumnName> targetStorageColumns = [];
+
+        for (var index = 0; index < identityColumns.LocalColumns.Count; index++)
+        {
+            var localStorageColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
+                identityColumns.LocalColumns[index],
+                localTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                localMappingContext,
+                "local identity column",
+                "foreign keys"
+            );
+            var targetStorageColumn = UnifiedAliasStorageResolver.ResolveStorageColumn(
+                identityColumns.TargetColumns[index],
+                targetTableMetadata,
+                UnifiedAliasStorageResolver.PresenceGateRejectionPolicy.RejectSyntheticScalarPresence,
+                targetMappingContext,
+                "target identity column",
+                "foreign keys"
+            );
+
+            if (
+                targetByLocalStorageColumn.TryGetValue(
+                    localStorageColumn,
+                    out var existingTargetStorageColumn
+                ) && !existingTargetStorageColumn.Equals(targetStorageColumn)
+            )
+            {
+                throw new InvalidOperationException(
+                    $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
+                        + $"mapped storage column '{localStorageColumn.Value}' to multiple target "
+                        + $"storage columns ('{existingTargetStorageColumn.Value}', '{targetStorageColumn.Value}')."
+                );
+            }
+
+            targetByLocalStorageColumn[localStorageColumn] = targetStorageColumn;
+
+            if (seenPairs.Add((localStorageColumn, targetStorageColumn)))
+            {
+                localStorageColumns.Add(localStorageColumn);
+                targetStorageColumns.Add(targetStorageColumn);
+            }
+        }
+
+        return new ReferenceIdentityColumnSet(localStorageColumns.ToArray(), targetStorageColumns.ToArray());
     }
 
     /// <summary>
@@ -604,6 +720,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             var abstractInfo = new TargetIdentityInfo(
                 targetResource,
                 abstractTable.TableModel.Table,
+                abstractTable.TableModel,
                 identityPaths,
                 columnNames,
                 AllowIdentityUpdates: false,
@@ -639,6 +756,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
         var info = new TargetIdentityInfo(
             targetResource,
             entry.Model.RelationalModel.Root.Table,
+            entry.Model.RelationalModel.Root,
             builderContext.IdentityJsonPaths,
             identityColumns,
             builderContext.AllowIdentityUpdates,
@@ -815,6 +933,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
     private sealed record TargetIdentityInfo(
         QualifiedResourceName Resource,
         DbTableName Table,
+        DbTableModel TableModel,
         IReadOnlyList<JsonPathExpression> IdentityJsonPaths,
         IReadOnlyList<DbColumnName> IdentityColumns,
         bool AllowIdentityUpdates,

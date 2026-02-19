@@ -20,9 +20,10 @@ This story produces “SQL-free DDL intent” lists (`DbIndexInfo[]`, `DbTrigger
 
 ## Integration (ordered passes)
 
-- Set-level (`DMS-1033`): implemented as a whole-schema pass over the complete derived table/constraint inventory. This pass may consult cross-resource structure (e.g., the full FK graph) to:
-  - apply the FK index policy deterministically, and
-  - determine any dialect-conditional trigger-based propagation fallbacks (SQL Server “multiple cascade paths” constraints).
+- Set-level (`DMS-1033`) uses two whole-schema passes over the complete derived table/constraint inventory:
+  - `DeriveIndexInventoryPass`: applies FK index policy deterministically.
+  - `DeriveTriggerInventoryPass`: derives trigger intent inventory, including SQL Server propagation fallback fan-out
+    metadata.
 
 ## Scope (What This Story Is Talking About)
 
@@ -78,7 +79,8 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 2. **Referential identity maintenance triggers** (`DbTriggerKind.ReferentialIdentityMaintenance`)
    - One per concrete resource root table.
-   - Trigger events: `INSERT` and `UPDATE` when identity-projection columns change.
+   - Trigger events: `INSERT` and `UPDATE` with recomputation gated by null-safe value-diff comparisons over
+     `IdentityProjectionColumns` (not `UPDATE(column)`-style gating).
    - Semantic purpose:
      - recompute and upsert the resource’s `dms.ReferentialIdentity` primary row, and
      - (when applicable) recompute and upsert the superclass/abstract alias row,
@@ -86,11 +88,18 @@ Descriptor resources stored in shared `dms.Descriptor` (no per-descriptor tables
 
 3. **Abstract identity table maintenance triggers** (`DbTriggerKind.AbstractIdentityMaintenance`)
    - One per participating concrete resource root table **per abstract identity table** it contributes to.
-   - Trigger events: `INSERT` and `UPDATE` when the concrete identity projection changes.
+   - Trigger events: `INSERT` and `UPDATE` with recomputation gated by null-safe value-diff comparisons over
+     `IdentityProjectionColumns`.
    - Semantic purpose: upsert/update the `{schema}.{AbstractResource}Identity` row so polymorphic reference enforcement and cascades work.
 
-- SQL Server-only trigger-based propagation fallbacks (when used) appear as explicit trigger intents with stable naming.
-  - These are `DbTriggerKind.IdentityPropagationFallback` triggers emitted only when `ON UPDATE CASCADE` cannot be used due to SQL Server cascade-path restrictions (as described in `ddl-generation.md` and `strengths-risks.md`).
+- Trigger contracts interpret `IdentityProjectionColumns` as null-safe old/new value-diff compare sets, not
+  `UPDATE(column)` gates.
+- SQL Server-only identity propagation is represented by explicit `DbTriggerKind.IdentityPropagationFallback` trigger
+  intents with stable naming.
+  - SQL Server reference composite FKs always use `ON UPDATE NO ACTION`.
+  - For eligible targets (abstract targets and concrete targets with `allowIdentityUpdates=true`), inventory emits one
+    propagation trigger per referenced table (`TriggerTable`) with deterministic referrer fan-out actions.
+  - Propagation fan-out actions update canonical/storage columns only (never alias/binding columns).
 - Trigger names follow `data-model.md` rules and are collision-checked after dialect shortening.
   - Trigger naming should use `TR_{TableName}_{Purpose}` with purpose tokens aligned to `data-model.md`:
     - `Stamp`, `ReferentialIdentity`, `AbstractIdentity`, `PropagateIdentity`.
@@ -117,7 +126,7 @@ Out of scope for this story:
    - table stamping triggers,
    - referential identity maintenance triggers,
    - abstract identity maintenance triggers,
-   - (dialect-conditional) propagation fallback triggers.
+   - SQL Server propagation fallback triggers (one trigger per referenced table with fan-out referrer actions).
 3. Ensure both the DDL emitter and the manifest emitter consume the same derived inventories.
 4. Add unit tests for ordering, suppression, and naming determinism.
 5. Wire this derivation into the `DMS-1033` set-level builder as a whole-schema pass.

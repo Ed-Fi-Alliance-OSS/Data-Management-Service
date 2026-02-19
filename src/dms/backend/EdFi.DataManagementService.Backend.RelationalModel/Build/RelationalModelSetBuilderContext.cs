@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
@@ -45,6 +47,10 @@ public sealed class RelationalModelSetBuilderContext
     private readonly Dictionary<string, ProjectSchemaInfo> _extensionProjectsByKey = new(
         ExtensionProjectKeyComparer
     );
+    private readonly Dictionary<
+        DbTableName,
+        List<StrictUnifiedAliasTableMetadataEntry>
+    > _strictUnifiedAliasTableMetadataByTable = [];
     private static readonly IReadOnlyList<ExtensionSite> _emptyExtensionSites = Array.Empty<ExtensionSite>();
     private static readonly IReadOnlyDictionary<string, DescriptorPathInfo> _emptyDescriptorPaths =
         new Dictionary<string, DescriptorPathInfo>(StringComparer.Ordinal);
@@ -157,6 +163,98 @@ public sealed class RelationalModelSetBuilderContext
     /// rely on insertion order.
     /// </summary>
     public List<DbTriggerInfo> TriggerInventory { get; } = [];
+
+    /// <summary>
+    /// Clears cached strict unified-alias metadata.
+    /// </summary>
+    internal void ClearStrictUnifiedAliasTableMetadataCache()
+    {
+        _strictUnifiedAliasTableMetadataByTable.Clear();
+    }
+
+    /// <summary>
+    /// Attempts to resolve strict unified-alias metadata for the requested table.
+    /// </summary>
+    internal bool TryGetStrictUnifiedAliasTableMetadata(
+        DbTableModel table,
+        [NotNullWhen(true)] out UnifiedAliasStorageResolver.TableMetadata? metadata
+    )
+    {
+        ArgumentNullException.ThrowIfNull(table);
+
+        if (!_strictUnifiedAliasTableMetadataByTable.TryGetValue(table.Table, out var entries))
+        {
+            metadata = null;
+            return false;
+        }
+
+        foreach (var entry in entries)
+        {
+            if (
+                entry.JsonScope.Equals(table.JsonScope)
+                && entry.Columns.Count == table.Columns.Count
+                && entry.Columns.SequenceEqual(table.Columns)
+            )
+            {
+                metadata = entry.Metadata;
+                return true;
+            }
+        }
+
+        metadata = null;
+        return false;
+    }
+
+    /// <summary>
+    /// Caches strict unified-alias metadata for a table.
+    /// </summary>
+    internal void SetStrictUnifiedAliasTableMetadata(
+        DbTableModel table,
+        UnifiedAliasStorageResolver.TableMetadata metadata
+    )
+    {
+        ArgumentNullException.ThrowIfNull(table);
+        ArgumentNullException.ThrowIfNull(metadata);
+
+        if (!_strictUnifiedAliasTableMetadataByTable.TryGetValue(table.Table, out var entries))
+        {
+            entries = [];
+            _strictUnifiedAliasTableMetadataByTable[table.Table] = entries;
+        }
+
+        for (var index = 0; index < entries.Count; index++)
+        {
+            var entry = entries[index];
+
+            if (
+                entry.JsonScope.Equals(table.JsonScope)
+                && entry.Columns.Count == table.Columns.Count
+                && entry.Columns.SequenceEqual(table.Columns)
+            )
+            {
+                entries[index] = new StrictUnifiedAliasTableMetadataEntry(
+                    table.JsonScope,
+                    table.Columns,
+                    metadata
+                );
+                return;
+            }
+        }
+
+        entries.Add(new StrictUnifiedAliasTableMetadataEntry(table.JsonScope, table.Columns, metadata));
+    }
+
+    /// <summary>
+    /// Cache entry for strict unified-alias metadata keyed by a table's JSON scope and column snapshot.
+    /// </summary>
+    /// <param name="JsonScope">The table JSON scope used to disambiguate same-name tables across resources.</param>
+    /// <param name="Columns">The table columns snapshot used for cache invalidation.</param>
+    /// <param name="Metadata">The strict unified-alias metadata payload.</param>
+    private sealed record StrictUnifiedAliasTableMetadataEntry(
+        JsonPathExpression JsonScope,
+        IReadOnlyList<DbColumnModel> Columns,
+        UnifiedAliasStorageResolver.TableMetadata Metadata
+    );
 
     /// <summary>
     /// Enumerates projects in canonical endpoint order.
@@ -487,8 +585,8 @@ public sealed class RelationalModelSetBuilderContext
             .ToArray();
 
         var canonicalTriggers = TriggerInventory
-            .OrderBy(trigger => trigger.Table.Schema.Value, StringComparer.Ordinal)
-            .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
+            .OrderBy(trigger => trigger.TriggerTable.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(trigger => trigger.TriggerTable.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
 
@@ -692,12 +790,12 @@ public sealed class RelationalModelSetBuilderContext
     /// </summary>
     private NamedObjectKey BuildTriggerUniquenessKey(DbTriggerInfo trigger)
     {
-        var schema = trigger.Table.Schema.Value;
+        var schema = trigger.TriggerTable.Schema.Value;
         var name = trigger.Name.Value;
 
         return Dialect switch
         {
-            SqlDialect.Pgsql => NamedObjectKey.ForTable(schema, trigger.Table.Name, name),
+            SqlDialect.Pgsql => NamedObjectKey.ForTable(schema, trigger.TriggerTable.Name, name),
             SqlDialect.Mssql => NamedObjectKey.ForSchema(schema, name),
             _ => NamedObjectKey.ForSchema(schema, name),
         };

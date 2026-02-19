@@ -278,6 +278,14 @@ public class Given_Mixed_Constraint_Types
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.studentReference.schoolId"),
                 TargetResource: null
             ),
+            new DbColumnModel(
+                new DbColumnName("BooleanFlag"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Boolean),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.booleanFlag"),
+                TargetResource: null
+            ),
         };
 
         var constraints = new TableConstraint[]
@@ -286,6 +294,10 @@ public class Given_Mixed_Constraint_Types
                 "CK_School_Student_DocumentId_AllOrNone_B",
                 fkColumn,
                 dependentColumns
+            ),
+            new TableConstraint.NullOrTrue(
+                "CK_School_BooleanFlag_NullOrTrue_B",
+                new DbColumnName("BooleanFlag")
             ),
             new TableConstraint.ForeignKey(
                 "FK_School_Student_B",
@@ -298,6 +310,10 @@ public class Given_Mixed_Constraint_Types
                 "CK_School_Student_DocumentId_AllOrNone_A",
                 fkColumn,
                 dependentColumns
+            ),
+            new TableConstraint.NullOrTrue(
+                "CK_School_BooleanFlag_NullOrTrue_A",
+                new DbColumnName("BooleanFlag")
             ),
             new TableConstraint.ForeignKey(
                 "FK_School_Student_A",
@@ -351,7 +367,9 @@ public class Given_Mixed_Constraint_Types
                 "FK_School_Student_A",
                 "FK_School_Student_B",
                 "CK_School_Student_DocumentId_AllOrNone_A",
-                "CK_School_Student_DocumentId_AllOrNone_B"
+                "CK_School_Student_DocumentId_AllOrNone_B",
+                "CK_School_BooleanFlag_NullOrTrue_A",
+                "CK_School_BooleanFlag_NullOrTrue_B"
             );
     }
 
@@ -365,8 +383,171 @@ public class Given_Mixed_Constraint_Types
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => string.Empty,
         };
+    }
+}
+
+/// <summary>
+/// Test fixture for key-unification alias dependency ordering.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Alias_Dependencies
+{
+    private IReadOnlyDictionary<string, int> _columnIndexByName = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "Enrollment");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+
+        var canonicalColumn = new DbColumnName("School_SchoolId_Unified");
+        var referencePresenceColumn = new DbColumnName("School_DocumentId");
+        var scalarPresenceColumn = new DbColumnName("LocalSchoolId_Present");
+        var referenceAliasColumn = new DbColumnName("School_SchoolId");
+        var scalarAliasColumn = new DbColumnName("LocalSchoolId");
+        var descriptorColumn = new DbColumnName("GradeLevelDescriptor_DescriptorId");
+        var scalarColumn = new DbColumnName("AcademicYear");
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                referenceAliasColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                TargetResource: null
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(canonicalColumn, referencePresenceColumn),
+            },
+            new DbColumnModel(
+                scalarAliasColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.localSchoolId"),
+                TargetResource: null
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(canonicalColumn, scalarPresenceColumn),
+            },
+            new DbColumnModel(
+                canonicalColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                scalarPresenceColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Boolean),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                referencePresenceColumn,
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+            ),
+            new DbColumnModel(
+                descriptorColumn,
+                ColumnKind.DescriptorFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.gradeLevelDescriptor"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+            ),
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                scalarColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.academicYear"),
+                TargetResource: null
+            ),
+        };
+
+        var table = new DbTableModel(
+            tableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey("PK_Enrollment", [keyColumn]),
+            columns,
+            Array.Empty<TableConstraint>()
+        );
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "Enrollment"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            new[] { table },
+            Array.Empty<DocumentReferenceBinding>(),
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var context = new RelationalModelBuilderContext { ResourceModel = resourceModel };
+        var canonicalize = new CanonicalizeOrderingStep();
+        canonicalize.Execute(context);
+
+        _columnIndexByName = context
+            .ResourceModel!.Root.Columns.Select(
+                (column, index) => new { ColumnName = column.ColumnName.Value, Index = index }
+            )
+            .ToDictionary(entry => entry.ColumnName, entry => entry.Index, StringComparer.Ordinal);
+    }
+
+    /// <summary>
+    /// It should place canonical and presence columns before dependent unified aliases.
+    /// </summary>
+    [Test]
+    public void It_should_place_canonical_and_presence_columns_before_dependent_aliases()
+    {
+        _columnIndexByName["School_SchoolId_Unified"]
+            .Should()
+            .BeLessThan(_columnIndexByName["School_SchoolId"]);
+        _columnIndexByName["School_DocumentId"].Should().BeLessThan(_columnIndexByName["School_SchoolId"]);
+        _columnIndexByName["School_SchoolId_Unified"]
+            .Should()
+            .BeLessThan(_columnIndexByName["LocalSchoolId"]);
+        _columnIndexByName["LocalSchoolId_Present"].Should().BeLessThan(_columnIndexByName["LocalSchoolId"]);
+    }
+
+    /// <summary>
+    /// It should keep existing grouping stable when dependencies do not require reordering.
+    /// </summary>
+    [Test]
+    public void It_should_keep_existing_grouping_stable_when_dependencies_allow()
+    {
+        _columnIndexByName["DocumentId"].Should().Be(0);
+        _columnIndexByName["GradeLevelDescriptor_DescriptorId"]
+            .Should()
+            .BeLessThan(_columnIndexByName["AcademicYear"]);
+        _columnIndexByName["LocalSchoolId"].Should().BeLessThan(_columnIndexByName["School_DocumentId"]);
     }
 }
 
@@ -450,6 +631,7 @@ internal static class CanonicalizeOrderingStepTestContext
             TableConstraint.Unique unique => unique.Name,
             TableConstraint.ForeignKey foreignKey => foreignKey.Name,
             TableConstraint.AllOrNoneNullability allOrNone => allOrNone.Name,
+            TableConstraint.NullOrTrue nullOrTrue => nullOrTrue.Name,
             _ => string.Empty,
         };
     }

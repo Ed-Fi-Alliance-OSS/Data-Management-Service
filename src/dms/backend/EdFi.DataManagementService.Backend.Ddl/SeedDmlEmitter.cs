@@ -62,6 +62,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         return writer.ToString();
     }
 
+    /// <summary>
+    /// Emits a preflight check that fails fast when the database is provisioned for a different effective schema hash.
+    /// </summary>
     private void EmitEffectiveSchemaHashPreflight(SqlWriter writer, string effectiveSchemaHash)
     {
         string Q(string id) => _dialect.QuoteIdentifier(id);
@@ -117,6 +120,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits insert-if-missing seed rows for <c>dms.ResourceKey</c>.
+    /// </summary>
     private void EmitResourceKeySeeds(SqlWriter writer, IReadOnlyList<ResourceKeyEntry> resourceKeys)
     {
         if (resourceKeys.Count == 0)
@@ -165,6 +171,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits a deterministic exact-match validation block for <c>dms.ResourceKey</c> (row count + expected content).
+    /// </summary>
     private void EmitResourceKeyValidation(SqlWriter writer, IReadOnlyList<ResourceKeyEntry> resourceKeys)
     {
         if (resourceKeys.Count == 0)
@@ -301,6 +310,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the singleton insert-if-missing for <c>dms.EffectiveSchema</c>.
+    /// </summary>
     private void EmitEffectiveSchemaInsert(SqlWriter writer, EffectiveSchemaInfo effectiveSchema)
     {
         string Q(string id) => _dialect.QuoteIdentifier(id);
@@ -340,6 +352,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits insert-if-missing seed rows for <c>dms.SchemaComponent</c> scoped by <paramref name="effectiveSchemaHash"/>.
+    /// </summary>
     private void EmitSchemaComponentSeeds(
         SqlWriter writer,
         string effectiveSchemaHash,
@@ -395,6 +410,9 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits a deterministic exact-match validation block for <c>dms.SchemaComponent</c> (row count + expected content).
+    /// </summary>
     private void EmitSchemaComponentValidation(
         SqlWriter writer,
         string effectiveSchemaHash,

@@ -310,17 +310,23 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStartObject();
             writer.WriteString("name", trigger.Name.Value);
             writer.WritePropertyName("table");
-            WriteTableReference(writer, trigger.Table);
+            WriteTableReference(writer, trigger.TriggerTable);
             writer.WriteString("kind", trigger.Kind.ToString());
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, trigger.KeyColumns);
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            if (trigger.TargetTable is { } targetTable)
+            if (trigger.MaintenanceTargetTable is { } maintenanceTargetTable)
             {
                 writer.WritePropertyName("target_table");
-                WriteTableReference(writer, targetTable);
+                WriteTableReference(writer, maintenanceTargetTable);
+            }
+
+            if (trigger.PropagationFallback is { } propagationFallback)
+            {
+                writer.WritePropertyName("propagation_fallback");
+                WritePropagationFallback(writer, propagationFallback);
             }
 
             writer.WriteEndObject();
@@ -448,6 +454,14 @@ public static class DerivedModelSetManifestEmitter
         }
         writer.WriteEndArray();
 
+        writer.WritePropertyName("key_unification_classes");
+        writer.WriteStartArray();
+        foreach (var keyUnificationClass in table.KeyUnificationClasses)
+        {
+            WriteKeyUnificationClass(writer, keyUnificationClass);
+        }
+        writer.WriteEndArray();
+
         writer.WritePropertyName("constraints");
         writer.WriteStartArray();
         foreach (var constraint in table.Constraints)
@@ -490,6 +504,63 @@ public static class DerivedModelSetManifestEmitter
         {
             writer.WriteNullValue();
         }
+
+        writer.WritePropertyName("storage");
+        WriteColumnStorage(writer, column.Storage);
+
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// Writes a key unification class entry.
+    /// </summary>
+    private static void WriteKeyUnificationClass(
+        Utf8JsonWriter writer,
+        KeyUnificationClass keyUnificationClass
+    )
+    {
+        writer.WriteStartObject();
+        writer.WriteString("canonical_column", keyUnificationClass.CanonicalColumn.Value);
+        writer.WritePropertyName("member_path_columns");
+        WriteColumnNameList(writer, keyUnificationClass.MemberPathColumns);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>
+    /// Writes column storage metadata.
+    /// </summary>
+    private static void WriteColumnStorage(Utf8JsonWriter writer, ColumnStorage storage)
+    {
+        ArgumentNullException.ThrowIfNull(storage);
+
+        writer.WriteStartObject();
+
+        switch (storage)
+        {
+            case ColumnStorage.Stored:
+                writer.WriteString("kind", nameof(ColumnStorage.Stored));
+                break;
+            case ColumnStorage.UnifiedAlias unifiedAlias:
+                writer.WriteString("kind", nameof(ColumnStorage.UnifiedAlias));
+                writer.WriteString("canonical_column", unifiedAlias.CanonicalColumn.Value);
+
+                if (unifiedAlias.PresenceColumn is { } presenceColumn)
+                {
+                    writer.WriteString("presence_column", presenceColumn.Value);
+                }
+                else
+                {
+                    writer.WriteNull("presence_column");
+                }
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(
+                    nameof(storage),
+                    storage,
+                    "Unknown column storage type."
+                );
+        }
+
         writer.WriteEndObject();
     }
 
@@ -522,7 +593,7 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes a single table constraint (Unique, ForeignKey, or AllOrNoneNullability).
+    /// Writes a single table constraint (Unique, ForeignKey, AllOrNoneNullability, or NullOrTrue).
     /// </summary>
     private static void WriteConstraint(Utf8JsonWriter writer, TableConstraint constraint)
     {
@@ -555,6 +626,11 @@ public static class DerivedModelSetManifestEmitter
                 writer.WritePropertyName("dependent_columns");
                 WriteColumnNameList(writer, allOrNone.DependentColumns);
                 break;
+            case TableConstraint.NullOrTrue nullOrTrue:
+                writer.WriteString("kind", "NullOrTrue");
+                writer.WriteString("name", nullOrTrue.Name);
+                writer.WriteString("column", nullOrTrue.Column.Value);
+                break;
             default:
                 throw new ArgumentOutOfRangeException(
                     nameof(constraint),
@@ -577,6 +653,46 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStringValue(column.Value);
         }
         writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Writes identity-propagation fallback payload details.
+    /// </summary>
+    private static void WritePropagationFallback(
+        Utf8JsonWriter writer,
+        DbIdentityPropagationFallbackInfo propagationFallback
+    )
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("referrer_actions");
+        writer.WriteStartArray();
+
+        foreach (var referrerAction in propagationFallback.ReferrerActions)
+        {
+            writer.WriteStartObject();
+            writer.WritePropertyName("referrer_table");
+            WriteTableReference(writer, referrerAction.ReferrerTable);
+            writer.WriteString("referrer_document_id_column", referrerAction.ReferrerDocumentIdColumn.Value);
+            writer.WriteString(
+                "referenced_document_id_column",
+                referrerAction.ReferencedDocumentIdColumn.Value
+            );
+
+            writer.WritePropertyName("identity_column_pairs");
+            writer.WriteStartArray();
+            foreach (var columnPair in referrerAction.IdentityColumnPairs)
+            {
+                writer.WriteStartObject();
+                writer.WriteString("referrer_storage_column", columnPair.ReferrerStorageColumn.Value);
+                writer.WriteString("referenced_storage_column", columnPair.ReferencedStorageColumn.Value);
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        writer.WriteEndArray();
+        writer.WriteEndObject();
     }
 
     /// <summary>

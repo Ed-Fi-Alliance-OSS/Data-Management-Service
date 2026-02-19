@@ -545,6 +545,538 @@ public class Given_Reference_Constraint_Derivation
 }
 
 /// <summary>
+/// Test fixture for reference constraint derivation with key unification.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Constraint_Derivation_With_Key_Unification
+{
+    private DbTableModel _enrollmentTable = default!;
+    private DbTableModel _schoolTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+        ]);
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        var enrollmentModel = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+        var schoolModel = result
+            .ConcreteResourcesInNameOrder.Single(model => model.ResourceKey.Resource.ResourceName == "School")
+            .RelationalModel;
+
+        _enrollmentTable = enrollmentModel.Root;
+        _schoolTable = schoolModel.Root;
+    }
+
+    /// <summary>
+    /// It should emit composite reference FK columns using canonical storage columns only.
+    /// </summary>
+    [Test]
+    public void It_should_emit_composite_reference_fk_columns_using_canonical_storage_columns_only()
+    {
+        var schoolFk = _enrollmentTable
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single(constraint => constraint.Columns[0].Value == "School_DocumentId");
+
+        var localCanonicalColumn = ResolveCanonicalColumn(_enrollmentTable, "School_EducationOrganizationId");
+        ResolveCanonicalColumn(_enrollmentTable, "School_SchoolId").Should().Be(localCanonicalColumn);
+
+        schoolFk
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId", localCanonicalColumn.Value);
+
+        var targetCanonicalColumn = ResolveCanonicalColumn(_schoolTable, "EducationOrganizationId");
+        ResolveCanonicalColumn(_schoolTable, "SchoolId").Should().Be(targetCanonicalColumn);
+
+        schoolFk
+            .TargetColumns.Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId", targetCanonicalColumn.Value);
+
+        foreach (var columnName in schoolFk.Columns.Skip(1))
+        {
+            _enrollmentTable
+                .Columns.Single(column => column.ColumnName.Equals(columnName))
+                .Storage.Should()
+                .BeOfType<ColumnStorage.Stored>();
+        }
+
+        foreach (var columnName in schoolFk.TargetColumns.Skip(1))
+        {
+            _schoolTable
+                .Columns.Single(column => column.ColumnName.Equals(columnName))
+                .Storage.Should()
+                .BeOfType<ColumnStorage.Stored>();
+        }
+    }
+
+    /// <summary>
+    /// It should preserve all-or-none constraints on per-site binding columns.
+    /// </summary>
+    [Test]
+    public void It_should_preserve_all_or_none_constraints_on_per_site_binding_columns()
+    {
+        var schoolAllOrNone = _enrollmentTable
+            .Constraints.OfType<TableConstraint.AllOrNoneNullability>()
+            .Single(constraint => constraint.FkColumn.Value == "School_DocumentId");
+
+        schoolAllOrNone
+            .DependentColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_EducationOrganizationId", "School_SchoolId");
+    }
+
+    /// <summary>
+    /// It should emit target reference-key uniqueness over canonical storage columns.
+    /// </summary>
+    [Test]
+    public void It_should_emit_target_reference_key_uniqueness_over_canonical_storage_columns()
+    {
+        var targetCanonicalColumn = ResolveCanonicalColumn(_schoolTable, "EducationOrganizationId");
+        ResolveCanonicalColumn(_schoolTable, "SchoolId").Should().Be(targetCanonicalColumn);
+
+        var uniqueConstraint = _schoolTable
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Single(constraint => constraint.Name == "UX_School_RefKey");
+
+        uniqueConstraint
+            .Columns.Select(column => column.Value)
+            .Should()
+            .Equal("DocumentId", targetCanonicalColumn.Value);
+    }
+
+    /// <summary>
+    /// Resolves canonical storage column for a unified alias.
+    /// </summary>
+    private static DbColumnName ResolveCanonicalColumn(DbTableModel table, string aliasColumnName)
+    {
+        var alias = table.Columns.Single(column => column.ColumnName.Value == aliasColumnName);
+        return alias.Storage.Should().BeOfType<ColumnStorage.UnifiedAlias>().Subject.CanonicalColumn;
+    }
+}
+
+/// <summary>
+/// Test fixture for reference constraint derivation with invalid unified-alias presence metadata.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Constraint_Derivation_With_Invalid_Unified_Alias_Presence_Metadata
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new InvalidUnifiedAliasPresenceGateFixturePass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+        ]);
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when unified-alias presence metadata is invalid.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_unified_alias_presence_metadata_is_invalid()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Unified alias column");
+        exception.Message.Should().Contain("table");
+        exception.Message.Should().Contain("MissingPresenceGate");
+        exception.Message.Should().Contain("presence-gate column");
+    }
+
+    /// <summary>
+    /// Test pass that rewrites one unified-alias presence gate to a missing column.
+    /// </summary>
+    private sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelSetPass
+    {
+        private static readonly DbColumnName InvalidPresenceGateColumn = new("MissingPresenceGate");
+
+        /// <summary>
+        /// Execute.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            for (
+                var resourceIndex = 0;
+                resourceIndex < context.ConcreteResourcesInNameOrder.Count;
+                resourceIndex++
+            )
+            {
+                var concreteResource = context.ConcreteResourcesInNameOrder[resourceIndex];
+
+                if (concreteResource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+                {
+                    continue;
+                }
+
+                var relationalModel = concreteResource.RelationalModel;
+
+                foreach (var table in relationalModel.TablesInDependencyOrder)
+                {
+                    var aliasColumn = table.Columns.FirstOrDefault(column =>
+                        column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: not null }
+                    );
+
+                    if (
+                        aliasColumn is null
+                        || aliasColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias
+                    )
+                    {
+                        continue;
+                    }
+
+                    var rewrittenAliasColumn = aliasColumn with
+                    {
+                        Storage = new ColumnStorage.UnifiedAlias(
+                            unifiedAlias.CanonicalColumn,
+                            InvalidPresenceGateColumn
+                        ),
+                    };
+                    var rewrittenTable = table with
+                    {
+                        Columns = table
+                            .Columns.Select(column =>
+                                column.ColumnName.Equals(aliasColumn.ColumnName)
+                                    ? rewrittenAliasColumn
+                                    : column
+                            )
+                            .ToArray(),
+                    };
+                    var rewrittenTables = relationalModel
+                        .TablesInDependencyOrder.Select(existingTable =>
+                            existingTable.Table.Equals(table.Table)
+                            && existingTable.JsonScope.Equals(table.JsonScope)
+                                ? rewrittenTable
+                                : existingTable
+                        )
+                        .ToArray();
+                    var rewrittenRoot =
+                        relationalModel.Root.Table.Equals(table.Table)
+                        && relationalModel.Root.JsonScope.Equals(table.JsonScope)
+                            ? rewrittenTable
+                            : relationalModel.Root;
+                    var rewrittenModel = relationalModel with
+                    {
+                        Root = rewrittenRoot,
+                        TablesInDependencyOrder = rewrittenTables,
+                    };
+
+                    context.ConcreteResourcesInNameOrder[resourceIndex] = concreteResource with
+                    {
+                        RelationalModel = rewrittenModel,
+                    };
+
+                    return;
+                }
+            }
+
+            throw new InvalidOperationException(
+                "Test fixture requires at least one unified alias with a presence gate."
+            );
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for foreign-key storage invariant validation.
+/// </summary>
+[TestFixture]
+public class Given_Foreign_Key_Storage_Invariant_Validation
+{
+    private Action _action = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new InjectTargetForeignKeyAliasPass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+        ]);
+
+        _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when target foreign-key columns include unified aliases.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_target_foreign_key_columns_include_unified_aliases()
+    {
+        var exception = _action.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("FK_Enrollment_School_Ref");
+        exception.Message.Should().Contain("edfi.Enrollment");
+        exception.Message.Should().Contain("edfi.School");
+        exception.Message.Should().Contain("invalid target column(s)");
+        exception.Message.Should().Contain("EducationOrganizationId");
+    }
+
+    /// <summary>
+    /// Test pass that rewrites one target FK endpoint column to a unified-alias column.
+    /// </summary>
+    private sealed class InjectTargetForeignKeyAliasPass : IRelationalModelSetPass
+    {
+        /// <summary>
+        /// Execute.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var resource = new QualifiedResourceName("Ed-Fi", "Enrollment");
+            var resourceIndex = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+                model.ResourceKey.Resource == resource
+            );
+
+            if (resourceIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+                );
+            }
+
+            var concrete = context.ConcreteResourcesInNameOrder[resourceIndex];
+            var root = concrete.RelationalModel.Root;
+            var constraints = root.Constraints.ToArray();
+            var fkIndex = Array.FindIndex(
+                constraints,
+                constraint =>
+                    constraint is TableConstraint.ForeignKey foreignKey
+                    && string.Equals(foreignKey.TargetTable.Name, "School", StringComparison.Ordinal)
+                    && foreignKey.Columns.Count > 0
+                    && string.Equals(
+                        foreignKey.Columns[0].Value,
+                        "School_DocumentId",
+                        StringComparison.Ordinal
+                    )
+            );
+
+            if (fkIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"School reference foreign key was not found on table '{root.Table}'."
+                );
+            }
+
+            var schoolForeignKey = (TableConstraint.ForeignKey)constraints[fkIndex];
+
+            if (schoolForeignKey.TargetColumns.Count < 2)
+            {
+                throw new InvalidOperationException(
+                    $"Foreign key '{schoolForeignKey.Name}' does not contain identity target columns."
+                );
+            }
+
+            var targetColumns = schoolForeignKey.TargetColumns.ToArray();
+            targetColumns[1] = new DbColumnName("EducationOrganizationId");
+
+            constraints[fkIndex] = schoolForeignKey with { TargetColumns = targetColumns };
+
+            var updatedRoot = root with { Constraints = constraints };
+            var updatedTables = concrete.RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            );
+            var updatedModel = concrete.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables.ToArray(),
+            };
+
+            context.ConcreteResourcesInNameOrder[resourceIndex] = concrete with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+}
+
+/// <summary>
+/// Test fixture for local foreign-key alias invariant validation.
+/// </summary>
+[TestFixture]
+public class Given_Foreign_Key_Storage_Invariant_Validation_With_Local_Alias
+{
+    private Action _action = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new InjectLocalForeignKeyAliasPass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+        ]);
+
+        _action = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when local foreign-key columns include unified aliases.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_local_foreign_key_columns_include_unified_aliases()
+    {
+        var exception = _action.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("FK_Enrollment_School_Ref");
+        exception.Message.Should().Contain("edfi.Enrollment");
+        exception.Message.Should().Contain("edfi.School");
+        exception.Message.Should().Contain("invalid local column(s)");
+        exception.Message.Should().Contain("School_EducationOrganizationId");
+    }
+
+    /// <summary>
+    /// Test pass that rewrites one local FK endpoint column to a unified-alias column.
+    /// </summary>
+    private sealed class InjectLocalForeignKeyAliasPass : IRelationalModelSetPass
+    {
+        /// <summary>
+        /// Execute.
+        /// </summary>
+        public void Execute(RelationalModelSetBuilderContext context)
+        {
+            ArgumentNullException.ThrowIfNull(context);
+
+            var resource = new QualifiedResourceName("Ed-Fi", "Enrollment");
+            var resourceIndex = context.ConcreteResourcesInNameOrder.FindIndex(model =>
+                model.ResourceKey.Resource == resource
+            );
+
+            if (resourceIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"Concrete resource '{resource.ProjectName}:{resource.ResourceName}' was not found."
+                );
+            }
+
+            var concrete = context.ConcreteResourcesInNameOrder[resourceIndex];
+            var root = concrete.RelationalModel.Root;
+            var constraints = root.Constraints.ToArray();
+            var fkIndex = Array.FindIndex(
+                constraints,
+                constraint =>
+                    constraint is TableConstraint.ForeignKey foreignKey
+                    && string.Equals(foreignKey.TargetTable.Name, "School", StringComparison.Ordinal)
+                    && foreignKey.Columns.Count > 0
+                    && string.Equals(
+                        foreignKey.Columns[0].Value,
+                        "School_DocumentId",
+                        StringComparison.Ordinal
+                    )
+            );
+
+            if (fkIndex < 0)
+            {
+                throw new InvalidOperationException(
+                    $"School reference foreign key was not found on table '{root.Table}'."
+                );
+            }
+
+            var schoolForeignKey = (TableConstraint.ForeignKey)constraints[fkIndex];
+
+            if (schoolForeignKey.Columns.Count < 2)
+            {
+                throw new InvalidOperationException(
+                    $"Foreign key '{schoolForeignKey.Name}' does not contain identity local columns."
+                );
+            }
+
+            var localColumns = schoolForeignKey.Columns.ToArray();
+            localColumns[1] = new DbColumnName("School_EducationOrganizationId");
+
+            constraints[fkIndex] = schoolForeignKey with { Columns = localColumns };
+
+            var updatedRoot = root with { Constraints = constraints };
+            var updatedTables = concrete.RelationalModel.TablesInDependencyOrder.Select(table =>
+                table.Table == root.Table ? updatedRoot : table
+            );
+            var updatedModel = concrete.RelationalModel with
+            {
+                Root = updatedRoot,
+                TablesInDependencyOrder = updatedTables.ToArray(),
+            };
+
+            context.ConcreteResourcesInNameOrder[resourceIndex] = concrete with
+            {
+                RelationalModel = updatedModel,
+            };
+        }
+    }
+}
+
+/// <summary>
 /// Test fixture for shuffled reference identity bindings.
 /// </summary>
 [TestFixture]
@@ -1512,6 +2044,45 @@ internal static class ConstraintDerivationTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build reference constraint project schema with key unification on school identity columns.
+    /// </summary>
+    internal static JsonObject BuildReferenceConstraintProjectSchemaWithIdentityUnification()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildReferenceConstraintEnrollmentSchemaWithIdentityUnification(),
+                ["schools"] = BuildReferenceConstraintSchoolSchemaWithIdentityUnification(),
+                ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    /// <summary>
+    /// Build reference constraint project schema with both root and child references to the same target.
+    /// </summary>
+    internal static JsonObject BuildReferenceConstraintProjectSchemaWithChildReference()
+    {
+        return new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "1.0.0",
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["enrollments"] = BuildReferenceConstraintEnrollmentSchema(),
+                ["busRoutes"] = BuildBusRouteArrayUniquenessSchema(new JsonArray()),
+                ["schools"] = BuildReferenceConstraintSchoolSchema(),
+                ["students"] = BuildStudentSchema(),
+            },
+        };
+    }
+
+    /// <summary>
     /// Build target unique mutation project schema.
     /// </summary>
     internal static JsonObject BuildTargetUniqueMutationProjectSchema()
@@ -2064,6 +2635,24 @@ internal static class ConstraintDerivationTestSchemaBuilder
     }
 
     /// <summary>
+    /// Build reference constraint enrollment schema with key-unified school identity paths.
+    /// </summary>
+    private static JsonObject BuildReferenceConstraintEnrollmentSchemaWithIdentityUnification()
+    {
+        var schema = BuildReferenceConstraintEnrollmentSchema();
+        schema["equalityConstraints"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["sourceJsonPath"] = "$.schoolReference.schoolId",
+                ["targetJsonPath"] = "$.schoolReference.educationOrganizationId",
+            },
+        };
+
+        return schema;
+    }
+
+    /// <summary>
     /// Build single school reference schema.
     /// </summary>
     private static JsonObject BuildSingleSchoolReferenceSchema(string resourceName)
@@ -2581,6 +3170,24 @@ internal static class ConstraintDerivationTestSchemaBuilder
             },
             ["jsonSchemaForInsert"] = jsonSchemaForInsert,
         };
+    }
+
+    /// <summary>
+    /// Build reference constraint school schema with key-unified identity paths.
+    /// </summary>
+    private static JsonObject BuildReferenceConstraintSchoolSchemaWithIdentityUnification()
+    {
+        var schema = BuildReferenceConstraintSchoolSchema();
+        schema["equalityConstraints"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["sourceJsonPath"] = "$.schoolId",
+                ["targetJsonPath"] = "$.educationOrganizationId",
+            },
+        };
+
+        return schema;
     }
 
     /// <summary>

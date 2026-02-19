@@ -52,6 +52,7 @@ public class Given_Reference_Binding
                 new BaseTraversalAndDescriptorBindingPass(),
                 new ExtensionTableDerivationPass(),
                 new ReferenceBindingPass(),
+                new DescriptorForeignKeyConstraintPass(),
             }
         );
 

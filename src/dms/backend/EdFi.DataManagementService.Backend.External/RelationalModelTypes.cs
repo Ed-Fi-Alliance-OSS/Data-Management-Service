@@ -205,7 +205,20 @@ public sealed record RelationalResourceModel(
     IReadOnlyList<DbTableModel> TablesInDependencyOrder,
     IReadOnlyList<DocumentReferenceBinding> DocumentReferenceBindings,
     IReadOnlyList<DescriptorEdgeSource> DescriptorEdgeSources
-);
+)
+{
+    /// <summary>
+    /// Per-resource equality-constraint diagnostics for key-unification classification.
+    /// </summary>
+    public KeyUnificationEqualityConstraintDiagnostics KeyUnificationEqualityConstraints { get; init; } =
+        KeyUnificationEqualityConstraintDiagnostics.Empty;
+
+    /// <summary>
+    /// Per-resource diagnostics for descriptor FK storage de-duplication.
+    /// </summary>
+    public IReadOnlyList<DescriptorForeignKeyDeduplication> DescriptorForeignKeyDeduplications { get; init; } =
+    [];
+}
 
 /// <summary>
 /// The model for a physical table derived from a JSONPath scope.
@@ -224,6 +237,129 @@ public sealed record DbTableModel(
     TableKey Key,
     IReadOnlyList<DbColumnModel> Columns,
     IReadOnlyList<TableConstraint> Constraints
+)
+{
+    /// <summary>
+    /// Per-table key-unification classes in deterministic order.
+    /// </summary>
+    public IReadOnlyList<KeyUnificationClass> KeyUnificationClasses { get; init; } = [];
+}
+
+/// <summary>
+/// Describes one key-unification class on a table.
+/// </summary>
+/// <param name="CanonicalColumn">The canonical stored source-of-truth column.</param>
+/// <param name="MemberPathColumns">The ordered member path columns in the class.</param>
+public sealed record KeyUnificationClass(
+    DbColumnName CanonicalColumn,
+    IReadOnlyList<DbColumnName> MemberPathColumns
+);
+
+/// <summary>
+/// Ignore reasons for key-unification equality constraints.
+/// </summary>
+public enum KeyUnificationIgnoredReason
+{
+    /// <summary>
+    /// Endpoint bindings resolved to different physical tables.
+    /// </summary>
+    CrossTable,
+}
+
+/// <summary>
+/// One resolved endpoint binding for key-unification diagnostics.
+/// </summary>
+/// <param name="Table">The physical table containing the endpoint binding column.</param>
+/// <param name="Column">The endpoint binding column.</param>
+public sealed record KeyUnificationEndpointBinding(DbTableName Table, DbColumnName Column);
+
+/// <summary>
+/// Applied equality-constraint diagnostic entry.
+/// </summary>
+/// <param name="EndpointAPath">Canonical endpoint-a path (ordinal minimum).</param>
+/// <param name="EndpointBPath">Canonical endpoint-b path (ordinal maximum).</param>
+/// <param name="Table">The table owning both endpoint bindings.</param>
+/// <param name="EndpointAColumn">Endpoint-a binding column.</param>
+/// <param name="EndpointBColumn">Endpoint-b binding column.</param>
+/// <param name="CanonicalColumn">The resolved canonical storage column for the applied class.</param>
+public sealed record KeyUnificationAppliedConstraint(
+    JsonPathExpression EndpointAPath,
+    JsonPathExpression EndpointBPath,
+    DbTableName Table,
+    DbColumnName EndpointAColumn,
+    DbColumnName EndpointBColumn,
+    DbColumnName CanonicalColumn
+);
+
+/// <summary>
+/// Redundant equality-constraint diagnostic entry.
+/// </summary>
+/// <param name="EndpointAPath">Canonical endpoint-a path (ordinal minimum).</param>
+/// <param name="EndpointBPath">Canonical endpoint-b path (ordinal maximum).</param>
+/// <param name="Binding">The shared endpoint binding for both paths.</param>
+public sealed record KeyUnificationRedundantConstraint(
+    JsonPathExpression EndpointAPath,
+    JsonPathExpression EndpointBPath,
+    KeyUnificationEndpointBinding Binding
+);
+
+/// <summary>
+/// Ignored equality-constraint diagnostic entry.
+/// </summary>
+/// <param name="EndpointAPath">Canonical endpoint-a path (ordinal minimum).</param>
+/// <param name="EndpointBPath">Canonical endpoint-b path (ordinal maximum).</param>
+/// <param name="Reason">The deterministic ignore reason.</param>
+/// <param name="EndpointABinding">Endpoint-a resolved binding.</param>
+/// <param name="EndpointBBinding">Endpoint-b resolved binding.</param>
+public sealed record KeyUnificationIgnoredConstraint(
+    JsonPathExpression EndpointAPath,
+    JsonPathExpression EndpointBPath,
+    KeyUnificationIgnoredReason Reason,
+    KeyUnificationEndpointBinding EndpointABinding,
+    KeyUnificationEndpointBinding EndpointBBinding
+);
+
+/// <summary>
+/// Aggregate ignored-entry count by reason.
+/// </summary>
+/// <param name="Reason">The ignore reason.</param>
+/// <param name="Count">The number of ignored entries with this reason.</param>
+public sealed record KeyUnificationIgnoredByReasonEntry(KeyUnificationIgnoredReason Reason, int Count);
+
+/// <summary>
+/// Per-resource key-unification equality-constraint diagnostics.
+/// </summary>
+/// <param name="Applied">Applied same-table constraints.</param>
+/// <param name="Redundant">Redundant same-binding constraints.</param>
+/// <param name="Ignored">Ignored constraints (for v1: cross-table only).</param>
+/// <param name="IgnoredByReason">Aggregate ignored counts by reason.</param>
+public sealed record KeyUnificationEqualityConstraintDiagnostics(
+    IReadOnlyList<KeyUnificationAppliedConstraint> Applied,
+    IReadOnlyList<KeyUnificationRedundantConstraint> Redundant,
+    IReadOnlyList<KeyUnificationIgnoredConstraint> Ignored,
+    IReadOnlyList<KeyUnificationIgnoredByReasonEntry> IgnoredByReason
+)
+{
+    /// <summary>
+    /// Empty diagnostics payload.
+    /// </summary>
+    public static KeyUnificationEqualityConstraintDiagnostics Empty { get; } = new([], [], [], []);
+}
+
+/// <summary>
+/// Descriptor FK de-duplication diagnostics for one storage-column group.
+/// </summary>
+/// <param name="Table">The table where descriptor FK storage de-duplication was applied.</param>
+/// <param name="StorageColumn">
+/// The final storage column that receives the single emitted descriptor FK constraint.
+/// </param>
+/// <param name="BindingColumns">
+/// The descriptor binding/path columns that mapped to <paramref name="StorageColumn"/> (ordinal sorted).
+/// </param>
+public sealed record DescriptorForeignKeyDeduplication(
+    DbTableName Table,
+    DbColumnName StorageColumn,
+    IReadOnlyList<DbColumnName> BindingColumns
 );
 
 /// <summary>
@@ -249,14 +385,63 @@ public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 /// <param name="IsNullable">Whether the column allows NULL.</param>
 /// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
 /// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
+public abstract record ColumnStorage
+{
+    /// <summary>
+    /// Column is physically stored and writable.
+    /// </summary>
+    public sealed record Stored : ColumnStorage;
+
+    /// <summary>
+    /// Column is a generated alias over a canonical stored column, optionally presence-gated.
+    /// </summary>
+    /// <param name="CanonicalColumn">Canonical stored column on the same table.</param>
+    /// <param name="PresenceColumn">Optional presence-gate column on the same table.</param>
+    public sealed record UnifiedAlias(DbColumnName CanonicalColumn, DbColumnName? PresenceColumn)
+        : ColumnStorage;
+}
+
+/// <summary>
+/// A derived table column definition.
+/// </summary>
+/// <param name="ColumnName">The physical column name.</param>
+/// <param name="Kind">The semantic role for the column.</param>
+/// <param name="ScalarType">The scalar type metadata (when applicable).</param>
+/// <param name="IsNullable">Whether the column allows NULL.</param>
+/// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
+/// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
+/// <param name="Storage">Storage metadata for bind-vs-storage behavior.</param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
     RelationalScalarType? ScalarType,
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
-    QualifiedResourceName? TargetResource
-);
+    QualifiedResourceName? TargetResource,
+    ColumnStorage Storage
+)
+{
+    /// <summary>
+    /// Initializes a new instance with stored-column default behavior.
+    /// </summary>
+    public DbColumnModel(
+        DbColumnName ColumnName,
+        ColumnKind Kind,
+        RelationalScalarType? ScalarType,
+        bool IsNullable,
+        JsonPathExpression? SourceJsonPath,
+        QualifiedResourceName? TargetResource
+    )
+        : this(
+            ColumnName,
+            Kind,
+            ScalarType,
+            IsNullable,
+            SourceJsonPath,
+            TargetResource,
+            new ColumnStorage.Stored()
+        ) { }
+}
 
 /// <summary>
 /// Base type for table constraint models derived from schema and metadata.
@@ -301,6 +486,13 @@ public abstract record TableConstraint
         DbColumnName FkColumn,
         IReadOnlyList<DbColumnName> DependentColumns
     ) : TableConstraint;
+
+    /// <summary>
+    /// A check constraint that enforces a nullable boolean column can only be <c>NULL</c> or <c>TRUE</c>.
+    /// </summary>
+    /// <param name="Name">The physical constraint name.</param>
+    /// <param name="Column">The constrained nullable-boolean column.</param>
+    public sealed record NullOrTrue(string Name, DbColumnName Column) : TableConstraint;
 }
 
 /// <summary>

@@ -8,6 +8,7 @@ This document is the data-model deep dive for `overview.md`.
 
 - Overview: [overview.md](overview.md)
 - Flattening & reconstitution deep dive: [flattening-reconstitution.md](flattening-reconstitution.md)
+- Key unification deep dive: [key-unification.md](key-unification.md)
 - Extensions: [extensions.md](extensions.md)
 - Transactions, concurrency, and cascades: [transactions-and-concurrency.md](transactions-and-concurrency.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
@@ -67,7 +68,7 @@ CREATE TABLE dms.ResourceKey (
 
 Canonical metadata per persisted resource instance. One row per document, regardless of resource type.
 
-Update tracking note: `reference/design/backend-redesign/design-docs/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using stored per-document stamps on `dms.Document`, updated in-transaction. Indirect representation changes are realized via FK-cascade updates to stored reference identity columns on referrers, which then trigger normal stamping.
+Update tracking note: `reference/design/backend-redesign/design-docs/update-tracking.md` defines representation-sensitive `_etag/_lastModifiedDate` (and Change Query support) using stored per-document stamps on `dms.Document`, updated in-transaction. Indirect representation changes are realized via FK-cascade updates to reference-identity *storage* columns on referrers (the writable columns participating in composite reference FKs); under key unification, per-site identity-part binding columns may be generated/persisted aliases of those storage columns.
 
 **PostgreSQL**
 
@@ -126,7 +127,7 @@ Notes:
 - `DocumentUuid` remains stable across identity updates; identity-based upserts map to it via `dms.ReferentialIdentity` for **all** identities (self-contained, reference-bearing, and abstract/superclass aliases), because `dms.ReferentialIdentity` is maintained transactionally (including cascades) on identity changes.
 - `ResourceKeyId` identifies the document’s concrete resource type; use `dms.ResourceKey` for `(ProjectName, ResourceName)` when needed (diagnostics, CDC metadata).
 - Update tracking columns (brief semantics; see `reference/design/backend-redesign/design-docs/update-tracking.md` for the normative rules):
-  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to stored reference identity columns).
+  - `ContentVersion` / `ContentLastModifiedAt`: bump when the document’s served representation changes (local write, or cascaded update to reference-identity storage columns and any dependent generated aliases).
   - `IdentityVersion` / `IdentityLastModifiedAt`: bump when the document’s identity/URI projection changes (directly or via cascaded updates to identity-component reference identity columns).
   - API `_etag`, `_lastModifiedDate`, and per-item `ChangeVersion` are served from these stored stamps (no read-time dependency derivation).
 - Time semantics: store timestamps as UTC instants. In PostgreSQL, use `timestamp with time zone` and format response values as UTC (e.g., `...Z`). In SQL Server, use `datetime2` with UTC writers (e.g., `sysutcdatetime()`).
@@ -257,7 +258,7 @@ Operational considerations:
 
 Critical invariants:
 - **Uniqueness** of `ReferentialId` enforces “one natural identity maps to one document” for **all** identities (self-contained identities, reference-bearing identities, and descriptor URIs). This requires `dms.ReferentialIdentity` to be maintained transactionally on identity changes, including cascading recompute when upstream identity components change.
-- The resource root table’s natural-key unique constraint (FK `..._DocumentId` columns + scalar identity parts) remains a recommended relational guardrail, but identity-based resolution/upsert uses `dms.ReferentialIdentity`.
+- The resource root table’s natural-key unique constraint (binding/path columns for `identityJsonPaths`, including reference-site `..._DocumentId` and identity-part binding columns) remains a recommended relational guardrail; under key unification, some identity-part binding columns may be generated/persisted aliases of canonical storage columns. Identity-based resolution/upsert uses `dms.ReferentialIdentity`.
 - A document has **at most 2** referential ids:
   - the **primary** referential id for the document’s concrete `ResourceKeyId` (`(ProjectName, ResourceName)` in `dms.ResourceKey`)
   - an optional **superclass/abstract alias** referential id for polymorphic references (when `isSubclass: true`) using the superclass/abstract `ResourceKeyId`
@@ -538,19 +539,31 @@ One row per document; PK is `DocumentId` (shared surrogate key).
 
 Typical structure:
 - `DocumentId BIGINT` **PK/FK** → `dms.Document(DocumentId)` ON DELETE CASCADE
-- Natural key columns (from `identityJsonPaths`) → unique constraint. For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable), while referenced identity values are additionally stored in companion columns for propagation and query.
+- Natural key columns (from `identityJsonPaths`) → **API-semantic** unique constraint over the identity **binding/path** columns.
+  - For identity elements that come from a document reference object, the unique constraint uses the corresponding `..._DocumentId` FK column (stable) plus the per-site identity-part binding columns.
+  - Under key unification, per-site identity-part binding columns may be generated/persisted aliases of canonical storage columns; the natural-key unique constraint remains defined over binding columns to preserve API path/presence semantics.
+- Reference key columns → **FK-supporting** unique constraint over `(DocumentId, <StorageIdentityParts...>)` (the referenced key used by composite reference FKs).
+  - Under key unification, `<StorageIdentityParts...>` uses canonical storage columns (never per-site `UnifiedAlias` binding columns); see `key-unification.md`.
 - Scalar columns for top-level non-collection properties
 - Reference columns (document references):
   - For each reference site, store:
     - `..._DocumentId BIGINT` (stable FK key part), and
-    - one column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`),
-    enforced with a composite FK:
-    - `FOREIGN KEY (..._DocumentId, ..._{IdentityParts...}) REFERENCES <TargetIdentityKey>(DocumentId, <IdentityParts...>)`
-      - `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true`
-      - `ON UPDATE NO ACTION` when `allowIdentityUpdates=false`
+    - one **binding/path** column per referenced identity field (e.g., `{RefBaseName}_{IdentityPart}`).
+      - Under key unification, these per-site columns remain in the table shape but may be generated/persisted `UnifiedAlias` columns of canonical storage columns; see `key-unification.md`.
+  - Enforce a composite reference FK using only stored/writable **storage** columns:
+    - `FOREIGN KEY (..._DocumentId, <StorageIdentityParts...>) REFERENCES <TargetRefKey>(DocumentId, <TargetStorageIdentityParts...>)`
+      - For each referenced identity part, derive the referencing-side storage column by mapping the per-site binding column through `DbColumnModel.Storage` (i.e., when the binding column is a `UnifiedAlias`, use its canonical column).
+      - FKs MUST NOT be defined over `UnifiedAlias` columns (generated columns are not cascade targets).
+      - PostgreSQL:
+        - concrete targets: `ON UPDATE CASCADE` only when the referenced target resource has `allowIdentityUpdates=true` (`ON UPDATE NO ACTION` otherwise)
+        - abstract targets: `ON UPDATE CASCADE`
+      - SQL Server:
+        - all reference composite FKs use `ON UPDATE NO ACTION` (concrete + abstract targets)
+        - eligible propagation targets (abstract targets and concrete targets with `allowIdentityUpdates=true`) are maintained by deterministic `DbTriggerKind.IdentityPropagationFallback` trigger fan-out on the referenced table, updating canonical/storage columns only
   - Add an all-or-none CHECK constraint per reference site:
-    - if `..._DocumentId` is `NULL`, all identity-part columns are `NULL`
-    - if `..._DocumentId` is not `NULL`, all identity-part columns are not `NULL`
+    - if `..._DocumentId` is `NULL`, all identity-part binding columns for that reference site are `NULL`
+    - if `..._DocumentId` is not `NULL`, all identity-part binding columns for that reference site are not `NULL`
+    - Note: this is intentionally defined over the per-site binding/alias columns (not canonical storage columns) to preserve optional-reference presence semantics.
   - Descriptor references remain `..._DescriptorId BIGINT` FKs to `dms.Descriptor(DocumentId)` (no propagation; descriptors are treated as immutable).
 
 #### Child tables for collections
@@ -573,7 +586,7 @@ Some Ed-Fi references target **abstract resources** (polymorphic references), no
 - `EducationOrganization` (e.g., `educationOrganizationReference`)
 - `GeneralStudentProgramAssociation` (e.g., `generalStudentProgramAssociationReference`)
 
-Abstract resources have **no physical root table**, but composite FKs (and any identity-update cascades) require a concrete FK target with the required identity columns.
+Abstract resources have **no physical root table**, but composite FKs (and any identity-update propagation) require a concrete FK target with the required identity columns.
 
 This redesign provisions an **identity table per abstract resource**:
 
@@ -585,7 +598,9 @@ This redesign provisions an **identity table per abstract resource**:
 - Maintenance:
   - triggers on each concrete member root table upsert the corresponding `{AbstractResource}Identity` row on insert/update of the concrete identity fields (including identity renames).
 - FKs for abstract reference sites:
-  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)` with `ON UPDATE CASCADE` (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
+  - referencing tables use composite FKs to `{schema}.{AbstractResource}Identity(DocumentId, <AbstractIdentityFields...>)`.
+    - PostgreSQL: `ON UPDATE CASCADE`.
+    - SQL Server: `ON UPDATE NO ACTION` and identity propagation via `DbTriggerKind.IdentityPropagationFallback` trigger fan-out (identity tables are trigger-maintained; `allowIdentityUpdates` applies to concrete targets).
 
 Required: `{schema}.{AbstractResource}_View` union view
 
@@ -597,7 +612,7 @@ Also provision a union view per abstract resource for diagnostics/ad-hoc queryin
 
 Usage:
 - Not required for write-time reference resolution (still via `dms.ReferentialIdentity` alias rows).
-- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via cascades).
+- Not required for read-time reference identity projection (reference identity fields are stored locally on the referrer and kept consistent via database propagation: PostgreSQL cascades, SQL Server propagation-fallback triggers).
 - Not required for membership/type validation (enforced by the composite FK to `{AbstractResource}Identity`).
 
 DDL generation requirement:
@@ -668,7 +683,8 @@ CREATE TABLE IF NOT EXISTS edfi.Student (
     LastSurname      varchar(75)  NOT NULL,
     BirthDate        date         NULL,
 
-    CONSTRAINT UX_Student_StudentUniqueId UNIQUE (StudentUniqueId)
+    CONSTRAINT UX_Student_NK UNIQUE (StudentUniqueId),
+    CONSTRAINT UX_Student_RefKey UNIQUE (DocumentId, StudentUniqueId)
 );
 
 -- Descriptor references are stored as FKs directly to dms.Descriptor.
@@ -684,7 +700,8 @@ CREATE TABLE IF NOT EXISTS edfi.School (
     SchoolTypeDescriptor_DescriptorId bigint NULL
                            REFERENCES dms.Descriptor(DocumentId),
 
-    CONSTRAINT UX_School_SchoolId UNIQUE (SchoolId)
+    CONSTRAINT UX_School_NK UNIQUE (SchoolId),
+    CONSTRAINT UX_School_RefKey UNIQUE (DocumentId, SchoolId)
 );
 
 -- Example collection table: School has a collection of GradeLevelDescriptor values
@@ -738,16 +755,21 @@ CREATE TABLE IF NOT EXISTS edfi.StudentSchoolAssociation (
     DocumentId         bigint PRIMARY KEY
                        REFERENCES dms.Document(DocumentId) ON DELETE CASCADE,
 
-    Student_DocumentId bigint NOT NULL
-                       REFERENCES edfi.Student(DocumentId),
+    Student_DocumentId bigint NOT NULL,
+    Student_StudentUniqueId varchar(32) NOT NULL,
 
-    School_DocumentId  bigint NOT NULL
-                       REFERENCES edfi.School(DocumentId),
+    School_DocumentId  bigint NOT NULL,
+    School_SchoolId int NOT NULL,
 
     EntryDate          date   NOT NULL,
     ExitWithdrawDate   date   NULL,
 
-    CONSTRAINT UX_StudentSchoolAssociation UNIQUE (Student_DocumentId, School_DocumentId, EntryDate)
+    CONSTRAINT FK_StudentSchoolAssociation_Student_RefKey FOREIGN KEY (Student_DocumentId, Student_StudentUniqueId)
+        REFERENCES edfi.Student (DocumentId, StudentUniqueId),
+    CONSTRAINT FK_StudentSchoolAssociation_School_RefKey FOREIGN KEY (School_DocumentId, School_SchoolId)
+        REFERENCES edfi.School (DocumentId, SchoolId),
+    CONSTRAINT UX_StudentSchoolAssociation_NK UNIQUE (Student_DocumentId, School_DocumentId, EntryDate),
+    CONSTRAINT UX_StudentSchoolAssociation_RefKey UNIQUE (DocumentId, Student_StudentUniqueId, School_SchoolId, EntryDate)
 );
 
 CREATE INDEX IF NOT EXISTS IX_SSA_StudentDocumentId ON edfi.StudentSchoolAssociation(Student_DocumentId);
@@ -846,11 +868,26 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
 - Resource references: `{ReferenceBaseName}_DocumentId`
   - `ReferenceBaseName` comes from the reference-object JSON path (e.g., `$.studentReference` → `Student`)
   - override: `resourceSchema.relational.nameOverrides["$.studentReference"]`
-- Propagated reference identity columns (identity fields inside the reference object):
+- Reference identity-part binding columns (identity fields inside the reference object):
   - `{ReferenceBaseName}_{IdentityFieldBaseName}` (e.g., `Student_StudentUniqueId`, `School_SchoolId`)
+  - Under key unification, these per-site binding columns may be generated/persisted aliases of canonical storage columns; see `key-unification.md` for normative binding-vs-storage behavior.
 - Descriptor references: `{DescriptorBaseName}_DescriptorId`
   - `DescriptorBaseName` comes from the descriptor value JSON path (e.g., `$.schoolTypeDescriptor` → `SchoolTypeDescriptor`)
   - override: `resourceSchema.relational.nameOverrides["$.schoolTypeDescriptor"]`
+
+**Key-unification storage columns (canonical + synthetic presence flags)**
+
+Key unification introduces additional storage-only columns in a table scope:
+
+- Canonical storage columns for unification classes:
+  - scalar: `{Base}{Disambiguator}_Unified`
+  - descriptor FK: `{Base}{Disambiguator}_Unified_DescriptorId`
+- Synthetic presence-flag columns for optional non-reference unified endpoints:
+  - `{PathColumnName}{Disambiguator}_Present`
+
+See `key-unification.md` for the normative deterministic naming rules (including how `{Base}` is derived from
+`SourceJsonPath` semantics, why canonical naming MUST NOT consult `nameOverrides`, and the `{Disambiguator}` hashing
+rules).
 
 **Scalar columns**
 - Scalars are derived from JSON property names under the table’s JSON scope (PascalCase).
@@ -862,15 +899,15 @@ Note: SQL examples in this directory may omit quoting for readability. The DDL g
 Object names are deterministic and derived from the owning table plus purpose tokens:
 - Primary key constraints: `PK_{TableName}`
 - Unique constraints:
-  - Natural key (from `identityJsonPaths`): `UX_{TableName}_NK`
-  - Reference key (document id + identity): `UX_{TableName}_RefKey`
+  - Natural key (API semantics; binding/path columns from `identityJsonPaths`): `UX_{TableName}_NK`
+  - Reference key (FK target; `DocumentId` + storage identity columns, using canonical columns under key unification): `UX_{TableName}_RefKey`
   - Array uniqueness: `UX_{TableName}_{Tokens}` where tokens are the constrained column names with shared
     prefixes collapsed (e.g., `Assessment_DocumentId_AssessmentIdentifier_Namespace`)
 - Foreign keys: `FK_{TableName}_{Token}`, where `Token` is:
   - `Document` for FKs to `dms.Document`
   - `{DescriptorBaseName}` for descriptor FKs (no `_DescriptorId` suffix)
   - `{ReferenceBaseName}` for single-column reference FKs
-  - `{ReferenceBaseName}_RefKey` for composite reference FKs (document id + identity columns)
+  - `{ReferenceBaseName}_RefKey` for composite reference FKs (document id + storage identity columns; canonicalized under key unification)
   - `{ParentTableName}` for parent/extension table links
 - All-or-none checks: `CK_{TableName}_{ReferenceBaseName}_AllNone`
 - Indexes: `IX_{TableName}_{Column1}_{Column2}_...` (columns in index key order)

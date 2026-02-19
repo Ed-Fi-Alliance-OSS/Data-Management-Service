@@ -6,6 +6,7 @@ This document defines the on-disk bytes for a **Mapping Pack** (“`.mpack`”) 
 
 - AOT compilation overview: `reference/design/backend-redesign/design-docs/aot-compilation.md`
 - Flattening & reconstitution models/plans: `reference/design/backend-redesign/design-docs/flattening-reconstitution.md`
+- Key unification model/plan requirements: `reference/design/backend-redesign/design-docs/key-unification.md`
 - Effective schema fingerprinting: `reference/design/backend-redesign/design-docs/data-model.md` (`EffectiveSchemaHash`)
 - DDL generator workflow and `dms.ResourceKey` seeding: `reference/design/backend-redesign/design-docs/ddl-generation.md`
 
@@ -108,10 +109,23 @@ All collections are `repeated` and MUST be emitted in stable sort order:
   - `tables_in_read_dependency_order`: root-first, then increasing depth; stable within depth by `(json_scope, table_name)`
   - `tables_in_write_dependency_order`: root-first, then depth-first; stable within sibling set by `(json_scope, table_name)`
   - `columns`: stable per table; key columns first (in key order), then document reference groups, descriptor FKs, then scalars
-  - `constraints`: ascending by `(name)`
+  - `constraints`: ascending by `(constraint_kind_group, name)` where
+    `constraint_kind_group = unique < foreign_key < all_or_none_nullability < null_or_true`
   - `document_reference_bindings`: ascending by `(reference_object_path)`
   - `descriptor_edge_sources`: ascending by `(descriptor_value_path)`
+  - `key_unification_classes`: ascending by `(canonical_column.value)`
   - within `document_reference_bindings[*]`: `identity_bindings` preserve ApiSchema `referenceJsonPaths` order (identity field order)
+  - within `key_unification_classes[*]`:
+    - `member_path_columns` order is semantically significant and MUST NOT be sorted
+    - producers MUST emit the list exactly as derived (used for deterministic write-time coalescing)
+- Within each `ResourceWritePlan`:
+  - `table_plans`: ascending by `(table.schema, table.name)`
+- Within each `TableWritePlan`:
+  - `column_bindings`: order is semantically significant (defines parameter ordering) and MUST NOT be sorted
+  - `key_unification_plans`: ascending by `(canonical_column.value)`
+  - within `key_unification_plans[*]`:
+    - `members_in_order` order is semantically significant and MUST NOT be sorted
+    - producers MUST emit the list exactly as derived (must match the corresponding `key_unification_classes[*].member_path_columns`)
 
 ### 4.3 SQL text canonicalization
 
@@ -193,6 +207,11 @@ Given `(expectedEffectiveSchemaHash, expectedDialect, expectedRelationalMappingV
    - For each `ResourcePack`:
      - if `is_abstract=false`, has `relational_model`, `write_plan`, and `read_plan`
      - all referenced tables/columns/bindings referenced by plans exist in the model
+     - key unification invariants (when used in this `RelationalMappingVersion`):
+       - every `DbColumnModel` has `storage` set
+       - any `UnifiedAlias` storage references only stored columns on the same table (canonical + optional presence)
+       - any `DbTableModel.key_unification_classes` entries reference only columns on the same table and the member list is ordered and distinct
+       - any `WriteValueSource.precomputed` bindings are populated by exactly one `TableWritePlan.key_unification_plans` entry
 7. Validate `dms.ResourceKey` mapping in the target database (fast path if available; otherwise full diff) and cache:
    - `(ProjectName, ResourceName) -> ResourceKeyId`
    - `ResourceKeyId -> (ProjectName, ResourceName, ResourceVersion)`
@@ -334,7 +353,8 @@ message DbTableModel {
 
   TableKey key = 10;
   repeated DbColumnModel columns = 11;                   // order is significant (binding + DDL)
-  repeated TableConstraint constraints = 12;             // deterministic ordering by name
+  repeated TableConstraint constraints = 12;             // deterministic ordering by kind-group, then name
+  repeated KeyUnificationClass key_unification_classes = 20;
 }
 
 message TableKey {
@@ -389,6 +409,35 @@ message DbColumnModel {
 
   // For kind=DOCUMENT_FK and kind=DESCRIPTOR_FK.
   QualifiedResourceName target_resource = 12;
+
+  // Column storage semantics:
+  // - Stored: a writable physical column.
+  // - UnifiedAlias: a read-only generated alias of a canonical stored column (optionally presence-gated).
+  ColumnStorage storage = 20;
+}
+
+message ColumnStorage {
+  oneof kind {
+    StoredStorage stored = 1;
+    UnifiedAliasStorage unified_alias = 2;
+  }
+}
+
+message StoredStorage {}
+
+message UnifiedAliasStorage {
+  DbColumnName canonical_column = 1;
+  DbColumnName presence_column = 2; // optional; omitted for ungated aliases
+}
+
+message KeyUnificationClass {
+  DbColumnName canonical_column = 1;
+  repeated DbColumnName member_path_columns = 2;         // ordered (do not sort)
+}
+
+enum ReferentialAction {
+  REFERENTIAL_ACTION_NO_ACTION = 0;
+  REFERENTIAL_ACTION_CASCADE = 1;
 }
 
 message TableConstraint {
@@ -398,6 +447,8 @@ message TableConstraint {
   oneof kind {
     UniqueConstraint unique = 10;
     ForeignKeyConstraint foreign_key = 11;
+    AllOrNoneNullabilityConstraint all_or_none_nullability = 12;
+    NullOrTrueConstraint null_or_true = 13;
   }
 }
 
@@ -409,6 +460,17 @@ message ForeignKeyConstraint {
   repeated DbColumnName columns = 1;
   DbTableName target_table = 2;
   repeated DbColumnName target_columns = 3;
+  ReferentialAction on_delete = 4;
+  ReferentialAction on_update = 5;
+}
+
+message AllOrNoneNullabilityConstraint {
+  DbColumnName fk_column = 1;
+  repeated DbColumnName dependent_columns = 2;
+}
+
+message NullOrTrueConstraint {
+  DbColumnName column = 1;
 }
 
 message DocumentReferenceBinding {
@@ -449,6 +511,9 @@ message TableWritePlan {
 
   // Parameter/value ordering for insert is defined by this list.
   repeated WriteColumnBinding column_bindings = 20;
+
+  // Empty when this table has no key-unification classes.
+  repeated KeyUnificationWritePlan key_unification_plans = 30;
 }
 
 message WriteColumnBinding {
@@ -464,10 +529,13 @@ message WriteValueSource {
     WriteScalar scalar = 4;
     WriteDocumentReference document_reference = 5;
     WriteDescriptorReference descriptor_reference = 6;
+    WritePrecomputed precomputed = 7;
   }
 }
 
 message WriteDocumentId {}
+
+message WritePrecomputed {}
 
 message WriteParentKeyPart {
   uint32 index = 1;                                      // index in parent key parts array
@@ -488,6 +556,23 @@ message WriteDescriptorReference {
   string descriptor_value_path = 1;                      // absolute descriptor value path (or relative to scope)
   string relative_path = 2;                              // relative to table scope node (preferred for perf)
   QualifiedResourceName descriptor_resource = 3;
+}
+
+message KeyUnificationWritePlan {
+  DbColumnName canonical_column = 1;
+  uint32 canonical_binding_index = 2;                    // index into TableWritePlan.column_bindings
+  repeated KeyUnificationMemberWritePlan members_in_order = 3; // ordered (do not sort)
+}
+
+message KeyUnificationMemberWritePlan {
+  DbColumnName member_path_column = 1;                   // member binding column name (typically a UnifiedAlias)
+  string relative_path = 2;                              // relative to table scope node; empty => value-at-scope
+  ColumnKind kind = 3;                                   // must be SCALAR or DESCRIPTOR_FK
+  RelationalScalarType scalar_type = 4;                  // for kind=SCALAR
+  QualifiedResourceName descriptor_resource = 5;         // for kind=DESCRIPTOR_FK
+  DbColumnName presence_column = 6;                      // optional; omitted when ungated
+  optional uint32 presence_binding_index = 7;            // index into TableWritePlan.column_bindings when present
+  bool presence_is_synthetic = 8;
 }
 
 message ResourceReadPlan {
@@ -533,5 +618,14 @@ Bump it only for breaking changes to:
 `RelationalMappingVersion` is bumped when mapping rules change, even if `ApiSchema.json` content is unchanged.
 
 It is expected to be included in `EffectiveSchemaHash` computation (see `reference/design/backend-redesign/design-docs/data-model.md`), and is also present in the envelope key for defense-in-depth.
+
+Key unification is gated by `RelationalMappingVersion` (not `PackFormatVersion`):
+
+- Producers MUST bump `RelationalMappingVersion` when key-unification semantics are first enabled in emitted artifacts.
+- Consumers MUST reject packs whose `relational_mapping_version` does not match the expected value, including older packs that omit key-unification metadata.
+- Consumers MAY interpret missing `DbColumnModel.storage` as `Stored` and missing `DbTableModel.key_unification_classes` as empty only when explicitly operating in an older `RelationalMappingVersion` mode.
+
+Repository status note (non-normative): this story updates the mapping-pack contract documentation only; this repo is
+not introducing a `RelationalMappingVersion` bump in the same change.
 
 ---

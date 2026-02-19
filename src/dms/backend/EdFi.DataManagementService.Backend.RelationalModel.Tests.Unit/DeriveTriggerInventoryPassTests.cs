@@ -45,7 +45,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_DocumentStamping_trigger_for_root_table()
     {
         var schoolStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         schoolStamp.Should().NotBeNull();
@@ -60,7 +60,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_include_identity_projection_columns_on_root_table_stamping_trigger()
     {
         var schoolStamp = _triggers.Single(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         schoolStamp.IdentityProjectionColumns.Should().NotBeEmpty();
@@ -77,7 +77,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_DocumentStamping_trigger_for_child_table()
     {
         var childStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.Should().NotBeNull();
@@ -91,7 +91,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_use_root_document_ID_as_KeyColumns_on_child_table_stamping_trigger()
     {
         var childStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.KeyColumns.Should().ContainSingle();
@@ -105,7 +105,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_have_empty_identity_projection_columns_on_child_table_stamping_trigger()
     {
         var childStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.IdentityProjectionColumns.Should().BeEmpty();
@@ -118,7 +118,7 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_ReferentialIdentityMaintenance_trigger_on_root_table()
     {
         var refIdentity = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
         );
 
         refIdentity.Should().NotBeNull();
@@ -134,14 +134,14 @@ public class Given_Trigger_Set_Composition
     public void It_should_create_AbstractIdentityMaintenance_trigger_for_subclass_resource()
     {
         var abstractMaintenance = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "School" && t.Kind == DbTriggerKind.AbstractIdentityMaintenance
+            t.TriggerTable.Name == "School" && t.Kind == DbTriggerKind.AbstractIdentityMaintenance
         );
 
         abstractMaintenance.Should().NotBeNull();
         abstractMaintenance!.Name.Value.Should().Be("TR_School_AbstractIdentity");
         abstractMaintenance.KeyColumns.Select(c => c.Value).Should().Equal("DocumentId");
-        abstractMaintenance.TargetTable.Should().NotBeNull();
-        abstractMaintenance.TargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
+        abstractMaintenance.MaintenanceTargetTable.Should().NotBeNull();
+        abstractMaintenance.MaintenanceTargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
     }
 }
 
@@ -188,7 +188,7 @@ public class Given_Extension_Table_Triggers
     public void It_should_create_DocumentStamping_trigger_on_extension_table()
     {
         var extensionStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         extensionStamp.Should().NotBeNull();
@@ -201,7 +201,7 @@ public class Given_Extension_Table_Triggers
     public void It_should_use_DocumentId_as_KeyColumns_on_extension_table_stamping_trigger()
     {
         var extensionStamp = _triggers.Single(t =>
-            t.Table.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "ContactExtension" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         extensionStamp.KeyColumns.Should().ContainSingle();
@@ -289,6 +289,129 @@ public class Given_IdentityPropagationFallback_On_Pgsql
 }
 
 /// <summary>
+/// Test fixture for root trigger identity projections when identity includes reference components.
+/// </summary>
+[TestFixture]
+public class Given_Root_Trigger_Identity_Projection_With_Identity_Component_References
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should include identity-component reference part columns on root stamping trigger.
+    /// </summary>
+    [Test]
+    public void It_should_include_identity_component_reference_part_columns_on_root_stamping_trigger()
+    {
+        var enrollmentStamp = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        enrollmentStamp
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "School_EducationOrganizationId", "Student_StudentUniqueId");
+    }
+
+    /// <summary>
+    /// It should include identity-component reference part columns on root referential trigger.
+    /// </summary>
+    [Test]
+    public void It_should_include_identity_component_reference_part_columns_on_root_referential_trigger()
+    {
+        var referentialIdentity = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
+        );
+
+        referentialIdentity
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "School_EducationOrganizationId", "Student_StudentUniqueId");
+    }
+}
+
+/// <summary>
+/// Test fixture for root identity projections with interleaved identity JSON paths.
+/// </summary>
+[TestFixture]
+public class Given_Root_Trigger_Identity_Projection_With_Interleaved_Identity_Paths
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            TriggerInventoryTestSchemaBuilder.BuildReferenceIdentityProjectSchemaWithInterleavedIdentityPaths();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should order root stamping identity projection columns by identityJsonPaths.
+    /// </summary>
+    [Test]
+    public void It_should_order_root_stamping_identity_projection_columns_by_identity_json_paths()
+    {
+        var enrollmentStamp = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.DocumentStamping
+        );
+
+        enrollmentStamp
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "Student_StudentUniqueId", "School_EducationOrganizationId");
+    }
+
+    /// <summary>
+    /// It should order root referential identity projection columns by identityJsonPaths.
+    /// </summary>
+    [Test]
+    public void It_should_order_root_referential_identity_projection_columns_by_identity_json_paths()
+    {
+        var referentialIdentity = _triggers.Single(t =>
+            t.TriggerTable.Name == "Enrollment" && t.Kind == DbTriggerKind.ReferentialIdentityMaintenance
+        );
+
+        referentialIdentity
+            .IdentityProjectionColumns.Select(c => c.Value)
+            .Should()
+            .Equal("School_SchoolId", "Student_StudentUniqueId", "School_EducationOrganizationId");
+    }
+}
+
+/// <summary>
 /// Test fixture for IdentityPropagationFallback triggers on MSSQL dialect with concrete
 /// reference targets (allowIdentityUpdates).
 /// </summary>
@@ -325,11 +448,11 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var schoolPropagation = _triggers.SingleOrDefault(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
         schoolPropagation.Should().NotBeNull();
-        schoolPropagation!.Table.Name.Should().Be("Enrollment");
+        schoolPropagation!.TriggerTable.Name.Should().Be("School");
     }
 
     /// <summary>
@@ -340,58 +463,131 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var studentPropagation = _triggers.SingleOrDefault(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_Student"
+            && t.Name.Value == "TR_Student_PropagateIdentity"
         );
 
         studentPropagation.Should().BeNull();
     }
 
     /// <summary>
-    /// It should use FK column as key column.
+    /// It should carry referrer action payload with FK document-id column.
     /// </summary>
     [Test]
-    public void It_should_use_FK_column_as_key_column()
+    public void It_should_carry_referrer_action_payload_with_FK_document_id_column()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
-        schoolPropagation.KeyColumns.Should().ContainSingle();
-        schoolPropagation.KeyColumns[0].Value.Should().Be("School_DocumentId");
+        schoolPropagation.KeyColumns.Should().BeEmpty();
+        schoolPropagation.IdentityProjectionColumns.Should().BeEmpty();
+        schoolPropagation.PropagationFallback.Should().NotBeNull();
+
+        var action = schoolPropagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+        action.ReferrerTable.Name.Should().Be("Enrollment");
+        action.ReferrerDocumentIdColumn.Value.Should().Be("School_DocumentId");
+        action.ReferencedDocumentIdColumn.Value.Should().Be("DocumentId");
     }
 
     /// <summary>
-    /// It should include propagated identity columns.
+    /// It should include ordered storage column pairs in propagation payload.
     /// </summary>
     [Test]
-    public void It_should_include_propagated_identity_columns()
+    public void It_should_include_ordered_storage_column_pairs_in_propagation_payload()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
-        schoolPropagation
-            .IdentityProjectionColumns.Select(c => c.Value)
+        var identityColumnPairs = schoolPropagation
+            .PropagationFallback!.ReferrerActions.Single()
+            .IdentityColumnPairs;
+
+        identityColumnPairs
+            .Select(pair => (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value))
             .Should()
-            .Contain("School_EducationOrganizationId")
-            .And.Contain("School_SchoolId");
+            .ContainInOrder(
+                ("School_SchoolId", "SchoolId"),
+                ("School_EducationOrganizationId", "EducationOrganizationId")
+            );
     }
 
     /// <summary>
-    /// It should set target table to referenced resource root.
+    /// It should not use maintenance target for propagation fallback.
     /// </summary>
     [Test]
-    public void It_should_set_target_table_to_referenced_resource_root()
+    public void It_should_not_set_maintenance_target_for_propagation_fallback()
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_School"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
-        schoolPropagation.TargetTable.Should().NotBeNull();
-        schoolPropagation.TargetTable!.Value.Name.Should().Be("School");
+        schoolPropagation.MaintenanceTargetTable.Should().BeNull();
+    }
+}
+
+/// <summary>
+/// Test fixture for IdentityPropagationFallback fan-out on MSSQL with mixed root and child referrers.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Non_Root_Referrers
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithChildReference();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should include child-table referrer actions in the referenced-table fan-out payload.
+    /// </summary>
+    [Test]
+    public void It_should_include_child_referrer_action_in_referenced_table_fan_out_payload()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+
+        schoolPropagation.TriggerTable.Name.Should().Be("School");
+        schoolPropagation.PropagationFallback.Should().NotBeNull();
+        schoolPropagation.PropagationFallback!.ReferrerActions.Should().HaveCount(2);
+
+        var childAction = schoolPropagation.PropagationFallback.ReferrerActions.Single(action =>
+            action.ReferrerTable.Name == "BusRouteAddress"
+        );
+
+        childAction.ReferrerDocumentIdColumn.Value.Should().Be("School_DocumentId");
+        childAction.ReferencedDocumentIdColumn.Value.Should().Be("DocumentId");
+        childAction
+            .IdentityColumnPairs.Select(pair =>
+                (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value)
+            )
+            .Should()
+            .ContainInOrder(
+                ("School_SchoolId", "SchoolId"),
+                ("School_EducationOrganizationId", "EducationOrganizationId")
+            );
     }
 }
 
@@ -432,41 +628,241 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.SingleOrDefault(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
         propagation.Should().NotBeNull();
-        propagation!.Table.Name.Should().Be("Enrollment");
+        propagation!.TriggerTable.Name.Should().Be("EducationOrganizationIdentity");
     }
 
     /// <summary>
-    /// It should target the abstract identity table.
+    /// It should include abstract target identity storage column in propagation payload.
     /// </summary>
     [Test]
-    public void It_should_target_the_abstract_identity_table()
+    public void It_should_include_abstract_target_identity_storage_column_in_propagation_payload()
     {
         var propagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
-        propagation.TargetTable.Should().NotBeNull();
-        propagation.TargetTable!.Value.Name.Should().Be("EducationOrganizationIdentity");
+        var action = propagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+        action.ReferencedDocumentIdColumn.Value.Should().Be("DocumentId");
+        action
+            .IdentityColumnPairs.Select(pair =>
+                (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value)
+            )
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be(("EducationOrganization_EducationOrganizationId", "EducationOrganizationId"));
     }
 
     /// <summary>
-    /// It should use FK column as key column for abstract reference.
+    /// It should use abstract reference FK as the referrer document-id column.
     /// </summary>
     [Test]
-    public void It_should_use_FK_column_as_key_column_for_abstract_reference()
+    public void It_should_use_abstract_reference_FK_as_the_referrer_document_ID_column()
     {
         var propagation = _triggers.Single(t =>
             t.Kind == DbTriggerKind.IdentityPropagationFallback
-            && t.Name.Value == "TR_Enrollment_Propagation_EducationOrganization"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
-        propagation.KeyColumns.Should().ContainSingle();
-        propagation.KeyColumns[0].Value.Should().Be("EducationOrganization_DocumentId");
+        propagation.KeyColumns.Should().BeEmpty();
+        propagation.IdentityProjectionColumns.Should().BeEmpty();
+        propagation.MaintenanceTargetTable.Should().BeNull();
+        propagation
+            .PropagationFallback!.ReferrerActions.Single()
+            .ReferrerDocumentIdColumn.Value.Should()
+            .Be("EducationOrganization_DocumentId");
+    }
+}
+
+/// <summary>
+/// Test fixture for IdentityPropagationFallback payload mapping with key unification on MSSQL.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_On_Mssql_With_Key_Unification
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+    private DbTableModel _enrollmentTable = default!;
+    private DbTableModel _schoolTable = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivationWithKeyUnification()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+        _enrollmentTable = result
+            .ConcreteResourcesInNameOrder.Single(model =>
+                model.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel.Root;
+        _schoolTable = result
+            .ConcreteResourcesInNameOrder.Single(model => model.ResourceKey.Resource.ResourceName == "School")
+            .RelationalModel.Root;
+    }
+
+    /// <summary>
+    /// It should collapse unified identity bindings to a single canonical storage pair.
+    /// </summary>
+    [Test]
+    public void It_should_collapse_unified_identity_bindings_to_a_single_canonical_storage_pair()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var action = schoolPropagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+
+        var localCanonicalColumn = ResolveCanonicalColumn(_enrollmentTable, "School_EducationOrganizationId");
+        ResolveCanonicalColumn(_enrollmentTable, "School_SchoolId").Should().Be(localCanonicalColumn);
+
+        var targetCanonicalColumn = ResolveCanonicalColumn(_schoolTable, "EducationOrganizationId");
+        ResolveCanonicalColumn(_schoolTable, "SchoolId").Should().Be(targetCanonicalColumn);
+
+        action
+            .IdentityColumnPairs.Select(pair =>
+                (pair.ReferrerStorageColumn.Value, pair.ReferencedStorageColumn.Value)
+            )
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .Be((localCanonicalColumn.Value, targetCanonicalColumn.Value));
+    }
+
+    /// <summary>
+    /// It should emit only stored columns in propagation identity pairs.
+    /// </summary>
+    [Test]
+    public void It_should_emit_only_stored_columns_in_propagation_identity_pairs()
+    {
+        var schoolPropagation = _triggers.Single(t =>
+            t.Kind == DbTriggerKind.IdentityPropagationFallback
+            && t.Name.Value == "TR_School_PropagateIdentity"
+        );
+        var action = schoolPropagation.PropagationFallback!.ReferrerActions.Should().ContainSingle().Which;
+
+        foreach (var pair in action.IdentityColumnPairs)
+        {
+            _enrollmentTable
+                .Columns.Single(column => column.ColumnName.Equals(pair.ReferrerStorageColumn))
+                .Storage.Should()
+                .BeOfType<ColumnStorage.Stored>();
+            _schoolTable
+                .Columns.Single(column => column.ColumnName.Equals(pair.ReferencedStorageColumn))
+                .Storage.Should()
+                .BeOfType<ColumnStorage.Stored>();
+        }
+    }
+
+    /// <summary>
+    /// Resolves canonical storage column for a unified alias.
+    /// </summary>
+    private static DbColumnName ResolveCanonicalColumn(DbTableModel table, string aliasColumnName)
+    {
+        var alias = table.Columns.Single(column => column.ColumnName.Value == aliasColumnName);
+        return alias.Storage.Should().BeOfType<ColumnStorage.UnifiedAlias>().Subject.CanonicalColumn;
+    }
+}
+
+/// <summary>
+/// Test fixture for propagation fallback mapping/binding mismatch handling.
+/// </summary>
+[TestFixture]
+public class Given_IdentityPropagationFallback_With_Unmapped_Reference_Mapping
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivationWithUnmappedReferenceMapping()
+        );
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Mssql, new MssqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast when a mapping path has no derived reference binding.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_reference_mapping_path_has_no_derived_binding()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Reference mapping 'UnmappedReferenceMapping'");
+        exception.Message.Should().Contain("resource '");
+        exception.Message.Should().Contain("Enrollment");
+        exception.Message.Should().Contain("reference object path '$.unmappedReference'");
+    }
+}
+
+/// <summary>
+/// Test fixture for presence-gate validation in trigger derivation without index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Trigger_Derivation_With_Invalid_Presence_Gate_Without_Index_Derivation
+{
+    private Action _build = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema =
+            ConstraintDerivationTestSchemaBuilder.BuildReferenceConstraintProjectSchemaWithIdentityUnification();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivationWithKeyUnificationAndInvalidPresenceGateWithoutIndexDerivation()
+        );
+
+        _build = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+    }
+
+    /// <summary>
+    /// It should fail fast on an invalid unified-alias presence gate without relying on index derivation.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_on_invalid_presence_gate_without_index_derivation()
+    {
+        var exception = _build.Should().Throw<InvalidOperationException>().Which;
+
+        exception.Message.Should().Contain("Unified alias column");
+        exception.Message.Should().Contain("table");
+        exception.Message.Should().Contain("MissingPresenceGate");
+        exception.Message.Should().Contain("presence-gate column");
     }
 }
 
@@ -505,7 +901,7 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_create_DocumentStamping_trigger_for_grandchild_table()
     {
         var grandchildStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         grandchildStamp.Should().NotBeNull();
@@ -519,7 +915,7 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_use_root_document_ID_as_KeyColumns_on_grandchild_table()
     {
         var grandchildStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         grandchildStamp.KeyColumns.Should().ContainSingle();
@@ -533,7 +929,7 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_have_empty_identity_projection_columns_on_grandchild_table()
     {
         var grandchildStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         grandchildStamp.IdentityProjectionColumns.Should().BeEmpty();
@@ -557,10 +953,10 @@ public class Given_Three_Level_Nested_Collections
     public void It_should_use_same_root_document_ID_column_across_all_child_levels()
     {
         var childStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
         var grandchildStamp = _triggers.Single(t =>
-            t.Table.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "SchoolAddressPeriod" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         childStamp.KeyColumns[0].Value.Should().Be("School_DocumentId");
@@ -603,10 +999,10 @@ public class Given_Multiple_Sibling_Collections
     public void It_should_create_DocumentStamping_trigger_for_each_sibling_collection()
     {
         var addressStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
         var telephoneStamp = _triggers.SingleOrDefault(t =>
-            t.Table.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         addressStamp.Should().NotBeNull();
@@ -620,10 +1016,10 @@ public class Given_Multiple_Sibling_Collections
     public void It_should_produce_distinct_trigger_names_for_sibling_tables()
     {
         var addressStamp = _triggers.Single(t =>
-            t.Table.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentAddress" && t.Kind == DbTriggerKind.DocumentStamping
         );
         var telephoneStamp = _triggers.Single(t =>
-            t.Table.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
+            t.TriggerTable.Name == "StudentTelephone" && t.Kind == DbTriggerKind.DocumentStamping
         );
 
         addressStamp.Name.Value.Should().Be("TR_StudentAddress_Stamp");
@@ -683,10 +1079,136 @@ public class Given_Deterministic_Trigger_Ordering
     [Test]
     public void It_should_produce_identical_trigger_sequence_on_repeated_builds()
     {
-        var firstSequence = _triggersFirst.Select(t => (t.Table.Name, t.Name.Value, t.Kind)).ToList();
-        var secondSequence = _triggersSecond.Select(t => (t.Table.Name, t.Name.Value, t.Kind)).ToList();
+        var firstSequence = _triggersFirst.Select(t => (t.TriggerTable.Name, t.Name.Value, t.Kind)).ToList();
+        var secondSequence = _triggersSecond
+            .Select(t => (t.TriggerTable.Name, t.Name.Value, t.Kind))
+            .ToList();
 
         firstSequence.Should().Equal(secondSequence);
+    }
+}
+
+/// <summary>
+/// Test pass that injects a synthetic unmapped reference mapping to validate fail-fast behavior.
+/// </summary>
+file sealed class UnmappedReferenceMappingFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
+        {
+            var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
+
+            if (builderContext.DocumentReferenceMappings.Count == 0)
+            {
+                continue;
+            }
+
+            var firstMapping = builderContext.DocumentReferenceMappings[0];
+
+            builderContext.DocumentReferenceMappings =
+            [
+                .. builderContext.DocumentReferenceMappings,
+                firstMapping with
+                {
+                    MappingKey = "UnmappedReferenceMapping",
+                    ReferenceObjectPath = JsonPathExpressionCompiler.Compile("$.unmappedReference"),
+                },
+            ];
+
+            return;
+        }
+
+        throw new InvalidOperationException(
+            "Test fixture requires at least one resource with document reference mappings."
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that rewrites one unified-alias presence gate to a missing column.
+/// </summary>
+file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelSetPass
+{
+    private static readonly DbColumnName InvalidPresenceGateColumn = new("MissingPresenceGate");
+
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        for (
+            var resourceIndex = 0;
+            resourceIndex < context.ConcreteResourcesInNameOrder.Count;
+            resourceIndex++
+        )
+        {
+            var concreteResource = context.ConcreteResourcesInNameOrder[resourceIndex];
+
+            if (concreteResource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+            {
+                continue;
+            }
+
+            var relationalModel = concreteResource.RelationalModel;
+
+            foreach (var table in relationalModel.TablesInDependencyOrder)
+            {
+                var aliasColumn = table.Columns.FirstOrDefault(column =>
+                    column.Storage is ColumnStorage.UnifiedAlias { PresenceColumn: not null }
+                );
+
+                if (aliasColumn is null || aliasColumn.Storage is not ColumnStorage.UnifiedAlias unifiedAlias)
+                {
+                    continue;
+                }
+
+                var rewrittenAliasColumn = aliasColumn with
+                {
+                    Storage = new ColumnStorage.UnifiedAlias(
+                        unifiedAlias.CanonicalColumn,
+                        InvalidPresenceGateColumn
+                    ),
+                };
+                var rewrittenColumns = table
+                    .Columns.Select(column =>
+                        column.ColumnName.Equals(aliasColumn.ColumnName) ? rewrittenAliasColumn : column
+                    )
+                    .ToArray();
+                var rewrittenTable = table with { Columns = rewrittenColumns };
+                var rewrittenTables = relationalModel
+                    .TablesInDependencyOrder.Select(existingTable =>
+                        existingTable.Table.Equals(table.Table) ? rewrittenTable : existingTable
+                    )
+                    .ToArray();
+                var rewrittenRoot = relationalModel.Root.Table.Equals(table.Table)
+                    ? rewrittenTable
+                    : relationalModel.Root;
+                var rewrittenModel = relationalModel with
+                {
+                    Root = rewrittenRoot,
+                    TablesInDependencyOrder = rewrittenTables,
+                };
+
+                context.ConcreteResourcesInNameOrder[resourceIndex] = concreteResource with
+                {
+                    RelationalModel = rewrittenModel,
+                };
+
+                return;
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Test fixture requires at least one unified alias with a presence gate."
+        );
     }
 }
 
@@ -714,6 +1236,106 @@ internal static class TriggerInventoryTestSchemaBuilder
             new DeriveIndexInventoryPass(),
             new DeriveTriggerInventoryPass(),
         ];
+    }
+
+    /// <summary>
+    /// Build pass list through trigger derivation with an injected unmapped reference mapping.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughTriggerDerivationWithUnmappedReferenceMapping()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveIndexInventoryPass(),
+            new UnmappedReferenceMappingFixturePass(),
+            new DeriveTriggerInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build the standard pass list through trigger derivation with key unification.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughTriggerDerivationWithKeyUnification()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveIndexInventoryPass(),
+            new DeriveTriggerInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build pass list through trigger derivation with key unification and invalid presence-gate fixture,
+    /// without index derivation.
+    /// </summary>
+    internal static IRelationalModelSetPass[] BuildPassesThroughTriggerDerivationWithKeyUnificationAndInvalidPresenceGateWithoutIndexDerivation()
+    {
+        return
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new InvalidUnifiedAliasPresenceGateFixturePass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new DeriveTriggerInventoryPass(),
+        ];
+    }
+
+    /// <summary>
+    /// Build reference identity project schema with interleaved identityJsonPaths.
+    /// </summary>
+    internal static JsonObject BuildReferenceIdentityProjectSchemaWithInterleavedIdentityPaths()
+    {
+        var projectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema();
+
+        if (projectSchema["resourceSchemas"] is not JsonObject resourceSchemas)
+        {
+            throw new InvalidOperationException(
+                "Reference identity project schema is missing resourceSchemas."
+            );
+        }
+
+        if (resourceSchemas["enrollments"] is not JsonObject enrollmentSchema)
+        {
+            throw new InvalidOperationException(
+                "Reference identity project schema is missing enrollments resource schema."
+            );
+        }
+
+        enrollmentSchema["identityJsonPaths"] = new JsonArray
+        {
+            "$.schoolReference.schoolId",
+            "$.studentReference.studentUniqueId",
+            "$.schoolReference.educationOrganizationId",
+        };
+
+        return projectSchema;
     }
 
     /// <summary>

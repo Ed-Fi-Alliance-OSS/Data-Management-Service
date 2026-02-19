@@ -41,17 +41,35 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
+    /// <summary>
+    /// Creates a column-name value object for use in core DDL emission.
+    /// </summary>
     private static DbColumnName Col(string name) => new(name);
 
+    /// <summary>
+    /// Builds a dialect-specific string type with the specified maximum length.
+    /// </summary>
     private string StringType(int maxLength) =>
         $"{_dialect.Rules.ScalarTypeDefaults.StringType}({maxLength})";
 
+    /// <summary>
+    /// Gets the dialect default date scalar type.
+    /// </summary>
     private string DateType => _dialect.Rules.ScalarTypeDefaults.DateType;
 
+    /// <summary>
+    /// Gets the dialect default date-time scalar type.
+    /// </summary>
     private string DateTimeType => _dialect.Rules.ScalarTypeDefaults.DateTimeType;
 
+    /// <summary>
+    /// Gets the dialect default boolean scalar type.
+    /// </summary>
     private string BooleanType => _dialect.Rules.ScalarTypeDefaults.BooleanType;
 
+    /// <summary>
+    /// Gets the default expression for generating change/version values from the core change-version sequence.
+    /// </summary>
     private string SequenceDefault =>
         _dialect.RenderSequenceDefaultExpression(_dmsSchema, "ChangeVersionSequence");
 
@@ -77,6 +95,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     // ── Phase 1: Schemas ────────────────────────────────────────────────
 
+    /// <summary>
+    /// Emits core schema creation statements.
+    /// </summary>
     private void EmitSchemas(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
@@ -90,6 +111,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     // ── Phase 2: Sequences ──────────────────────────────────────────────
 
+    /// <summary>
+    /// Emits the core sequence inventory required by core tables and triggers.
+    /// </summary>
     private void EmitSequences(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
@@ -100,6 +124,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         EmitChangeVersionSequence(writer);
     }
 
+    /// <summary>
+    /// Emits the change-version sequence used for deterministic version stamping.
+    /// </summary>
     private void EmitChangeVersionSequence(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateSequenceIfNotExists(_dmsSchema, "ChangeVersionSequence"));
@@ -108,6 +135,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     // ── Phase 3: Tables ─────────────────────────────────────────────────
 
+    /// <summary>
+    /// Emits core table definitions (primary keys, unique constraints, and check constraints only).
+    /// </summary>
     private void EmitTables(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
@@ -126,6 +156,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         EmitSchemaComponentTable(writer);
     }
 
+    /// <summary>
+    /// Emits the <c>dms.Descriptor</c> table definition.
+    /// </summary>
     private void EmitDescriptorTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_descriptorTable));
@@ -168,6 +201,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.Document</c> table definition.
+    /// </summary>
     private void EmitDocumentTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_documentTable));
@@ -209,6 +245,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.DocumentCache</c> table definition.
+    /// </summary>
     private void EmitDocumentCacheTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_documentCacheTable));
@@ -277,6 +316,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.DocumentChangeEvent</c> table definition.
+    /// </summary>
     private void EmitDocumentChangeEventTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_documentChangeEventTable));
@@ -304,6 +346,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.EffectiveSchema</c> table definition.
+    /// </summary>
     private void EmitEffectiveSchemaTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_effectiveSchemaTable));
@@ -369,6 +414,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.ReferentialIdentity</c> table definition.
+    /// </summary>
     private void EmitReferentialIdentityTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_referentialIdentityTable));
@@ -416,6 +464,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.ResourceKey</c> table definition.
+    /// </summary>
     private void EmitResourceKeyTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_resourceKeyTable));
@@ -449,6 +500,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the <c>dms.SchemaComponent</c> table definition.
+    /// </summary>
     private void EmitSchemaComponentTable(SqlWriter writer)
     {
         writer.AppendLine(_dialect.CreateTableHeader(_schemaComponentTable));
@@ -483,6 +537,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     // ── Phase 4: Foreign Keys ───────────────────────────────────────────
 
+    /// <summary>
+    /// Emits cross-table foreign keys for core tables using <c>ALTER TABLE</c> statements.
+    /// </summary>
     private void EmitForeignKeys(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
@@ -588,6 +645,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     // ── Phase 5: Indexes ────────────────────────────────────────────────
 
+    /// <summary>
+    /// Emits core indexes that are required in addition to constraint-implied indexes.
+    /// </summary>
     private void EmitIndexes(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
@@ -654,6 +714,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
     // ── Phase 6: Triggers ───────────────────────────────────────────────
 
+    /// <summary>
+    /// Emits core triggers, including dialect-specific document journaling triggers.
+    /// </summary>
     private void EmitTriggers(SqlWriter writer)
     {
         writer.AppendLine("-- ==========================================================");
@@ -671,6 +734,10 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         }
     }
 
+    /// <summary>
+    /// Emits the PostgreSQL document journaling trigger function and trigger, inserting rows into
+    /// <c>dms.DocumentChangeEvent</c> when <c>dms.Document.ContentVersion</c> changes.
+    /// </summary>
     private void EmitPgsqlJournalingTrigger(SqlWriter writer)
     {
         string Q(string id) => _dialect.QuoteIdentifier(id);
@@ -719,6 +786,11 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine();
     }
 
+    /// <summary>
+    /// Emits the SQL Server document journaling trigger, inserting rows into
+    /// <c>dms.DocumentChangeEvent</c> on document inserts and on updates that modify
+    /// <c>dms.Document.ContentVersion</c>.
+    /// </summary>
     private void EmitMssqlJournalingTrigger(SqlWriter writer)
     {
         string Q(string id) => _dialect.QuoteIdentifier(id);

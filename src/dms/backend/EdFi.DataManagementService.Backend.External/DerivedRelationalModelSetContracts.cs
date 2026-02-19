@@ -244,32 +244,78 @@ public enum DbTriggerKind
 public readonly record struct DbTriggerName(string Value);
 
 /// <summary>
+/// Ordered storage-column mapping used by identity-propagation fallback triggers.
+/// </summary>
+/// <param name="ReferrerStorageColumn">The storage column on the referrer table being updated.</param>
+/// <param name="ReferencedStorageColumn">The storage column on the referenced table supplying the new value.</param>
+public sealed record DbIdentityPropagationColumnPair(
+    DbColumnName ReferrerStorageColumn,
+    DbColumnName ReferencedStorageColumn
+);
+
+/// <summary>
+/// One fan-out action for an identity-propagation fallback trigger.
+/// </summary>
+/// <param name="ReferrerTable">The table receiving propagated identity updates.</param>
+/// <param name="ReferrerDocumentIdColumn">The referrer <c>..._DocumentId</c> column on <paramref name="ReferrerTable"/>.</param>
+/// <param name="ReferencedDocumentIdColumn">The referenced table document identifier column (typically <c>DocumentId</c>).</param>
+/// <param name="IdentityColumnPairs">
+/// Ordered pairs mapping each referrer storage identity-part column to its corresponding referenced storage column.
+/// </param>
+public sealed record DbIdentityPropagationReferrerAction(
+    DbTableName ReferrerTable,
+    DbColumnName ReferrerDocumentIdColumn,
+    DbColumnName ReferencedDocumentIdColumn,
+    IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs
+);
+
+/// <summary>
+/// Propagation payload for <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers.
+/// </summary>
+/// <param name="ReferrerActions">Referrer fan-out actions executed by the trigger.</param>
+public sealed record DbIdentityPropagationFallbackInfo(
+    IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
+);
+
+/// <summary>
 /// Derived trigger inventory entry.
 /// </summary>
 /// <param name="Name">The trigger name.</param>
-/// <param name="Table">The owning table.</param>
+/// <param name="TriggerTable">The table the trigger is created on and fires on.</param>
 /// <param name="Kind">The trigger intent classification.</param>
-/// <param name="KeyColumns">Key columns used to identify the affected <c>DocumentId</c>.</param>
-/// <param name="IdentityProjectionColumns">
-/// Columns whose change affects the resource identity projection. For
-/// <see cref="DbTriggerKind.DocumentStamping"/> triggers on root tables, these are the columns
-/// that should additionally bump <c>IdentityVersion</c>. For
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> and
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, these are the columns that
-/// trigger recomputation. Empty for child/extension table stamping triggers.
+/// <param name="KeyColumns">
+/// Key columns used by non-propagation triggers to identify affected <c>DocumentId</c> rows.
+/// For <see cref="DbTriggerKind.IdentityPropagationFallback"/>, this is empty and
+/// <paramref name="PropagationFallback"/> carries the trigger-specific payload.
 /// </param>
-/// <param name="TargetTable">
+/// <param name="IdentityProjectionColumns">
+/// Null-safe, value-diff compare columns for non-propagation triggers. These are compared by
+/// value (including null transitions) and are not interpreted as <c>UPDATE(column)</c>-style
+/// updated-column gates.
+/// For <see cref="DbTriggerKind.DocumentStamping"/> triggers on root tables, these are the
+/// columns that additionally bump <c>IdentityVersion</c>. For
+/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> and
+/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, these are the columns whose
+/// value-diff causes recomputation. Empty for child/extension table stamping triggers and all
+/// <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers.
+/// </param>
+/// <param name="MaintenanceTargetTable">
 /// The maintenance target table, when applicable. For
 /// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, this identifies the abstract
 /// identity table being maintained. <c>null</c> for other trigger kinds.
 /// </param>
+/// <param name="PropagationFallback">
+/// Typed payload for <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers. <c>null</c>
+/// for other trigger kinds.
+/// </param>
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
-    DbTableName Table,
+    DbTableName TriggerTable,
     DbTriggerKind Kind,
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
-    DbTableName? TargetTable = null
+    DbTableName? MaintenanceTargetTable = null,
+    DbIdentityPropagationFallbackInfo? PropagationFallback = null
 );
 
 /// <summary>

@@ -40,6 +40,9 @@ public static class EffectiveSchemaManifestEmitter
         return json + "\n";
     }
 
+    /// <summary>
+    /// Validates that required effective-schema fields are present before emitting a manifest.
+    /// </summary>
     private static void ValidateInput(EffectiveSchemaInfo effectiveSchema)
     {
         ArgumentNullException.ThrowIfNull(effectiveSchema);
@@ -98,6 +101,9 @@ public static class EffectiveSchemaManifestEmitter
         }
     }
 
+    /// <summary>
+    /// Writes the top-level effective-schema manifest object to the provided JSON writer.
+    /// </summary>
     private static void WriteManifest(
         Utf8JsonWriter writer,
         EffectiveSchemaInfo effectiveSchema,
@@ -137,6 +143,9 @@ public static class EffectiveSchemaManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single schema-component entry to the manifest.
+    /// </summary>
     private static void WriteSchemaComponent(Utf8JsonWriter writer, SchemaComponentInfo component)
     {
         writer.WriteStartObject();
@@ -148,6 +157,9 @@ public static class EffectiveSchemaManifestEmitter
         writer.WriteEndObject();
     }
 
+    /// <summary>
+    /// Writes a single resource-key entry to the manifest.
+    /// </summary>
     private static void WriteResourceKey(Utf8JsonWriter writer, ResourceKeyEntry resourceKey)
     {
         writer.WriteStartObject();

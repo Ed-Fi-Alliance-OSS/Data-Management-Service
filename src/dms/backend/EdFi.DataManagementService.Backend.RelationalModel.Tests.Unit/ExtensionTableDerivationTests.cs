@@ -47,6 +47,7 @@ public class Given_Extension_Table_Derivation
             {
                 new BaseTraversalAndDescriptorBindingPass(),
                 new ExtensionTableDerivationPass(),
+                new DescriptorForeignKeyConstraintPass(),
             }
         );
 
@@ -199,6 +200,7 @@ public class Given_Multiple_Extension_Projects_Extending_Same_Resource
         var builder = new DerivedRelationalModelSetBuilder([
             new BaseTraversalAndDescriptorBindingPass(),
             new ExtensionTableDerivationPass(),
+            new DescriptorForeignKeyConstraintPass(),
         ]);
 
         var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());

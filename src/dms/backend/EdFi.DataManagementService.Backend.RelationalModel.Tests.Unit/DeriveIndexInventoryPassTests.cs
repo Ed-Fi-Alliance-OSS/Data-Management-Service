@@ -422,6 +422,707 @@ public class Given_Long_Index_Names_After_Derivation
 }
 
 /// <summary>
+/// Test fixture for key-unification storage-column FK index derivation.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Storage_Columns_For_FK_Indexes
+{
+    private IReadOnlyList<DbIndexInfo> _firstRunIndexes = default!;
+    private IReadOnlyList<DbIndexInfo> _secondRunIndexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationStorageForeignKeysFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        _firstRunIndexes = builder
+            .Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules())
+            .IndexesInCreateOrder;
+        _secondRunIndexes = builder
+            .Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules())
+            .IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should derive one FK-support index when multiple FK endpoints converge on one storage key set.
+    /// </summary>
+    [Test]
+    public void It_should_derive_one_FK_support_index_for_converged_storage_key_sets()
+    {
+        var fkIndexes = _firstRunIndexes
+            .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.ForeignKeySupport)
+            .ToArray();
+
+        fkIndexes.Should().ContainSingle();
+        var fkIndex = fkIndexes.Single();
+
+        fkIndex
+            .KeyColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId", "School_SchoolId_Unified");
+        fkIndex.Name.Value.Should().Be("IX_Enrollment_School_DocumentId_School_SchoolId_Unified");
+    }
+
+    /// <summary>
+    /// It should remain deterministic and collision-free across runs.
+    /// </summary>
+    [Test]
+    public void It_should_remain_deterministic_and_collision_free_across_runs()
+    {
+        _firstRunIndexes
+            .Select(BuildIndexSignature)
+            .Should()
+            .Equal(_secondRunIndexes.Select(BuildIndexSignature));
+
+        var duplicateIndexNames = _firstRunIndexes
+            .GroupBy(index => $"{index.Table.Schema.Value}|{index.Name.Value}", StringComparer.Ordinal)
+            .Where(group => group.Count() > 1);
+
+        duplicateIndexNames.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Builds a stable index signature used to compare deterministic output.
+    /// </summary>
+    private static string BuildIndexSignature(DbIndexInfo index)
+    {
+        return $"{index.Kind}|{index.Table.Schema.Value}.{index.Table.Name}|{index.Name.Value}|"
+            + $"{string.Join(",", index.KeyColumns.Select(column => column.Value))}|{index.IsUnique}";
+    }
+}
+
+/// <summary>
+/// Test fixture for key-unification alias-column FK invariant.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Alias_Columns_In_FKs
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationAliasForeignKeyFixturePass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when FK columns target alias columns while canonical storage columns exist.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_FKs_target_alias_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("canonical storage column");
+        _exception.Message.Should().Contain("School_SchoolId");
+        _exception.Message.Should().Contain("School_SchoolId_Unified");
+        _exception.StackTrace.Should().NotBeNull();
+        _exception.StackTrace.Should().Contain(".ValidateForeignKeyStorageInvariantPass.Execute(");
+        _exception.StackTrace.Should().NotContain(".DeriveIndexInventoryPass.Execute(");
+    }
+}
+
+/// <summary>
+/// Test fixture for alias-column FK validation when canonical names do not follow suffix heuristics.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Alias_Columns_With_Custom_Canonical_Names_In_FKs
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationAliasCustomCanonicalForeignKeyFixturePass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast for unified aliases even when canonical names do not end with "_Unified".
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_alias_FK_columns_use_custom_canonical_names()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("canonical storage column");
+        _exception.Message.Should().Contain("School_SchoolId");
+        _exception.Message.Should().Contain("SchoolStorageCanonical");
+    }
+}
+
+/// <summary>
+/// Test fixture for synthetic presence-column FK invariant.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Presence_Columns_In_FKs
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationPresenceForeignKeyFixturePass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when FK columns target synthetic presence columns from storage metadata.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_FKs_target_synthetic_presence_columns()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("synthetic presence column");
+        _exception.Message.Should().Contain("SchoolPathGate");
+    }
+}
+
+/// <summary>
+/// Test fixture for invalid synthetic presence-column metadata.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_Invalid_Synthetic_Presence_Columns
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationInvalidSyntheticPresenceForeignKeyFixturePass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a unified alias points to a non-boolean synthetic presence candidate.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_synthetic_presence_column_is_not_nullable_boolean()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("invalid synthetic presence column");
+        _exception.Message.Should().Contain("School_SchoolId");
+        _exception.Message.Should().Contain("SchoolPathGate");
+    }
+}
+
+/// <summary>
+/// Test fixture for API-bound synthetic presence-column metadata.
+/// </summary>
+[TestFixture]
+public class Given_Key_Unification_API_Bound_Synthetic_Presence_Columns
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationApiBoundSyntheticPresenceForeignKeyFixturePass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        try
+        {
+            _ = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception ex)
+        {
+            _exception = ex;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a unified alias points to a synthetic presence candidate with a source path.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_synthetic_presence_column_has_non_null_source_path()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!.Message.Should().Contain("invalid synthetic presence column");
+        _exception.Message.Should().Contain("School_SchoolId");
+        _exception.Message.Should().Contain("SchoolPathGate");
+        _exception.Message.Should().Contain("$.schoolReference.schoolPathGate");
+    }
+}
+
+/// <summary>
+/// Test fixture for stored columns that happen to end with key-unification suffix tokens.
+/// </summary>
+[TestFixture]
+public class Given_Stored_Suffix_Columns_In_FKs
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new KeyUnificationStoredSuffixForeignKeyFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should allow stored FK columns whose names end with "_Present" or "_Unified".
+    /// </summary>
+    [Test]
+    public void It_should_allow_stored_FK_columns_with_unification_suffix_tokens()
+    {
+        var fkIndex = _indexes.Single(index =>
+            index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.ForeignKeySupport
+        );
+
+        fkIndex
+            .KeyColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_DocumentId", "SchoolPath_Present");
+        fkIndex.Name.Value.Should().Be("IX_Enrollment_School_DocumentId_SchoolPath_Present");
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model where two FK endpoints share one storage key set.
+/// </summary>
+file sealed class KeyUnificationStorageForeignKeysFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: true
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model with an FK targeting an alias column.
+/// </summary>
+file sealed class KeyUnificationAliasForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: true,
+            addDuplicateForeignKeyEndpoint: false
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model with a custom canonical storage name.
+/// </summary>
+file sealed class KeyUnificationAliasCustomCanonicalForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: true,
+            addDuplicateForeignKeyEndpoint: false,
+            localCanonicalStorageColumnName: "SchoolStorageCanonical",
+            targetCanonicalStorageColumnName: "SchoolStorageCanonical"
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model with an FK targeting a synthetic presence column.
+/// </summary>
+file sealed class KeyUnificationPresenceForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: false,
+            localCanonicalStorageColumnName: "SchoolStorageCanonical",
+            targetCanonicalStorageColumnName: "SchoolStorageCanonical",
+            aliasPresenceColumnName: "SchoolPathGate",
+            usePresenceColumnInForeignKey: true
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model with a non-boolean synthetic presence candidate.
+/// </summary>
+file sealed class KeyUnificationInvalidSyntheticPresenceForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: false,
+            localCanonicalStorageColumnName: "SchoolStorageCanonical",
+            targetCanonicalStorageColumnName: "SchoolStorageCanonical",
+            aliasPresenceColumnName: "SchoolPathGate",
+            usePresenceColumnInForeignKey: true,
+            aliasPresenceScalarKind: ScalarKind.Int32
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model with an API-bound synthetic presence candidate.
+/// </summary>
+file sealed class KeyUnificationApiBoundSyntheticPresenceForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: false,
+            localCanonicalStorageColumnName: "SchoolStorageCanonical",
+            targetCanonicalStorageColumnName: "SchoolStorageCanonical",
+            aliasPresenceColumnName: "SchoolPathGate",
+            usePresenceColumnInForeignKey: true,
+            aliasPresenceSourceJsonPath: "$.schoolReference.schoolPathGate"
+        );
+    }
+}
+
+/// <summary>
+/// Test pass that injects a key-unification-like resource model using stored suffix-named FK columns.
+/// </summary>
+file sealed class KeyUnificationStoredSuffixForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
+            context,
+            useAliasColumnInForeignKey: false,
+            addDuplicateForeignKeyEndpoint: false,
+            localCanonicalStorageColumnName: "SchoolPath_Present",
+            targetCanonicalStorageColumnName: "SchoolPath_Present"
+        );
+    }
+}
+
+/// <summary>
+/// Helpers that build synthetic key-unification fixtures for index inventory testing.
+/// </summary>
+file static class KeyUnificationIndexInventoryFixtureBuilder
+{
+    /// <summary>
+    /// Adds one synthetic resource model to the context with configurable FK column choices.
+    /// </summary>
+    public static void AddFixtureResource(
+        RelationalModelSetBuilderContext context,
+        bool useAliasColumnInForeignKey,
+        bool addDuplicateForeignKeyEndpoint,
+        string localCanonicalStorageColumnName = "School_SchoolId_Unified",
+        string targetCanonicalStorageColumnName = "SchoolId_Unified",
+        string? aliasPresenceColumnName = null,
+        bool usePresenceColumnInForeignKey = false,
+        ScalarKind aliasPresenceScalarKind = ScalarKind.Boolean,
+        string? aliasPresenceSourceJsonPath = null
+    )
+    {
+        var resourceKey = context.EffectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder[0];
+        var schema = new DbSchemaName("edfi");
+        var rootTableName = new DbTableName(schema, "Enrollment");
+        var targetTable = new DbTableName(schema, "School");
+        var localCanonicalStorageColumn = new DbColumnName(localCanonicalStorageColumnName);
+        var targetCanonicalStorageColumn = new DbColumnName(targetCanonicalStorageColumnName);
+        var aliasPresenceColumn = aliasPresenceColumnName is not null
+            ? new DbColumnName(aliasPresenceColumnName)
+            : (DbColumnName?)null;
+
+        if (usePresenceColumnInForeignKey && aliasPresenceColumn is null)
+        {
+            throw new InvalidOperationException(
+                $"Fixture option '{nameof(usePresenceColumnInForeignKey)}' requires "
+                    + $"'{nameof(aliasPresenceColumnName)}'."
+            );
+        }
+
+        DbColumnName selectedIdentityColumn;
+
+        if (usePresenceColumnInForeignKey)
+        {
+            selectedIdentityColumn = aliasPresenceColumn!.Value;
+        }
+        else if (useAliasColumnInForeignKey)
+        {
+            selectedIdentityColumn = new DbColumnName("School_SchoolId");
+        }
+        else
+        {
+            selectedIdentityColumn = localCanonicalStorageColumn;
+        }
+
+        List<TableConstraint> constraints =
+        [
+            new TableConstraint.ForeignKey(
+                "FK_Enrollment_SchoolPrimary_RefKey",
+                [new DbColumnName("School_DocumentId"), selectedIdentityColumn],
+                targetTable,
+                [RelationalNameConventions.DocumentIdColumnName, targetCanonicalStorageColumn],
+                OnDelete: ReferentialAction.NoAction,
+                OnUpdate: ReferentialAction.NoAction
+            ),
+        ];
+
+        if (addDuplicateForeignKeyEndpoint)
+        {
+            constraints.Add(
+                new TableConstraint.ForeignKey(
+                    "FK_Enrollment_SchoolAlias_RefKey",
+                    [new DbColumnName("School_DocumentId"), selectedIdentityColumn],
+                    targetTable,
+                    [RelationalNameConventions.DocumentIdColumnName, targetCanonicalStorageColumn],
+                    OnDelete: ReferentialAction.NoAction,
+                    OnUpdate: ReferentialAction.NoAction
+                )
+            );
+        }
+
+        List<DbColumnModel> columns =
+        [
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_DocumentId"),
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_SchoolId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                TargetResource: null
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(localCanonicalStorageColumn, aliasPresenceColumn),
+            },
+            new DbColumnModel(
+                new DbColumnName("SchoolAlias_SchoolId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolAliasReference.schoolId"),
+                TargetResource: null
+            )
+            {
+                Storage = new ColumnStorage.UnifiedAlias(localCanonicalStorageColumn, aliasPresenceColumn),
+            },
+            new DbColumnModel(
+                localCanonicalStorageColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+
+        if (aliasPresenceColumn is not null)
+        {
+            columns.Add(
+                new DbColumnModel(
+                    aliasPresenceColumn.Value,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(aliasPresenceScalarKind),
+                    IsNullable: true,
+                    SourceJsonPath: aliasPresenceSourceJsonPath is null
+                        ? null
+                        : JsonPathExpressionCompiler.Compile(aliasPresenceSourceJsonPath),
+                    TargetResource: null
+                )
+            );
+        }
+
+        var rootTable = new DbTableModel(
+            rootTableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_Enrollment",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            columns,
+            constraints
+        );
+
+        List<DbColumnModel> targetColumns =
+        [
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                targetCanonicalStorageColumn,
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+        ];
+        var targetTableModel = new DbTableModel(
+            targetTable,
+            JsonPathExpressionCompiler.Compile("$.school"),
+            new TableKey(
+                "PK_School",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            targetColumns,
+            []
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [targetTableModel, rootTable],
+            [],
+            []
+        );
+
+        context.ConcreteResourcesInNameOrder.Add(
+            new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        );
+    }
+}
+
+/// <summary>
 /// Test schema builder for index inventory pass tests.
 /// </summary>
 internal static class IndexInventoryTestSchemaBuilder

@@ -201,11 +201,30 @@ public enum DbTriggerKind
 
 public readonly record struct DbTriggerName(string Value);
 
+public sealed record DbIdentityPropagationColumnPair(
+    DbColumnName ReferrerStorageColumn,
+    DbColumnName ReferencedStorageColumn
+);
+
+public sealed record DbIdentityPropagationReferrerAction(
+    DbTableName ReferrerTable,
+    DbColumnName ReferrerDocumentIdColumn,
+    DbColumnName ReferencedDocumentIdColumn,
+    IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs
+);
+
+public sealed record DbIdentityPropagationFallbackInfo(
+    IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
+);
+
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
-    DbTableName Table,
+    DbTableName TriggerTable,
     DbTriggerKind Kind,
-    IReadOnlyList<DbColumnName> KeyColumns
+    IReadOnlyList<DbColumnName> KeyColumns,
+    IReadOnlyList<DbColumnName> IdentityProjectionColumns,
+    DbTableName? MaintenanceTargetTable = null,
+    DbIdentityPropagationFallbackInfo? PropagationFallback = null
 );
 
 public sealed record DerivedRelationalModelSet(
@@ -224,6 +243,7 @@ Notes:
 - `RelationalResourceModel` and its nested table/column types are defined in `flattening-reconstitution.md` and reused here.
 - `TableConstraint` here refers to the model-level constraint inventory used by DDL emission. The mapping-pack/runtime subset may not need to serialize every constraint kind.
 - Index/trigger inventories are dialect-aware (“SQL-free DDL intent”), derived deterministically from the derived tables/constraints plus the policies in `ddl-generation.md`.
+ - `IdentityProjectionColumns` is a null-safe value-diff compare set, not an `UPDATE(column)` gate list.
   - Scope: schema-derived project objects only (resource/extension/abstract-identity tables). Core `dms.*` indexes/triggers are owned by core DDL emission.
 - `IndexesInCreateOrder` / `TriggersInCreateOrder` are stored in canonical deterministic order (schema, table, name), not a dependency-aware DDL execution order; DDL emission chooses any required creation sequence.
 
@@ -303,6 +323,8 @@ For a write request targeting resource `R`:
      - `ResolvedReferenceSet.DocumentIdByReferentialId` for document references, and
      - `ResolvedReferenceSet.DescriptorIdByKey` for descriptor references (keyed by `(normalizedUri, descriptorResource)`).
    - Materialize `ResolvedReferenceSet` for this request.
+   - Note: under key unification, this same `ResolvedReferenceSet.DescriptorIdByKey` map is also consumed by `KeyUnificationWritePlan`
+     when coalescing unified descriptor endpoints into canonical storage columns (see `key-unification.md`).
 
 4. **Build the per-request reference index**
    - Build an `IDocumentReferenceInstanceIndex` for this request using:
@@ -315,12 +337,19 @@ For a write request targeting resource `R`:
 
 5. **Flatten to row buffers using `TableWritePlan.ColumnBindings`**
    - For each `DbTableModel` in `ResourceWritePlan.Model.TablesInDependencyOrder`, enumerate JSON scope instances (`JsonScope`) and materialize `RowBuffer` objects.
-   - Each `TableWritePlan` contains `ColumnBindings: IReadOnlyList<WriteColumnBinding>`.
+   - Each `TableWritePlan` contains:
+     - `ColumnBindings: IReadOnlyList<WriteColumnBinding>` (stored/writable columns only, in parameter order), and
+     - `KeyUnificationPlans: IReadOnlyList<KeyUnificationWritePlan>` (empty when no key unification applies).
    - Runtime produces `RowBuffer.Values[]` by iterating `ColumnBindings` *in order* and sourcing each value from the associated `WriteValueSource`:
      - `DocumentId`, `ParentKeyPart(i)`, `Ordinal`
      - `Scalar(relativeJsonPath, scalarType)`
      - `DocumentReference(binding)` resolved via the per-request `(binding, ordinalPath) → DocumentId` index
      - `DescriptorReference(...)` resolved via `ResolvedReferenceSet`
+     - `WriteValueSource.Precomputed` populated by executing `KeyUnificationWritePlan` (canonical storage columns + any synthetic `..._Present` presence flags)
+
+   Key unification notes:
+   - `TableWritePlan.ColumnBindings` excludes any column whose `DbColumnModel.Storage` is `UnifiedAlias(...)` (API-bound binding/path aliases are generated/read-only and are never written).
+   - Canonical storage columns and synthetic `..._Present` columns are included in `ColumnBindings` as `WriteValueSource.Precomputed` and are populated per-row by `KeyUnificationWritePlan` after normal extraction.
 
    **Critical invariant (how “compiled SQL parameter positions” work):**
    - `TableWritePlan.ColumnBindings` defines the authoritative *parameter/value ordering* for writes.
@@ -347,7 +376,7 @@ For a read request targeting resource `R`:
    - GET by id: resolve `DocumentUuid → DocumentId` via `dms.Document`.
    - Query: compile and execute “page DocumentId SQL” (a separate root-table query compiler/executor step) to produce a page keyset of `DocumentId`s:
      - translate supported query parameters using the resource’s `ApiSchema.queryFieldMapping` to predicates over **root-table columns only** (no array traversal),
-     - include reference-identity query fields by targeting the locally stored propagated identity columns on the root table (no joins),
+     - include reference identity query fields by targeting the root table’s API-bound binding/path columns (including `UnifiedAlias` columns) rather than canonical storage-only columns, preserving optional-path presence semantics without joins,
      - emit parameterized SQL with deterministic paging (`ORDER BY r.DocumentId ASC` + dialect paging clause), and
      - return `DocumentId` only (optionally also compile/execute a `TotalCountSql` for `totalCount=true`).
 
@@ -364,6 +393,7 @@ For a read request targeting resource `R`:
    - Each `SelectByKeysetSql` must emit its select-list in a stable order consistent with the table model (so readers can consume by ordinal without name-based mapping).
 
 4. **Reconstitute JSON**
+   - Key unification note: API JsonPath binding continues to target the per-path binding columns (`DbColumnModel.SourceJsonPath`), including `UnifiedAlias` columns; canonical storage columns are storage-only (`SourceJsonPath = null`) and are not emitted to JSON directly.
    - Use the `RelationalResourceModel` (table scopes + column metadata) to rebuild a document in two phases:
      1) **Assemble an in-memory row graph** for each `DocumentId` in the page keyset:
         - treat the root table as the anchor (one row per `DocumentId`),
@@ -382,11 +412,12 @@ For a read request targeting resource `R`:
      - the reference site (wildcard JSON reference-object path),
      - the referencing table/row that stores the reference,
      - the FK column (`..._DocumentId`) that indicates presence, and
-     - the ordered identity-field bindings that map reference JSON paths → local propagated columns on the referencing row.
-   - During reconstitution, if the FK column is null, omit the reference object; otherwise emit the reference object by reading the bound propagated identity columns from the *same row* (no joins).
-   - This avoids joining to referenced resource tables (including abstract/unions) during reads; polymorphic/abstract references work the same way because the referencing row stores the abstract identity fields (enforced by a composite FK to the abstract identity table).
+     - the ordered identity-field bindings that map reference JSON paths → local binding/path columns on the referencing row (these columns may be `UnifiedAlias` columns generated from canonical storage columns).
+   - During reconstitution, if the FK column is null, omit the reference object; otherwise emit the reference object by reading the bound binding/path columns from the *same row* (no joins).
+   - This avoids joining to referenced resource tables (including abstract/unions) during reads; under key unification, composite reference FKs are derived via storage-column mapping (`DbColumnModel.Storage`) even though read-time projection continues to bind to per-path columns.
 
 6. **Descriptor URI projection (batched)**
    - Use `RelationalResourceModel.DescriptorEdgeSources` to identify descriptor FK columns (`..._DescriptorId`) that require URI projection.
    - Include descriptor projection as an additional result set in the same multi-result hydration command (still page-sized and batched, no N+1), returning `(DescriptorId, Uri)` for all descriptor ids referenced by the page.
    - Avoid left-joining `dms.Descriptor` into every per-table hydration SELECT: it requires many joins (one per descriptor FK) and bloats the compiled per-table SQL.
+   - Key unification note: descriptor FK emission uses storage-column mapping and may de-duplicate multiple descriptor binding columns into one FK per `(table, storage_column)`, reporting deterministic `descriptor_fk_deduplications[]` diagnostics in manifests (see `key-unification.md`).

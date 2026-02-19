@@ -13,9 +13,6 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class ReferenceBindingPass : IRelationalModelSetPass
 {
-    private static readonly DbSchemaName _dmsSchemaName = new("dms");
-    private static readonly DbTableName _descriptorTableName = new(_dmsSchemaName, "Descriptor");
-
     /// <summary>
     /// Executes reference binding across all concrete resources and resource extensions.
     /// </summary>
@@ -103,11 +100,7 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
             .ToDictionary(builder => builder.Definition.JsonScope.Canonical, StringComparer.Ordinal);
 
         var tableScopes = tableBuilders
-            .Select(entry => new TableScopeEntry(
-                entry.Key,
-                entry.Value.Definition.JsonScope.Segments,
-                entry.Value
-            ))
+            .Select(entry => new TableScopeEntry(entry.Value.Definition.JsonScope, entry.Value))
             .ToArray();
 
         var identityPaths = new HashSet<string>(
@@ -136,7 +129,14 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
 
             var originalReferenceBaseName = RelationalNameConventions.ToPascalCase(mapping.MappingKey);
             var referenceBaseName = ResolveReferenceBaseName(mapping, builderContext);
-            var tableBuilder = ResolveOwningTableBuilder(mapping.ReferenceObjectPath, tableScopes, resource);
+            var tableBuilder = ReferenceObjectPathScopeResolver
+                .ResolveOwningTableScope(
+                    mapping.ReferenceObjectPath,
+                    tableScopes,
+                    static scope => scope.Scope,
+                    resource
+                )
+                .Builder;
             var isNullable = !mapping.IsRequired;
             var referenceIdentityFieldBaseNameCounts = BuildReferenceIdentityFieldBaseNameCounts(
                 mapping.ReferenceObjectPath,
@@ -202,19 +202,6 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
                     );
 
                     tableBuilder.AddColumn(descriptorColumn, originalDescriptorColumnName.Value);
-                    tableBuilder.AddConstraint(
-                        new TableConstraint.ForeignKey(
-                            ConstraintNaming.BuildDescriptorForeignKeyName(
-                                tableBuilder.Definition.Table,
-                                descriptorColumnName
-                            ),
-                            new[] { descriptorColumnName },
-                            _descriptorTableName,
-                            new[] { RelationalNameConventions.DocumentIdColumnName },
-                            OnDelete: ReferentialAction.NoAction,
-                            OnUpdate: ReferentialAction.NoAction
-                        )
-                    );
 
                     var isIdentityComponent = identityPaths.Contains(
                         identityBinding.ReferenceJsonPath.Canonical
@@ -307,77 +294,6 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Resolves the table accumulator that owns the reference object path by selecting the deepest matching
-    /// table scope prefix.
-    /// </summary>
-    private static TableColumnAccumulator ResolveOwningTableBuilder(
-        JsonPathExpression referenceObjectPath,
-        IReadOnlyList<TableScopeEntry> tableScopes,
-        QualifiedResourceName resource
-    )
-    {
-        var bestMatches = new List<TableScopeEntry>();
-        var bestSegmentCount = -1;
-
-        foreach (var scope in tableScopes)
-        {
-            if (!IsPrefixOf(scope.Segments, referenceObjectPath.Segments))
-            {
-                continue;
-            }
-
-            var segmentCount = scope.Segments.Count;
-            if (segmentCount > bestSegmentCount)
-            {
-                bestSegmentCount = segmentCount;
-                bestMatches.Clear();
-                bestMatches.Add(scope);
-            }
-            else if (segmentCount == bestSegmentCount)
-            {
-                bestMatches.Add(scope);
-            }
-        }
-
-        if (bestMatches.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' did not match any table scope."
-            );
-        }
-
-        var candidateScopes = bestMatches
-            .Select(entry => entry.Canonical)
-            .Distinct(StringComparer.Ordinal)
-            .OrderBy(scope => scope, StringComparer.Ordinal)
-            .ToArray();
-
-        if (candidateScopes.Length > 1)
-        {
-            throw new InvalidOperationException(
-                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' matched multiple table scopes with the same depth: "
-                    + $"{string.Join(", ", candidateScopes.Select(scope => $"'{scope}'"))}."
-            );
-        }
-
-        var bestMatch = bestMatches[0];
-        if (
-            referenceObjectPath.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" })
-            && !bestMatch.Segments.Any(segment => segment is JsonPathSegment.Property { Name: "_ext" })
-        )
-        {
-            throw new InvalidOperationException(
-                $"Reference object path '{referenceObjectPath.Canonical}' on resource "
-                    + $"'{FormatResource(resource)}' requires an extension table scope, but none was found."
-            );
-        }
-
-        return bestMatch.Builder;
-    }
-
-    /// <summary>
     /// Resolves the reference base name, applying any supported <c>relational.nameOverrides</c> entry first.
     /// </summary>
     private static string ResolveReferenceBaseName(
@@ -460,9 +376,5 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
     /// <summary>
     /// Captures a table scope and its accumulator for prefix matching against reference object paths.
     /// </summary>
-    private sealed record TableScopeEntry(
-        string Canonical,
-        IReadOnlyList<JsonPathSegment> Segments,
-        TableColumnAccumulator Builder
-    );
+    private sealed record TableScopeEntry(JsonPathExpression Scope, TableColumnAccumulator Builder);
 }
