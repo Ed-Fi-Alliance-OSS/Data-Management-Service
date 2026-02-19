@@ -39,6 +39,7 @@ Design references:
 - Compiled plans include a deterministic descriptor-projection query plan that:
   - is page-batched (no per-row descriptor lookups),
   - returns `(DescriptorId, Uri)` for all descriptor ids referenced by the page,
+  - emits deterministic result ordering (e.g., `ORDER BY DescriptorId`) so projection can consume stably,
   - avoids N+1 joins (does not left-join `dms.Descriptor` once per descriptor FK column into every hydration `SELECT`).
 - Projection SQL is canonicalized and stable for a fixed selection key (pgsql + mssql).
 
@@ -47,10 +48,11 @@ Design references:
 - Unit tests validate deterministic output and model reference integrity:
   - descriptor projection plans reference only embedded model elements and `dms.Descriptor`,
   - reference identity projection validation fails deterministically for missing columns/bindings.
+- When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable, normalized SQL hashes for the descriptor projection plan (and stable projection metadata where applicable), enabling golden comparisons per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Tasks
 
-1. Define a projection-plan contract shape consumable by the read executor (descriptor projection SQL + expected result-set shape).
-2. Compile descriptor projection plans from `RelationalResourceModel.DescriptorEdgeSources`, producing stable, canonicalized SQL.
-3. Compile and/or validate reference identity projection metadata from `RelationalResourceModel.DocumentReferenceBindings` and ensure required columns are present in `TableReadPlan` select lists.
-4. Add unit tests for deterministic output and model reference integrity (pgsql + mssql).
+1. Compile descriptor projection plans from `RelationalResourceModel.DescriptorEdgeSources`, producing stable, canonicalized SQL (page-batched and deterministically ordered).
+2. Compile and/or validate reference identity projection metadata from `RelationalResourceModel.DocumentReferenceBindings` and ensure required columns are present in `TableReadPlan` select lists.
+3. Add unit tests for deterministic output and model reference integrity (pgsql + mssql).
+4. Add (or extend) a small fixture that exercises descriptor projection + reference identity projection and validates output via `mappingset.manifest.json` golden comparisons.

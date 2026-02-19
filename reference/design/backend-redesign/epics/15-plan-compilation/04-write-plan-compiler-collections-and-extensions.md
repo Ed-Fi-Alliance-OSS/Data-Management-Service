@@ -71,6 +71,11 @@ Design references:
   - `_ext` tables,
   - key-unification cases (including presence gating),
   - deterministic SQL output (pgsql + mssql).
+- When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable, normalized SQL hashes and binding-order metadata for:
+  - `InsertSql` (all tables),
+  - `UpdateSql` (root when applicable),
+  - `DeleteByParentSql` (all non-root tables),
+  enabling golden comparisons per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Tasks
 
@@ -81,3 +86,4 @@ Design references:
 3. Implement dialect-aware batching metadata (e.g., SQL Server ~2100 parameter limit) and store it in `TableWritePlan` for bulk insert executors.
 4. Enforce key-unification compile-time invariants (exclude `UnifiedAlias`, require complete `Precomputed` coverage by `KeyUnificationWritePlan`).
 5. Add unit tests for deterministic output and key-unification invariants on representative models (pgsql + mssql).
+6. Add (or extend) small fixtures that cover collections + `_ext` + key unification and validate write-plan output via `mappingset.manifest.json` golden comparisons (pgsql + mssql).

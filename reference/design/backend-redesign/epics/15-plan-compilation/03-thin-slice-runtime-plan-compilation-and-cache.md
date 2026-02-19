@@ -45,6 +45,9 @@ Design references:
   - parameter naming determinism,
   - plan/model reference integrity,
   - cache compile-once behavior under concurrency.
+- Fixture/golden tests are practical and validate at least one small fixture where:
+  - runtime compilation fallback emits `mappingset.manifest.json` with normalized SQL hashes for the thin-slice plans, and
+  - `expected/` vs `actual/` comparisons fail with a readable diff per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Tasks
 
@@ -63,3 +66,4 @@ Design references:
    - validate plan references exist in the embedded model,
    - assert compile-once behavior under concurrency,
    - assert deterministic failure behavior for a non-root-only resource.
+5. Add (or extend) a small fixture that exercises root-only compilation and validates `mappingset.manifest.json` via expected-vs-actual golden comparison (pgsql + mssql).

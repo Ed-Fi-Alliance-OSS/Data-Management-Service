@@ -55,6 +55,10 @@ Design references:
   - indentation and keyword casing,
   - no trailing whitespace.
 - If the query compiler validates parameter identifiers, unit tests cover deterministic failure behavior for invalid parameter names.
+- Snapshot/golden tests are practical and cover at least:
+  - one representative plan SQL emission (pgsql + mssql), and
+  - one representative query SQL emission (`PageDocumentIdSqlCompiler`),
+  comparing exact normalized SQL (or stable hashes of normalized SQL) per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Tasks
 
@@ -65,3 +69,4 @@ Design references:
 2. Add a small SQL canonicalization helper intended for unit tests (and pack/fixture comparisons) so tests compare normalized SQL (or normalized hashes) rather than ad-hoc “pretty printed” variants.
 3. Refactor `PageDocumentIdSqlCompiler` to use the shared writer and dialect quoting helpers.
 4. Add unit tests validating deterministic, canonicalized output for both dialects.
+5. Add (or extend) a small fixture/snapshot that locks down canonical plan/query SQL output and supports expected-vs-actual golden comparisons.

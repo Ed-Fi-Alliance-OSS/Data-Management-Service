@@ -34,6 +34,7 @@ Design references:
   - emits a deterministic `ORDER BY` on the table key columns in key order (parent key parts..., ordinal).
 - SQL output is canonicalized and stable for the same selection key (pgsql + mssql).
 - Unit tests validate deterministic output and stable ordering behavior.
+- When fixture-based artifacts are emitted, `mappingset.manifest.json` includes stable, normalized SQL hashes for each `SelectByKeysetSql`, enabling golden comparisons per `reference/design/backend-redesign/design-docs/ddl-generator-testing.md`.
 
 ## Tasks
 
@@ -43,3 +44,4 @@ Design references:
    - `ORDER BY` derived from the table key columns (parent key parts..., ordinal).
 3. Ensure the join predicate to the page keyset is correct for root, child, and `_ext` tables (root `DocumentId` key part).
 4. Add unit tests for deterministic output across dialects and input-order permutations.
+5. Add (or extend) small fixtures that cover nested collections + `_ext` and validate hydration read-plan output via `mappingset.manifest.json` golden comparisons (pgsql + mssql).
