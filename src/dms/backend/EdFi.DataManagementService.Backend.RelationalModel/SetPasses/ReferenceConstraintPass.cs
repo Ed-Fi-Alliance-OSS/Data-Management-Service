@@ -272,8 +272,9 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Maps local and target identity columns to canonical storage columns and de-duplicates pairs after
-    /// storage mapping while preserving first-seen identity-path order.
+    /// Maps (optional) local and target identity columns to canonical storage columns and de-duplicates pairs
+    /// after storage mapping while preserving first-seen identity-path order. Identity columns may be empty,
+    /// in which case reference constraints are derived solely from the document id column.
     /// </summary>
     private static ReferenceIdentityColumnSet MapReferenceIdentityColumnsToStorage(
         ReferenceIdentityColumnSet identityColumns,
@@ -290,6 +291,11 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
                 $"Reference mapping '{mapping.MappingKey}' on resource '{FormatResource(resource)}' "
                     + "produced mismatched local and target identity-column counts."
             );
+        }
+
+        if (identityColumns.LocalColumns.Count == 0)
+        {
+            return identityColumns;
         }
 
         var localTableMetadata = UnifiedAliasStrictMetadataCache.GetOrBuild(setContext, localTable);

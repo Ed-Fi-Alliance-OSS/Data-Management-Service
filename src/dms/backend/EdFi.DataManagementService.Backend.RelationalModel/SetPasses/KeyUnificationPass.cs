@@ -245,6 +245,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             var leftTableIndex = ResolveEndpointTableIndex(constraint.SourcePath, leftCandidates, resource);
             var rightTableIndex = ResolveEndpointTableIndex(constraint.TargetPath, rightCandidates, resource);
 
+            // ResolveEndpointCandidates guarantees >=1 element, so the [0] access is safe
             var left = leftCandidates[0];
             var right = rightCandidates[0];
 

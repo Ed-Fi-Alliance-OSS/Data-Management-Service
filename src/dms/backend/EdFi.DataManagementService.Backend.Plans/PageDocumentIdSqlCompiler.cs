@@ -232,6 +232,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             QueryComparisonOperator.GreaterThan => ">",
             QueryComparisonOperator.GreaterThanOrEqual => ">=",
             QueryComparisonOperator.Like => "LIKE",
+            // Defer implementation until the real compilation stories
             QueryComparisonOperator.In => "IN",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(@operator),

@@ -55,7 +55,17 @@ public sealed class DescriptorForeignKeyConstraintPass : IRelationalModelSetPass
             updatedTables[tableIndex] = ApplyToTable(context, table, resource, dedupDiagnostics);
         }
 
-        var updatedRoot = updatedTables.Single(table => table.JsonScope.Equals(resourceModel.Root.JsonScope));
+        var rootScope = resourceModel.Root.JsonScope;
+        var updatedRoot = updatedTables.SingleOrDefault(table => table.JsonScope.Equals(rootScope));
+
+        if (updatedRoot is null)
+        {
+            throw new InvalidOperationException(
+                $"Root table '{resourceModel.Root.Table}' scope '{rootScope.Canonical}' for resource "
+                    + $"'{FormatResource(resource)}' was not found for descriptor FK constraint derivation."
+            );
+        }
+
         var orderedDedupDiagnostics = dedupDiagnostics
             .OrderBy(entry => entry.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(entry => entry.Table.Name, StringComparer.Ordinal)
