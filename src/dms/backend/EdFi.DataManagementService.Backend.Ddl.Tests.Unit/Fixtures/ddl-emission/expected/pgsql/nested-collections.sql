@@ -73,7 +73,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_Stamp"
+DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
+CREATE TRIGGER "TR_School_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
@@ -88,7 +89,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_SchoolAddress_Stamp"
+DROP TRIGGER IF EXISTS "TR_SchoolAddress_Stamp" ON "edfi"."SchoolAddress";
+CREATE TRIGGER "TR_SchoolAddress_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."SchoolAddress"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"();
@@ -103,7 +105,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_SchoolAddressPhoneNumber_Stamp"
+DROP TRIGGER IF EXISTS "TR_SchoolAddressPhoneNumber_Stamp" ON "edfi"."SchoolAddressPhoneNumber";
+CREATE TRIGGER "TR_SchoolAddressPhoneNumber_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."SchoolAddressPhoneNumber"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPhoneNumber_Stamp"();
@@ -119,7 +122,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_ReferentialIdentity"
+DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
+CREATE TRIGGER "TR_School_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();

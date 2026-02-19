@@ -376,9 +376,12 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Triggers
     }
 
     [Test]
-    public void It_should_emit_trigger()
+    public void It_should_emit_trigger_with_drop_then_create_pattern()
     {
-        _ddl.Should().Contain("CREATE OR REPLACE TRIGGER");
+        // Design requires DROP + CREATE pattern, not CREATE OR REPLACE TRIGGER (ddl-generation.md:260-262)
+        _ddl.Should().Contain("DROP TRIGGER IF EXISTS");
+        _ddl.Should().Contain("CREATE TRIGGER");
+        _ddl.Should().NotContain("CREATE OR REPLACE TRIGGER");
         _ddl.Should().Contain("EXECUTE FUNCTION");
     }
 

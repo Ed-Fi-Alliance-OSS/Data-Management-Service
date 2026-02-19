@@ -79,7 +79,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_LocalEducationAgency_Stamp"
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_Stamp" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
@@ -95,7 +96,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_LocalEducationAgency_AbstractIdentity"
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_AbstractIdentity" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
@@ -115,7 +117,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_ReferentialIdentity" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
@@ -135,7 +138,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_Stamp"
+DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
+CREATE TRIGGER "TR_School_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
@@ -151,7 +155,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_AbstractIdentity"
+DROP TRIGGER IF EXISTS "TR_School_AbstractIdentity" ON "edfi"."School";
+CREATE TRIGGER "TR_School_AbstractIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"();
@@ -171,7 +176,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_ReferentialIdentity"
+DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
+CREATE TRIGGER "TR_School_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();

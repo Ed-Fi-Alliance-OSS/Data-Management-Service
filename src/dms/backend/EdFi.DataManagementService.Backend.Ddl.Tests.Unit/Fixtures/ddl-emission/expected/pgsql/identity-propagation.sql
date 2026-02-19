@@ -48,7 +48,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_Stamp"
+DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
+CREATE TRIGGER "TR_School_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
@@ -64,7 +65,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_School_ReferentialIdentity"
+DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
+CREATE TRIGGER "TR_School_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
@@ -84,7 +86,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_StudentSchoolAssociation_Stamp"
+DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_Stamp" ON "edfi"."StudentSchoolAssociation";
+CREATE TRIGGER "TR_StudentSchoolAssociation_Stamp"
 BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"();
@@ -100,7 +103,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE OR REPLACE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity"
+DROP TRIGGER IF EXISTS "TR_StudentSchoolAssociation_ReferentialIdentity" ON "edfi"."StudentSchoolAssociation";
+CREATE TRIGGER "TR_StudentSchoolAssociation_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."StudentSchoolAssociation"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"();

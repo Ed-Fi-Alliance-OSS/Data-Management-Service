@@ -236,13 +236,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Emits a PostgreSQL trigger (function + trigger).
+    /// Uses DROP TRIGGER IF EXISTS + CREATE TRIGGER per design (not CREATE OR REPLACE TRIGGER).
     /// </summary>
     private void EmitPgsqlTrigger(SqlWriter writer, DbTriggerInfo trigger)
     {
         var funcName = _dialect.Rules.ShortenIdentifier($"TF_{trigger.Name.Value}");
         var schema = trigger.Table.Schema;
 
-        // Function
+        // Function: CREATE OR REPLACE is supported and idempotent
         writer.Append("CREATE OR REPLACE FUNCTION ");
         writer.Append(Quote(schema));
         writer.Append(".");
@@ -259,8 +260,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("$$ LANGUAGE plpgsql;");
         writer.AppendLine();
 
-        // Trigger
-        writer.Append("CREATE OR REPLACE TRIGGER ");
+        // Trigger: Use DROP + CREATE pattern per design (ddl-generation.md:260-262)
+        // PostgreSQL's CREATE OR REPLACE TRIGGER is not available in all versions,
+        // so we use the idempotent DROP IF EXISTS + CREATE pattern.
+        writer.AppendLine(_dialect.DropTriggerIfExists(trigger.Table, trigger.Name.Value));
+        writer.Append("CREATE TRIGGER ");
         writer.AppendLine(Quote(trigger.Name));
         writer.Append("BEFORE INSERT OR UPDATE ON ");
         writer.AppendLine(Quote(trigger.Table));
