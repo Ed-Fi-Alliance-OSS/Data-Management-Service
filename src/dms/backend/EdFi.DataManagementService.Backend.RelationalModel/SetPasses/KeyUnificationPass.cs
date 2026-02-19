@@ -17,7 +17,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class KeyUnificationPass : IRelationalModelSetPass
 {
-    private static readonly IComparer<IReadOnlyList<string>> ConnectedComponentOrderingComparer = Comparer<
+    private static readonly IComparer<IReadOnlyList<string>> _connectedComponentOrderingComparer = Comparer<
         IReadOnlyList<string>
     >.Create(CompareConnectedComponents);
 
@@ -702,7 +702,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         HashSet<DbColumnName> syntheticPresenceColumns = [];
 
         foreach (
-            var component in componentColumnNames.OrderBy(group => group, ConnectedComponentOrderingComparer)
+            var component in componentColumnNames.OrderBy(group => group, _connectedComponentOrderingComparer)
         )
         {
             var memberColumns = component
@@ -741,7 +741,9 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
             var canonicalColumnName = AllocateCanonicalColumnName(
                 baseName,
                 memberColumns,
-                existingColumnNames
+                existingColumnNames,
+                resource,
+                table
             );
             var firstMember = memberColumns[0];
             var canonicalColumn = new DbColumnModel(
@@ -1097,7 +1099,9 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     private static DbColumnName AllocateCanonicalColumnName(
         string baseName,
         IReadOnlyList<DbColumnModel> members,
-        ISet<string> existingColumnNames
+        ISet<string> existingColumnNames,
+        QualifiedResourceName resource,
+        DbTableModel table
     )
     {
         var firstMember = members[0];
@@ -1112,7 +1116,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         var signature = string.Join(
             "\n",
             members
-                .Select(member => member.SourceJsonPath!.Value.Canonical)
+                .Select(member => GetRequiredSourcePath(member, resource, table).Canonical)
                 .OrderBy(path => path, StringComparer.Ordinal)
         );
         var hash = ComputeHash8($"key-unification-canonical-name:v1\n{signature}");
