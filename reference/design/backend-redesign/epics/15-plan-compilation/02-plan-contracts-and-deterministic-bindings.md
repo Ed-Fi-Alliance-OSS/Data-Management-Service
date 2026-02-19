@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1044
+jira_url: https://edfi.atlassian.net/browse/DMS-1044
 ---
 
 # Story: Plan Contracts + Deterministic Bindings (Parameter Naming, Ordering, Metadata)

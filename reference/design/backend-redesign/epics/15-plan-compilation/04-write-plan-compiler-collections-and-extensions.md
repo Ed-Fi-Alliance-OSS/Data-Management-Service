@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1045
+jira_url: https://edfi.atlassian.net/browse/DMS-1045
 ---
 
 # Story: Compile Write Plans for Child/Extension Tables (Replace Semantics + Batching)

@@ -483,9 +483,9 @@ Recommended Jira link creation:
 | Hard | `E05-S00` | `DMS-964` | `05-mpack-generation/00-protobuf-contracts.md` | `E05-S01` | `DMS-965` | `05-mpack-generation/01-pack-payload-shape.md` |
 | Hard | `E00-S02` | `DMS-925` | `00-effective-schema-hash/02-effective-schema-hash.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
 | Hard | `E05-S01` | `DMS-965` | `05-mpack-generation/01-pack-payload-shape.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
-| Hard | `E15-S06` | `TBD` | `15-plan-compilation/06-projection-plan-compilers.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
+| Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
 | Hard | `E05-S01` | `DMS-965` | `05-mpack-generation/01-pack-payload-shape.md` | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` |
-| Hard | `E15-S06` | `TBD` | `15-plan-compilation/06-projection-plan-compilers.md` | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` |
+| Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` |
 | Hard | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` |
 | Hard | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` |
 | Soft | `E06-S01` | `DMS-976` | `06-runtime-mapping-selection/01-resourcekey-validation.md` | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` |
@@ -522,7 +522,7 @@ Recommended Jira link creation:
 | Hard | `E02-S05` | `DMS-943` | `02-ddl-emission/05-descriptor-ddl.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
-| Soft | `E15-S05` | `TBD` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
+| Soft | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
 | Hard | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
 | Soft | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
 | Hard | `E02-S02` | `DMS-938` | `02-ddl-emission/02-project-and-resource-ddl.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
@@ -530,7 +530,7 @@ Recommended Jira link creation:
 | Hard | `E02-S01` | `DMS-937` | `02-ddl-emission/01-core-dms-ddl.md` | `E08-S03` | `DMS-992` | `08-relational-read-path/03-descriptor-projection.md` |
 | Hard | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` | `E08-S03` | `DMS-992` | `08-relational-read-path/03-descriptor-projection.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S04` | `DMS-993` | `08-relational-read-path/04-query-execution.md` |
-| Soft | `E15-S01` | `TBD` | `15-plan-compilation/01-plan-sql-foundations.md` | `E08-S04` | `DMS-993` | `08-relational-read-path/04-query-execution.md` |
+| Soft | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` | `E08-S04` | `DMS-993` | `08-relational-read-path/04-query-execution.md` |
 | Hard | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` |
 | Soft | `E02-S05` | `DMS-943` | `02-ddl-emission/05-descriptor-ddl.md` | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` |
@@ -584,13 +584,13 @@ Recommended Jira link creation:
 | Soft | `E03-S05` | `DMS-955` | `03-provisioning-workflow/05-seed-descriptors.md` | `E13-S04` | `DMS-1025` | `13-test-migration/04-descriptor-tests.md` |
 | Hard | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` | `E13-S04` | `DMS-1025` | `13-test-migration/04-descriptor-tests.md` |
 | Hard | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` | `E13-S04` | `DMS-1025` | `13-test-migration/04-descriptor-tests.md` |
-| Hard | `E02-S00` | `DMS-936` | `02-ddl-emission/00-dialect-abstraction.md` | `E15-S01` | `TBD` | `15-plan-compilation/01-plan-sql-foundations.md` |
-| Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E15-S02` | `TBD` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
-| Hard | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` | `E15-S02` | `TBD` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
-| Hard | `E15-S01` | `TBD` | `15-plan-compilation/01-plan-sql-foundations.md` | `E15-S02` | `TBD` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
-| Hard | `E15-S02` | `TBD` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` |
-| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S04` | `TBD` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` |
-| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S05` | `TBD` | `15-plan-compilation/05-read-plan-compiler-hydration.md` |
-| Soft | `E15-S04` | `TBD` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S06` | `TBD` | `15-plan-compilation/06-projection-plan-compilers.md` |
-| Hard | `E15-S05` | `TBD` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E15-S06` | `TBD` | `15-plan-compilation/06-projection-plan-compilers.md` |
+| Hard | `E02-S00` | `DMS-936` | `02-ddl-emission/00-dialect-abstraction.md` | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` |
+| Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
+| Hard | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
+| Hard | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
+| Hard | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` |
+| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` |
+| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` |
+| Soft | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
+| Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 <!-- END STORY DEPENDENCY EDGES -->

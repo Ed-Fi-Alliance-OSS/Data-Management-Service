@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1047
+jira_url: https://edfi.atlassian.net/browse/DMS-1047
 ---
 
 # Story: Compile Projection Plans (Reference Identity + Descriptor URI)

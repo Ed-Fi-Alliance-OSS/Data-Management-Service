@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1046
+jira_url: https://edfi.atlassian.net/browse/DMS-1046
 ---
 
 # Story: Compile Hydration Read Plans (`SelectByKeysetSql`) for All Tables

@@ -125,9 +125,9 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1026` — Authorization Design Spike (Relational Primary Store) — `reference/design/backend-redesign/epics/14-authorization/00-auth-placeholder.md`
 
 - `DMS-1027` — Runtime Plan Compilation + Caching (Shared with AOT Packs) — `reference/design/backend-redesign/epics/15-plan-compilation/EPIC.md`
-  - `TBD` — Plan SQL Foundations (Shared Canonical Writer + Dialect Helpers) — `reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md`
-  - `TBD` — Plan Contracts + Deterministic Bindings (Parameter Naming, Ordering, Metadata) — `reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md`
+  - `DMS-1043` — Plan SQL Foundations (Shared Canonical Writer + Dialect Helpers) — `reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md`
+  - `DMS-1044` — Plan Contracts + Deterministic Bindings (Parameter Naming, Ordering, Metadata) — `reference/design/backend-redesign/epics/15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md`
   - `DMS-1028` — Thin Slice — Runtime Plan Compilation + Caching (Root-Only) — `reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md`
-  - `TBD` — Compile Write Plans for Child/Extension Tables (Replace Semantics + Batching) — `reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md`
-  - `TBD` — Compile Hydration Read Plans (`SelectByKeysetSql`) for All Tables — `reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md`
-  - `TBD` — Compile Projection Plans (Reference Identity + Descriptor URI) — `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`
+  - `DMS-1045` — Compile Write Plans for Child/Extension Tables (Replace Semantics + Batching) — `reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md`
+  - `DMS-1046` — Compile Hydration Read Plans (`SelectByKeysetSql`) for All Tables — `reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md`
+  - `DMS-1047` — Compile Projection Plans (Reference Identity + Descriptor URI) — `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`

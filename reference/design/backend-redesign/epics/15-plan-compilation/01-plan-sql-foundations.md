@@ -1,6 +1,6 @@
 ---
-jira: TBD
-jira_url: TBD
+jira: DMS-1043
+jira_url: https://edfi.atlassian.net/browse/DMS-1043
 ---
 
 # Story: Plan SQL Foundations (Shared Canonical Writer + Dialect Helpers)
