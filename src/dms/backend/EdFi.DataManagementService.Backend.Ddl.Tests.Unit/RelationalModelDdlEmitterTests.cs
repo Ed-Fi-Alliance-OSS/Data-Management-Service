@@ -37,13 +37,18 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Foreign_Keys
     [Test]
     public void It_should_emit_foreign_keys_after_tables()
     {
+        // RelationalModelDdlEmitter does not emit phase comment markers (unlike CoreDdlEmitter).
+        // We verify ordering by finding first occurrence of each DDL construct.
         var schemaIndex = _ddl.IndexOf("CREATE SCHEMA");
         var tableIndex = _ddl.IndexOf("CREATE TABLE");
         var fkIndex = _ddl.IndexOf("ALTER TABLE");
 
+        // First verify each construct is present
         schemaIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE SCHEMA in DDL");
         tableIndex.Should().BeGreaterOrEqualTo(0, "expected CREATE TABLE in DDL");
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected ALTER TABLE in DDL");
+
+        // Then verify ordering: schemas before tables, tables before FKs
         schemaIndex.Should().BeLessThan(tableIndex);
         tableIndex.Should().BeLessThan(fkIndex);
     }

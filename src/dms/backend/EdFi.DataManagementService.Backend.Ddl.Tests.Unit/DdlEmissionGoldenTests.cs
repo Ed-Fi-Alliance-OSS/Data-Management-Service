@@ -359,9 +359,10 @@ public class Given_DdlEmitter_With_FkSupportIndex_For_Pgsql : DdlEmissionGoldenT
     [Test]
     public void It_should_emit_fk_support_index_exactly_once()
     {
+        // Use dialect-specific quoted identifier pattern for precise matching
         var indexMatches = System.Text.RegularExpressions.Regex.Matches(
             _ddlContent,
-            @"CREATE\s+INDEX.*IX_Enrollment_SchoolId",
+            @"CREATE\s+INDEX\s+""IX_Enrollment_SchoolId""",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
         indexMatches.Count.Should().Be(1, "FK-support index should be emitted exactly once");
@@ -391,9 +392,10 @@ public class Given_DdlEmitter_With_FkSupportIndex_For_Mssql : DdlEmissionGoldenT
     [Test]
     public void It_should_emit_fk_support_index_exactly_once()
     {
+        // Use dialect-specific quoted identifier pattern for precise matching
         var indexMatches = System.Text.RegularExpressions.Regex.Matches(
             _ddlContent,
-            @"CREATE\s+INDEX.*IX_Enrollment_SchoolId",
+            @"CREATE\s+INDEX\s+\[IX_Enrollment_SchoolId\]",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase
         );
         indexMatches.Count.Should().Be(1, "FK-support index should be emitted exactly once");

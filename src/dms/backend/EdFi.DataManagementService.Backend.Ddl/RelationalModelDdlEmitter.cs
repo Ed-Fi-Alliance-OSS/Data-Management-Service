@@ -1016,6 +1016,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         if (scalarType is null)
         {
+            // ColumnKind.Scalar always has an explicit ScalarType from schema projection.
+            // The cases below are implicit system columns with no ScalarType.
             return column.Kind switch
             {
                 ColumnKind.Ordinal => _dialect.Rules.ScalarTypeDefaults.Int32Type,
@@ -1063,14 +1065,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         var fkCol = Quote(constraint.FkColumn);
 
         // All columns NULL case
-        var allNull = new List<string> { $"{fkCol} IS NULL" };
-        allNull.AddRange(constraint.DependentColumns.Select(column => $"{Quote(column)} IS NULL"));
-        var allNullClause = string.Join(" AND ", allNull);
+        var allNullClause = string.Join(
+            " AND ",
+            constraint
+                .DependentColumns.Select(column => $"{Quote(column)} IS NULL")
+                .Prepend($"{fkCol} IS NULL")
+        );
 
         // All columns NOT NULL case
-        var allNotNull = new List<string> { $"{fkCol} IS NOT NULL" };
-        allNotNull.AddRange(constraint.DependentColumns.Select(column => $"{Quote(column)} IS NOT NULL"));
-        var allNotNullClause = string.Join(" AND ", allNotNull);
+        var allNotNullClause = string.Join(
+            " AND ",
+            constraint
+                .DependentColumns.Select(column => $"{Quote(column)} IS NOT NULL")
+                .Prepend($"{fkCol} IS NOT NULL")
+        );
 
         return $"({allNullClause}) OR ({allNotNullClause})";
     }
@@ -1297,8 +1305,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Escapes single quotes in a value for safe embedding in a SQL string literal.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Inputs are schema-derived and pre-validated (project names, resource names, JSON paths)
+    /// from the API schema loader. These are not user-supplied runtime values.
+    /// </para>
+    /// <para>
     /// Assumes <c>standard_conforming_strings = on</c> (PostgreSQL default since 9.1),
     /// so backslashes are treated as literal characters and do not need escaping.
-    /// </summary>
+    /// For MSSQL, <c>SET QUOTED_IDENTIFIER ON</c> (the default) provides similar semantics.
+    /// </para>
+    /// </remarks>
     private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 }
