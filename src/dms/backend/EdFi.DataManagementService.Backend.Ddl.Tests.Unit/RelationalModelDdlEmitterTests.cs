@@ -426,6 +426,108 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// All-Or-None CHECK Constraint Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_AllOrNone_CHECK_Constraint
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AllOrNoneCheckFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_check_constraint_with_bidirectional_all_or_none()
+    {
+        // Bidirectional: (all NULL) OR (all NOT NULL)
+        _ddl.Should().Contain("CHK_Reference_AllOrNone");
+        _ddl.Should().Contain("CHECK");
+    }
+
+    [Test]
+    public void It_should_require_fk_null_when_deps_null()
+    {
+        // First clause: FK IS NULL AND all deps IS NULL
+        _ddl.Should().Contain("\"Reference_DocumentId\" IS NULL");
+        _ddl.Should().Contain("\"Reference_IdentityPart1\" IS NULL");
+        _ddl.Should().Contain("\"Reference_IdentityPart2\" IS NULL");
+    }
+
+    [Test]
+    public void It_should_require_fk_not_null_when_deps_not_null()
+    {
+        // Second clause: FK IS NOT NULL AND all deps IS NOT NULL
+        _ddl.Should().Contain("\"Reference_DocumentId\" IS NOT NULL");
+        _ddl.Should().Contain("\"Reference_IdentityPart1\" IS NOT NULL");
+        _ddl.Should().Contain("\"Reference_IdentityPart2\" IS NOT NULL");
+    }
+
+    [Test]
+    public void It_should_use_or_between_all_null_and_all_not_null_clauses()
+    {
+        // Format: (all NULL) OR (all NOT NULL)
+        _ddl.Should().MatchRegex(@"IS NULL.*AND.*IS NULL.*\)\s*OR\s*\(.*IS NOT NULL.*AND.*IS NOT NULL");
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_AllOrNone_CHECK_Constraint
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AllOrNoneCheckFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_check_constraint_with_bidirectional_all_or_none()
+    {
+        // Bidirectional: (all NULL) OR (all NOT NULL)
+        _ddl.Should().Contain("CHK_Reference_AllOrNone");
+        _ddl.Should().Contain("CHECK");
+    }
+
+    [Test]
+    public void It_should_require_fk_null_when_deps_null()
+    {
+        // First clause: FK IS NULL AND all deps IS NULL
+        _ddl.Should().Contain("[Reference_DocumentId] IS NULL");
+        _ddl.Should().Contain("[Reference_IdentityPart1] IS NULL");
+        _ddl.Should().Contain("[Reference_IdentityPart2] IS NULL");
+    }
+
+    [Test]
+    public void It_should_require_fk_not_null_when_deps_not_null()
+    {
+        // Second clause: FK IS NOT NULL AND all deps IS NOT NULL
+        _ddl.Should().Contain("[Reference_DocumentId] IS NOT NULL");
+        _ddl.Should().Contain("[Reference_IdentityPart1] IS NOT NULL");
+        _ddl.Should().Contain("[Reference_IdentityPart2] IS NOT NULL");
+    }
+
+    [Test]
+    public void It_should_use_or_between_all_null_and_all_not_null_clauses()
+    {
+        // Format: (all NULL) OR (all NOT NULL)
+        _ddl.Should().MatchRegex(@"IS NULL.*AND.*IS NULL.*\)\s*OR\s*\(.*IS NOT NULL.*AND.*IS NOT NULL");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Trigger Tests
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1456,6 +1558,119 @@ internal static class AbstractIdentityTableFkFixture
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, edfiSchema)],
             [],
             [identityTable],
+            [],
+            [],
+            []
+        );
+    }
+}
+
+internal static class AllOrNoneCheckFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var edfiSchema = new DbSchemaName("edfi");
+        var resource = new QualifiedResourceName("Ed-Fi", "Test");
+        var resourceKey = new ResourceKeyEntry(1, resource, "1.0.0", false);
+
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var testIdColumn = new DbColumnName("TestId");
+        var referenceFkColumn = new DbColumnName("Reference_DocumentId");
+        var identityPart1Column = new DbColumnName("Reference_IdentityPart1");
+        var identityPart2Column = new DbColumnName("Reference_IdentityPart2");
+
+        // Root table with a document reference that has an all-or-none check constraint
+        var tableName = new DbTableName(edfiSchema, "Test");
+        var table = new DbTableModel(
+            tableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_Test", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    testIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                // Document reference FK column (nullable for optional reference)
+                new DbColumnModel(
+                    referenceFkColumn,
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                // Propagated identity columns (nullable for optional reference)
+                new DbColumnModel(
+                    identityPart1Column,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    identityPart2Column,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: true,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                // All-or-none check: FK and identity columns must all be null or all be not null
+                new TableConstraint.AllOrNoneNullability(
+                    "CHK_Reference_AllOrNone",
+                    referenceFkColumn,
+                    [identityPart1Column, identityPart2Column]
+                ),
+            ]
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resource,
+            edfiSchema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            [table],
+            [],
+            []
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [resourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, edfiSchema)],
+            [new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)],
+            [],
             [],
             [],
             []

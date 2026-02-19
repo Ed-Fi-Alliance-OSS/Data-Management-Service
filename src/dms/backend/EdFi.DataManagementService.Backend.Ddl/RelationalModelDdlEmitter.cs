@@ -1106,15 +1106,24 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Formats the expression for an all-or-none nullability check constraint.
+    /// Enforces bidirectional all-or-none semantics: either all columns (FK + dependents)
+    /// are NULL, or all columns are NOT NULL. This prevents partial composite FK values.
     /// </summary>
     private string FormatAllOrNoneCheck(TableConstraint.AllOrNoneNullability constraint)
     {
-        var dependencies = string.Join(
-            " AND ",
-            constraint.DependentColumns.Select(column => $"{Quote(column)} IS NOT NULL")
-        );
+        var fkCol = Quote(constraint.FkColumn);
 
-        return $"({Quote(constraint.FkColumn)} IS NULL) OR ({dependencies})";
+        // All columns NULL case
+        var allNull = new List<string> { $"{fkCol} IS NULL" };
+        allNull.AddRange(constraint.DependentColumns.Select(column => $"{Quote(column)} IS NULL"));
+        var allNullClause = string.Join(" AND ", allNull);
+
+        // All columns NOT NULL case
+        var allNotNull = new List<string> { $"{fkCol} IS NOT NULL" };
+        allNotNull.AddRange(constraint.DependentColumns.Select(column => $"{Quote(column)} IS NOT NULL"));
+        var allNotNullClause = string.Join(" AND ", allNotNull);
+
+        return $"({allNullClause}) OR ({allNotNullClause})";
     }
 
     /// <summary>
