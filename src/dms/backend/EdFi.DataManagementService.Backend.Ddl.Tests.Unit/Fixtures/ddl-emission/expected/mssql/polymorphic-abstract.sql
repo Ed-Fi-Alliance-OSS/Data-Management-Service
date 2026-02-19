@@ -48,6 +48,17 @@ REFERENCES [edfi].[EducationOrganizationIdentity] ([DocumentId])
 ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
+IF NOT EXISTS (
+    SELECT 1 FROM sys.foreign_keys
+    WHERE name = N'FK_EducationOrganizationIdentity_Document' AND parent_object_id = OBJECT_ID(N'edfi.EducationOrganizationIdentity')
+)
+ALTER TABLE [edfi].[EducationOrganizationIdentity]
+ADD CONSTRAINT [FK_EducationOrganizationIdentity_Document]
+FOREIGN KEY ([DocumentId])
+REFERENCES [dms].[Document] ([DocumentId])
+ON DELETE CASCADE
+ON UPDATE NO ACTION;
+
 GO
 CREATE OR ALTER VIEW [edfi].[EducationOrganization] AS
 SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'School' AS nvarchar(50)) AS [Discriminator]

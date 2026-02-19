@@ -350,6 +350,82 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Abstract Identity Table FK Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Table_FK
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractIdentityTableFkFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_fk_from_abstract_identity_table_to_dms_document()
+    {
+        // Design requirement: abstract identity tables must have FK to dms.Document
+        _ddl.Should().Contain("FK_TestIdentity_Document");
+        _ddl.Should().Contain("REFERENCES \"dms\".\"Document\"");
+    }
+
+    [Test]
+    public void It_should_emit_abstract_identity_table_fk_in_phase_4()
+    {
+        // FK emission for abstract identity tables should come after table creation
+        var tableIndex = _ddl.IndexOf("CREATE TABLE IF NOT EXISTS \"edfi\".\"TestIdentity\"");
+        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Document");
+
+        tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
+        fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
+        fkIndex.Should().BeGreaterThan(tableIndex);
+    }
+}
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Table_FK
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = AbstractIdentityTableFkFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_fk_from_abstract_identity_table_to_dms_document()
+    {
+        // Design requirement: abstract identity tables must have FK to dms.Document
+        _ddl.Should().Contain("FK_TestIdentity_Document");
+        _ddl.Should().Contain("REFERENCES [dms].[Document]");
+    }
+
+    [Test]
+    public void It_should_emit_abstract_identity_table_fk_in_phase_4()
+    {
+        // FK emission for abstract identity tables should come after table creation
+        var tableIndex = _ddl.IndexOf("CREATE TABLE [edfi].[TestIdentity]");
+        var fkIndex = _ddl.IndexOf("FK_TestIdentity_Document");
+
+        tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
+        fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
+        fkIndex.Should().BeGreaterThan(tableIndex);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Trigger Tests
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1290,6 +1366,99 @@ internal static class TriggerFixture
             [],
             [],
             [trigger]
+        );
+    }
+}
+
+internal static class AbstractIdentityTableFkFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var edfiSchema = new DbSchemaName("edfi");
+        var dmsSchema = new DbSchemaName("dms");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var testIdColumn = new DbColumnName("TestId");
+        var discriminatorColumn = new DbColumnName("Discriminator");
+
+        var abstractResource = new QualifiedResourceName("Ed-Fi", "Test");
+        var abstractResourceKey = new ResourceKeyEntry(1, abstractResource, "1.0.0", true);
+
+        // Abstract identity table with FK to dms.Document
+        var identityTableName = new DbTableName(edfiSchema, "TestIdentity");
+        var identityTable = new AbstractIdentityTableInfo(
+            abstractResourceKey,
+            new DbTableModel(
+                identityTableName,
+                new JsonPathExpression("$", []),
+                new TableKey(
+                    "PK_TestIdentity",
+                    [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+                ),
+                [
+                    new DbColumnModel(
+                        documentIdColumn,
+                        ColumnKind.ParentKeyPart,
+                        new RelationalScalarType(ScalarKind.Int64),
+                        IsNullable: false,
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    ),
+                    new DbColumnModel(
+                        testIdColumn,
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.Int32),
+                        IsNullable: false,
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    ),
+                    new DbColumnModel(
+                        discriminatorColumn,
+                        ColumnKind.Scalar,
+                        new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                        IsNullable: false,
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    ),
+                ],
+                [
+                    // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
+                    new TableConstraint.ForeignKey(
+                        "FK_TestIdentity_Document",
+                        [documentIdColumn],
+                        new DbTableName(dmsSchema, "Document"),
+                        [documentIdColumn],
+                        ReferentialAction.Cascade,
+                        ReferentialAction.NoAction
+                    ),
+                ]
+            )
+        );
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [abstractResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, edfiSchema)],
+            [],
+            [identityTable],
+            [],
+            [],
+            []
         );
     }
 }

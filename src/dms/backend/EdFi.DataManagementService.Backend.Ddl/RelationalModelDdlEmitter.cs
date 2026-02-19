@@ -51,7 +51,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         EmitAbstractIdentityTables(writer, modelSet.AbstractIdentityTablesInNameOrder);
 
         // Phase 4: Foreign Keys (separate ALTER TABLE statements)
-        EmitForeignKeys(writer, modelSet.ConcreteResourcesInNameOrder);
+        EmitForeignKeys(
+            writer,
+            modelSet.ConcreteResourcesInNameOrder,
+            modelSet.AbstractIdentityTablesInNameOrder
+        );
 
         // Phase 5: Indexes
         EmitIndexes(writer, modelSet.IndexesInCreateOrder);
@@ -152,28 +156,47 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// <summary>
     /// Emits idempotent <c>ALTER TABLE ADD CONSTRAINT</c> statements for all foreign keys.
     /// </summary>
-    private void EmitForeignKeys(SqlWriter writer, IReadOnlyList<ConcreteResourceModel> resources)
+    private void EmitForeignKeys(
+        SqlWriter writer,
+        IReadOnlyList<ConcreteResourceModel> resources,
+        IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTables
+    )
     {
+        // Emit FKs for concrete resource tables
         foreach (var resource in resources)
         {
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
-                foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
-                {
-                    writer.AppendLine(
-                        _dialect.AddForeignKeyConstraint(
-                            table.Table,
-                            fk.Name,
-                            fk.Columns,
-                            fk.TargetTable,
-                            fk.TargetColumns,
-                            fk.OnDelete,
-                            fk.OnUpdate
-                        )
-                    );
-                    writer.AppendLine();
-                }
+                EmitTableForeignKeys(writer, table);
             }
+        }
+
+        // Emit FKs for abstract identity tables (e.g., DocumentId -> dms.Document)
+        foreach (var tableInfo in abstractIdentityTables)
+        {
+            EmitTableForeignKeys(writer, tableInfo.TableModel);
+        }
+    }
+
+    /// <summary>
+    /// Emits foreign key constraints for a single table.
+    /// </summary>
+    private void EmitTableForeignKeys(SqlWriter writer, DbTableModel table)
+    {
+        foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
+        {
+            writer.AppendLine(
+                _dialect.AddForeignKeyConstraint(
+                    table.Table,
+                    fk.Name,
+                    fk.Columns,
+                    fk.TargetTable,
+                    fk.TargetColumns,
+                    fk.OnDelete,
+                    fk.OnUpdate
+                )
+            );
+            writer.AppendLine();
         }
     }
 

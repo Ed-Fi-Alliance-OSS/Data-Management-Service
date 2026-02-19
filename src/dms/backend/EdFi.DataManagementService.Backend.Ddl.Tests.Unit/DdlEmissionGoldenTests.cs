@@ -700,7 +700,17 @@ internal static class PolymorphicAbstractFixture
                     TargetResource: null
                 ),
             ],
-            []
+            [
+                // FK from abstract identity table to dms.Document (as created by BuildIdentityTableConstraints)
+                new TableConstraint.ForeignKey(
+                    "FK_EducationOrganizationIdentity_Document",
+                    [documentIdColumn],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
         );
 
         // School concrete table
