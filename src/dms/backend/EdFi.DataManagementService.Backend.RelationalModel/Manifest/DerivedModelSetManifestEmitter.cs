@@ -330,54 +330,37 @@ public static class DerivedModelSetManifestEmitter
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            if (trigger.Parameters is TriggerKindParameters.AbstractIdentityMaintenance abstractId)
+            switch (trigger.Parameters)
             {
-                writer.WritePropertyName("target_table");
-                WriteTableReference(writer, abstractId.TargetTable);
-                WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
-                writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
-            }
-            else if (trigger.Parameters is TriggerKindParameters.IdentityPropagationFallback propagation)
-            {
-                writer.WritePropertyName("referrer_updates");
-                writer.WriteStartArray();
-                foreach (var referrer in propagation.ReferrerUpdates)
-                {
-                    writer.WriteStartObject();
-                    writer.WritePropertyName("referrer_table");
-                    WriteTableReference(writer, referrer.ReferrerTable);
-                    writer.WriteString("referrer_fk_column", referrer.ReferrerFkColumn.Value);
-                    WriteTargetColumnMappings(writer, referrer.ColumnMappings);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndArray();
-            }
-            else if (trigger.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance refId)
-            {
-                writer.WriteNumber("resource_key_id", refId.ResourceKeyId);
-                writer.WriteString("project_name", refId.ProjectName);
-                writer.WriteString("resource_name", refId.ResourceName);
-                writer.WritePropertyName("identity_elements");
-                writer.WriteStartArray();
-                foreach (var element in refId.IdentityElements)
-                {
-                    writer.WriteStartObject();
-                    writer.WriteString("column", element.Column.Value);
-                    writer.WriteString("identity_json_path", element.IdentityJsonPath);
-                    writer.WriteEndObject();
-                }
-                writer.WriteEndArray();
+                case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
+                    writer.WritePropertyName("target_table");
+                    WriteTableReference(writer, abstractId.TargetTable);
+                    WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
+                    writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
+                    break;
 
-                if (refId.SuperclassAlias is { } alias)
-                {
-                    writer.WritePropertyName("superclass_alias");
-                    writer.WriteStartObject();
-                    writer.WriteNumber("resource_key_id", alias.ResourceKeyId);
-                    writer.WriteString("project_name", alias.ProjectName);
-                    writer.WriteString("resource_name", alias.ResourceName);
+                case TriggerKindParameters.IdentityPropagationFallback propagation:
+                    writer.WritePropertyName("referrer_updates");
+                    writer.WriteStartArray();
+                    foreach (var referrer in propagation.ReferrerUpdates)
+                    {
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("referrer_table");
+                        WriteTableReference(writer, referrer.ReferrerTable);
+                        writer.WriteString("referrer_fk_column", referrer.ReferrerFkColumn.Value);
+                        WriteTargetColumnMappings(writer, referrer.ColumnMappings);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                    break;
+
+                case TriggerKindParameters.ReferentialIdentityMaintenance refId:
+                    writer.WriteNumber("resource_key_id", refId.ResourceKeyId);
+                    writer.WriteString("project_name", refId.ProjectName);
+                    writer.WriteString("resource_name", refId.ResourceName);
                     writer.WritePropertyName("identity_elements");
                     writer.WriteStartArray();
-                    foreach (var element in alias.IdentityElements)
+                    foreach (var element in refId.IdentityElements)
                     {
                         writer.WriteStartObject();
                         writer.WriteString("column", element.Column.Value);
@@ -385,8 +368,31 @@ public static class DerivedModelSetManifestEmitter
                         writer.WriteEndObject();
                     }
                     writer.WriteEndArray();
-                    writer.WriteEndObject();
-                }
+
+                    if (refId.SuperclassAlias is { } alias)
+                    {
+                        writer.WritePropertyName("superclass_alias");
+                        writer.WriteStartObject();
+                        writer.WriteNumber("resource_key_id", alias.ResourceKeyId);
+                        writer.WriteString("project_name", alias.ProjectName);
+                        writer.WriteString("resource_name", alias.ResourceName);
+                        writer.WritePropertyName("identity_elements");
+                        writer.WriteStartArray();
+                        foreach (var element in alias.IdentityElements)
+                        {
+                            writer.WriteStartObject();
+                            writer.WriteString("column", element.Column.Value);
+                            writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                            writer.WriteEndObject();
+                        }
+                        writer.WriteEndArray();
+                        writer.WriteEndObject();
+                    }
+                    break;
+
+                case TriggerKindParameters.DocumentStamping:
+                    // DocumentStamping has no additional properties
+                    break;
             }
 
             writer.WriteEndObject();

@@ -162,6 +162,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 {
                     // When superclassIdentityJsonPath is set, the subclass has exactly one identity path
                     // that maps to the superclass's single identity path.
+                    // This invariant is validated here at trigger derivation time rather than during schema
+                    // loading because superclassIdentityJsonPath is resolved from the ApiSchema JSON and the
+                    // identity element count is derived from the relational model building process.
                     if (identityElements.Count != 1)
                     {
                         throw new InvalidOperationException(
