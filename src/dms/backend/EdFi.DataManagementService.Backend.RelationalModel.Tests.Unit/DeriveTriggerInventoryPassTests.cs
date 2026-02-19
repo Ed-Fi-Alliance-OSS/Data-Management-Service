@@ -339,7 +339,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var schoolPropagation = _triggers.SingleOrDefault(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_School_Propagation"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
         schoolPropagation.Should().NotBeNull();
@@ -354,7 +354,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var studentPropagation = _triggers.SingleOrDefault(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_Student_Propagation"
+            && t.Name.Value == "TR_Student_PropagateIdentity"
         );
 
         studentPropagation.Should().BeNull();
@@ -368,7 +368,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_School_Propagation"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
         schoolPropagation.KeyColumns.Should().ContainSingle();
@@ -383,7 +383,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_School_Propagation"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
         schoolPropagation
@@ -401,7 +401,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Concrete_Targets
     {
         var schoolPropagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_School_Propagation"
+            && t.Name.Value == "TR_School_PropagateIdentity"
         );
 
         var propagationParams =
@@ -457,7 +457,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.SingleOrDefault(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
         propagation.Should().NotBeNull();
@@ -472,7 +472,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
         var propagationParams = propagation.Parameters as TriggerKindParameters.IdentityPropagationFallback;
@@ -492,7 +492,7 @@ public class Given_IdentityPropagationFallback_On_Mssql_With_Abstract_Targets
     {
         var propagation = _triggers.Single(t =>
             t.Parameters is TriggerKindParameters.IdentityPropagationFallback
-            && t.Name.Value == "TR_EducationOrganizationIdentity_Propagation"
+            && t.Name.Value == "TR_EducationOrganizationIdentity_PropagateIdentity"
         );
 
         propagation.KeyColumns.Should().ContainSingle();
