@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.Security;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
@@ -915,6 +916,250 @@ public class ConfigurationServiceDmsInstanceProviderTests
         }
     }
 
+    [TestFixture]
+    public class Given_DmsInstanceCache_Refresh_Disabled
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+        private FakeTimeProvider? _fakeTimeProvider;
+        private TestHttpMessageHandler? _handler;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            _handler.SetResponse(
+                "v2/dmsInstances/",
+                new[]
+                {
+                    new
+                    {
+                        Id = 1L,
+                        InstanceType = "Production",
+                        InstanceName = "Initial Instance",
+                        ConnectionString = "host=first;database=db1;",
+                        DmsInstanceRouteContexts = Array.Empty<object>(),
+                    },
+                }
+            );
+
+            var httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            var cacheSettings = new CacheSettings
+            {
+                DmsInstanceCacheRefreshEnabled = false,
+                DmsInstanceCacheExpirationSeconds = 1,
+            };
+
+            _fakeTimeProvider = new FakeTimeProvider();
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                cacheSettings,
+                _fakeTimeProvider
+            );
+
+            await _provider.LoadDmsInstances();
+
+            _handler.SetResponse(
+                "v2/dmsInstances/",
+                new[]
+                {
+                    new
+                    {
+                        Id = 2L,
+                        InstanceType = "Development",
+                        InstanceName = "Updated Instance",
+                        ConnectionString = "host=second;database=db2;",
+                        DmsInstanceRouteContexts = Array.Empty<object>(),
+                    },
+                }
+            );
+        }
+
+        [Test]
+        public async Task It_should_not_refresh_when_disabled()
+        {
+            await _provider!.RefreshInstancesIfExpiredAsync();
+
+            _handler!.GetRequestCount("v2/dmsInstances/").Should().Be(1);
+            _provider.GetAll().Should().ContainSingle(i => i.InstanceName == "Initial Instance");
+        }
+    }
+
+    [TestFixture]
+    public class Given_DmsInstanceCache_Refresh_Not_Expired
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+        private TestHttpMessageHandler? _handler;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            _handler.SetResponse(
+                "v2/dmsInstances/",
+                new[]
+                {
+                    new
+                    {
+                        Id = 1L,
+                        InstanceType = "Production",
+                        InstanceName = "Initial Instance",
+                        ConnectionString = "host=first;database=db1;",
+                        DmsInstanceRouteContexts = Array.Empty<object>(),
+                    },
+                }
+            );
+
+            var httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            var cacheSettings = new CacheSettings
+            {
+                DmsInstanceCacheRefreshEnabled = true,
+                DmsInstanceCacheExpirationSeconds = 600,
+            };
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                cacheSettings
+            );
+
+            await _provider.LoadDmsInstances();
+
+            _handler.SetResponse(
+                "v2/dmsInstances/",
+                new[]
+                {
+                    new
+                    {
+                        Id = 2L,
+                        InstanceType = "Development",
+                        InstanceName = "Updated Instance",
+                        ConnectionString = "host=second;database=db2;",
+                        DmsInstanceRouteContexts = Array.Empty<object>(),
+                    },
+                }
+            );
+        }
+
+        [Test]
+        public async Task It_should_not_refresh_before_expiration()
+        {
+            await _provider!.RefreshInstancesIfExpiredAsync();
+
+            _handler!.GetRequestCount("v2/dmsInstances/").Should().Be(1);
+            _provider.GetAll().Should().ContainSingle(i => i.InstanceName == "Initial Instance");
+        }
+    }
+
+    [TestFixture]
+    public class Given_DmsInstanceCache_Refresh_Expired
+    {
+        private ConfigurationServiceDmsInstanceProvider? _provider;
+        private FakeTimeProvider? _fakeTimeProvider;
+        private TestHttpMessageHandler? _handler;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _fakeTimeProvider = new FakeTimeProvider();
+            var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+            A.CallTo(() => tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._))
+                .Returns("valid-token");
+
+            _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
+            _handler.SetResponse(
+                "v2/dmsInstances/",
+                new[]
+                {
+                    new
+                    {
+                        Id = 1L,
+                        InstanceType = "Production",
+                        InstanceName = "Initial Instance",
+                        ConnectionString = "host=first;database=db1;",
+                        DmsInstanceRouteContexts = Array.Empty<object>(),
+                    },
+                }
+            );
+
+            var httpClient = new HttpClient(_handler) { BaseAddress = new Uri("https://api.example.com/") };
+            var apiClient = new ConfigurationServiceApiClient(httpClient);
+            var context = new ConfigurationServiceContext("clientId", "secret", "scope");
+
+            var cacheSettings = new CacheSettings
+            {
+                DmsInstanceCacheRefreshEnabled = true,
+                DmsInstanceCacheExpirationSeconds = 10,
+            };
+
+            _provider = new ConfigurationServiceDmsInstanceProvider(
+                apiClient,
+                tokenHandler,
+                context,
+                NullLogger<ConfigurationServiceDmsInstanceProvider>.Instance,
+                cacheSettings,
+                _fakeTimeProvider
+            );
+
+            await _provider.LoadDmsInstances();
+
+            _handler.SetResponse(
+                "v2/dmsInstances/",
+                new[]
+                {
+                    new
+                    {
+                        Id = 2L,
+                        InstanceType = "Development",
+                        InstanceName = "Updated Instance",
+                        ConnectionString = "host=second;database=db2;",
+                        DmsInstanceRouteContexts = Array.Empty<object>(),
+                    },
+                }
+            );
+        }
+
+        [Test]
+        public async Task It_should_refresh_after_expiration()
+        {
+            _fakeTimeProvider!.Advance(TimeSpan.FromSeconds(11));
+
+            await _provider!.RefreshInstancesIfExpiredAsync();
+
+            _handler!.GetRequestCount("v2/dmsInstances/").Should().Be(2);
+            _provider.GetAll().Should().Contain(i => i.InstanceName == "Updated Instance");
+        }
+
+        [Test]
+        public async Task It_should_not_refresh_before_expiration()
+        {
+            _fakeTimeProvider!.Advance(TimeSpan.FromSeconds(2));
+
+            await _provider!.RefreshInstancesIfExpiredAsync();
+
+            _handler!.GetRequestCount("v2/dmsInstances/").Should().Be(1);
+            _provider.GetAll().Should().NotContain(i => i.InstanceName == "Updated Instance");
+        }
+    }
+
     /// <summary>
     /// Test HTTP message handler that returns predefined responses
     /// </summary>
@@ -923,6 +1168,7 @@ public class ConfigurationServiceDmsInstanceProviderTests
     {
         private readonly Dictionary<string, object> _responses = new();
         private readonly Dictionary<string, string> _jsonResponses = new();
+        private readonly Dictionary<string, int> _requestCounts = new();
 
         /// <summary>
         /// Gets the value of the Tenant header from the last request, or null if not present
@@ -939,6 +1185,9 @@ public class ConfigurationServiceDmsInstanceProviderTests
             _jsonResponses[path] = jsonContent;
         }
 
+        public int GetRequestCount(string path) =>
+            _requestCounts.TryGetValue(path, out var count) ? count : 0;
+
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
             CancellationToken cancellationToken
@@ -950,6 +1199,8 @@ public class ConfigurationServiceDmsInstanceProviderTests
                 : null;
 
             var path = request.RequestUri?.PathAndQuery.TrimStart('/') ?? "";
+
+            _requestCounts[path] = _requestCounts.TryGetValue(path, out var count) ? count + 1 : 1;
 
             string content = defaultContent;
 

@@ -18,6 +18,12 @@ public interface IDmsInstanceProvider
     Task<IList<DmsInstance>> LoadDmsInstances(string? tenant = null);
 
     /// <summary>
+    /// Refreshes the cached DMS instances for a tenant when the configured TTL has elapsed.
+    /// </summary>
+    /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>
+    Task RefreshInstancesIfExpiredAsync(string? tenant = null);
+
+    /// <summary>
     /// Gets all stored DMS instances for a tenant
     /// </summary>
     /// <param name="tenant">Optional tenant identifier for multi-tenant environments</param>

@@ -360,6 +360,48 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
 }
 
 /// <summary>
+/// Test fixture verifying that the effective schema manifest emitter produces
+/// byte-for-byte identical output when called twice with the same input.
+/// </summary>
+[TestFixture]
+public class Given_EffectiveSchemaManifestEmitter_Emitting_Twice_With_Same_Input
+{
+    private string _first = default!;
+    private string _second = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var effectiveSchema = effectiveSchemaSet.EffectiveSchema;
+
+        _first = EffectiveSchemaManifestEmitter.Emit(effectiveSchema, includeResourceKeys: true);
+        _second = EffectiveSchemaManifestEmitter.Emit(effectiveSchema, includeResourceKeys: true);
+    }
+
+    /// <summary>
+    /// It should produce byte for byte identical output.
+    /// </summary>
+    [Test]
+    public void It_should_produce_byte_for_byte_identical_output()
+    {
+        _first.Should().Be(_second);
+    }
+
+    /// <summary>
+    /// It should produce non empty output.
+    /// </summary>
+    [Test]
+    public void It_should_produce_non_empty_output()
+    {
+        _first.Should().NotBeNullOrWhiteSpace();
+    }
+}
+
+/// <summary>
 /// Shared helpers for effective schema manifest golden tests.
 /// </summary>
 file static class EffectiveSchemaManifestGoldenHelpers

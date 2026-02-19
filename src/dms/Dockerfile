@@ -42,10 +42,8 @@ RUN dotnet publish frontend/EdFi.DataManagementService.Frontend.AspNetCore/EdFi.
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.1-alpine3.23@sha256:2273b24ea865e253d5e3b66d0eae23ce53529946089819489410849ba62db12c AS runtimebase
 
-# bash: used in startup script and debugging
-# postgresql: used to test for PostgreSQL readiness
-# jq: used to parse plugins defined in JSON env variable
-RUN apk --no-cache add bash=~5 postgresql16-client=~16 jq=~1.8
+# Upgrade OpenSSL to fix CVE-2025-15467 and install runtime helpers
+RUN apk --no-cache add openssl=~3.5.5-r0 bash=~5 postgresql16-client=~16 jq=~1.8
 
 FROM runtimebase AS setup
 

@@ -2373,6 +2373,831 @@
       }
     }
   ],
+  "abstract_union_views": [
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "EducationOrganization"
+      },
+      "view_name": {
+        "schema": "edfi",
+        "name": "EducationOrganization_View"
+      },
+      "output_columns": [
+        {
+          "column_name": "DocumentId",
+          "type": {
+            "kind": "Int64"
+          },
+          "source_path": null,
+          "target_resource": null
+        },
+        {
+          "column_name": "EducationOrganizationId",
+          "type": {
+            "kind": "Int32"
+          },
+          "source_path": "$.educationOrganizationId",
+          "target_resource": null
+        },
+        {
+          "column_name": "Discriminator",
+          "type": {
+            "kind": "String",
+            "max_length": 256
+          },
+          "source_path": null,
+          "target_resource": null
+        }
+      ],
+      "union_arms": [
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "CommunityOrganization"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "CommunityOrganization"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "CommunityOrganizationId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:CommunityOrganization"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "CommunityProvider"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "CommunityProvider"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "CommunityProviderId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:CommunityProvider"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationOrganizationNetwork"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "EducationOrganizationNetwork"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganizationNetworkId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:EducationOrganizationNetwork"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "EducationServiceCenter"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "EducationServiceCenter"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationServiceCenterId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:EducationServiceCenter"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "LocalEducationAgency"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "LocalEducationAgency"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "LocalEducationAgencyId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:LocalEducationAgency"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "OrganizationDepartment"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "OrganizationDepartment"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "OrganizationDepartmentId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:OrganizationDepartment"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "PostSecondaryInstitution"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "PostSecondaryInstitution"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "PostSecondaryInstitutionId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:PostSecondaryInstitution"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "School"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "School"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "SchoolId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:School"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StateEducationAgency"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StateEducationAgency"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "StateEducationAgencyId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StateEducationAgency"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": {
+        "project_name": "Ed-Fi",
+        "resource_name": "GeneralStudentProgramAssociation"
+      },
+      "view_name": {
+        "schema": "edfi",
+        "name": "GeneralStudentProgramAssociation_View"
+      },
+      "output_columns": [
+        {
+          "column_name": "DocumentId",
+          "type": {
+            "kind": "Int64"
+          },
+          "source_path": null,
+          "target_resource": null
+        },
+        {
+          "column_name": "BeginDate",
+          "type": {
+            "kind": "Date"
+          },
+          "source_path": "$.beginDate",
+          "target_resource": null
+        },
+        {
+          "column_name": "EducationOrganizationReferenceEducationOrganizationId",
+          "type": {
+            "kind": "Int32"
+          },
+          "source_path": "$.educationOrganizationReference.educationOrganizationId",
+          "target_resource": null
+        },
+        {
+          "column_name": "ProgramReferenceEducationOrganizationId",
+          "type": {
+            "kind": "Int32"
+          },
+          "source_path": "$.programReference.educationOrganizationId",
+          "target_resource": null
+        },
+        {
+          "column_name": "ProgramReferenceProgramName",
+          "type": {
+            "kind": "String",
+            "max_length": 60
+          },
+          "source_path": "$.programReference.programName",
+          "target_resource": null
+        },
+        {
+          "column_name": "ProgramReferenceProgramTypeDescriptor",
+          "type": {
+            "kind": "Int64"
+          },
+          "source_path": "$.programReference.programTypeDescriptor",
+          "target_resource": {
+            "project_name": "Ed-Fi",
+            "resource_name": "ProgramTypeDescriptor"
+          }
+        },
+        {
+          "column_name": "StudentReferenceStudentUniqueId",
+          "type": {
+            "kind": "String",
+            "max_length": 32
+          },
+          "source_path": "$.studentReference.studentUniqueId",
+          "target_resource": null
+        },
+        {
+          "column_name": "Discriminator",
+          "type": {
+            "kind": "String",
+            "max_length": 256
+          },
+          "source_path": null,
+          "target_resource": null
+        }
+      ],
+      "union_arms": [
+        {
+          "concrete_member": {
+            "project_name": "Sample",
+            "resource_name": "StudentArtProgramAssociation"
+          },
+          "from_table": {
+            "schema": "sample",
+            "name": "StudentArtProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Sample:StudentArtProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentCTEProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentCTEProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentCTEProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentHomelessProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentHomelessProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentHomelessProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentLanguageInstructionProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentLanguageInstructionProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentLanguageInstructionProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentMigrantEducationProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentMigrantEducationProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentMigrantEducationProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentNeglectedOrDelinquentProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentNeglectedOrDelinquentProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentNeglectedOrDelinquentProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentSchoolFoodServiceProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentSchoolFoodServiceProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentSchoolFoodServiceProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentSection504ProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentSection504ProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentSection504ProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentSpecialEducationProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentSpecialEducationProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentSpecialEducationProgramAssociation"
+            }
+          ]
+        },
+        {
+          "concrete_member": {
+            "project_name": "Ed-Fi",
+            "resource_name": "StudentTitleIPartAProgramAssociation"
+          },
+          "from_table": {
+            "schema": "edfi",
+            "name": "StudentTitleIPartAProgramAssociation"
+          },
+          "projection_expressions": [
+            {
+              "kind": "SourceColumn",
+              "column_name": "DocumentId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "BeginDate"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "EducationOrganization_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_EducationOrganizationId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramName"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
+            },
+            {
+              "kind": "SourceColumn",
+              "column_name": "Student_StudentUniqueId"
+            },
+            {
+              "kind": "StringLiteral",
+              "value": "Ed-Fi:StudentTitleIPartAProgramAssociation"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "indexes": [
     {
       "name": "IX_AcademicWeek_School_DocumentId_School_SchoolId",

@@ -26,7 +26,8 @@ jobs:
     name: Code Analysis
     runs-on: ubuntu-latest
     permissions:
-        security-events: write
+      contents: read
+      security-events: write
     defaults:
       run:
         shell: pwsh
