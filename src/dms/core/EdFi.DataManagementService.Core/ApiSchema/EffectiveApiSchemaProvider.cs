@@ -102,6 +102,8 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 extensionCount
             );
 
+            var coreResourceByName = BuildCoreResourceByName(coreResources);
+
             foreach (JsonNode extension in apiSchemaNodes.ExtensionApiSchemaRootNodes)
             {
                 List<JsonNode> extensionResources = extension
@@ -110,10 +112,10 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
 
                 foreach (var nodeKey in nodeKeys)
                 {
-                    CopyResourceExtensionNodeToCore(extensionResources, coreResources, nodeKey);
+                    CopyResourceExtensionNodeToCore(extensionResources, coreResourceByName, nodeKey);
                 }
 
-                ApplyCommonExtensionOverrides(extensionResources, coreResources);
+                ApplyCommonExtensionOverrides(extensionResources, coreResourceByName);
             }
 
             _documents = new ApiSchemaDocuments(
@@ -136,6 +138,26 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 _schemaId
             );
         }
+    }
+
+    /// <summary>
+    /// Builds a lookup of core resources by name, detecting and logging duplicates.
+    /// </summary>
+    private static Dictionary<string, JsonNode> BuildCoreResourceByName(List<JsonNode> coreResources)
+    {
+        Dictionary<string, JsonNode> coreResourceByName = [];
+        foreach (var coreResource in coreResources)
+        {
+            var name = coreResource.GetRequiredNode("resourceName").GetValue<string>();
+            if (!coreResourceByName.TryAdd(name, coreResource))
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{name}' appears more than once in the core schema. This should not happen since resource names are JSON object keys."
+                );
+            }
+        }
+
+        return coreResourceByName;
     }
 
     private void EnsureInitialized()
@@ -161,19 +183,12 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// Merges extension resource data into core resources by copying specific nodes identified
     /// by the nodeKey.
     /// </summary>
-    private static void CopyResourceExtensionNodeToCore(
+    private void CopyResourceExtensionNodeToCore(
         List<JsonNode> extensionResources,
-        List<JsonNode> coreResources,
+        Dictionary<string, JsonNode> coreResourceByName,
         string nodeKey
     )
     {
-        Dictionary<string, JsonNode> coreResourceByName = [];
-        foreach (var coreResource in coreResources)
-        {
-            var name = coreResource.GetRequiredNode("resourceName").GetValue<string>();
-            coreResourceByName[name] = coreResource;
-        }
-
         foreach (
             JsonNode extensionResource in extensionResources.Where(extensionResource =>
                 extensionResource.GetRequiredNode("isResourceExtension").GetValue<bool>()
@@ -191,7 +206,13 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             switch (nodeValueKind)
             {
                 case JsonValueKind.Object:
-                    MergeExtensionObjectIntoCore(sourceExtensionNode, targetCoreNode);
+                    bool hasCommonExtensionOverrides =
+                        extensionResource["commonExtensionOverrides"]?.AsArray() is { Count: > 0 };
+                    MergeExtensionObjectIntoCore(
+                        sourceExtensionNode,
+                        targetCoreNode,
+                        hasCommonExtensionOverrides
+                    );
                     break;
                 case JsonValueKind.Array:
                     var targetArray = targetCoreNode.AsArray();
@@ -218,7 +239,11 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// <summary>
     /// Merges JSON object properties from an extension schema into a core schema object.
     /// </summary>
-    private static void MergeExtensionObjectIntoCore(JsonNode sourceExtensionNode, JsonNode targetCoreNode)
+    private void MergeExtensionObjectIntoCore(
+        JsonNode sourceExtensionNode,
+        JsonNode targetCoreNode,
+        bool hasCommonExtensionOverrides
+    )
     {
         var targetObject = targetCoreNode.AsObject();
         foreach (KeyValuePair<string, JsonNode?> sourceObject in sourceExtensionNode.AsObject())
@@ -226,21 +251,71 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             // If _ext exists in the target, merge its properties from the source.
             if (
                 string.Equals(sourceObject.Key, "_ext", StringComparison.InvariantCultureIgnoreCase)
-                && targetObject["_ext"]?["properties"] is JsonObject existingProps
-                && sourceObject.Value?.DeepClone()?["properties"] is JsonObject newProps
+                && targetObject["_ext"] is JsonObject existingExt
+                && sourceObject.Value?.DeepClone() is JsonObject newExt
             )
             {
-                foreach (var item in newProps)
-                {
-                    existingProps[item.Key] = item.Value?.DeepClone();
-                }
+                MergeExtFragment(existingExt, newExt);
             }
             else if (!targetObject.ContainsKey(sourceObject.Key))
             {
                 targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
             }
-            // Keys that already exist in core (e.g., "addresses") are common extension
-            // entries handled by ApplyCommonExtensionOverrides — skip them here.
+            else if (hasCommonExtensionOverrides)
+            {
+                // Duplicate key is expected — it will be handled by ApplyCommonExtensionOverrides
+                _logger.LogDebug(
+                    "Skipping duplicate key '{Key}' during extension merge — will be handled by common extension overrides",
+                    LoggingSanitizer.SanitizeForLogging(sourceObject.Key)
+                );
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate key '{sourceObject.Key}' found during extension merge with no commonExtensionOverrides to handle it"
+                );
+            }
+        }
+    }
+
+    /// <summary>
+    /// Merges an _ext schema fragment into an existing _ext object, combining properties,
+    /// required arrays, and other schema keywords.
+    /// </summary>
+    private static void MergeExtFragment(JsonObject existingExt, JsonObject newExt)
+    {
+        // Merge properties
+        if (
+            existingExt["properties"] is JsonObject existingProps
+            && newExt["properties"] is JsonObject newProps
+        )
+        {
+            foreach (var item in newProps)
+            {
+                existingProps[item.Key] = item.Value?.DeepClone();
+            }
+        }
+
+        // Merge required arrays
+        if (newExt["required"] is JsonArray newRequired)
+        {
+            if (existingExt["required"] is JsonArray existingRequired)
+            {
+                foreach (var req in newRequired)
+                {
+                    existingRequired.Add(req?.DeepClone());
+                }
+            }
+            else
+            {
+                existingExt["required"] = newRequired.DeepClone();
+            }
+        }
+
+        // Merge additionalProperties (new value wins if present)
+        if (newExt.ContainsKey("additionalProperties"))
+        {
+            existingExt["additionalProperties"] = newExt["additionalProperties"]?.DeepClone();
         }
     }
 
@@ -312,16 +387,9 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// </summary>
     private void ApplyCommonExtensionOverrides(
         List<JsonNode> extensionResources,
-        List<JsonNode> coreResources
+        Dictionary<string, JsonNode> coreResourceByName
     )
     {
-        Dictionary<string, JsonNode> coreResourceByName = [];
-        foreach (var coreResource in coreResources)
-        {
-            var name = coreResource.GetRequiredNode("resourceName").GetValue<string>();
-            coreResourceByName[name] = coreResource;
-        }
-
         foreach (
             JsonNode extensionResource in extensionResources.Where(extensionResource =>
                 extensionResource.GetRequiredNode("isResourceExtension").GetValue<bool>()
@@ -337,20 +405,26 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             var resourceName = extensionResource.GetRequiredNode("resourceName").GetValue<string>();
             if (!coreResourceByName.TryGetValue(resourceName, out var coreResource))
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Common extension overrides present for resource '{resourceName}' but no matching core resource found"
+                );
             }
 
             var coreJsonSchemaForInsert = coreResource["jsonSchemaForInsert"];
             if (coreJsonSchemaForInsert is null)
             {
-                continue;
+                throw new InvalidOperationException(
+                    $"Common extension overrides present for resource '{resourceName}' but core resource has no jsonSchemaForInsert"
+                );
             }
 
             foreach (JsonNode? overrideEntry in overrides)
             {
                 if (overrideEntry is null)
                 {
-                    continue;
+                    throw new InvalidOperationException(
+                        $"Null override entry found in commonExtensionOverrides for resource '{resourceName}'"
+                    );
                 }
 
                 var insertionLocations = overrideEntry["insertionLocations"]?.AsArray();
@@ -358,7 +432,9 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
 
                 if (insertionLocations is null || schemaFragment is null)
                 {
-                    continue;
+                    throw new InvalidOperationException(
+                        $"Common extension override for resource '{resourceName}' is missing required insertionLocations or schemaFragment"
+                    );
                 }
 
                 foreach (JsonNode? location in insertionLocations)
@@ -366,46 +442,40 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                     var jsonPath = location?.GetValue<string>();
                     if (string.IsNullOrEmpty(jsonPath))
                     {
-                        continue;
+                        throw new InvalidOperationException(
+                            $"Empty insertion location in commonExtensionOverrides for resource '{resourceName}'"
+                        );
                     }
 
                     // Navigate the JSONPath (e.g., "$.properties.addresses.items")
                     // to find the target node in the core jsonSchemaForInsert
-                    var targetNode = NavigateJsonPath(coreJsonSchemaForInsert, jsonPath);
+                    var targetNode = coreJsonSchemaForInsert.SelectNodeFromPath(jsonPath, _logger);
                     if (targetNode is null)
                     {
-                        _logger.LogDebug(
-                            "Could not navigate to '{JsonPath}' in core jsonSchemaForInsert for resource '{ResourceName}'",
-                            LoggingSanitizer.SanitizeForLogging(jsonPath),
-                            LoggingSanitizer.SanitizeForLogging(resourceName)
+                        throw new InvalidOperationException(
+                            $"Common extension override could not be applied: path '{jsonPath}' not found in core jsonSchemaForInsert for resource '{resourceName}'"
                         );
-                        continue;
                     }
 
                     // Insert or merge the _ext property at the target location
                     var targetProperties = targetNode["properties"]?.AsObject();
                     if (targetProperties is null)
                     {
-                        continue;
+                        throw new InvalidOperationException(
+                            $"Target node at '{jsonPath}' for resource '{resourceName}' has no 'properties' object"
+                        );
                     }
 
-                    if (targetProperties.ContainsKey("_ext"))
+                    if (
+                        targetProperties["_ext"] is JsonObject existingExt
+                        && schemaFragment.DeepClone() is JsonObject newFragment
+                    )
                     {
-                        // Merge into existing _ext
-                        var existingExtProps = targetProperties["_ext"]?["properties"]?.AsObject();
-                        var newExtProps = schemaFragment.DeepClone()["properties"]?.AsObject();
-                        if (existingExtProps is not null && newExtProps is not null)
-                        {
-                            foreach (var prop in newExtProps)
-                            {
-                                existingExtProps[prop.Key] = prop.Value?.DeepClone();
-                            }
-                        }
+                        MergeExtFragment(existingExt, newFragment);
                     }
                     else
                     {
-                        // Add _ext property
-                        targetProperties.Add("_ext", schemaFragment.DeepClone());
+                        targetProperties["_ext"] = schemaFragment.DeepClone();
                     }
 
                     _logger.LogDebug(
@@ -416,27 +486,5 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 }
             }
         }
-    }
-
-    /// <summary>
-    /// Navigates a simple JSONPath (e.g., "$.properties.addresses.items") starting from the given node.
-    /// Supports only dot-notation property access (no wildcards, filters, or array indices).
-    /// </summary>
-    private static JsonNode? NavigateJsonPath(JsonNode root, string jsonPath)
-    {
-        // Strip leading "$." prefix
-        var path = jsonPath.StartsWith("$.") ? jsonPath[2..] : jsonPath;
-
-        JsonNode? current = root;
-        foreach (var segment in path.Split('.'))
-        {
-            current = current?[segment];
-            if (current is null)
-            {
-                return null;
-            }
-        }
-
-        return current;
     }
 }

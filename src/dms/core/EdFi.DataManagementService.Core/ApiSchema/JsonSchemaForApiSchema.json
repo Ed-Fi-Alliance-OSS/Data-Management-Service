@@ -240,7 +240,7 @@
                                     "insertionLocations": {
                                         "type": "array",
                                         "items": {
-                                            "type": "string"
+                                            "$ref": "#/definitions/JsonPath"
                                         }
                                     },
                                     "schemaFragment": {
