@@ -365,10 +365,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitDocumentStampingBody(writer, trigger);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-                EmitReferentialIdentityBody(writer, trigger, refId);
+                EmitReferentialIdentityBody(writer, refId);
                 break;
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
-                EmitAbstractIdentityBody(writer, trigger, abstractId);
+                EmitAbstractIdentityBody(writer, abstractId);
                 break;
             case TriggerKindParameters.IdentityPropagationFallback propagation:
                 EmitIdentityPropagationBody(writer, trigger, propagation);
@@ -558,7 +558,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitReferentialIdentityBody(
         SqlWriter writer,
-        DbTriggerInfo trigger,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
@@ -792,7 +791,6 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitAbstractIdentityBody(
         SqlWriter writer,
-        DbTriggerInfo trigger,
         TriggerKindParameters.AbstractIdentityMaintenance abstractId
     )
     {
@@ -1058,11 +1056,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // The cases below are implicit system columns with no ScalarType.
             return column.Kind switch
             {
-                ColumnKind.Ordinal => _dialect.Rules.ScalarTypeDefaults.Int32Type,
-                ColumnKind.DocumentFk or ColumnKind.DescriptorFk or ColumnKind.ParentKeyPart => _dialect
-                    .Rules
-                    .ScalarTypeDefaults
-                    .Int64Type,
+                ColumnKind.Ordinal => _dialect.OrdinalColumnType,
+                ColumnKind.DocumentFk or ColumnKind.DescriptorFk or ColumnKind.ParentKeyPart =>
+                    _dialect.DocumentIdColumnType,
                 _ => throw new InvalidOperationException(
                     $"Column '{column.ColumnName.Value}' of kind {column.Kind} has no ScalarType."
                 ),
@@ -1128,17 +1124,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private string FormatNullOrTrueCheck(TableConstraint.NullOrTrue constraint)
     {
-        var trueLiteral = _dialect.Rules.Dialect switch
-        {
-            SqlDialect.Pgsql => "TRUE",
-            SqlDialect.Mssql => "1",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(_dialect.Rules.Dialect),
-                _dialect.Rules.Dialect,
-                "Unsupported SQL dialect."
-            ),
-        };
-
+        var trueLiteral = _dialect.RenderBooleanLiteral(true);
         return $"{Quote(constraint.Column)} IS NULL OR {Quote(constraint.Column)} = {trueLiteral}";
     }
 
