@@ -27,7 +27,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_School_EducationOrganizationIdentity'
-        AND conrelid = to_regclass('edfi.School')
+        AND conrelid = to_regclass('"edfi"."School"')
     )
     THEN
         ALTER TABLE "edfi"."School"
@@ -44,7 +44,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_LocalEducationAgency_EducationOrganizationIdentity'
-        AND conrelid = to_regclass('edfi.LocalEducationAgency')
+        AND conrelid = to_regclass('"edfi"."LocalEducationAgency"')
     )
     THEN
         ALTER TABLE "edfi"."LocalEducationAgency"
@@ -61,7 +61,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
         WHERE conname = 'FK_EducationOrganizationIdentity_Document'
-        AND conrelid = to_regclass('edfi.EducationOrganizationIdentity')
+        AND conrelid = to_regclass('"edfi"."EducationOrganizationIdentity"')
     )
     THEN
         ALTER TABLE "edfi"."EducationOrganizationIdentity"

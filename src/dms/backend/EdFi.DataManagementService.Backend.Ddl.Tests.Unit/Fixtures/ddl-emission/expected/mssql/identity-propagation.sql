@@ -13,6 +13,7 @@ IF OBJECT_ID(N'edfi.StudentSchoolAssociation', N'U') IS NULL
 CREATE TABLE [edfi].[StudentSchoolAssociation]
 (
     [DocumentId] bigint NOT NULL,
+    [School_DocumentId] bigint NOT NULL,
     [SchoolId] int NOT NULL,
     [StudentUniqueId] nvarchar(32) NOT NULL,
     [EntryDate] date NOT NULL,
@@ -25,8 +26,8 @@ IF NOT EXISTS (
 )
 ALTER TABLE [edfi].[StudentSchoolAssociation]
 ADD CONSTRAINT [FK_StudentSchoolAssociation_School]
-FOREIGN KEY ([SchoolId])
-REFERENCES [edfi].[School] ([SchoolId])
+FOREIGN KEY ([School_DocumentId])
+REFERENCES [edfi].[School] ([DocumentId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 

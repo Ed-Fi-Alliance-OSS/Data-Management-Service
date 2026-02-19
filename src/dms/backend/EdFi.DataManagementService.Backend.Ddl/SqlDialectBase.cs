@@ -229,4 +229,12 @@ public abstract class SqlDialectBase : ISqlDialect
 
     /// <inheritdoc />
     public virtual string RenderIntegerLiteral(int value) => value.ToString();
+
+    /// <inheritdoc />
+    public abstract string RenderComputedColumnDefinition(
+        DbColumnName columnName,
+        string sqlType,
+        DbColumnName canonicalColumn,
+        DbColumnName? presenceColumn
+    );
 }

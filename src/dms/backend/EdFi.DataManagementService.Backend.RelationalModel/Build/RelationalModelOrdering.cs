@@ -244,20 +244,35 @@ internal static class RelationalModelOrdering
     }
 
     /// <summary>
-    /// Returns a grouping value used to order columns by key columns first, then descriptor FKs, then scalars.
+    /// Returns a grouping value to order columns per spec: key → unification support →
+    /// reference groups → descriptor FK → scalar → other.
     /// </summary>
     private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
     {
+        // Group 0: Key columns
         if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
         {
             return 0;
         }
 
+        // Group 1: Unification support columns (canonical storage + presence flags).
+        // These are Stored columns with no SourceJsonPath — they hold the canonical unified
+        // value or act as presence indicators for key unification.
+        if (column.Storage is ColumnStorage.Stored && column.SourceJsonPath is null)
+        {
+            return 1;
+        }
+
         return column.Kind switch
         {
-            ColumnKind.DescriptorFk => 1,
-            ColumnKind.Scalar => 2,
-            _ => 3,
+            // Group 2: Reference groups (DocumentFk + related identity parts)
+            ColumnKind.DocumentFk => 2,
+            // Group 3: Descriptor FKs
+            ColumnKind.DescriptorFk => 3,
+            // Group 4: Scalar columns
+            ColumnKind.Scalar => 4,
+            // Group 5: Other (Ordinal, ParentKeyPart, etc.)
+            _ => 5,
         };
     }
 
