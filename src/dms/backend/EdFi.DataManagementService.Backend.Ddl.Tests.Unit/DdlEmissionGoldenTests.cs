@@ -71,7 +71,7 @@ public abstract class DdlEmissionGoldenTestBase
         if (!process.WaitForExit(30_000))
         {
             process.Kill();
-            return "git diff timed out after 30 seconds";
+            throw new TimeoutException("git diff timed out after 30 seconds");
         }
 
         if (process.ExitCode == 0)

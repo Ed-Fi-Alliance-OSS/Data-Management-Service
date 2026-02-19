@@ -292,6 +292,14 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Union_View
     }
 
     [Test]
+    public void It_should_include_all_union_arms()
+    {
+        // Both concrete table names should appear in the view's FROM clauses
+        _ddl.Should().Contain("\"School\"");
+        _ddl.Should().Contain("\"LocalEducationAgency\"");
+    }
+
+    [Test]
     public void It_should_emit_views_after_tables_and_indexes()
     {
         var tableIndex = _ddl.IndexOf("CREATE TABLE");
@@ -334,6 +342,14 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
     public void It_should_include_union_all()
     {
         _ddl.Should().Contain("UNION ALL");
+    }
+
+    [Test]
+    public void It_should_include_all_union_arms()
+    {
+        // Both concrete table names should appear in the view's FROM clauses
+        _ddl.Should().Contain("[School]");
+        _ddl.Should().Contain("[LocalEducationAgency]");
     }
 
     [Test]
@@ -502,7 +518,11 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_AllOrNone_CHECK_Cons
     public void It_should_use_or_between_all_null_and_all_not_null_clauses()
     {
         // Format: (all NULL) OR (all NOT NULL)
-        _ddl.Should().MatchRegex(@"IS NULL.*AND.*IS NULL.*\)\s*OR\s*\(.*IS NOT NULL.*AND.*IS NOT NULL");
+        // Use [\s\S]* instead of .* to match across newlines in multiline CHECK expressions
+        _ddl.Should()
+            .MatchRegex(
+                @"IS NULL[\s\S]*AND[\s\S]*IS NULL[\s\S]*\)\s*OR\s*\([\s\S]*IS NOT NULL[\s\S]*AND[\s\S]*IS NOT NULL"
+            );
     }
 }
 
@@ -551,7 +571,11 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_AllOrNone_CHECK_Cons
     public void It_should_use_or_between_all_null_and_all_not_null_clauses()
     {
         // Format: (all NULL) OR (all NOT NULL)
-        _ddl.Should().MatchRegex(@"IS NULL.*AND.*IS NULL.*\)\s*OR\s*\(.*IS NOT NULL.*AND.*IS NOT NULL");
+        // Use [\s\S]* instead of .* to match across newlines in multiline CHECK expressions
+        _ddl.Should()
+            .MatchRegex(
+                @"IS NULL[\s\S]*AND[\s\S]*IS NULL[\s\S]*\)\s*OR\s*\([\s\S]*IS NOT NULL[\s\S]*AND[\s\S]*IS NOT NULL"
+            );
     }
 }
 
@@ -652,11 +676,14 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_Emitting_Twice
     public void Setup()
     {
         var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
-        var emitter = new RelationalModelDdlEmitter(dialect);
         var modelSet = ForeignKeyFixture.Build(dialect.Rules.Dialect);
 
-        _first = emitter.Emit(modelSet);
-        _second = emitter.Emit(modelSet);
+        // Use separate emitter instances to prove construction + emission is stateless
+        var emitter1 = new RelationalModelDdlEmitter(dialect);
+        var emitter2 = new RelationalModelDdlEmitter(dialect);
+
+        _first = emitter1.Emit(modelSet);
+        _second = emitter2.Emit(modelSet);
     }
 
     [Test]
@@ -676,11 +703,14 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_Emitting_Twice
     public void Setup()
     {
         var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
-        var emitter = new RelationalModelDdlEmitter(dialect);
         var modelSet = ForeignKeyFixture.Build(dialect.Rules.Dialect);
 
-        _first = emitter.Emit(modelSet);
-        _second = emitter.Emit(modelSet);
+        // Use separate emitter instances to prove construction + emission is stateless
+        var emitter1 = new RelationalModelDdlEmitter(dialect);
+        var emitter2 = new RelationalModelDdlEmitter(dialect);
+
+        _first = emitter1.Emit(modelSet);
+        _second = emitter2.Emit(modelSet);
     }
 
     [Test]

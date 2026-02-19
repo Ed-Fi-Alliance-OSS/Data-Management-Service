@@ -246,6 +246,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         foreach (var trigger in triggers)
         {
+            // Dispatch by dialect enum rather than pattern abstraction for trigger generation.
+            // Adding a new dialect requires updating this site and: EmitDocumentStampingBody (line ~371),
+            // EmitReferentialIdentityBody (line ~533), EmitAbstractIdentityBody (line ~767),
+            // FormatNullOrTrueCheck (line ~1093), EmitStringLiteralWithCast (line ~1244).
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
                 EmitPgsqlTrigger(writer, trigger);
@@ -469,6 +473,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)
         {
+            // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET clause,
+            // regardless of whether the value actually changed. The WHERE clause below (using null-safe
+            // inequality) is the authoritative value-change check that filters to only actually changed rows.
             writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
             for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
             {
