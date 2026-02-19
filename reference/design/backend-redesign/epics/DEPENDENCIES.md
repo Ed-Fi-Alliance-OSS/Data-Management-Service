@@ -305,7 +305,7 @@ Epic: `15-plan-compilation/EPIC.md`
 | E15-S03 | [`03-thin-slice-runtime-plan-compilation-and-cache.md`](15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md) | E15-S02 | E01-S02 | Root-only plan compiler + runtime cache/provider (first usable runtime compile fallback) |
 | E15-S04 | [`04-write-plan-compiler-collections-and-extensions.md`](15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md) | E15-S03 | — | Full write plans for child/extension tables (replace semantics, batching) |
 | E15-S05 | [`05-read-plan-compiler-hydration.md`](15-plan-compilation/05-read-plan-compiler-hydration.md) | E15-S03 | — | Full hydration read plans (`SelectByKeysetSql`) for all tables |
-| E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E15-S05 | E15-S04 | Projection plans (descriptor URI + identity projection) |
+| E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E15-S05 | E15-S04 | Projection plans (reference identity + descriptor URI) |
 
 ---
 

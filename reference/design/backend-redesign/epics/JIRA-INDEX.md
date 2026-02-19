@@ -130,4 +130,4 @@ This index links design documents under `reference/design/backend-redesign/epics
   - `DMS-1028` — Thin Slice — Runtime Plan Compilation + Caching (Root-Only) — `reference/design/backend-redesign/epics/15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md`
   - `TBD` — Compile Write Plans for Child/Extension Tables (Replace Semantics + Batching) — `reference/design/backend-redesign/epics/15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md`
   - `TBD` — Compile Hydration Read Plans (`SelectByKeysetSql`) for All Tables — `reference/design/backend-redesign/epics/15-plan-compilation/05-read-plan-compiler-hydration.md`
-  - `TBD` — Compile Projection Plans (Descriptor URI + Identity Projection) — `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`
+  - `TBD` — Compile Projection Plans (Reference Identity + Descriptor URI) — `reference/design/backend-redesign/epics/15-plan-compilation/06-projection-plan-compilers.md`
