@@ -222,18 +222,18 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
                 new DbTriggerInfo(
                     new DbTriggerName("TR_School"),
                     table,
-                    DbTriggerKind.DocumentStamping,
                     [],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 )
             );
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName("TR_School"),
                     table,
-                    DbTriggerKind.DocumentStamping,
                     [],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 )
             );
         }
@@ -426,18 +426,18 @@ file sealed class DuplicateTriggerNamesAcrossTablesPass : IRelationalModelSetPas
             new DbTriggerInfo(
                 new DbTriggerName("TR_Common"),
                 tableAlpha,
-                DbTriggerKind.DocumentStamping,
                 [],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             )
         );
         context.TriggerInventory.Add(
             new DbTriggerInfo(
                 new DbTriggerName("TR_Common"),
                 tableBeta,
-                DbTriggerKind.DocumentStamping,
                 [],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             )
         );
     }

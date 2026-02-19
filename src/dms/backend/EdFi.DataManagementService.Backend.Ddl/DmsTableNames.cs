@@ -15,7 +15,11 @@ internal static class DmsTableNames
 {
     private static readonly DbSchemaName _dmsSchema = new("dms");
 
+    public static readonly DbTableName Document = new(_dmsSchema, "Document");
     public static readonly DbTableName EffectiveSchema = new(_dmsSchema, "EffectiveSchema");
+    public static readonly DbTableName ReferentialIdentity = new(_dmsSchema, "ReferentialIdentity");
     public static readonly DbTableName ResourceKey = new(_dmsSchema, "ResourceKey");
     public static readonly DbTableName SchemaComponent = new(_dmsSchema, "SchemaComponent");
+
+    public static readonly string ChangeVersionSequence = "ChangeVersionSequence";
 }

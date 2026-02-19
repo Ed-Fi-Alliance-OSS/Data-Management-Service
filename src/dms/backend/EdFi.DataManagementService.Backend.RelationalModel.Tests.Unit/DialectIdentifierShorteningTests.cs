@@ -76,7 +76,7 @@ public class Given_Pgsql_Identifier_Shortening
     }
 
     /// <summary>
-    /// It should shorten unique, foreign key, all-or-none, and null-or-true constraint identifiers.
+    /// It should shorten unique constraint, foreign key, and all-or-none constraint identifiers.
     /// </summary>
     [Test]
     public void It_should_shorten_constraint_identifiers()
@@ -91,10 +91,6 @@ public class Given_Pgsql_Identifier_Shortening
         var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
-        var expectedNullOrTrueConstraint = dialectRules.ShortenIdentifier(
-            identifiers.NullOrTrueConstraintName
-        );
-        var expectedNullOrTrueColumn = dialectRules.ShortenIdentifier(identifiers.NullOrTrueColumnName);
 
         var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
 
@@ -115,10 +111,6 @@ public class Given_Pgsql_Identifier_Shortening
         allOrNone.Name.Should().Be(expectedAllNone);
         allOrNone.FkColumn.Value.Should().Be(expectedFk);
         allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
-
-        var nullOrTrue = resourceModel.Root.Constraints.OfType<TableConstraint.NullOrTrue>().Single();
-        nullOrTrue.Name.Should().Be(expectedNullOrTrueConstraint);
-        nullOrTrue.Column.Value.Should().Be(expectedNullOrTrueColumn);
     }
 
     /// <summary>
@@ -169,22 +161,11 @@ public class Given_Pgsql_Identifier_Shortening
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
 
-        var trigger = _scenario.Result.TriggersInCreateOrder.Single(entry =>
-            entry.Kind == DbTriggerKind.DocumentStamping
-        );
+        var trigger = _scenario.Result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
-        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
-        trigger.TriggerTable.Name.Should().Be(expectedTable);
+        trigger.Table.Schema.Value.Should().Be(expectedSchema);
+        trigger.Table.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
-    }
-
-    /// <summary>
-    /// It should shorten identity-propagation fallback trigger identifiers.
-    /// </summary>
-    [Test]
-    public void It_should_shorten_identity_propagation_fallback_trigger_identifiers()
-    {
-        IdentifierShorteningAssertions.AssertPropagationFallbackShortened(_scenario);
     }
 
     /// <summary>
@@ -307,7 +288,7 @@ public class Given_Mssql_Identifier_Shortening
     }
 
     /// <summary>
-    /// It should shorten unique, foreign key, all-or-none, and null-or-true constraint identifiers.
+    /// It should shorten unique constraint, foreign key, and all-or-none constraint identifiers.
     /// </summary>
     [Test]
     public void It_should_shorten_constraint_identifiers()
@@ -322,10 +303,6 @@ public class Given_Mssql_Identifier_Shortening
         var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
-        var expectedNullOrTrueConstraint = dialectRules.ShortenIdentifier(
-            identifiers.NullOrTrueConstraintName
-        );
-        var expectedNullOrTrueColumn = dialectRules.ShortenIdentifier(identifiers.NullOrTrueColumnName);
 
         var resourceModel = _scenario.Result.ConcreteResourcesInNameOrder.Single().RelationalModel;
 
@@ -346,10 +323,6 @@ public class Given_Mssql_Identifier_Shortening
         allOrNone.Name.Should().Be(expectedAllNone);
         allOrNone.FkColumn.Value.Should().Be(expectedFk);
         allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
-
-        var nullOrTrue = resourceModel.Root.Constraints.OfType<TableConstraint.NullOrTrue>().Single();
-        nullOrTrue.Name.Should().Be(expectedNullOrTrueConstraint);
-        nullOrTrue.Column.Value.Should().Be(expectedNullOrTrueColumn);
     }
 
     /// <summary>
@@ -400,22 +373,11 @@ public class Given_Mssql_Identifier_Shortening
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
 
-        var trigger = _scenario.Result.TriggersInCreateOrder.Single(entry =>
-            entry.Kind == DbTriggerKind.DocumentStamping
-        );
+        var trigger = _scenario.Result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
-        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
-        trigger.TriggerTable.Name.Should().Be(expectedTable);
+        trigger.Table.Schema.Value.Should().Be(expectedSchema);
+        trigger.Table.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
-    }
-
-    /// <summary>
-    /// It should shorten identity-propagation fallback trigger identifiers.
-    /// </summary>
-    [Test]
-    public void It_should_shorten_identity_propagation_fallback_trigger_identifiers()
-    {
-        IdentifierShorteningAssertions.AssertPropagationFallbackShortened(_scenario);
     }
 
     /// <summary>
@@ -591,6 +553,188 @@ public class Given_Short_Identifier_Limit
 }
 
 /// <summary>
+/// Test fixture verifying that dialect shortening applies to column names inside trigger parameter subtypes.
+/// </summary>
+[TestFixture]
+public class Given_Trigger_Parameter_Column_Shortening
+{
+    private DerivedRelationalModelSet _result = default!;
+    private ISqlDialectRules _dialectRules = default!;
+    private TriggerParameterColumnIdentifiers _identifiers = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _dialectRules = new PgsqlDialectRules();
+        _identifiers = TriggerParameterColumnIdentifiers.Create(_dialectRules.MaxIdentifierLength + 12);
+        var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new TriggerParameterColumnFixturePass(_identifiers),
+            new ApplyDialectIdentifierShorteningPass(),
+        ]);
+
+        _result = builder.Build(effectiveSchemaSet, _dialectRules.Dialect, _dialectRules);
+    }
+
+    [Test]
+    public void It_should_shorten_abstract_identity_maintenance_target_column_mappings()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.AbstractIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.AbstractIdentityMaintenance)trigger.Parameters;
+        var mapping = parameters.TargetColumnMappings.Single();
+
+        mapping.SourceColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.SourceColumn));
+        mapping.TargetColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.TargetColumn));
+    }
+
+    [Test]
+    public void It_should_shorten_identity_propagation_fallback_referrer_updates()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.IdentityPropagationFallback
+        );
+        var parameters = (TriggerKindParameters.IdentityPropagationFallback)trigger.Parameters;
+        var referrer = parameters.ReferrerUpdates.Single();
+        var mapping = referrer.ColumnMappings.Single();
+
+        referrer.ReferrerFkColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.FkColumn));
+        mapping.SourceColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.SourceColumn));
+        mapping.TargetColumn.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.TargetColumn));
+    }
+
+    [Test]
+    public void It_should_shorten_referential_identity_maintenance_identity_elements()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.ReferentialIdentityMaintenance)trigger.Parameters;
+        var element = parameters.IdentityElements.Single();
+
+        element.Column.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.IdentityColumn));
+    }
+
+    [Test]
+    public void It_should_shorten_superclass_alias_identity_elements()
+    {
+        var trigger = _result.TriggersInCreateOrder.Single(t =>
+            t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+        var parameters = (TriggerKindParameters.ReferentialIdentityMaintenance)trigger.Parameters;
+        var aliasElement = parameters.SuperclassAlias!.IdentityElements.Single();
+
+        aliasElement.Column.Value.Should().Be(_dialectRules.ShortenIdentifier(_identifiers.AliasColumn));
+    }
+}
+
+/// <summary>
+/// Long identifier values for trigger parameter column shortening tests.
+/// </summary>
+internal sealed record TriggerParameterColumnIdentifiers(
+    string SourceColumn,
+    string TargetColumn,
+    string FkColumn,
+    string IdentityColumn,
+    string AliasColumn
+)
+{
+    public static TriggerParameterColumnIdentifiers Create(int length)
+    {
+        return new TriggerParameterColumnIdentifiers(
+            SourceColumn: BuildLong("SourceCol", length),
+            TargetColumn: BuildLong("TargetCol", length),
+            FkColumn: BuildLong("FkCol", length),
+            IdentityColumn: BuildLong("IdentityCol", length),
+            AliasColumn: BuildLong("AliasCol", length)
+        );
+    }
+
+    private static string BuildLong(string label, int length)
+    {
+        return label.Length >= length ? label : label + new string('A', length - label.Length);
+    }
+}
+
+/// <summary>
+/// Fixture pass that seeds triggers with each non-DocumentStamping parameter subtype containing long column names.
+/// </summary>
+file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdentifiers identifiers)
+    : IRelationalModelSetPass
+{
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var schema = new DbSchemaName("edfi");
+        var table = new DbTableName(schema, "School");
+        var targetTable = new DbTableName(schema, "EducationOrganization");
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_AbstractId"),
+                table,
+                [],
+                [],
+                new TriggerKindParameters.AbstractIdentityMaintenance(
+                    targetTable,
+                    [
+                        new TriggerColumnMapping(
+                            new DbColumnName(identifiers.SourceColumn),
+                            new DbColumnName(identifiers.TargetColumn)
+                        ),
+                    ],
+                    "School"
+                )
+            )
+        );
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_Propagation"),
+                table,
+                [],
+                [],
+                new TriggerKindParameters.IdentityPropagationFallback([
+                    new PropagationReferrerTarget(
+                        targetTable,
+                        new DbColumnName(identifiers.FkColumn),
+                        [
+                            new TriggerColumnMapping(
+                                new DbColumnName(identifiers.SourceColumn),
+                                new DbColumnName(identifiers.TargetColumn)
+                            ),
+                        ]
+                    ),
+                ])
+            )
+        );
+
+        context.TriggerInventory.Add(
+            new DbTriggerInfo(
+                new DbTriggerName("TR_RefIdentity"),
+                table,
+                [],
+                [],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(new DbColumnName(identifiers.IdentityColumn), "$.id")],
+                    new SuperclassAliasInfo(
+                        2,
+                        "Ed-Fi",
+                        "EducationOrganization",
+                        [new IdentityElementMapping(new DbColumnName(identifiers.AliasColumn), "$.parentId")]
+                    )
+                )
+            )
+        );
+    }
+}
+
+/// <summary>
 /// Captures a single identifier-shortening test run, including the derived model and the long identifiers
 /// used as inputs.
 /// </summary>
@@ -633,25 +777,14 @@ internal sealed record ShorteningIdentifiers(
     string SchemaName,
     string TableName,
     string KeyColumnName,
-    string CanonicalColumnName,
-    string AliasMemberColumnName,
     string FkColumnName,
     string IdentityColumnName,
     string DescriptorColumnName,
     string UniqueConstraintName,
     string ForeignKeyConstraintName,
     string AllOrNoneConstraintName,
-    string NullOrTrueConstraintName,
-    string NullOrTrueColumnName,
     string IndexName,
     string TriggerName,
-    string PropagationTriggerName,
-    string PropagationTriggerTableName,
-    string PropagationReferrerTableName,
-    string PropagationReferrerDocumentIdColumnName,
-    string PropagationReferencedDocumentIdColumnName,
-    string PropagationReferrerStorageColumnName,
-    string PropagationReferencedStorageColumnName,
     string AbstractTableName,
     string AbstractColumnName,
     string ViewName,
@@ -672,41 +805,14 @@ internal sealed record ShorteningIdentifiers(
             SchemaName: BuildLongIdentifier(prefix, "Schema", length),
             TableName: BuildLongIdentifier(prefix, "Table", length),
             KeyColumnName: BuildLongIdentifier(prefix, "KeyColumn", length),
-            CanonicalColumnName: BuildLongIdentifier(prefix, "CanonicalColumn", length),
-            AliasMemberColumnName: BuildLongIdentifier(prefix, "AliasMemberColumn", length),
             FkColumnName: BuildLongIdentifier(prefix, "FkColumn", length),
             IdentityColumnName: BuildLongIdentifier(prefix, "IdentityColumn", length),
             DescriptorColumnName: BuildLongIdentifier(prefix, "DescriptorColumn", length),
             UniqueConstraintName: BuildLongIdentifier(prefix, "UniqueConstraint", length),
             ForeignKeyConstraintName: BuildLongIdentifier(prefix, "ForeignKeyConstraint", length),
             AllOrNoneConstraintName: BuildLongIdentifier(prefix, "AllOrNoneConstraint", length),
-            NullOrTrueConstraintName: BuildLongIdentifier(prefix, "NullOrTrueConstraint", length),
-            NullOrTrueColumnName: BuildLongIdentifier(prefix, "NullOrTrueColumn", length),
             IndexName: BuildLongIdentifier(prefix, "Index", length),
             TriggerName: BuildLongIdentifier(prefix, "Trigger", length),
-            PropagationTriggerName: BuildLongIdentifier(prefix, "PropagationTrigger", length),
-            PropagationTriggerTableName: BuildLongIdentifier(prefix, "PropagationTriggerTable", length),
-            PropagationReferrerTableName: BuildLongIdentifier(prefix, "PropagationReferrerTable", length),
-            PropagationReferrerDocumentIdColumnName: BuildLongIdentifier(
-                prefix,
-                "PropagationReferrerDocumentIdColumn",
-                length
-            ),
-            PropagationReferencedDocumentIdColumnName: BuildLongIdentifier(
-                prefix,
-                "PropagationReferencedDocumentIdColumn",
-                length
-            ),
-            PropagationReferrerStorageColumnName: BuildLongIdentifier(
-                prefix,
-                "PropagationReferrerStorageColumn",
-                length
-            ),
-            PropagationReferencedStorageColumnName: BuildLongIdentifier(
-                prefix,
-                "PropagationReferencedStorageColumn",
-                length
-            ),
             AbstractTableName: BuildLongIdentifier(prefix, "AbstractTable", length),
             AbstractColumnName: BuildLongIdentifier(prefix, "AbstractColumn", length),
             ViewName: BuildLongIdentifier(prefix, "View", length),
@@ -750,18 +856,12 @@ internal static class IdentifierShorteningAssertions
         var expectedTable = dialectRules.ShortenIdentifier(identifiers.TableName);
         var expectedPrimaryKey = dialectRules.ShortenIdentifier($"PK_{identifiers.TableName}");
         var expectedKey = dialectRules.ShortenIdentifier(identifiers.KeyColumnName);
-        var expectedCanonical = dialectRules.ShortenIdentifier(identifiers.CanonicalColumnName);
-        var expectedAliasMember = dialectRules.ShortenIdentifier(identifiers.AliasMemberColumnName);
         var expectedFk = dialectRules.ShortenIdentifier(identifiers.FkColumnName);
         var expectedIdentity = dialectRules.ShortenIdentifier(identifiers.IdentityColumnName);
         var expectedDescriptor = dialectRules.ShortenIdentifier(identifiers.DescriptorColumnName);
         var expectedUnique = dialectRules.ShortenIdentifier(identifiers.UniqueConstraintName);
         var expectedForeign = dialectRules.ShortenIdentifier(identifiers.ForeignKeyConstraintName);
         var expectedAllNone = dialectRules.ShortenIdentifier(identifiers.AllOrNoneConstraintName);
-        var expectedNullOrTrueConstraint = dialectRules.ShortenIdentifier(
-            identifiers.NullOrTrueConstraintName
-        );
-        var expectedNullOrTrueColumn = dialectRules.ShortenIdentifier(identifiers.NullOrTrueColumnName);
         var expectedIndex = dialectRules.ShortenIdentifier(identifiers.IndexName);
         var expectedTrigger = dialectRules.ShortenIdentifier(identifiers.TriggerName);
         var expectedAbstractTable = dialectRules.ShortenIdentifier(identifiers.AbstractTableName);
@@ -790,23 +890,6 @@ internal static class IdentifierShorteningAssertions
             .ColumnName.Value.Should()
             .Be(expectedKey);
 
-        var aliasMemberColumn = resourceModel.Root.Columns.Single(column =>
-            column.ColumnName.Value == expectedAliasMember
-        );
-        var aliasMemberStorage = aliasMemberColumn
-            .Storage.Should()
-            .BeOfType<ColumnStorage.UnifiedAlias>()
-            .Subject;
-        aliasMemberStorage.CanonicalColumn.Value.Should().Be(expectedCanonical);
-        aliasMemberStorage.PresenceColumn.Should().Be(new DbColumnName(expectedNullOrTrueColumn));
-
-        var keyUnificationClass = resourceModel.Root.KeyUnificationClasses.Should().ContainSingle().Subject;
-        keyUnificationClass.CanonicalColumn.Value.Should().Be(expectedCanonical);
-        keyUnificationClass
-            .MemberPathColumns.Select(column => column.Value)
-            .Should()
-            .Equal(expectedAliasMember, expectedIdentity);
-
         var uniqueConstraint = resourceModel.Root.Constraints.OfType<TableConstraint.Unique>().Single();
         uniqueConstraint.Name.Should().Be(expectedUnique);
         uniqueConstraint.Columns.Single().Value.Should().Be(expectedKey);
@@ -825,10 +908,6 @@ internal static class IdentifierShorteningAssertions
         allOrNone.FkColumn.Value.Should().Be(expectedFk);
         allOrNone.DependentColumns.Single().Value.Should().Be(expectedIdentity);
 
-        var nullOrTrue = resourceModel.Root.Constraints.OfType<TableConstraint.NullOrTrue>().Single();
-        nullOrTrue.Name.Should().Be(expectedNullOrTrueConstraint);
-        nullOrTrue.Column.Value.Should().Be(expectedNullOrTrueColumn);
-
         var binding = resourceModel.DocumentReferenceBindings.Single();
         binding.Table.Schema.Value.Should().Be(expectedSchema);
         binding.Table.Name.Should().Be(expectedTable);
@@ -840,54 +919,17 @@ internal static class IdentifierShorteningAssertions
         edge.Table.Name.Should().Be(expectedTable);
         edge.FkColumn.Value.Should().Be(expectedDescriptor);
 
-        var keyUnificationDiagnostics = resourceModel.KeyUnificationEqualityConstraints;
-        var applied = keyUnificationDiagnostics.Applied.Should().ContainSingle().Subject;
-        applied.Table.Schema.Value.Should().Be(expectedSchema);
-        applied.Table.Name.Should().Be(expectedTable);
-        applied.EndpointAColumn.Value.Should().Be(expectedAliasMember);
-        applied.EndpointBColumn.Value.Should().Be(expectedIdentity);
-        applied.CanonicalColumn.Value.Should().Be(expectedCanonical);
-
-        var redundant = keyUnificationDiagnostics.Redundant.Should().ContainSingle().Subject;
-        redundant.Binding.Table.Schema.Value.Should().Be(expectedSchema);
-        redundant.Binding.Table.Name.Should().Be(expectedTable);
-        redundant.Binding.Column.Value.Should().Be(expectedAliasMember);
-
-        var ignored = keyUnificationDiagnostics.Ignored.Should().ContainSingle().Subject;
-        ignored.EndpointABinding.Table.Schema.Value.Should().Be(expectedSchema);
-        ignored.EndpointABinding.Table.Name.Should().Be(expectedTable);
-        ignored.EndpointABinding.Column.Value.Should().Be(expectedAliasMember);
-        ignored.EndpointBBinding.Table.Schema.Value.Should().Be(expectedSchema);
-        ignored.EndpointBBinding.Table.Name.Should().Be(expectedTable);
-        ignored.EndpointBBinding.Column.Value.Should().Be(expectedFk);
-
-        var descriptorForeignKeyDeduplication = resourceModel
-            .DescriptorForeignKeyDeduplications.Should()
-            .ContainSingle()
-            .Subject;
-        descriptorForeignKeyDeduplication.Table.Schema.Value.Should().Be(expectedSchema);
-        descriptorForeignKeyDeduplication.Table.Name.Should().Be(expectedTable);
-        descriptorForeignKeyDeduplication.StorageColumn.Value.Should().Be(expectedCanonical);
-        descriptorForeignKeyDeduplication
-            .BindingColumns.Select(column => column.Value)
-            .Should()
-            .Equal(expectedDescriptor, expectedAliasMember);
-
         var index = result.IndexesInCreateOrder.Single();
         index.Name.Value.Should().Be(expectedIndex);
         index.Table.Schema.Value.Should().Be(expectedSchema);
         index.Table.Name.Should().Be(expectedTable);
         index.KeyColumns.Single().Value.Should().Be(expectedKey);
 
-        var trigger = result.TriggersInCreateOrder.Single(entry =>
-            entry.Kind == DbTriggerKind.DocumentStamping
-        );
+        var trigger = result.TriggersInCreateOrder.Single();
         trigger.Name.Value.Should().Be(expectedTrigger);
-        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
-        trigger.TriggerTable.Name.Should().Be(expectedTable);
+        trigger.Table.Schema.Value.Should().Be(expectedSchema);
+        trigger.Table.Name.Should().Be(expectedTable);
         trigger.KeyColumns.Single().Value.Should().Be(expectedKey);
-
-        AssertPropagationFallbackShortened(scenario);
 
         var abstractTable = result.AbstractIdentityTablesInNameOrder.Single();
         abstractTable.TableModel.Table.Schema.Value.Should().Be(expectedSchema);
@@ -909,53 +951,6 @@ internal static class IdentifierShorteningAssertions
             .BeOfType<AbstractUnionViewProjectionExpression.SourceColumn>()
             .Subject;
         sourceColumnProjection.ColumnName.Value.Should().Be(expectedKey);
-    }
-
-    /// <summary>
-    /// Asserts that propagation fallback payload identifiers are shortened as expected for the dialect.
-    /// </summary>
-    public static void AssertPropagationFallbackShortened(ShorteningScenario scenario)
-    {
-        ArgumentNullException.ThrowIfNull(scenario);
-
-        var dialectRules = scenario.DialectRules;
-        var identifiers = scenario.Identifiers;
-        var trigger = scenario.Result.TriggersInCreateOrder.Single(entry =>
-            entry.Kind == DbTriggerKind.IdentityPropagationFallback
-        );
-        var expectedSchema = dialectRules.ShortenIdentifier(identifiers.SchemaName);
-        var expectedTriggerName = dialectRules.ShortenIdentifier(identifiers.PropagationTriggerName);
-        var expectedTriggerTable = dialectRules.ShortenIdentifier(identifiers.PropagationTriggerTableName);
-        var expectedReferrerTable = dialectRules.ShortenIdentifier(identifiers.PropagationReferrerTableName);
-        var expectedReferrerDocumentIdColumn = dialectRules.ShortenIdentifier(
-            identifiers.PropagationReferrerDocumentIdColumnName
-        );
-        var expectedReferencedDocumentIdColumn = dialectRules.ShortenIdentifier(
-            identifiers.PropagationReferencedDocumentIdColumnName
-        );
-        var expectedReferrerStorageColumn = dialectRules.ShortenIdentifier(
-            identifiers.PropagationReferrerStorageColumnName
-        );
-        var expectedReferencedStorageColumn = dialectRules.ShortenIdentifier(
-            identifiers.PropagationReferencedStorageColumnName
-        );
-
-        trigger.Name.Value.Should().Be(expectedTriggerName);
-        trigger.TriggerTable.Schema.Value.Should().Be(expectedSchema);
-        trigger.TriggerTable.Name.Should().Be(expectedTriggerTable);
-        trigger.KeyColumns.Should().BeEmpty();
-        trigger.IdentityProjectionColumns.Should().BeEmpty();
-        trigger.PropagationFallback.Should().NotBeNull();
-
-        var action = trigger.PropagationFallback!.ReferrerActions.Single();
-        action.ReferrerTable.Schema.Value.Should().Be(expectedSchema);
-        action.ReferrerTable.Name.Should().Be(expectedReferrerTable);
-        action.ReferrerDocumentIdColumn.Value.Should().Be(expectedReferrerDocumentIdColumn);
-        action.ReferencedDocumentIdColumn.Value.Should().Be(expectedReferencedDocumentIdColumn);
-
-        var identityColumnPair = action.IdentityColumnPairs.Single();
-        identityColumnPair.ReferrerStorageColumn.Value.Should().Be(expectedReferrerStorageColumn);
-        identityColumnPair.ReferencedStorageColumn.Value.Should().Be(expectedReferencedStorageColumn);
     }
 }
 
@@ -1020,14 +1015,6 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 TargetResource: null
             ),
             new DbColumnModel(
-                new DbColumnName(_identifiers.CanonicalColumnName),
-                ColumnKind.Scalar,
-                new RelationalScalarType(ScalarKind.String, MaxLength: 20),
-                IsNullable: true,
-                SourceJsonPath: null,
-                TargetResource: null
-            ),
-            new DbColumnModel(
                 new DbColumnName(_identifiers.FkColumnName),
                 ColumnKind.DocumentFk,
                 new RelationalScalarType(ScalarKind.Int64),
@@ -1044,34 +1031,12 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 TargetResource: null
             ),
             new DbColumnModel(
-                new DbColumnName(_identifiers.AliasMemberColumnName),
-                ColumnKind.Scalar,
-                new RelationalScalarType(ScalarKind.String, MaxLength: 20),
-                IsNullable: true,
-                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.aliasMember"),
-                TargetResource: null
-            )
-            {
-                Storage = new ColumnStorage.UnifiedAlias(
-                    new DbColumnName(_identifiers.CanonicalColumnName),
-                    new DbColumnName(_identifiers.NullOrTrueColumnName)
-                ),
-            },
-            new DbColumnModel(
                 new DbColumnName(_identifiers.DescriptorColumnName),
                 ColumnKind.DescriptorFk,
                 new RelationalScalarType(ScalarKind.Int64),
                 IsNullable: false,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.descriptor"),
                 TargetResource: ShorteningScenario.AbstractResource
-            ),
-            new DbColumnModel(
-                new DbColumnName(_identifiers.NullOrTrueColumnName),
-                ColumnKind.Scalar,
-                new RelationalScalarType(ScalarKind.Boolean),
-                IsNullable: true,
-                SourceJsonPath: null,
-                TargetResource: null
             ),
         ];
 
@@ -1094,10 +1059,6 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
                 new DbColumnName(_identifiers.FkColumnName),
                 [new DbColumnName(_identifiers.IdentityColumnName)]
             ),
-            new TableConstraint.NullOrTrue(
-                _identifiers.NullOrTrueConstraintName,
-                new DbColumnName(_identifiers.NullOrTrueColumnName)
-            ),
         ];
 
         var table = new DbTableModel(
@@ -1106,19 +1067,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new TableKey(ConstraintNaming.BuildPrimaryKeyName(tableName), [keyColumn]),
             columns,
             constraints
-        )
-        {
-            KeyUnificationClasses =
-            [
-                new KeyUnificationClass(
-                    new DbColumnName(_identifiers.CanonicalColumnName),
-                    [
-                        new DbColumnName(_identifiers.AliasMemberColumnName),
-                        new DbColumnName(_identifiers.IdentityColumnName),
-                    ]
-                ),
-            ],
-        };
+        );
 
         var binding = new DocumentReferenceBinding(
             IsIdentityComponent: true,
@@ -1151,58 +1100,7 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             [table],
             [binding],
             [descriptorEdge]
-        )
-        {
-            KeyUnificationEqualityConstraints = new KeyUnificationEqualityConstraintDiagnostics(
-                [
-                    new KeyUnificationAppliedConstraint(
-                        JsonPathExpressionCompiler.Compile("$.aliasMember"),
-                        JsonPathExpressionCompiler.Compile("$.ref.identity"),
-                        tableName,
-                        new DbColumnName(_identifiers.AliasMemberColumnName),
-                        new DbColumnName(_identifiers.IdentityColumnName),
-                        new DbColumnName(_identifiers.CanonicalColumnName)
-                    ),
-                ],
-                [
-                    new KeyUnificationRedundantConstraint(
-                        JsonPathExpressionCompiler.Compile("$.redundantA"),
-                        JsonPathExpressionCompiler.Compile("$.redundantB"),
-                        new KeyUnificationEndpointBinding(
-                            tableName,
-                            new DbColumnName(_identifiers.AliasMemberColumnName)
-                        )
-                    ),
-                ],
-                [
-                    new KeyUnificationIgnoredConstraint(
-                        JsonPathExpressionCompiler.Compile("$.ignoredA"),
-                        JsonPathExpressionCompiler.Compile("$.ignoredB"),
-                        KeyUnificationIgnoredReason.CrossTable,
-                        new KeyUnificationEndpointBinding(
-                            tableName,
-                            new DbColumnName(_identifiers.AliasMemberColumnName)
-                        ),
-                        new KeyUnificationEndpointBinding(
-                            tableName,
-                            new DbColumnName(_identifiers.FkColumnName)
-                        )
-                    ),
-                ],
-                [new KeyUnificationIgnoredByReasonEntry(KeyUnificationIgnoredReason.CrossTable, 1)]
-            ),
-            DescriptorForeignKeyDeduplications =
-            [
-                new DescriptorForeignKeyDeduplication(
-                    tableName,
-                    new DbColumnName(_identifiers.CanonicalColumnName),
-                    [
-                        new DbColumnName(_identifiers.DescriptorColumnName),
-                        new DbColumnName(_identifiers.AliasMemberColumnName),
-                    ]
-                ),
-            ],
-        };
+        );
 
         context.ConcreteResourcesInNameOrder.Add(
             new ConcreteResourceModel(_resourceKey, ResourceStorageKind.RelationalTables, resourceModel)
@@ -1273,35 +1171,9 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
             new DbTriggerInfo(
                 new DbTriggerName(_identifiers.TriggerName),
                 tableName,
-                DbTriggerKind.DocumentStamping,
                 [new DbColumnName(_identifiers.KeyColumnName)],
-                []
-            )
-        );
-
-        var propagationTriggerTable = new DbTableName(schema, _identifiers.PropagationTriggerTableName);
-        var propagationReferrerTable = new DbTableName(schema, _identifiers.PropagationReferrerTableName);
-
-        context.TriggerInventory.Add(
-            new DbTriggerInfo(
-                new DbTriggerName(_identifiers.PropagationTriggerName),
-                propagationTriggerTable,
-                DbTriggerKind.IdentityPropagationFallback,
                 [],
-                [],
-                PropagationFallback: new DbIdentityPropagationFallbackInfo([
-                    new DbIdentityPropagationReferrerAction(
-                        propagationReferrerTable,
-                        new DbColumnName(_identifiers.PropagationReferrerDocumentIdColumnName),
-                        new DbColumnName(_identifiers.PropagationReferencedDocumentIdColumnName),
-                        [
-                            new DbIdentityPropagationColumnPair(
-                                new DbColumnName(_identifiers.PropagationReferrerStorageColumnName),
-                                new DbColumnName(_identifiers.PropagationReferencedStorageColumnName)
-                            ),
-                        ]
-                    ),
-                ])
+                new TriggerKindParameters.DocumentStamping()
             )
         );
     }

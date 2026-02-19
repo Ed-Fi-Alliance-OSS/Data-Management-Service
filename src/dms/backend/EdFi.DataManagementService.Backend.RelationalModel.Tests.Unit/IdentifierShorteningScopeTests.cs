@@ -262,18 +262,18 @@ file sealed class TriggerShorteningCollisionAcrossTablesPass : IRelationalModelS
             new DbTriggerInfo(
                 new DbTriggerName("TR_LongAlpha"),
                 tableAlpha,
-                DbTriggerKind.DocumentStamping,
                 [],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             )
         );
         context.TriggerInventory.Add(
             new DbTriggerInfo(
                 new DbTriggerName("TR_LongBeta"),
                 tableBeta,
-                DbTriggerKind.DocumentStamping,
                 [],
-                []
+                [],
+                new TriggerKindParameters.DocumentStamping()
             )
         );
     }

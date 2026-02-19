@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 /// </summary>
 public static class RelationalModelManifestEmitter
 {
-    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
     private static readonly DbTableName _descriptorTableName = new(new DbSchemaName("dms"), "Descriptor");
 
     /// <summary>
@@ -25,10 +25,7 @@ public static class RelationalModelManifestEmitter
     /// <returns>The JSON manifest.</returns>
     public static string Emit(RelationalModelBuildResult buildResult)
     {
-        if (buildResult is null)
-        {
-            throw new ArgumentNullException(nameof(buildResult));
-        }
+        ArgumentNullException.ThrowIfNull(buildResult);
 
         return Emit(buildResult.ResourceModel, buildResult.ExtensionSites);
     }
