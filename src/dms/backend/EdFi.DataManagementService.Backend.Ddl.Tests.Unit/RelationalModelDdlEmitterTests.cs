@@ -349,6 +349,29 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Union_View
     }
 }
 
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Mssql_And_Unbounded_String_In_Union_View
+{
+    private string _ddl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+        var modelSet = UnboundedStringUnionViewFixture.Build(dialect.Rules.Dialect);
+
+        _ddl = emitter.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_emit_unbounded_string_cast_with_nvarchar_max()
+    {
+        // MssqlDialect.RenderColumnType should emit nvarchar(max) for unbounded strings
+        _ddl.Should().Contain("CAST(N'TestValue' AS nvarchar(max))");
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // Abstract Identity Table FK Tests
 // ═══════════════════════════════════════════════════════════════════
@@ -1138,6 +1161,68 @@ internal static class AbstractUnionViewFixture
             [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
             [],
             [abstractIdentityTable],
+            [unionView],
+            [],
+            []
+        );
+    }
+}
+
+internal static class UnboundedStringUnionViewFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var testTableName = new DbTableName(schema, "Test");
+        var viewName = new DbTableName(schema, "TestView");
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var unboundedColumn = new DbColumnName("UnboundedField");
+
+        var abstractResource = new QualifiedResourceName("Ed-Fi", "TestAbstract");
+        var concreteResource = new QualifiedResourceName("Ed-Fi", "Test");
+        var abstractResourceKey = new ResourceKeyEntry(1, abstractResource, "1.0.0", true);
+        var concreteResourceKey = new ResourceKeyEntry(2, concreteResource, "1.0.0", false);
+
+        // Output column with unbounded string (no MaxLength)
+        List<AbstractUnionViewOutputColumn> outputColumns =
+        [
+            new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
+            new(unboundedColumn, new RelationalScalarType(ScalarKind.String), null, null), // No MaxLength = unbounded
+        ];
+
+        var testArm = new AbstractUnionViewArm(
+            concreteResourceKey,
+            testTableName,
+            [
+                new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                new AbstractUnionViewProjectionExpression.StringLiteral("TestValue"),
+            ]
+        );
+
+        var unionView = new AbstractUnionViewInfo(abstractResourceKey, viewName, outputColumns, [testArm]);
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                1,
+                [0x01],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [abstractResourceKey, concreteResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [],
+            [],
             [unionView],
             [],
             []

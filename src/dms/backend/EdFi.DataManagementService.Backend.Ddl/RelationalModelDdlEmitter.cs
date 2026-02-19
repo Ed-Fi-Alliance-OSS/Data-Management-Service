@@ -1006,6 +1006,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     /// <summary>
     /// Resolves the SQL type for a column using explicit scalar type metadata or dialect defaults.
+    /// For columns with an explicit <see cref="RelationalScalarType"/>, delegates to
+    /// <see cref="ISqlDialect.RenderColumnType"/>. For implicit key columns (Ordinal, FK, etc.),
+    /// falls back to dialect-specific integer defaults.
     /// </summary>
     private string ResolveColumnType(DbColumnModel column)
     {
@@ -1026,61 +1029,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             };
         }
 
-        return ResolveColumnType(scalarType);
-    }
-
-    /// <summary>
-    /// Resolves the SQL type for a required scalar type.
-    /// </summary>
-    private string ResolveColumnType(RelationalScalarType scalarType)
-    {
-        return scalarType.Kind switch
-        {
-            ScalarKind.String => FormatStringType(scalarType),
-            ScalarKind.Decimal => FormatDecimalType(scalarType),
-            ScalarKind.Int32 => _dialect.Rules.ScalarTypeDefaults.Int32Type,
-            ScalarKind.Int64 => _dialect.Rules.ScalarTypeDefaults.Int64Type,
-            ScalarKind.Boolean => _dialect.Rules.ScalarTypeDefaults.BooleanType,
-            ScalarKind.Date => _dialect.Rules.ScalarTypeDefaults.DateType,
-            ScalarKind.DateTime => _dialect.Rules.ScalarTypeDefaults.DateTimeType,
-            ScalarKind.Time => _dialect.Rules.ScalarTypeDefaults.TimeType,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(scalarType.Kind),
-                scalarType.Kind,
-                "Unsupported scalar kind."
-            ),
-        };
-    }
-
-    /// <summary>
-    /// Formats a string scalar type including a length specifier when present.
-    /// For SQL Server, unbounded strings use (max) suffix.
-    /// </summary>
-    private string FormatStringType(RelationalScalarType scalarType)
-    {
-        if (scalarType.MaxLength is null)
-        {
-            // Unbounded string - use (max) for SQL Server
-            return _dialect.Rules.Dialect == SqlDialect.Mssql
-                ? $"{_dialect.Rules.ScalarTypeDefaults.StringType}(max)"
-                : _dialect.Rules.ScalarTypeDefaults.StringType;
-        }
-
-        return $"{_dialect.Rules.ScalarTypeDefaults.StringType}({scalarType.MaxLength.Value})";
-    }
-
-    /// <summary>
-    /// Formats a decimal scalar type including precision and scale when present.
-    /// </summary>
-    private string FormatDecimalType(RelationalScalarType scalarType)
-    {
-        if (scalarType.Decimal is null)
-        {
-            return _dialect.Rules.ScalarTypeDefaults.DecimalType;
-        }
-
-        var (precision, scale) = scalarType.Decimal.Value;
-        return $"{_dialect.Rules.ScalarTypeDefaults.DecimalType}({precision},{scale})";
+        return _dialect.RenderColumnType(scalarType);
     }
 
     /// <summary>
@@ -1261,7 +1210,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitStringLiteralWithCast(SqlWriter writer, string value, RelationalScalarType targetType)
     {
-        var sqlType = ResolveColumnType(targetType);
+        var sqlType = _dialect.RenderColumnType(targetType);
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
