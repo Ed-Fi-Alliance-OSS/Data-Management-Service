@@ -727,6 +727,8 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
         var triggerName = $"{Q(_dmsSchema.Value)}.{Q("TR_Document_Journal")}";
 
+        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
+        writer.AppendLine("GO");
         writer.AppendLine($"CREATE OR ALTER TRIGGER {triggerName}");
         writer.AppendLine($"ON {docTable}");
         writer.AppendLine("AFTER INSERT, UPDATE");
