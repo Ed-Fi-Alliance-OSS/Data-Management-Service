@@ -336,19 +336,21 @@ END;
         string newRowAlias
     )
     {
+        var columnsByName = triggerTable.Columns.ToDictionary(c => c.ColumnName);
+
         return string.Join(
             " OR ",
             trigger.IdentityProjectionColumns.Select(identityColumn =>
             {
                 var oldValueExpression = BuildIdentityValueExpression(
                     trigger,
-                    triggerTable,
+                    columnsByName,
                     identityColumn,
                     oldRowAlias
                 );
                 var newValueExpression = BuildIdentityValueExpression(
                     trigger,
-                    triggerTable,
+                    columnsByName,
                     identityColumn,
                     newRowAlias
                 );
@@ -363,14 +365,12 @@ END;
     /// </summary>
     private string BuildIdentityValueExpression(
         DbTriggerInfo trigger,
-        DbTableModel triggerTable,
+        IReadOnlyDictionary<DbColumnName, DbColumnModel> columnsByName,
         DbColumnName identityColumn,
         string rowAlias
     )
     {
-        var column = triggerTable.Columns.FirstOrDefault(c => c.ColumnName == identityColumn);
-
-        if (column is null)
+        if (!columnsByName.TryGetValue(identityColumn, out var column))
         {
             throw new InvalidOperationException(
                 $"Trigger '{trigger.Name.Value}' on '{trigger.TriggerTable}' referenced identity projection column "

@@ -81,9 +81,13 @@ public static class RelationalModelManifestEmitter
         writer.WriteStartArray();
         if (resourceModel.StorageKind != ResourceStorageKind.SharedDescriptorTable)
         {
+            var descriptorForeignKeyDeduplicationsByTable = BuildDescriptorForeignKeyDeduplicationLookup(
+                resourceModel.DescriptorForeignKeyDeduplications
+            );
+
             foreach (var table in resourceModel.TablesInDependencyOrder)
             {
-                WriteTable(writer, resourceModel, table);
+                WriteTable(writer, table, descriptorForeignKeyDeduplicationsByTable);
             }
         }
         writer.WriteEndArray();
@@ -131,12 +135,17 @@ public static class RelationalModelManifestEmitter
     /// Writes a table model entry, including key columns, columns, and constraints.
     /// </summary>
     /// <param name="writer">The JSON writer to write to.</param>
-    /// <param name="resourceModel">The resource model containing table-level diagnostics.</param>
     /// <param name="table">The table model to write.</param>
+    /// <param name="descriptorForeignKeyDeduplicationsByTable">
+    /// Descriptor FK de-duplication diagnostics grouped by table.
+    /// </param>
     private static void WriteTable(
         Utf8JsonWriter writer,
-        RelationalResourceModel resourceModel,
-        DbTableModel table
+        DbTableModel table,
+        IReadOnlyDictionary<
+            DbTableName,
+            DescriptorForeignKeyDeduplication[]
+        > descriptorForeignKeyDeduplicationsByTable
     )
     {
         writer.WriteStartObject();
@@ -170,15 +179,9 @@ public static class RelationalModelManifestEmitter
 
         writer.WritePropertyName("descriptor_fk_deduplications");
         writer.WriteStartArray();
-        foreach (
-            var deduplication in resourceModel
-                .DescriptorForeignKeyDeduplications.Where(entry => entry.Table.Equals(table.Table))
-                .OrderBy(entry => entry.StorageColumn.Value, StringComparer.Ordinal)
-                .ThenBy(
-                    entry => string.Join("|", entry.BindingColumns.Select(column => column.Value)),
-                    StringComparer.Ordinal
-                )
-        )
+        descriptorForeignKeyDeduplicationsByTable.TryGetValue(table.Table, out var deduplications);
+
+        foreach (var deduplication in deduplications ?? Array.Empty<DescriptorForeignKeyDeduplication>())
         {
             WriteDescriptorForeignKeyDeduplication(writer, table, deduplication);
         }
@@ -193,6 +196,28 @@ public static class RelationalModelManifestEmitter
         writer.WriteEndArray();
 
         writer.WriteEndObject();
+    }
+
+    private static IReadOnlyDictionary<
+        DbTableName,
+        DescriptorForeignKeyDeduplication[]
+    > BuildDescriptorForeignKeyDeduplicationLookup(
+        IReadOnlyList<DescriptorForeignKeyDeduplication> descriptorForeignKeyDeduplications
+    )
+    {
+        return descriptorForeignKeyDeduplications
+            .GroupBy(entry => entry.Table)
+            .ToDictionary(
+                group => group.Key,
+                group =>
+                    group
+                        .OrderBy(entry => entry.StorageColumn.Value, StringComparer.Ordinal)
+                        .ThenBy(
+                            entry => string.Join("|", entry.BindingColumns.Select(column => column.Value)),
+                            StringComparer.Ordinal
+                        )
+                        .ToArray()
+            );
     }
 
     /// <summary>

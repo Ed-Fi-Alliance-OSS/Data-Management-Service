@@ -38,6 +38,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             DbTableName,
             List<DbIdentityPropagationReferrerAction>
         > propagationFallbackActionsByTriggerTable = new();
+        Dictionary<
+            DbTableName,
+            HashSet<PropagationReferrerActionKey>
+        > propagationFallbackSeenActionsByTriggerTable = new();
 
         var abstractTablesByResource = context.AbstractIdentityTablesInNameOrder.ToDictionary(table =>
             table.AbstractResourceKey.Resource
@@ -172,7 +176,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     abstractTablesByResource,
                     resourceContextsByResource,
                     resource,
-                    propagationFallbackActionsByTriggerTable
+                    propagationFallbackActionsByTriggerTable,
+                    propagationFallbackSeenActionsByTriggerTable
                 );
             }
         }
@@ -288,7 +293,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         IReadOnlyDictionary<QualifiedResourceName, AbstractIdentityTableInfo> abstractTablesByResource,
         IReadOnlyDictionary<QualifiedResourceName, ConcreteResourceSchemaContext> resourceContextsByResource,
         QualifiedResourceName resource,
-        IDictionary<DbTableName, List<DbIdentityPropagationReferrerAction>> actionsByTriggerTable
+        IDictionary<DbTableName, List<DbIdentityPropagationReferrerAction>> actionsByTriggerTable,
+        IDictionary<DbTableName, HashSet<PropagationReferrerActionKey>> seenActionKeysByTriggerTable
     )
     {
         var bindingByReferencePath = resourceModel.DocumentReferenceBindings.ToDictionary(
@@ -442,7 +448,18 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 actionsByTriggerTable[referencedTableModel.Table] = referrerActions;
             }
 
-            AddPropagationReferrerAction(referrerActions, referrerAction);
+            if (
+                !seenActionKeysByTriggerTable.TryGetValue(
+                    referencedTableModel.Table,
+                    out var seenReferrerActions
+                )
+            )
+            {
+                seenReferrerActions = new HashSet<PropagationReferrerActionKey>();
+                seenActionKeysByTriggerTable[referencedTableModel.Table] = seenReferrerActions;
+            }
+
+            AddPropagationReferrerAction(referrerActions, seenReferrerActions, referrerAction);
         }
     }
 
@@ -550,19 +567,76 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// <summary>
     /// Adds a propagation action exactly once using semantic equality on referrer + identity mappings.
     /// </summary>
+    private readonly struct PropagationReferrerActionKey : IEquatable<PropagationReferrerActionKey>
+    {
+        private readonly int _hashCode;
+
+        public PropagationReferrerActionKey(DbIdentityPropagationReferrerAction action)
+        {
+            ReferrerTable = action.ReferrerTable;
+            ReferrerDocumentIdColumn = action.ReferrerDocumentIdColumn;
+            ReferencedDocumentIdColumn = action.ReferencedDocumentIdColumn;
+            IdentityColumnPairs = action.IdentityColumnPairs;
+
+            _hashCode = ComputeHashCode(
+                ReferrerTable,
+                ReferrerDocumentIdColumn,
+                ReferencedDocumentIdColumn,
+                IdentityColumnPairs
+            );
+        }
+
+        public DbTableName ReferrerTable { get; }
+
+        public DbColumnName ReferrerDocumentIdColumn { get; }
+
+        public DbColumnName ReferencedDocumentIdColumn { get; }
+
+        public IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs { get; }
+
+        public bool Equals(PropagationReferrerActionKey other)
+        {
+            return ReferrerTable.Equals(other.ReferrerTable)
+                && ReferrerDocumentIdColumn.Equals(other.ReferrerDocumentIdColumn)
+                && ReferencedDocumentIdColumn.Equals(other.ReferencedDocumentIdColumn)
+                && IdentityColumnPairs.SequenceEqual(other.IdentityColumnPairs);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is PropagationReferrerActionKey other && Equals(other);
+        }
+
+        public override int GetHashCode() => _hashCode;
+
+        private static int ComputeHashCode(
+            DbTableName referrerTable,
+            DbColumnName referrerDocumentIdColumn,
+            DbColumnName referencedDocumentIdColumn,
+            IReadOnlyList<DbIdentityPropagationColumnPair> identityColumnPairs
+        )
+        {
+            var hash = new HashCode();
+            hash.Add(referrerTable);
+            hash.Add(referrerDocumentIdColumn);
+            hash.Add(referencedDocumentIdColumn);
+
+            foreach (var pair in identityColumnPairs)
+            {
+                hash.Add(pair);
+            }
+
+            return hash.ToHashCode();
+        }
+    }
+
     private static void AddPropagationReferrerAction(
         ICollection<DbIdentityPropagationReferrerAction> referrerActions,
+        ISet<PropagationReferrerActionKey> seenReferrerActions,
         DbIdentityPropagationReferrerAction candidate
     )
     {
-        if (
-            referrerActions.Any(existing =>
-                existing.ReferrerTable.Equals(candidate.ReferrerTable)
-                && existing.ReferrerDocumentIdColumn.Equals(candidate.ReferrerDocumentIdColumn)
-                && existing.ReferencedDocumentIdColumn.Equals(candidate.ReferencedDocumentIdColumn)
-                && existing.IdentityColumnPairs.SequenceEqual(candidate.IdentityColumnPairs)
-            )
-        )
+        if (!seenReferrerActions.Add(new PropagationReferrerActionKey(candidate)))
         {
             return;
         }

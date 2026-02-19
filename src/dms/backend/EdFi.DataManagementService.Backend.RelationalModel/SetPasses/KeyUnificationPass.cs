@@ -400,7 +400,7 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         }
 
         return rawCandidates
-            .GroupBy(candidate =>
+            .DistinctBy(candidate =>
                 (
                     candidate.TableIndex,
                     candidate.Table.Table,
@@ -408,7 +408,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
                     candidate.Table.JsonScope.Canonical
                 )
             )
-            .Select(group => group.First())
             .OrderBy(candidate => candidate.Table.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(candidate => candidate.Table.Table.Name, StringComparer.Ordinal)
             .ThenBy(candidate => candidate.Table.JsonScope.Canonical, StringComparer.Ordinal)

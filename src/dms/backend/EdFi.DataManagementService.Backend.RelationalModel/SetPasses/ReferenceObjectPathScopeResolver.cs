@@ -15,6 +15,8 @@ internal static class ReferenceObjectPathScopeResolver
 {
     private const string ExtensionPropertyName = "_ext";
 
+    private readonly record struct CandidateScope<TCandidate>(TCandidate Candidate, JsonPathExpression Scope);
+
     /// <summary>
     /// Resolves the owning table scope for a reference object path and emits consistent scope mismatch errors.
     /// </summary>
@@ -26,6 +28,8 @@ internal static class ReferenceObjectPathScopeResolver
         string? tableName = null
     )
     {
+        ArgumentNullException.ThrowIfNull(referenceObjectPath.Canonical, nameof(referenceObjectPath));
+        ArgumentNullException.ThrowIfNull(referenceObjectPath.Segments, nameof(referenceObjectPath));
         ArgumentNullException.ThrowIfNull(scopeCandidates);
         ArgumentNullException.ThrowIfNull(scopeSelector);
 
@@ -68,20 +72,23 @@ internal static class ReferenceObjectPathScopeResolver
         Func<Exception> extensionScopeRequiredExceptionFactory
     )
     {
+        ArgumentNullException.ThrowIfNull(referenceObjectPath.Canonical, nameof(referenceObjectPath));
+        ArgumentNullException.ThrowIfNull(referenceObjectPath.Segments, nameof(referenceObjectPath));
         ArgumentNullException.ThrowIfNull(scopeCandidates);
         ArgumentNullException.ThrowIfNull(scopeSelector);
         ArgumentNullException.ThrowIfNull(noMatchExceptionFactory);
         ArgumentNullException.ThrowIfNull(extensionScopeRequiredExceptionFactory);
 
         var orderedCandidates = scopeCandidates
-            .OrderBy(candidate => scopeSelector(candidate).Canonical, StringComparer.Ordinal)
+            .Select(candidate => new CandidateScope<T>(candidate, scopeSelector(candidate)))
+            .OrderBy(candidate => candidate.Scope.Canonical, StringComparer.Ordinal)
             .ToArray();
-        List<T> bestMatches = [];
+        List<CandidateScope<T>> bestMatches = [];
         var bestSegmentCount = -1;
 
         foreach (var candidate in orderedCandidates)
         {
-            var scope = scopeSelector(candidate);
+            var scope = candidate.Scope;
 
             if (!IsPrefixOf(scope.Segments, referenceObjectPath.Segments))
             {
@@ -107,7 +114,7 @@ internal static class ReferenceObjectPathScopeResolver
         if (bestMatches.Count == 0)
         {
             var candidateScopes = orderedCandidates
-                .Select(candidate => scopeSelector(candidate).Canonical)
+                .Select(candidate => candidate.Scope.Canonical)
                 .Distinct(StringComparer.Ordinal)
                 .ToArray();
 
@@ -115,7 +122,7 @@ internal static class ReferenceObjectPathScopeResolver
         }
 
         var bestMatchScopes = bestMatches
-            .Select(candidate => scopeSelector(candidate).Canonical)
+            .Select(candidate => candidate.Scope.Canonical)
             .Distinct(StringComparer.Ordinal)
             .OrderBy(scope => scope, StringComparer.Ordinal)
             .ToArray();
@@ -126,7 +133,7 @@ internal static class ReferenceObjectPathScopeResolver
         }
 
         var bestMatch = bestMatches[0];
-        var bestScope = scopeSelector(bestMatch);
+        var bestScope = bestMatch.Scope;
 
         if (
             ContainsExtensionSegment(referenceObjectPath.Segments)
@@ -136,7 +143,7 @@ internal static class ReferenceObjectPathScopeResolver
             throw extensionScopeRequiredExceptionFactory();
         }
 
-        return bestMatch;
+        return bestMatch.Candidate;
     }
 
     /// <summary>
