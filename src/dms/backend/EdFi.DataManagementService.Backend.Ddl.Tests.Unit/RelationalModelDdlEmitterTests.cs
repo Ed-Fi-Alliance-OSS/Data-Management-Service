@@ -222,6 +222,13 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
     {
         _ddl.Should().Contain("PRIMARY KEY");
     }
+
+    [Test]
+    public void It_should_include_discriminator_as_not_null()
+    {
+        // Discriminator column must be NOT NULL to ensure every row identifies its concrete type.
+        _ddl.Should().MatchRegex(@"""Discriminator""\s+\w+.*NOT NULL");
+    }
 }
 
 [TestFixture]
@@ -257,6 +264,13 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
     public void It_should_include_primary_key()
     {
         _ddl.Should().Contain("PRIMARY KEY");
+    }
+
+    [Test]
+    public void It_should_include_discriminator_as_not_null()
+    {
+        // Discriminator column must be NOT NULL to ensure every row identifies its concrete type.
+        _ddl.Should().MatchRegex(@"\[Discriminator\]\s+\w+.*NOT NULL");
     }
 }
 
@@ -431,6 +445,21 @@ public class Given_RelationalModelDdlEmitter_With_Pgsql_And_Abstract_Identity_Ta
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
         fkIndex.Should().BeGreaterThan(tableIndex);
     }
+
+    [Test]
+    public void It_should_emit_fk_with_cascade_delete()
+    {
+        // Abstract identity table FK to dms.Document must use CASCADE delete
+        // so rows are cleaned up when the Document is deleted.
+        _ddl.Should().Contain("ON DELETE CASCADE");
+    }
+
+    [Test]
+    public void It_should_follow_fk_naming_convention()
+    {
+        // FK constraint should follow FK_{TableName}_{TargetTableName} convention.
+        _ddl.Should().MatchRegex(@"CONSTRAINT\s+""FK_TestIdentity_Document""");
+    }
 }
 
 [TestFixture]
@@ -466,6 +495,21 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_And_Abstract_Identity_Ta
         tableIndex.Should().BeGreaterOrEqualTo(0, "expected identity table CREATE TABLE in DDL");
         fkIndex.Should().BeGreaterOrEqualTo(0, "expected identity table FK in DDL");
         fkIndex.Should().BeGreaterThan(tableIndex);
+    }
+
+    [Test]
+    public void It_should_emit_fk_with_cascade_delete()
+    {
+        // Abstract identity table FK to dms.Document must use CASCADE delete
+        // so rows are cleaned up when the Document is deleted.
+        _ddl.Should().Contain("ON DELETE CASCADE");
+    }
+
+    [Test]
+    public void It_should_follow_fk_naming_convention()
+    {
+        // FK constraint should follow FK_{TableName}_{TargetTableName} convention.
+        _ddl.Should().MatchRegex(@"CONSTRAINT\s+\[FK_TestIdentity_Document\]");
     }
 }
 
@@ -717,6 +761,179 @@ public class Given_RelationalModelDdlEmitter_With_Mssql_Emitting_Twice
     public void It_should_produce_byte_for_byte_identical_output()
     {
         _first.Should().Be(_second);
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Component-Level Ordering Stability Tests
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_RelationalModelDdlEmitter_With_Multiple_Schemas_Emitting_Twice
+{
+    private string _first = default!;
+    private string _second = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+
+        // Build fixture with multiple schemas to verify ordering stability
+        var modelSet = MultiSchemaFixture.Build(dialect.Rules.Dialect);
+
+        var emitter1 = new RelationalModelDdlEmitter(dialect);
+        var emitter2 = new RelationalModelDdlEmitter(dialect);
+
+        _first = emitter1.Emit(modelSet);
+        _second = emitter2.Emit(modelSet);
+    }
+
+    [Test]
+    public void It_should_produce_identical_output()
+    {
+        _first.Should().Be(_second);
+    }
+
+    [Test]
+    public void It_should_emit_schemas_in_consistent_order()
+    {
+        // Verify schema creation statements appear in a deterministic order
+        var alphaIndex = _first.IndexOf("\"alpha\"");
+        var betaIndex = _first.IndexOf("\"beta\"");
+
+        alphaIndex.Should().BeGreaterOrEqualTo(0, "expected alpha schema in DDL");
+        betaIndex.Should().BeGreaterOrEqualTo(0, "expected beta schema in DDL");
+
+        // Alpha should appear before beta (alphabetical order)
+        alphaIndex.Should().BeLessThan(betaIndex);
+    }
+
+    [Test]
+    public void It_should_emit_tables_in_consistent_order_within_schema()
+    {
+        // Verify tables within the same schema are emitted in deterministic order
+        var alphaAaaIndex = _first.IndexOf("\"alpha\".\"Aaa\"");
+        var alphaBbbIndex = _first.IndexOf("\"alpha\".\"Bbb\"");
+
+        alphaAaaIndex.Should().BeGreaterOrEqualTo(0, "expected alpha.Aaa table in DDL");
+        alphaBbbIndex.Should().BeGreaterOrEqualTo(0, "expected alpha.Bbb table in DDL");
+
+        // Aaa should appear before Bbb (alphabetical order by resource name)
+        alphaAaaIndex.Should().BeLessThan(alphaBbbIndex);
+    }
+}
+
+internal static class MultiSchemaFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var alphaSchema = new DbSchemaName("alpha");
+        var betaSchema = new DbSchemaName("beta");
+        var documentIdColumn = new DbColumnName("DocumentId");
+
+        var alphaAaaResource = new QualifiedResourceName("Alpha", "Aaa");
+        var alphaBbbResource = new QualifiedResourceName("Alpha", "Bbb");
+        var betaCccResource = new QualifiedResourceName("Beta", "Ccc");
+
+        var alphaAaaKey = new ResourceKeyEntry(1, alphaAaaResource, "1.0.0", false);
+        var alphaBbbKey = new ResourceKeyEntry(2, alphaBbbResource, "1.0.0", false);
+        var betaCccKey = new ResourceKeyEntry(3, betaCccResource, "1.0.0", false);
+
+        DbTableModel CreateTable(DbSchemaName schema, string tableName)
+        {
+            var tableDef = new DbTableName(schema, tableName);
+            return new DbTableModel(
+                tableDef,
+                new JsonPathExpression("$", []),
+                new TableKey(
+                    $"PK_{tableName}",
+                    [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+                ),
+                [
+                    new DbColumnModel(
+                        documentIdColumn,
+                        ColumnKind.ParentKeyPart,
+                        new RelationalScalarType(ScalarKind.Int64),
+                        IsNullable: false,
+                        SourceJsonPath: null,
+                        TargetResource: null
+                    ),
+                ],
+                []
+            );
+        }
+
+        RelationalResourceModel CreateResourceModel(
+            QualifiedResourceName resource,
+            DbSchemaName schema,
+            string tableName
+        )
+        {
+            var table = CreateTable(schema, tableName);
+            return new RelationalResourceModel(
+                resource,
+                schema,
+                ResourceStorageKind.RelationalTables,
+                table,
+                [table],
+                [],
+                []
+            );
+        }
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                3,
+                [0x01, 0x02, 0x03],
+                [
+                    new SchemaComponentInfo(
+                        "alpha",
+                        "Alpha",
+                        "1.0.0",
+                        false,
+                        "aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000"
+                    ),
+                    new SchemaComponentInfo(
+                        "beta",
+                        "Beta",
+                        "1.0.0",
+                        false,
+                        "bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000bbbb0000"
+                    ),
+                ],
+                [alphaAaaKey, alphaBbbKey, betaCccKey]
+            ),
+            dialect,
+            [
+                new ProjectSchemaInfo("alpha", "Alpha", "1.0.0", false, alphaSchema),
+                new ProjectSchemaInfo("beta", "Beta", "1.0.0", false, betaSchema),
+            ],
+            [
+                new ConcreteResourceModel(
+                    alphaAaaKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateResourceModel(alphaAaaResource, alphaSchema, "Aaa")
+                ),
+                new ConcreteResourceModel(
+                    alphaBbbKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateResourceModel(alphaBbbResource, alphaSchema, "Bbb")
+                ),
+                new ConcreteResourceModel(
+                    betaCccKey,
+                    ResourceStorageKind.RelationalTables,
+                    CreateResourceModel(betaCccResource, betaSchema, "Ccc")
+                ),
+            ],
+            [],
+            [],
+            [],
+            []
+        );
     }
 }
 

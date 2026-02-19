@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -429,6 +430,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // IdentityVersion stamp for root tables with identity projection columns
         if (trigger.IdentityProjectionColumns.Count > 0)
         {
+            // PostgreSQL: IS DISTINCT FROM provides null-safe inequality comparison.
+            // (NULL IS DISTINCT FROM NULL) → false, (NULL IS DISTINCT FROM value) → true.
+            // Equivalent to MSSQL's EmitMssqlNullSafeNotEqual pattern which expands to:
+            // (a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL))
             writer.Append("IF TG_OP = 'UPDATE' AND (");
             for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
             {
@@ -607,12 +612,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
-        if (identityElements.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
-            );
-        }
+        // Defensive assertion: model derivation in DeriveTriggerInventoryPass guarantees non-empty identity elements.
+        // If this fires, there's a bug in the model derivation phase.
+        Debug.Assert(
+            identityElements.Count > 0,
+            $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
+        );
 
         var uuidv5Func = FormatUuidv5FunctionName();
 
@@ -714,12 +719,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
-        if (identityElements.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
-            );
-        }
+        // Defensive assertion: model derivation in DeriveTriggerInventoryPass guarantees non-empty identity elements.
+        // If this fires, there's a bug in the model derivation phase.
+        Debug.Assert(
+            identityElements.Count > 0,
+            $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
+        );
 
         var uuidv5Func = FormatUuidv5FunctionName();
 
@@ -996,6 +1001,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// Emits a NULL-safe inequality comparison for MSSQL, equivalent to PostgreSQL's
     /// <c>IS DISTINCT FROM</c>. Emits <c>(left.col &lt;&gt; right.col OR (left.col IS NULL AND right.col IS NOT NULL) OR (left.col IS NOT NULL AND right.col IS NULL))</c>.
     /// </summary>
+    /// <remarks>
+    /// PostgreSQL's <c>IS DISTINCT FROM</c> is a null-safe inequality operator:
+    /// <c>NULL IS DISTINCT FROM NULL</c> returns <c>false</c> (nulls are considered equal),
+    /// and <c>NULL IS DISTINCT FROM value</c> returns <c>true</c>.
+    /// SQL Server lacks this operator, so we expand to the three-part OR expression.
+    /// </remarks>
     private static void EmitMssqlNullSafeNotEqual(
         SqlWriter writer,
         string leftAlias,
@@ -1187,10 +1198,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(" AS");
 
         // Emit UNION ALL arms
-        if (viewInfo.UnionArmsInOrder.Count == 0)
-            throw new InvalidOperationException(
-                $"Abstract union view '{viewInfo.ViewName.Schema.Value}.{viewInfo.ViewName.Name}' has no union arms."
-            );
+        // Defensive assertion: model derivation guarantees at least one union arm for abstract views.
+        // If this fires, there's a bug in the model derivation phase.
+        Debug.Assert(
+            viewInfo.UnionArmsInOrder.Count > 0,
+            $"Abstract union view '{viewInfo.ViewName.Schema.Value}.{viewInfo.ViewName.Name}' has no union arms."
+        );
 
         for (int i = 0; i < viewInfo.UnionArmsInOrder.Count; i++)
         {

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
@@ -120,6 +121,16 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
             // Build identity element mappings for UUIDv5 computation.
             var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
+
+            // Every concrete resource must have at least one identity element for referential identity computation.
+            // Empty identity elements would produce a degenerate UUIDv5 hash with no identity data.
+            if (identityElements.Count == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Resource '{FormatResource(resource)}' requires at least one identity element "
+                        + "for referential identity computation, but none were derived."
+                );
+            }
 
             // Resolve the resource key entry for referential identity metadata.
             var resourceKeyEntry = context.GetResourceKeyEntry(resource);
@@ -568,11 +579,43 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// <summary>
     /// Extracts a column name from an identity JSON path by converting the last path segment to PascalCase.
     /// </summary>
+    /// <param name="identityPath">
+    /// The identity JSON path. Expected format: <c>$.camelCaseField</c> or <c>$.nested.camelCaseField</c>.
+    /// Array index notation (e.g., <c>[0]</c>) is not expected in identity paths since identity fields
+    /// are always scalar properties, not array elements.
+    /// </param>
+    /// <returns>The PascalCase column name derived from the last path segment.</returns>
+    /// <remarks>
+    /// This method assumes identity paths follow Ed-Fi ApiSchema conventions:
+    /// <list type="bullet">
+    /// <item>Paths start with <c>$.</c> (JSON path root notation)</item>
+    /// <item>Field names are camelCase (first letter lowercase)</item>
+    /// <item>No array brackets in identity paths (identity properties are never arrays)</item>
+    /// </list>
+    /// </remarks>
     private static string ExtractColumnNameFromIdentityPath(string identityPath)
     {
+        // Defensive assertion: identity paths must start with "$." per JSON path convention.
+        Debug.Assert(
+            identityPath.StartsWith("$.", StringComparison.Ordinal),
+            $"Identity path must start with '$.' but was: '{identityPath}'"
+        );
+
+        // Defensive assertion: identity paths should not contain array brackets.
+        Debug.Assert(
+            !identityPath.Contains('['),
+            $"Identity path should not contain array notation but was: '{identityPath}'"
+        );
+
         // Identity path format: $.fieldName or $.path.to.fieldName
         var lastDotIndex = identityPath.LastIndexOf('.');
         var fieldName = lastDotIndex >= 0 ? identityPath[(lastDotIndex + 1)..] : identityPath;
+
+        // Defensive assertion: ensure we extracted a valid field name, not just "$".
+        Debug.Assert(
+            !string.IsNullOrEmpty(fieldName) && fieldName != "$",
+            $"Failed to extract valid field name from identity path: '{identityPath}'"
+        );
 
         // Convert first char to uppercase (camelCase → PascalCase).
         if (fieldName.Length > 0 && char.IsLower(fieldName[0]))
