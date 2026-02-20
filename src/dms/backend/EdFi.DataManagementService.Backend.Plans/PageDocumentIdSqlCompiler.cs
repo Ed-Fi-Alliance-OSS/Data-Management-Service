@@ -20,8 +20,8 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     private const string DocumentIdColumnName = "DocumentId";
     private const string MissingPresenceColumnSortValue = "";
 
-    private readonly SqlDialect _dialect = dialect;
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
     /// <summary>
     /// Compiles page keyset SQL and total-count SQL for the supplied query specification.
@@ -168,7 +168,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
 
         writer.Append("ORDER BY r.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
 
-        AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
+        _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
         writer.AppendLine(";");
 
         return writer.ToString();
@@ -237,7 +237,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
         if (@operator is QueryComparisonOperator.In)
         {
             throw new NotSupportedException(
-                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)} yet."
+                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)}."
             );
         }
 
@@ -263,38 +263,6 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
         writer.Append("r.").AppendQuoted(column.Value).Append(" IS NOT NULL");
 
         return writer.ToString();
-    }
-
-    /// <summary>
-    /// Builds the paging clause for the configured SQL dialect.
-    /// </summary>
-    private void AppendPagingClause(SqlWriter writer, string offsetParameterName, string limitParameterName)
-    {
-        ArgumentNullException.ThrowIfNull(writer);
-
-        switch (_dialect)
-        {
-            case SqlDialect.Pgsql:
-                writer
-                    .Append("LIMIT ")
-                    .AppendParameter(limitParameterName)
-                    .Append(" OFFSET ")
-                    .AppendParameter(offsetParameterName)
-                    .AppendLine();
-                return;
-
-            case SqlDialect.Mssql:
-                writer
-                    .Append("OFFSET ")
-                    .AppendParameter(offsetParameterName)
-                    .Append(" ROWS FETCH NEXT ")
-                    .AppendParameter(limitParameterName)
-                    .AppendLine(" ROWS ONLY");
-                return;
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(_dialect), _dialect, "Unsupported SQL dialect.");
-        }
     }
 
     /// <summary>
