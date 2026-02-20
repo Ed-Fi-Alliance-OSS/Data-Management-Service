@@ -680,6 +680,13 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     {
         if (member.SuperclassIdentityJsonPath is not null)
         {
+            if (member.IdentityJsonPaths.Count != 1)
+            {
+                throw new InvalidOperationException(
+                    $"Member '{FormatResource(member.Resource)}' has SuperclassIdentityJsonPath set "
+                        + $"but {member.IdentityJsonPaths.Count} identity paths (expected exactly 1)."
+                );
+            }
             return member.IdentityJsonPaths[0];
         }
 
