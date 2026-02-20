@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using EdFi.DataManagementService.Backend.RelationalModel.Build.Steps.ExtractInputs;
 using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using static EdFi.DataManagementService.Backend.RelationalModel.Constraints.ConstraintDerivationHelpers;
@@ -390,17 +389,19 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         // For each target resource in the reverse index, emit a single trigger with all referrers.
         foreach (var (targetResource, referrerEntries) in reverseIndex)
         {
-            // Determine trigger table: abstract identity table OR concrete root table.
-            DbTableName triggerTable;
+            // Determine trigger table model: abstract identity table OR concrete root table.
+            // The table model is needed both for the trigger DDL and for resolving source
+            // column names from SourceJsonPath mappings in BuildPropagationColumnMappings.
+            DbTableModel triggerTableModel;
             IReadOnlyList<DbColumnName> identityProjectionColumns;
 
             if (abstractTablesByResource.TryGetValue(targetResource, out var abstractTableInfo))
             {
-                triggerTable = abstractTableInfo.TableModel.Table;
+                triggerTableModel = abstractTableInfo.TableModel;
 
                 // Identity projection columns are all columns with SourceJsonPath (identity columns).
-                identityProjectionColumns = abstractTableInfo
-                    .TableModel.Columns.Where(c => c.SourceJsonPath is not null)
+                identityProjectionColumns = triggerTableModel
+                    .Columns.Where(c => c.SourceJsonPath is not null)
                     .Select(c => c.ColumnName)
                     .ToArray();
             }
@@ -415,16 +416,16 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     continue;
                 }
 
-                triggerTable = concreteModel.RelationalModel.Root.Table;
+                triggerTableModel = concreteModel.RelationalModel.Root;
 
                 // Identity projection columns from the root table, resolved to stored columns.
                 // Under key unification, some identity columns may be unified aliases (computed);
                 // SQL Server rejects UPDATE() on computed columns (Msg 2114).
                 identityProjectionColumns = ResolveColumnsToStored(
-                    concreteModel
-                        .RelationalModel.Root.Columns.Where(c => c.SourceJsonPath is not null)
+                    triggerTableModel
+                        .Columns.Where(c => c.SourceJsonPath is not null)
                         .Select(c => c.ColumnName),
-                    concreteModel.RelationalModel.Root,
+                    triggerTableModel,
                     targetResource
                 );
             }
@@ -432,6 +433,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             {
                 continue;
             }
+
+            var triggerTable = triggerTableModel.Table;
 
             // Build referrer updates by mapping source identity columns to referrer stored columns.
             var referrerUpdates = new List<PropagationReferrerTarget>();
@@ -442,7 +445,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     entry.Binding,
                     entry.Mapping,
                     entry.ReferrerResource,
-                    entry.ReferrerRootTable
+                    entry.ReferrerRootTable,
+                    triggerTableModel,
+                    targetResource
                 );
 
                 referrerUpdates.Add(
@@ -541,8 +546,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds column mappings for identity propagation: source identity columns → referrer stored columns.
-    /// The direction is now source (trigger table) → referrer (what we update).
+    /// Builds column mappings for identity propagation: source identity columns on the trigger
+    /// table to referrer stored columns. Resolves source columns from the trigger table model's
+    /// <see cref="DbColumnModel.SourceJsonPath"/> mapping instead of guessing from JSON path
+    /// segments, matching the approach used by <see cref="BuildIdentityElementMappings"/>.
     /// </summary>
     /// <remarks>
     /// Under key unification, <c>ib.Column</c> from reference identity bindings may be a persisted
@@ -553,9 +560,14 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         DocumentReferenceBinding binding,
         DocumentReferenceMapping mapping,
         QualifiedResourceName referrerResource,
-        DbTableModel referrerRootTable
+        DbTableModel referrerRootTable,
+        DbTableModel triggerTable,
+        QualifiedResourceName targetResource
     )
     {
+        // Build lookup: identity JSON path → source column on the trigger table.
+        var sourceColumnsByPath = BuildColumnNameLookupBySourceJsonPath(triggerTable, targetResource);
+
         // Build lookup: reference JSON path → identity JSON path.
         var identityPathByReferencePath = new Dictionary<string, string>(StringComparer.Ordinal);
         foreach (var entry in mapping.ReferenceJsonPaths)
@@ -564,7 +576,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         }
 
         // For each identity binding, map source identity column to referrer stored column.
-        // Direction: SourceColumn = target identity column, TargetColumn = referrer stored column.
+        // Direction: SourceColumn = trigger table identity column, TargetColumn = referrer stored column.
         return binding
             .IdentityBindings.Select(ib =>
             {
@@ -582,9 +594,15 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     );
                 }
 
-                // Extract column name from identity path: $.schoolId → SchoolId
-                var sourceColumnName = ExtractColumnNameFromIdentityPath(identityPath);
-                var sourceColumn = new DbColumnName(sourceColumnName);
+                // Resolve source column from the trigger table model's SourceJsonPath mapping.
+                if (!sourceColumnsByPath.TryGetValue(identityPath, out var sourceColumn))
+                {
+                    throw new InvalidOperationException(
+                        $"Propagation fallback trigger derivation for target '{FormatResource(targetResource)}': "
+                            + $"identity path '{identityPath}' did not map to a column on trigger table "
+                            + $"'{triggerTable.Table.Schema.Value}.{triggerTable.Table.Name}'."
+                    );
+                }
 
                 // Resolve through storage: ib.Column may be a unified alias (computed) after
                 // key unification. The propagation UPDATE must target the canonical stored column.
@@ -593,56 +611,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 return new TriggerColumnMapping(sourceColumn, targetColumn);
             })
             .ToArray();
-    }
-
-    /// <summary>
-    /// Extracts a column name from an identity JSON path by converting the last path segment to PascalCase.
-    /// </summary>
-    /// <param name="identityPath">
-    /// The identity JSON path. Expected format: <c>$.camelCaseField</c> or <c>$.nested.camelCaseField</c>.
-    /// Array index notation (e.g., <c>[0]</c>) is not expected in identity paths since identity fields
-    /// are always scalar properties, not array elements.
-    /// </param>
-    /// <returns>The PascalCase column name derived from the last path segment.</returns>
-    /// <remarks>
-    /// This method assumes identity paths follow Ed-Fi ApiSchema conventions:
-    /// <list type="bullet">
-    /// <item>Paths start with <c>$.</c> (JSON path root notation)</item>
-    /// <item>Field names are camelCase (first letter lowercase)</item>
-    /// <item>No array brackets in identity paths (identity properties are never arrays)</item>
-    /// </list>
-    /// </remarks>
-    private static string ExtractColumnNameFromIdentityPath(string identityPath)
-    {
-        // Defensive assertion: identity paths must start with "$." per JSON path convention.
-        Debug.Assert(
-            identityPath.StartsWith("$.", StringComparison.Ordinal),
-            $"Identity path must start with '$.' but was: '{identityPath}'"
-        );
-
-        // Defensive assertion: identity paths should not contain array brackets.
-        Debug.Assert(
-            !identityPath.Contains('['),
-            $"Identity path should not contain array notation but was: '{identityPath}'"
-        );
-
-        // Identity path format: $.fieldName or $.path.to.fieldName
-        var lastDotIndex = identityPath.LastIndexOf('.');
-        var fieldName = lastDotIndex >= 0 ? identityPath[(lastDotIndex + 1)..] : identityPath;
-
-        // Defensive assertion: ensure we extracted a valid field name, not just "$".
-        Debug.Assert(
-            !string.IsNullOrEmpty(fieldName) && fieldName != "$",
-            $"Failed to extract valid field name from identity path: '{identityPath}'"
-        );
-
-        // Convert first char to uppercase (camelCase → PascalCase).
-        if (fieldName.Length > 0 && char.IsLower(fieldName[0]))
-        {
-            return char.ToUpperInvariant(fieldName[0]) + fieldName[1..];
-        }
-
-        return fieldName;
     }
 
     /// <summary>
