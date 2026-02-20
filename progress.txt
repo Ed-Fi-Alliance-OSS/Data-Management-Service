@@ -16,3 +16,9 @@ Decisions: made bare names canonical in contracts and compiler validation via Pl
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Given_PageDocumentIdSqlCompiler.cs; tasks.json
 Feedback loops: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass).
 Blockers/notes: none. Next likely Query Compiler task (SqlWriter/ISqlDialect internals + deterministic predicate ordering).
+2026-02-20
+Task: Query Compiler - refactor PageDocumentIdSqlCompiler to SqlWriter/ISqlDialect with deterministic predicate ordering + duplicate detection (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: made compiler emit through Backend.Ddl.SqlWriter for canonical output and shared quoting; treated predicates as unordered input by rewriting first then stable ordinal sort (presence/canonical/operator/parameter); fail-fast duplicate detection uses rewritten sort key to catch alias-collisions deterministically; statement termination normalized to ;\n for page + optional total-count SQL.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Given_PageDocumentIdSqlCompiler.cs; tasks.json
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
+Blockers/notes: none. Next likely Unit Tests task cleanup/coverage alignment or Plan SQL toy INSERT emitter.

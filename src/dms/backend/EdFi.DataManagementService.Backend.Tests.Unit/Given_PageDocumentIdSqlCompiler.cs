@@ -132,6 +132,101 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    public void It_should_emit_predicates_in_stable_sorted_order_after_unified_alias_rewrite()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("AliasB"),
+                        QueryComparisonOperator.GreaterThan,
+                        "zParam"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("AliasA"),
+                        QueryComparisonOperator.Equal,
+                        "aParam"
+                    ),
+                    new QueryValuePredicate(
+                        new DbColumnName("AliasC"),
+                        QueryComparisonOperator.LessThan,
+                        "mParam"
+                    ),
+                ],
+                [
+                    new UnifiedAliasColumnMapping(
+                        new DbColumnName("AliasA"),
+                        new DbColumnName("CanonicalA"),
+                        new DbColumnName("PresenceA")
+                    ),
+                    new UnifiedAliasColumnMapping(
+                        new DbColumnName("AliasB"),
+                        new DbColumnName("CanonicalB"),
+                        null
+                    ),
+                ]
+            )
+        );
+
+        var firstPredicateIndex = plan.PageDocumentIdSql.IndexOf(
+            "(r.\"AliasC\" < @mParam)",
+            StringComparison.Ordinal
+        );
+        var secondPredicateIndex = plan.PageDocumentIdSql.IndexOf(
+            "(r.\"CanonicalB\" > @zParam)",
+            StringComparison.Ordinal
+        );
+        var thirdPredicateIndex = plan.PageDocumentIdSql.IndexOf(
+            "(r.\"PresenceA\" IS NOT NULL AND r.\"CanonicalA\" = @aParam)",
+            StringComparison.Ordinal
+        );
+
+        firstPredicateIndex.Should().BeGreaterThan(-1);
+        secondPredicateIndex.Should().BeGreaterThan(firstPredicateIndex);
+        thirdPredicateIndex.Should().BeGreaterThan(secondPredicateIndex);
+    }
+
+    [Test]
+    public void It_should_fail_fast_for_duplicate_predicates_after_unified_alias_rewrite()
+    {
+        var act = () =>
+            _compiler.Compile(
+                CreateSpec(
+                    [
+                        new QueryValuePredicate(
+                            new DbColumnName("AliasOne"),
+                            QueryComparisonOperator.Equal,
+                            "studentUniqueId"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("AliasTwo"),
+                            QueryComparisonOperator.Equal,
+                            "studentUniqueId"
+                        ),
+                    ],
+                    [
+                        new UnifiedAliasColumnMapping(
+                            new DbColumnName("AliasOne"),
+                            new DbColumnName("CanonicalStudentUniqueId"),
+                            new DbColumnName("Student_DocumentId")
+                        ),
+                        new UnifiedAliasColumnMapping(
+                            new DbColumnName("AliasTwo"),
+                            new DbColumnName("CanonicalStudentUniqueId"),
+                            new DbColumnName("Student_DocumentId")
+                        ),
+                    ]
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "Duplicate predicate after unified alias rewrite for sort key (presenceColumn='Student_DocumentId', canonicalColumn='CanonicalStudentUniqueId', operator='Equal', parameterName='studentUniqueId')."
+            );
+    }
+
+    [Test]
     public void It_should_reject_in_operator_until_supported()
     {
         var act = () =>
@@ -172,11 +267,46 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_terminate_compiled_statements_with_semicolon_newline(SqlDialect dialect)
+    {
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(CreateSpec([], [], includeTotalCountSql: true));
+
+        plan.PageDocumentIdSql.Should().EndWith(";\n");
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().EndWith(";\n");
+    }
+
+    [Test]
     public void It_should_not_emit_total_count_sql_when_not_requested()
     {
         var plan = _compiler.Compile(CreateSpec([], []));
 
         plan.TotalCountSql.Should().BeNull();
+    }
+
+    [Test]
+    public void It_should_emit_total_count_sql_when_requested()
+    {
+        var plan = _compiler.Compile(
+            CreateSpec(
+                [
+                    new QueryValuePredicate(
+                        new DbColumnName("SchoolId"),
+                        QueryComparisonOperator.Equal,
+                        "schoolId"
+                    ),
+                ],
+                [],
+                includeTotalCountSql: true
+            )
+        );
+
+        plan.TotalCountSql.Should().NotBeNull();
+        plan.TotalCountSql.Should().Contain("SELECT COUNT(1)");
+        plan.TotalCountSql.Should().Contain("(r.\"SchoolId\" = @schoolId)");
     }
 
     [Test]
