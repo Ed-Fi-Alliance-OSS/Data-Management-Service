@@ -124,5 +124,43 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Repository Hygiene",
+    "description": "Remove duplicated authoritative ApiSchema input fixtures and keep a single source of truth under `src/dms/backend/Fixtures/authoritative/`. Acceptance: delete the duplicate inputs currently under `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/` (ds-5.2 + sample); all authoritative-golden tests load their inputs via `BackendFixturePaths.GetAuthoritativeFixtureRoot()` (solution-root discovery) and do not reference any other test project's `Fixtures/authoritative` directory; `rg` finds no remaining references to the deleted fixture paths; all backend unit tests still pass.",
+    "steps-to-verify": [
+      "Run: `rg -n \"RelationalModel\\.Tests\\.Unit/Fixtures/authoritative\" -S src/dms || true` and verify no matches.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Remove `Enum.ToString()` from predicate ordering to make determinism explicit and avoid hidden work. Acceptance: `PageDocumentIdSqlCompiler.RewriteAndSortPredicates` no longer calls `predicate.Operator.ToString()` for sort keys; operator ordering is still deterministic and implemented via an explicit, allocation-free sort key (e.g., a `switch` returning `nameof(QueryComparisonOperator.X)` strings); emitted SQL remains byte-for-byte identical to current plan-sql-foundations goldens for both dialects.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Reduce allocations in `PageDocumentIdSqlCompiler` by emitting the `WHERE` clause directly to the primary `SqlWriter` (avoid per-predicate `SqlWriter` instances and the intermediate `string[]` predicate list). Acceptance: `AppendWhereClause` no longer allocates a `string[]` of predicate fragments; per-predicate helpers do not allocate `SqlWriter` instances just to return strings; compiled SQL output (including whitespace, casing, quoting, and `;\\n` termination) remains byte-for-byte identical to existing goldens for pgsql+mssql.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Plans Tests",
+    "description": "Consolidate `Backend.Plans` unit tests into `EdFi.DataManagementService.Backend.Plans.Tests.Unit` to keep project boundaries clean. Acceptance: move `Given_PageDocumentIdSqlCompiler` and `Given_PlanSqlWriterExtensions` into `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/`; remove the `Backend.Plans` project reference from `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj` if nothing else in that project depends on it; all tests continue to pass and solution build remains warnings-as-errors clean.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
