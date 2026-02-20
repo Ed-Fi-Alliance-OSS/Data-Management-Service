@@ -441,7 +441,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 var columnMappings = BuildPropagationColumnMappings(
                     entry.Binding,
                     entry.Mapping,
-                    entry.ReferrerResource
+                    entry.ReferrerResource,
+                    entry.ReferrerRootTable
                 );
 
                 referrerUpdates.Add(
@@ -543,10 +544,16 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// Builds column mappings for identity propagation: source identity columns → referrer stored columns.
     /// The direction is now source (trigger table) → referrer (what we update).
     /// </summary>
+    /// <remarks>
+    /// Under key unification, <c>ib.Column</c> from reference identity bindings may be a persisted
+    /// computed alias. SQL Server rejects <c>SET r.[computedCol] = ...</c> (Msg 271), so each
+    /// target column must be resolved to its canonical storage column via the referrer table model.
+    /// </remarks>
     private static IReadOnlyList<TriggerColumnMapping> BuildPropagationColumnMappings(
         DocumentReferenceBinding binding,
         DocumentReferenceMapping mapping,
-        QualifiedResourceName referrerResource
+        QualifiedResourceName referrerResource,
+        DbTableModel referrerRootTable
     )
     {
         // Build lookup: reference JSON path → identity JSON path.
@@ -579,8 +586,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 var sourceColumnName = ExtractColumnNameFromIdentityPath(identityPath);
                 var sourceColumn = new DbColumnName(sourceColumnName);
 
-                // Target column is the referrer's stored identity column (e.g., School_SchoolId).
-                var targetColumn = ib.Column;
+                // Resolve through storage: ib.Column may be a unified alias (computed) after
+                // key unification. The propagation UPDATE must target the canonical stored column.
+                var targetColumn = ResolveToStoredColumn(ib.Column, referrerRootTable, referrerResource);
 
                 return new TriggerColumnMapping(sourceColumn, targetColumn);
             })
