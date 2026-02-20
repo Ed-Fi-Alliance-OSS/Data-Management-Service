@@ -73,11 +73,11 @@ BEGIN
     END IF;
 END $$;
 
-CREATE OR REPLACE VIEW "edfi"."EducationOrganization" AS
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'School'::varchar(50) AS "Discriminator"
+CREATE OR REPLACE VIEW "edfi"."EducationOrganization_View" AS
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:School'::varchar(50) AS "Discriminator"
 FROM "edfi"."School"
 UNION ALL
-SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'LocalEducationAgency'::varchar(50) AS "Discriminator"
+SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(50) AS "Discriminator"
 FROM "edfi"."LocalEducationAgency"
 ;
 
