@@ -75,13 +75,26 @@ AFTER INSERT, UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted) OR (UPDATE([SchoolId]))
+    IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
         SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiSchool' + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
         FROM inserted i;
+    END
+    ELSE IF (UPDATE([SchoolId]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[SchoolId] <> d.[SchoolId] OR (i.[SchoolId] IS NULL AND d.[SchoolId] IS NOT NULL) OR (i.[SchoolId] IS NOT NULL AND d.[SchoolId] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiSchool' + N'$$.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max))), i.[DocumentId], 1
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
 
@@ -115,13 +128,26 @@ AFTER INSERT, UPDATE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted) OR (UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([RegistrationDate]))
+    IF NOT EXISTS (SELECT 1 FROM deleted)
     BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
         SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiCourseRegistration' + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.localCourseCode=' + CAST(i.[CourseOffering_LocalCourseCode] AS nvarchar(max)) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.registrationDate=' + CAST(i.[RegistrationDate] AS nvarchar(max))), i.[DocumentId], 2
         FROM inserted i;
+    END
+    ELSE IF (UPDATE([SchoolId_Unified]) OR UPDATE([CourseOffering_LocalCourseCode]) OR UPDATE([RegistrationDate]))
+    BEGIN
+        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL);
+        INSERT INTO @changedDocs ([DocumentId])
+        SELECT i.[DocumentId]
+        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
+        WHERE (i.[SchoolId_Unified] <> d.[SchoolId_Unified] OR (i.[SchoolId_Unified] IS NULL AND d.[SchoolId_Unified] IS NOT NULL) OR (i.[SchoolId_Unified] IS NOT NULL AND d.[SchoolId_Unified] IS NULL)) OR (i.[CourseOffering_LocalCourseCode] <> d.[CourseOffering_LocalCourseCode] OR (i.[CourseOffering_LocalCourseCode] IS NULL AND d.[CourseOffering_LocalCourseCode] IS NOT NULL) OR (i.[CourseOffering_LocalCourseCode] IS NOT NULL AND d.[CourseOffering_LocalCourseCode] IS NULL)) OR (i.[RegistrationDate] <> d.[RegistrationDate] OR (i.[RegistrationDate] IS NULL AND d.[RegistrationDate] IS NOT NULL) OR (i.[RegistrationDate] IS NOT NULL AND d.[RegistrationDate] IS NULL));
+        DELETE FROM [dms].[ReferentialIdentity]
+        WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
+        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiCourseRegistration' + N'$$.courseOfferingReference.schoolId=' + CAST(i.[CourseOffering_SchoolId] AS nvarchar(max)) + N'#' + N'$$.courseOfferingReference.localCourseCode=' + CAST(i.[CourseOffering_LocalCourseCode] AS nvarchar(max)) + N'#' + N'$$.schoolReference.schoolId=' + CAST(i.[School_SchoolId] AS nvarchar(max)) + N'#' + N'$$.registrationDate=' + CAST(i.[RegistrationDate] AS nvarchar(max))), i.[DocumentId], 2
+        FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;
 

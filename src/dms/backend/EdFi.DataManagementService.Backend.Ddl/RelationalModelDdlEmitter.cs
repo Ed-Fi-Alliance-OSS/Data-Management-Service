@@ -476,16 +476,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // Equivalent to MSSQL's EmitMssqlNullSafeNotEqual pattern which expands to:
             // (a <> b OR (a IS NULL AND b IS NOT NULL) OR (a IS NOT NULL AND b IS NULL))
             writer.Append("IF TG_OP = 'UPDATE' AND (");
-            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
-            {
-                if (i > 0)
-                    writer.Append(" OR ");
-                var col = Quote(trigger.IdentityProjectionColumns[i]);
-                writer.Append("OLD.");
-                writer.Append(col);
-                writer.Append(" IS DISTINCT FROM NEW.");
-                writer.Append(col);
-            }
+            EmitPgsqlValueDiffDisjunction(writer, trigger.IdentityProjectionColumns);
             writer.AppendLine(") THEN");
 
             using (writer.Indent())
@@ -550,14 +541,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // regardless of whether the value actually changed. The WHERE clause below (using null-safe
             // inequality) is the authoritative value-change check that filters to only actually changed rows.
             writer.Append("IF EXISTS (SELECT 1 FROM deleted) AND (");
-            for (int i = 0; i < trigger.IdentityProjectionColumns.Count; i++)
-            {
-                if (i > 0)
-                    writer.Append(" OR ");
-                writer.Append("UPDATE(");
-                writer.Append(Quote(trigger.IdentityProjectionColumns[i]));
-                writer.Append(")");
-            }
+            EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
             writer.AppendLine(")");
 
             writer.AppendLine("BEGIN");
@@ -628,16 +612,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         // Guard: skip recomputation on no-op UPDATEs where identity columns didn't change
         writer.Append("IF TG_OP = 'INSERT' OR (");
-        for (int i = 0; i < identityProjectionColumns.Count; i++)
-        {
-            if (i > 0)
-                writer.Append(" OR ");
-            var col = Quote(identityProjectionColumns[i]);
-            writer.Append("OLD.");
-            writer.Append(col);
-            writer.Append(" IS DISTINCT FROM NEW.");
-            writer.Append(col);
-        }
+        EmitPgsqlValueDiffDisjunction(writer, identityProjectionColumns);
         writer.AppendLine(") THEN");
 
         using (writer.Indent())
@@ -754,57 +729,89 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
-        // Guard: skip recomputation on UPDATEs where identity columns weren't in SET clause
-        writer.Append("IF NOT EXISTS (SELECT 1 FROM deleted) OR (");
-        for (int i = 0; i < identityProjectionColumns.Count; i++)
+        var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
+
+        // INSERT case: no deleted rows, so always maintain referential identity for all inserted rows.
+        writer.AppendLine("IF NOT EXISTS (SELECT 1 FROM deleted)");
+        writer.AppendLine("BEGIN");
+
+        using (writer.Indent())
         {
-            if (i > 0)
-                writer.Append(" OR ");
-            writer.Append("UPDATE(");
-            writer.Append(Quote(identityProjectionColumns[i]));
-            writer.Append(")");
+            EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, "inserted");
         }
+
+        writer.AppendLine("END");
+
+        // UPDATE case: use UPDATE(col) as a performance pre-filter only, then compute a value-diff
+        // workset to find rows whose identity projection values actually changed (null-safe).
+        // This is critical for key-unification correctness: UPDATE(aliasColumn) returns false when
+        // a CASCADE updates the canonical column, so UPDATE() alone would miss those changes.
+        writer.Append("ELSE IF (");
+        EmitMssqlUpdateColumnDisjunction(writer, identityProjectionColumns);
         writer.AppendLine(")");
         writer.AppendLine("BEGIN");
 
         using (writer.Indent())
         {
-            var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
-
-            // Primary referential identity
-            EmitMssqlReferentialIdentityBlock(
-                writer,
-                refIdTable,
-                refId.ResourceKeyId,
-                refId.ProjectName,
-                refId.ResourceName,
-                refId.IdentityElements
-            );
-
-            // Superclass alias
-            if (refId.SuperclassAlias is { } alias)
-            {
-                EmitMssqlReferentialIdentityBlock(
-                    writer,
-                    refIdTable,
-                    alias.ResourceKeyId,
-                    alias.ProjectName,
-                    alias.ResourceName,
-                    alias.IdentityElements
-                );
-            }
+            EmitMssqlValueDiffWorkset(writer, identityProjectionColumns);
+            EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, "@changedDocs");
         }
 
         writer.AppendLine("END");
     }
 
+    /// <summary>
+    /// Emits the DELETE + INSERT block for one referential identity resource key, scoping
+    /// to rows from <paramref name="sourceAlias"/> (either <c>inserted</c> for INSERTs or
+    /// <c>changedDocs</c> for value-diff UPDATE worksets).
+    /// </summary>
     private void EmitMssqlReferentialIdentityBlock(
+        SqlWriter writer,
+        string refIdTable,
+        TriggerKindParameters.ReferentialIdentityMaintenance refId,
+        string sourceAlias
+    )
+    {
+        // Primary referential identity
+        EmitMssqlReferentialIdentityUpsert(
+            writer,
+            refIdTable,
+            refId.ResourceKeyId,
+            refId.ProjectName,
+            refId.ResourceName,
+            refId.IdentityElements,
+            sourceAlias
+        );
+
+        // Superclass alias
+        if (refId.SuperclassAlias is { } alias)
+        {
+            EmitMssqlReferentialIdentityUpsert(
+                writer,
+                refIdTable,
+                alias.ResourceKeyId,
+                alias.ProjectName,
+                alias.ResourceName,
+                alias.IdentityElements,
+                sourceAlias
+            );
+        }
+    }
+
+    /// <summary>
+    /// Emits a DELETE + INSERT pair for a single resource key's referential identity rows.
+    /// The <paramref name="sourceAlias"/> controls which rows are processed: <c>inserted</c>
+    /// for INSERT triggers (all new rows) or <c>@changedDocs</c> for UPDATE triggers
+    /// (only rows whose identity projection values actually changed).
+    /// </summary>
+    private void EmitMssqlReferentialIdentityUpsert(
         SqlWriter writer,
         string refIdTable,
         short resourceKeyId,
         string projectName,
         string resourceName,
-        IReadOnlyList<IdentityElementMapping> identityElements
+        IReadOnlyList<IdentityElementMapping> identityElements,
+        string sourceAlias
     )
     {
         if (identityElements.Count == 0)
@@ -816,27 +823,31 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         }
 
         var uuidv5Func = FormatUuidv5FunctionName();
+        var documentIdCol = Quote(new DbColumnName("DocumentId"));
 
-        // DELETE existing row
+        // DELETE existing rows scoped to the source (all inserted or only changed)
         writer.Append("DELETE FROM ");
         writer.AppendLine(refIdTable);
         writer.Append("WHERE ");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(documentIdCol);
         writer.Append(" IN (SELECT ");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        writer.Append(" FROM inserted) AND ");
+        writer.Append(documentIdCol);
+        writer.Append(" FROM ");
+        writer.Append(sourceAlias);
+        writer.Append(") AND ");
         writer.Append(Quote(new DbColumnName("ResourceKeyId")));
         writer.Append(" = ");
         writer.Append(resourceKeyId.ToString());
         writer.AppendLine(";");
 
-        // INSERT new rows from inserted table with UUIDv5
+        // INSERT new rows with UUIDv5 — always join back to 'inserted' for column values
+        // (changedDocs only carries DocumentId; inserted has the full row).
         writer.Append("INSERT INTO ");
         writer.Append(refIdTable);
         writer.Append(" (");
         writer.Append(Quote(new DbColumnName("ReferentialId")));
         writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(documentIdCol);
         writer.Append(", ");
         writer.Append(Quote(new DbColumnName("ResourceKeyId")));
         writer.AppendLine(")");
@@ -852,10 +863,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("' + ");
         EmitMssqlIdentityHashExpression(writer, identityElements);
         writer.Append("), i.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(documentIdCol);
         writer.Append(", ");
         writer.AppendLine(resourceKeyId.ToString());
-        writer.AppendLine("FROM inserted i;");
+        writer.Append("FROM inserted i");
+        if (sourceAlias != "inserted")
+        {
+            writer.Append(" INNER JOIN ");
+            writer.Append(sourceAlias);
+            writer.Append(" cd ON cd.");
+            writer.Append(documentIdCol);
+            writer.Append(" = i.");
+            writer.Append(documentIdCol);
+        }
+        writer.AppendLine(";");
     }
 
     private void EmitMssqlIdentityHashExpression(
@@ -917,16 +938,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         // Guard: skip recomputation on no-op UPDATEs where identity columns didn't change
         writer.Append("IF TG_OP = 'INSERT' OR (");
-        for (int i = 0; i < identityProjectionColumns.Count; i++)
-        {
-            if (i > 0)
-                writer.Append(" OR ");
-            var col = Quote(identityProjectionColumns[i]);
-            writer.Append("OLD.");
-            writer.Append(col);
-            writer.Append(" IS DISTINCT FROM NEW.");
-            writer.Append(col);
-        }
+        EmitPgsqlValueDiffDisjunction(writer, identityProjectionColumns);
         writer.AppendLine(") THEN");
 
         using (writer.Indent())
@@ -985,70 +997,115 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string discriminatorValue
     )
     {
-        // Guard: skip recomputation on UPDATEs where identity columns weren't in SET clause
-        writer.Append("IF NOT EXISTS (SELECT 1 FROM deleted) OR (");
-        for (int i = 0; i < identityProjectionColumns.Count; i++)
+        // INSERT case: no deleted rows, so always maintain abstract identity for all inserted rows.
+        writer.AppendLine("IF NOT EXISTS (SELECT 1 FROM deleted)");
+        writer.AppendLine("BEGIN");
+
+        using (writer.Indent())
         {
-            if (i > 0)
-                writer.Append(" OR ");
-            writer.Append("UPDATE(");
-            writer.Append(Quote(identityProjectionColumns[i]));
-            writer.Append(")");
+            EmitMssqlAbstractIdentityMerge(writer, targetTableName, mappings, discriminatorValue, "inserted");
         }
+
+        writer.AppendLine("END");
+
+        // UPDATE case: use UPDATE(col) as a performance pre-filter only, then compute a value-diff
+        // workset to find rows whose identity projection values actually changed (null-safe).
+        // This is critical for key-unification correctness: UPDATE(aliasColumn) returns false when
+        // a CASCADE updates the canonical column, so UPDATE() alone would miss those changes.
+        writer.Append("ELSE IF (");
+        EmitMssqlUpdateColumnDisjunction(writer, identityProjectionColumns);
         writer.AppendLine(")");
         writer.AppendLine("BEGIN");
 
         using (writer.Indent())
         {
-            var targetTable = Quote(targetTableName);
-
-            // MERGE statement
-            writer.Append("MERGE ");
-            writer.Append(targetTable);
-            writer.AppendLine(" AS t");
-            writer.Append("USING inserted AS s ON t.");
-            writer.Append(Quote(new DbColumnName("DocumentId")));
-            writer.Append(" = s.");
-            writer.AppendLine(Quote(new DbColumnName("DocumentId")));
-
-            // WHEN MATCHED THEN UPDATE
-            writer.Append("WHEN MATCHED THEN UPDATE SET ");
-            for (int i = 0; i < mappings.Count; i++)
-            {
-                if (i > 0)
-                    writer.Append(", ");
-                writer.Append("t.");
-                writer.Append(Quote(mappings[i].TargetColumn));
-                writer.Append(" = s.");
-                writer.Append(Quote(mappings[i].SourceColumn));
-            }
-            writer.AppendLine();
-
-            // WHEN NOT MATCHED THEN INSERT
-            writer.Append("WHEN NOT MATCHED THEN INSERT (");
-            writer.Append(Quote(new DbColumnName("DocumentId")));
-            foreach (var mapping in mappings)
-            {
-                writer.Append(", ");
-                writer.Append(Quote(mapping.TargetColumn));
-            }
-            writer.Append(", ");
-            writer.Append(Quote(new DbColumnName("Discriminator")));
-            writer.AppendLine(")");
-
-            writer.Append("VALUES (s.");
-            writer.Append(Quote(new DbColumnName("DocumentId")));
-            foreach (var mapping in mappings)
-            {
-                writer.Append(", s.");
-                writer.Append(Quote(mapping.SourceColumn));
-            }
-            writer.Append(", N'");
-            writer.Append(EscapeSqlLiteral(discriminatorValue));
-            writer.AppendLine("');");
+            EmitMssqlValueDiffWorkset(writer, identityProjectionColumns);
+            EmitMssqlAbstractIdentityMerge(
+                writer,
+                targetTableName,
+                mappings,
+                discriminatorValue,
+                "@changedDocs"
+            );
         }
 
         writer.AppendLine("END");
+    }
+
+    /// <summary>
+    /// Emits a MERGE statement for abstract identity maintenance, scoping the source to
+    /// <paramref name="sourceAlias"/> (<c>inserted</c> for INSERTs or <c>@changedDocs</c>
+    /// for value-diff UPDATE worksets). When the source is not <c>inserted</c>, the MERGE
+    /// joins through to <c>inserted</c> for column values.
+    /// </summary>
+    private void EmitMssqlAbstractIdentityMerge(
+        SqlWriter writer,
+        DbTableName targetTableName,
+        IReadOnlyList<TriggerColumnMapping> mappings,
+        string discriminatorValue,
+        string sourceAlias
+    )
+    {
+        var targetTable = Quote(targetTableName);
+        var documentIdCol = Quote(new DbColumnName("DocumentId"));
+
+        // Build the USING source: either 'inserted' directly, or 'inserted' filtered via changedDocs.
+        writer.Append("MERGE ");
+        writer.Append(targetTable);
+        writer.AppendLine(" AS t");
+        if (sourceAlias == "inserted")
+        {
+            writer.Append("USING inserted AS s ON t.");
+        }
+        else
+        {
+            writer.Append("USING (SELECT i.* FROM inserted i INNER JOIN ");
+            writer.Append(sourceAlias);
+            writer.Append(" cd ON cd.");
+            writer.Append(documentIdCol);
+            writer.Append(" = i.");
+            writer.Append(documentIdCol);
+            writer.Append(") AS s ON t.");
+        }
+        writer.Append(documentIdCol);
+        writer.Append(" = s.");
+        writer.AppendLine(documentIdCol);
+
+        // WHEN MATCHED THEN UPDATE
+        writer.Append("WHEN MATCHED THEN UPDATE SET ");
+        for (int i = 0; i < mappings.Count; i++)
+        {
+            if (i > 0)
+                writer.Append(", ");
+            writer.Append("t.");
+            writer.Append(Quote(mappings[i].TargetColumn));
+            writer.Append(" = s.");
+            writer.Append(Quote(mappings[i].SourceColumn));
+        }
+        writer.AppendLine();
+
+        // WHEN NOT MATCHED THEN INSERT
+        writer.Append("WHEN NOT MATCHED THEN INSERT (");
+        writer.Append(documentIdCol);
+        foreach (var mapping in mappings)
+        {
+            writer.Append(", ");
+            writer.Append(Quote(mapping.TargetColumn));
+        }
+        writer.Append(", ");
+        writer.Append(Quote(new DbColumnName("Discriminator")));
+        writer.AppendLine(")");
+
+        writer.Append("VALUES (s.");
+        writer.Append(documentIdCol);
+        foreach (var mapping in mappings)
+        {
+            writer.Append(", s.");
+            writer.Append(Quote(mapping.SourceColumn));
+        }
+        writer.Append(", N'");
+        writer.Append(EscapeSqlLiteral(discriminatorValue));
+        writer.AppendLine("');");
     }
 
     /// <summary>
@@ -1125,6 +1182,90 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine(";");
             writer.AppendLine();
         }
+    }
+
+    /// <summary>
+    /// Emits a PostgreSQL <c>OLD.col IS DISTINCT FROM NEW.col</c> disjunction for identity
+    /// projection columns, used as a value-diff guard in trigger bodies.
+    /// </summary>
+    private void EmitPgsqlValueDiffDisjunction(
+        SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns
+    )
+    {
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
+        {
+            if (i > 0)
+                writer.Append(" OR ");
+            var col = Quote(identityProjectionColumns[i]);
+            writer.Append("OLD.");
+            writer.Append(col);
+            writer.Append(" IS DISTINCT FROM NEW.");
+            writer.Append(col);
+        }
+    }
+
+    /// <summary>
+    /// Emits a MSSQL <c>UPDATE(col)</c> disjunction for identity projection columns, used
+    /// as a <b>performance pre-filter only</b> (not a correctness gate). <c>UPDATE(col)</c>
+    /// returns true if the column appeared in the SET clause regardless of whether the value
+    /// actually changed, and returns false for computed alias columns updated via CASCADE.
+    /// </summary>
+    private void EmitMssqlUpdateColumnDisjunction(
+        SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns
+    )
+    {
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
+        {
+            if (i > 0)
+                writer.Append(" OR ");
+            writer.Append("UPDATE(");
+            writer.Append(Quote(identityProjectionColumns[i]));
+            writer.Append(")");
+        }
+    }
+
+    /// <summary>
+    /// Emits a MSSQL table variable <c>@changedDocs</c> populated with the set of
+    /// <c>DocumentId</c> values whose identity projection columns actually changed
+    /// (null-safe value diff between <c>inserted</c> and <c>deleted</c>).
+    /// </summary>
+    /// <remarks>
+    /// A table variable is used instead of a CTE because T-SQL CTEs scope to the single
+    /// immediately-following DML statement, while triggers need the workset across multiple
+    /// statements (DELETE + INSERT or MERGE). The table variable persists for the entire
+    /// BEGIN...END block. This is the authoritative workset for UPDATE triggers and is
+    /// correct under key unification where <c>UPDATE(aliasColumn)</c> returns false for
+    /// CASCADE-driven canonical column changes.
+    /// </remarks>
+    private void EmitMssqlValueDiffWorkset(
+        SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns
+    )
+    {
+        var documentIdCol = Quote(new DbColumnName("DocumentId"));
+        writer.Append("DECLARE @changedDocs TABLE (");
+        writer.Append(documentIdCol);
+        writer.AppendLine(" bigint NOT NULL);");
+        writer.Append("INSERT INTO @changedDocs (");
+        writer.Append(documentIdCol);
+        writer.AppendLine(")");
+        writer.Append("SELECT i.");
+        writer.AppendLine(documentIdCol);
+        writer.Append("FROM inserted i INNER JOIN deleted d ON d.");
+        writer.Append(documentIdCol);
+        writer.Append(" = i.");
+        writer.AppendLine(documentIdCol);
+        writer.Append("WHERE ");
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
+        {
+            if (i > 0)
+                writer.Append(" OR ");
+            var col = Quote(identityProjectionColumns[i]);
+            EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
+        }
+        writer.AppendLine(";");
     }
 
     /// <summary>
