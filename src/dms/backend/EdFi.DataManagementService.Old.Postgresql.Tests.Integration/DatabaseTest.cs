@@ -448,7 +448,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new(
             ResourceInfo: CreateResourceInfo(reference.ResourceName),
             DocumentIdentity: new([]),
-            ReferentialId: new ReferentialId(reference.ReferentialIdGuid)
+            ReferentialId: new ReferentialId(reference.ReferentialIdGuid),
+            Path: new JsonPath("$")
         );
     }
 
@@ -467,7 +468,8 @@ public abstract class DatabaseTest : DatabaseTestBase
         return new(
             ResourceInfo: CreateResourceInfo(resourceName),
             DocumentIdentity: new([]),
-            ReferentialId: new ReferentialId(referentialIdGuid)
+            ReferentialId: new ReferentialId(referentialIdGuid),
+            Path: new JsonPath("$")
         );
     }
 

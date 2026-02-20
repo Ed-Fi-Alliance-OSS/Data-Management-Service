@@ -100,7 +100,8 @@ internal static class IdentityExtractor
             return new(
                 superclassResourceInfo,
                 documentIdentity,
-                ReferentialIdFrom(superclassResourceInfo, documentIdentity)
+                ReferentialIdFrom(superclassResourceInfo, documentIdentity),
+                new JsonPath("$")
             );
         }
 
@@ -112,7 +113,8 @@ internal static class IdentityExtractor
         return new(
             superclassResourceInfo,
             superclassIdentity,
-            ReferentialIdFrom(superclassResourceInfo, superclassIdentity)
+            ReferentialIdFrom(superclassResourceInfo, superclassIdentity),
+            new JsonPath("$")
         );
     }
 
