@@ -60,11 +60,11 @@ ON DELETE CASCADE
 ON UPDATE NO ACTION;
 
 GO
-CREATE OR ALTER VIEW [edfi].[EducationOrganization] AS
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'School' AS nvarchar(50)) AS [Discriminator]
+CREATE OR ALTER VIEW [edfi].[EducationOrganization_View] AS
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:School' AS nvarchar(50)) AS [Discriminator]
 FROM [edfi].[School]
 UNION ALL
-SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
+SELECT [DocumentId] AS [DocumentId], [EducationOrganizationId] AS [EducationOrganizationId], CAST(N'Ed-Fi:LocalEducationAgency' AS nvarchar(50)) AS [Discriminator]
 FROM [edfi].[LocalEducationAgency]
 ;
 

@@ -792,7 +792,7 @@ internal static class PolymorphicAbstractFixture
         );
 
         // Abstract union view
-        var viewName = new DbTableName(schema, "EducationOrganization");
+        var viewName = new DbTableName(schema, "EducationOrganization_View");
         List<AbstractUnionViewOutputColumn> outputColumns =
         [
             new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
@@ -806,7 +806,7 @@ internal static class PolymorphicAbstractFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
-                new AbstractUnionViewProjectionExpression.StringLiteral("School"),
+                new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:School"),
             ]
         );
 
@@ -816,7 +816,7 @@ internal static class PolymorphicAbstractFixture
             [
                 new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
                 new AbstractUnionViewProjectionExpression.SourceColumn(organizationIdColumn),
-                new AbstractUnionViewProjectionExpression.StringLiteral("LocalEducationAgency"),
+                new AbstractUnionViewProjectionExpression.StringLiteral("Ed-Fi:LocalEducationAgency"),
             ]
         );
 
