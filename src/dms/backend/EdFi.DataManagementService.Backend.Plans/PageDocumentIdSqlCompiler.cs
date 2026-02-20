@@ -175,22 +175,10 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(predicates);
 
-        if (predicates.Count == 0)
-        {
-            return;
-        }
-
-        writer.AppendLine("WHERE");
-
-        using (writer.Indent())
-        {
-            for (var index = 0; index < predicates.Count; index++)
-            {
-                writer.Append(index == 0 ? "(" : "AND (");
-                AppendPredicateSql(writer, predicates[index]);
-                writer.AppendLine(")");
-            }
-        }
+        writer.AppendWhereClause(
+            predicates.Count,
+            (predicateWriter, index) => AppendPredicateSql(predicateWriter, predicates[index])
+        );
     }
 
     /// <summary>

@@ -106,3 +106,9 @@ Decisions: kept single authoritative input source under src/dms/backend/Fixtures
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json (deleted); src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json (deleted); tasks.json
 Feedback loops: rg -n "RelationalModel\.Tests\.Unit/Fixtures/authoritative" -S src/dms || true (pass, no matches); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
 Blockers/notes: none. All tasks in tasks.json complete for this story.
+2026-02-20
+Task: SQL Foundations - shared canonical WHERE helper for string + direct-emission callers (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: centralized WHERE/AND/parens/indent layout in PlanSqlWriterExtensions.AppendWhereClause(predicateCount, callback) to remove compiler duplication; retained list<string> overload by delegating through shared helper so existing callers keep behavior while compiler emits predicates directly.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
+Blockers/notes: none. Next highest-priority open task appears SQL Foundations hardening for multiline predicate fragments.
