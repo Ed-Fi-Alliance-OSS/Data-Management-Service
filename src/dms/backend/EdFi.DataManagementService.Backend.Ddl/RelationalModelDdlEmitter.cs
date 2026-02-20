@@ -174,8 +174,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             );
         }
 
-        var nullability = column.IsNullable ? "NULL" : "NOT NULL";
-        return $"{Quote(column.ColumnName)} {type} {nullability}";
+        return _dialect.RenderColumnDefinition(column.ColumnName, type, column.IsNullable);
     }
 
     /// <summary>
