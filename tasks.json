@@ -69,5 +69,58 @@
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
     "completed": true
+  },
+  {
+    "category": "Plan Dialect",
+    "description": "Introduce a plan/query SQL dialect abstraction in `src/dms/backend/EdFi.DataManagementService.Backend.Plans` (e.g., `IPlanSqlDialect`, `PgsqlPlanDialect`, `MssqlPlanDialect`, and a small factory) that encapsulates plan/query emission differences starting with paging clause emission. Acceptance: `PageDocumentIdSqlCompiler` no longer contains a `switch`/`if` on `SqlDialect` for paging; paging is emitted via the plan dialect abstraction; quoting + canonicalization continue to use `Backend.Ddl.SqlWriter` and `Backend.Ddl.ISqlDialect`; output for both dialects remains byte-for-byte identical to the existing goldens.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Contracts",
+    "description": "Remove `UnifiedAliasColumnMapping` duplication by using `ColumnStorage.UnifiedAlias` directly in page-query contracts. Acceptance: `PageDocumentIdQuerySpec` carries unified-alias rewrite metadata as `IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias>` (or an equivalent shape that does not re-declare canonical/presence fields); `UnifiedAliasColumnMapping` is deleted; `PageDocumentIdSqlCompiler` predicate rewrite uses the `ColumnStorage.UnifiedAlias` values and preserves presence-gate semantics; all unit tests and plan-sql-foundations goldens are updated and continue to pass.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Code Cleanup",
+    "description": "Remove the unnecessary `partial` keyword from `PageDocumentIdSqlCompiler`. Acceptance: `PageDocumentIdSqlCompiler` is no longer declared `partial` and there are no other partial declarations for this type; build succeeds with warnings-as-errors.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Plans Tests",
+    "description": "Rename `ToyInsertSqlEmitter` to `SimpleInsertSqlEmitter` and move it out of production code into a new unit test project `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`. Acceptance: `EdFi.DataManagementService.Backend.Plans` no longer contains `ToyInsertSqlEmitter`; new test project exists, is included in `src/dms/EdFi.DataManagementService.sln`, references `EdFi.DataManagementService.Backend.Plans`, and contains `SimpleInsertSqlEmitter` plus unit tests validating canonical INSERT SQL for Pgsql + Mssql; the plan-sql-foundations golden fixture test (and its checked-in `expected/*.sql` files) run from this new test project and continue to pass.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Error Handling",
+    "description": "Update the insert emitter to treat mismatched column/parameter counts as an argument contract violation. Acceptance: `SimpleInsertSqlEmitter.Emit` throws an `ArgumentException` (not `InvalidOperationException`) when `orderedColumns.Count != orderedParameterNames.Count`, with a deterministic message including both counts and a stable `paramName` value; unit tests are updated accordingly.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Test Infrastructure",
+    "description": "Create a shared helper for golden/snapshot-style fixture tests to reduce duplicated logic and standardize diff/update behavior. Acceptance: introduce a reusable helper (e.g., `GoldenFixtureTestHelpers`) that provides `ShouldUpdateGoldens()` (`UPDATE_GOLDENS`), `RunGitDiff(expected, actual)` (reads stdout + stderr asynchronously to avoid deadlocks), and a root-discovery helper where needed; refactor the plan-sql-foundations golden fixture test and existing backend authoritative golden tests to use this shared helper; duplicated helper methods are removed from individual fixtures; all affected tests still fail with readable diffs and pass when goldens match.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
   }
 ]

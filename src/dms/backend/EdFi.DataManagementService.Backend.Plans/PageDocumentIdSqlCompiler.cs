@@ -237,7 +237,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
         if (@operator is QueryComparisonOperator.In)
         {
             throw new NotSupportedException(
-                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)}."
+                $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)} yet."
             );
         }
 
@@ -316,7 +316,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             _ => throw new ArgumentOutOfRangeException(
                 nameof(@operator),
                 @operator,
-                "Unsupported query operator."
+                "Unsupported query operator for now."
             ),
         };
     }

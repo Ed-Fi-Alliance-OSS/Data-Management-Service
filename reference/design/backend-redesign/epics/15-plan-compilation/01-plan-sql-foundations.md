@@ -64,7 +64,7 @@ Design references:
 
 1. Extend (or reuse) the shared SQL writer from `epics/02-ddl-emission/00-dialect-abstraction.md` so it can emit plan SQL:
    - common `SELECT`/`INSERT`/`UPDATE`/`DELETE` statement building blocks,
-   - identifier quoting + parameter prefixing via dialect,
+   - identifier quoting + parameter prefixing with @ across dialects,
    - stable formatting/canonicalization rules.
 2. Add a small SQL canonicalization helper intended for unit tests (and pack/fixture comparisons) so tests compare normalized SQL (or normalized hashes) rather than ad-hoc “pretty printed” variants.
 3. Refactor `PageDocumentIdSqlCompiler` to use the shared writer and dialect quoting helpers.

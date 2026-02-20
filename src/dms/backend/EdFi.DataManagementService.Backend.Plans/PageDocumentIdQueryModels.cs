@@ -37,7 +37,7 @@ public sealed record UnifiedAliasColumnMapping(
 /// Input specification for compiling page-<c>DocumentId</c> query SQL.
 /// </summary>
 /// <param name="RootTable">The resource root table queried for <c>DocumentId</c>.</param>
-/// <param name="Predicates">Value predicates in deterministic emission order.</param>
+/// <param name="Predicates">Value predicates are treated as an unordered set; compiler emits them in deterministic sorted order after rewrite</param>
 /// <param name="UnifiedAliasMappings">
 /// Unified alias mappings used for canonical-column predicate rewrite.
 /// </param>
