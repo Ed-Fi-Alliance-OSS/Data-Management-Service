@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS "edfi"."StudentSchoolAssociation"
     "SchoolId" integer NOT NULL,
     "StudentUniqueId" varchar(32) NOT NULL,
     "EntryDate" date NOT NULL,
+    "EntryTimestamp" timestamp with time zone NOT NULL,
+    "IsActive" boolean NOT NULL,
     CONSTRAINT "PK_StudentSchoolAssociation" PRIMARY KEY ("DocumentId")
 );
 
@@ -92,7 +94,7 @@ BEGIN
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
-    IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate") THEN
+    IF TG_OP = 'UPDATE' AND (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."EntryTimestamp" IS DISTINCT FROM NEW."EntryTimestamp" OR OLD."IsActive" IS DISTINCT FROM NEW."IsActive") THEN
         UPDATE "dms"."Document"
         SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
         WHERE "DocumentId" = NEW."DocumentId";
@@ -110,11 +112,11 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate") THEN
+    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate" OR OLD."EntryTimestamp" IS DISTINCT FROM NEW."EntryTimestamp" OR OLD."IsActive" IS DISTINCT FROM NEW."IsActive") THEN
         DELETE FROM "dms"."ReferentialIdentity"
         WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
         INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$$.schoolReference.schoolId=' || NEW."SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$$.entryDate=' || NEW."EntryDate"::text), NEW."DocumentId", 2);
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$$.schoolReference.schoolId=' || NEW."SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$$.entryDate=' || NEW."EntryDate"::text || '#' || '$$.entryTimestamp=' || to_char(NEW."EntryTimestamp", 'YYYY-MM-DD"T"HH24:MI:SS') || '#' || '$$.isActive=' || NEW."IsActive"::text), NEW."DocumentId", 2);
     END IF;
     RETURN NEW;
 END;

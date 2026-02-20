@@ -949,8 +949,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 break;
 
             case ScalarKind.DateTime:
-                // ISO 8601: YYYY-MM-DDTHH:mm:ss.nnnnnnn (CONVERT style 126).
-                writer.Append("CONVERT(nvarchar(33), i.");
+                // ISO 8601: YYYY-MM-DDTHH:mm:ss (CONVERT style 126, truncated to 19 chars).
+                // Truncation to whole seconds matches PG to_char() which also omits fractional
+                // seconds, ensuring cross-engine identity hash parity.
+                writer.Append("CONVERT(nvarchar(19), i.");
                 writer.Append(quoted);
                 writer.Append(", 126)");
                 break;
@@ -962,8 +964,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(", 108)");
                 break;
 
+            case ScalarKind.Boolean:
+                // CAST(bit AS nvarchar) produces '1'/'0', but Core's JsonValue.ToString()
+                // and PG bool::text both produce 'true'/'false'. Use CASE to match.
+                writer.Append("CASE WHEN i.");
+                writer.Append(quoted);
+                writer.Append(" = 1 THEN N'true' ELSE N'false' END");
+                break;
+
             default:
-                // Int32, Int64, Decimal, Boolean — CAST is deterministic.
+                // Int32, Int64, Decimal — CAST is deterministic and matches Core/PG formatting.
                 writer.Append("CAST(i.");
                 writer.Append(quoted);
                 writer.Append(" AS nvarchar(max))");
