@@ -64,10 +64,12 @@ EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 1);
+    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 1);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -108,10 +110,12 @@ EXECUTE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_StudentSchoolAssociation_ReferentialIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$$.schoolReference.schoolId=' || NEW."SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$$.entryDate=' || NEW."EntryDate"::text), NEW."DocumentId", 2);
+    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId" OR OLD."StudentUniqueId" IS DISTINCT FROM NEW."StudentUniqueId" OR OLD."EntryDate" IS DISTINCT FROM NEW."EntryDate") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiStudentSchoolAssociation' || '$$.schoolReference.schoolId=' || NEW."SchoolId"::text || '#' || '$$.studentReference.studentUniqueId=' || NEW."StudentUniqueId"::text || '#' || '$$.entryDate=' || NEW."EntryDate"::text), NEW."DocumentId", 2);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

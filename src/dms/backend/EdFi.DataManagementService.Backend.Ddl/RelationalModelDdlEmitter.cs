@@ -408,10 +408,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 EmitDocumentStampingBody(writer, trigger);
                 break;
             case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-                EmitReferentialIdentityBody(writer, refId);
+                EmitReferentialIdentityBody(writer, trigger, refId);
                 break;
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
-                EmitAbstractIdentityBody(writer, abstractId);
+                EmitAbstractIdentityBody(writer, trigger, abstractId);
                 break;
             case TriggerKindParameters.IdentityPropagationFallback propagation:
                 EmitIdentityPropagationBody(writer, trigger, propagation);
@@ -608,48 +608,69 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitReferentialIdentityBody(
         SqlWriter writer,
+        DbTriggerInfo trigger,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
-            EmitPgsqlReferentialIdentityBody(writer, refId);
+            EmitPgsqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, refId);
         }
         else
         {
-            EmitMssqlReferentialIdentityBody(writer, refId);
+            EmitMssqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, refId);
         }
     }
 
     private void EmitPgsqlReferentialIdentityBody(
         SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
-        var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
-
-        // Primary referential identity
-        EmitPgsqlReferentialIdentityBlock(
-            writer,
-            refIdTable,
-            refId.ResourceKeyId,
-            refId.ProjectName,
-            refId.ResourceName,
-            refId.IdentityElements
-        );
-
-        // Superclass alias
-        if (refId.SuperclassAlias is { } alias)
+        // Guard: skip recomputation on no-op UPDATEs where identity columns didn't change
+        writer.Append("IF TG_OP = 'INSERT' OR (");
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
+            if (i > 0)
+                writer.Append(" OR ");
+            var col = Quote(identityProjectionColumns[i]);
+            writer.Append("OLD.");
+            writer.Append(col);
+            writer.Append(" IS DISTINCT FROM NEW.");
+            writer.Append(col);
+        }
+        writer.AppendLine(") THEN");
+
+        using (writer.Indent())
+        {
+            var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
+
+            // Primary referential identity
             EmitPgsqlReferentialIdentityBlock(
                 writer,
                 refIdTable,
-                alias.ResourceKeyId,
-                alias.ProjectName,
-                alias.ResourceName,
-                alias.IdentityElements
+                refId.ResourceKeyId,
+                refId.ProjectName,
+                refId.ResourceName,
+                refId.IdentityElements
             );
+
+            // Superclass alias
+            if (refId.SuperclassAlias is { } alias)
+            {
+                EmitPgsqlReferentialIdentityBlock(
+                    writer,
+                    refIdTable,
+                    alias.ResourceKeyId,
+                    alias.ProjectName,
+                    alias.ResourceName,
+                    alias.IdentityElements
+                );
+            }
         }
+
+        writer.AppendLine("END IF;");
     }
 
     private void EmitPgsqlReferentialIdentityBlock(
@@ -730,33 +751,52 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     private void EmitMssqlReferentialIdentityBody(
         SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns,
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
-        var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
-
-        // Primary referential identity
-        EmitMssqlReferentialIdentityBlock(
-            writer,
-            refIdTable,
-            refId.ResourceKeyId,
-            refId.ProjectName,
-            refId.ResourceName,
-            refId.IdentityElements
-        );
-
-        // Superclass alias
-        if (refId.SuperclassAlias is { } alias)
+        // Guard: skip recomputation on UPDATEs where identity columns weren't in SET clause
+        writer.Append("IF NOT EXISTS (SELECT 1 FROM deleted) OR (");
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
+            if (i > 0)
+                writer.Append(" OR ");
+            writer.Append("UPDATE(");
+            writer.Append(Quote(identityProjectionColumns[i]));
+            writer.Append(")");
+        }
+        writer.AppendLine(")");
+        writer.AppendLine("BEGIN");
+
+        using (writer.Indent())
+        {
+            var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
+
+            // Primary referential identity
             EmitMssqlReferentialIdentityBlock(
                 writer,
                 refIdTable,
-                alias.ResourceKeyId,
-                alias.ProjectName,
-                alias.ResourceName,
-                alias.IdentityElements
+                refId.ResourceKeyId,
+                refId.ProjectName,
+                refId.ResourceName,
+                refId.IdentityElements
             );
+
+            // Superclass alias
+            if (refId.SuperclassAlias is { } alias)
+            {
+                EmitMssqlReferentialIdentityBlock(
+                    writer,
+                    refIdTable,
+                    alias.ResourceKeyId,
+                    alias.ProjectName,
+                    alias.ResourceName,
+                    alias.IdentityElements
+                );
+            }
         }
+
+        writer.AppendLine("END");
     }
 
     private void EmitMssqlReferentialIdentityBlock(
@@ -841,6 +881,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitAbstractIdentityBody(
         SqlWriter writer,
+        DbTriggerInfo trigger,
         TriggerKindParameters.AbstractIdentityMaintenance abstractId
     )
     {
@@ -848,6 +889,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             EmitPgsqlAbstractIdentityBody(
                 writer,
+                trigger.IdentityProjectionColumns,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
                 abstractId.DiscriminatorValue
@@ -857,6 +899,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             EmitMssqlAbstractIdentityBody(
                 writer,
+                trigger.IdentityProjectionColumns,
                 abstractId.TargetTable,
                 abstractId.TargetColumnMappings,
                 abstractId.DiscriminatorValue
@@ -866,107 +909,146 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
     private void EmitPgsqlAbstractIdentityBody(
         SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
         string discriminatorValue
     )
     {
-        var targetTable = Quote(targetTableName);
-
-        // INSERT ... ON CONFLICT DO UPDATE
-        writer.Append("INSERT INTO ");
-        writer.Append(targetTable);
-        writer.Append(" (");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        foreach (var mapping in mappings)
-        {
-            writer.Append(", ");
-            writer.Append(Quote(mapping.TargetColumn));
-        }
-        writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("Discriminator")));
-        writer.AppendLine(")");
-
-        writer.Append("VALUES (NEW.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        foreach (var mapping in mappings)
-        {
-            writer.Append(", NEW.");
-            writer.Append(Quote(mapping.SourceColumn));
-        }
-        writer.Append(", '");
-        writer.Append(EscapeSqlLiteral(discriminatorValue));
-        writer.AppendLine("')");
-
-        writer.Append("ON CONFLICT (");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        writer.AppendLine(")");
-
-        writer.Append("DO UPDATE SET ");
-        for (int i = 0; i < mappings.Count; i++)
+        // Guard: skip recomputation on no-op UPDATEs where identity columns didn't change
+        writer.Append("IF TG_OP = 'INSERT' OR (");
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
-                writer.Append(", ");
-            writer.Append(Quote(mappings[i].TargetColumn));
-            writer.Append(" = EXCLUDED.");
-            writer.Append(Quote(mappings[i].TargetColumn));
+                writer.Append(" OR ");
+            var col = Quote(identityProjectionColumns[i]);
+            writer.Append("OLD.");
+            writer.Append(col);
+            writer.Append(" IS DISTINCT FROM NEW.");
+            writer.Append(col);
         }
-        writer.AppendLine(";");
+        writer.AppendLine(") THEN");
+
+        using (writer.Indent())
+        {
+            var targetTable = Quote(targetTableName);
+
+            // INSERT ... ON CONFLICT DO UPDATE
+            writer.Append("INSERT INTO ");
+            writer.Append(targetTable);
+            writer.Append(" (");
+            writer.Append(Quote(new DbColumnName("DocumentId")));
+            foreach (var mapping in mappings)
+            {
+                writer.Append(", ");
+                writer.Append(Quote(mapping.TargetColumn));
+            }
+            writer.Append(", ");
+            writer.Append(Quote(new DbColumnName("Discriminator")));
+            writer.AppendLine(")");
+
+            writer.Append("VALUES (NEW.");
+            writer.Append(Quote(new DbColumnName("DocumentId")));
+            foreach (var mapping in mappings)
+            {
+                writer.Append(", NEW.");
+                writer.Append(Quote(mapping.SourceColumn));
+            }
+            writer.Append(", '");
+            writer.Append(EscapeSqlLiteral(discriminatorValue));
+            writer.AppendLine("')");
+
+            writer.Append("ON CONFLICT (");
+            writer.Append(Quote(new DbColumnName("DocumentId")));
+            writer.AppendLine(")");
+
+            writer.Append("DO UPDATE SET ");
+            for (int i = 0; i < mappings.Count; i++)
+            {
+                if (i > 0)
+                    writer.Append(", ");
+                writer.Append(Quote(mappings[i].TargetColumn));
+                writer.Append(" = EXCLUDED.");
+                writer.Append(Quote(mappings[i].TargetColumn));
+            }
+            writer.AppendLine(";");
+        }
+
+        writer.AppendLine("END IF;");
     }
 
     private void EmitMssqlAbstractIdentityBody(
         SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
         string discriminatorValue
     )
     {
-        var targetTable = Quote(targetTableName);
-
-        // MERGE statement
-        writer.Append("MERGE ");
-        writer.Append(targetTable);
-        writer.AppendLine(" AS t");
-        writer.Append("USING inserted AS s ON t.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        writer.Append(" = s.");
-        writer.AppendLine(Quote(new DbColumnName("DocumentId")));
-
-        // WHEN MATCHED THEN UPDATE
-        writer.Append("WHEN MATCHED THEN UPDATE SET ");
-        for (int i = 0; i < mappings.Count; i++)
+        // Guard: skip recomputation on UPDATEs where identity columns weren't in SET clause
+        writer.Append("IF NOT EXISTS (SELECT 1 FROM deleted) OR (");
+        for (int i = 0; i < identityProjectionColumns.Count; i++)
         {
             if (i > 0)
-                writer.Append(", ");
-            writer.Append("t.");
-            writer.Append(Quote(mappings[i].TargetColumn));
-            writer.Append(" = s.");
-            writer.Append(Quote(mappings[i].SourceColumn));
+                writer.Append(" OR ");
+            writer.Append("UPDATE(");
+            writer.Append(Quote(identityProjectionColumns[i]));
+            writer.Append(")");
         }
-        writer.AppendLine();
-
-        // WHEN NOT MATCHED THEN INSERT
-        writer.Append("WHEN NOT MATCHED THEN INSERT (");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        foreach (var mapping in mappings)
-        {
-            writer.Append(", ");
-            writer.Append(Quote(mapping.TargetColumn));
-        }
-        writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("Discriminator")));
         writer.AppendLine(")");
+        writer.AppendLine("BEGIN");
 
-        writer.Append("VALUES (s.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
-        foreach (var mapping in mappings)
+        using (writer.Indent())
         {
-            writer.Append(", s.");
-            writer.Append(Quote(mapping.SourceColumn));
+            var targetTable = Quote(targetTableName);
+
+            // MERGE statement
+            writer.Append("MERGE ");
+            writer.Append(targetTable);
+            writer.AppendLine(" AS t");
+            writer.Append("USING inserted AS s ON t.");
+            writer.Append(Quote(new DbColumnName("DocumentId")));
+            writer.Append(" = s.");
+            writer.AppendLine(Quote(new DbColumnName("DocumentId")));
+
+            // WHEN MATCHED THEN UPDATE
+            writer.Append("WHEN MATCHED THEN UPDATE SET ");
+            for (int i = 0; i < mappings.Count; i++)
+            {
+                if (i > 0)
+                    writer.Append(", ");
+                writer.Append("t.");
+                writer.Append(Quote(mappings[i].TargetColumn));
+                writer.Append(" = s.");
+                writer.Append(Quote(mappings[i].SourceColumn));
+            }
+            writer.AppendLine();
+
+            // WHEN NOT MATCHED THEN INSERT
+            writer.Append("WHEN NOT MATCHED THEN INSERT (");
+            writer.Append(Quote(new DbColumnName("DocumentId")));
+            foreach (var mapping in mappings)
+            {
+                writer.Append(", ");
+                writer.Append(Quote(mapping.TargetColumn));
+            }
+            writer.Append(", ");
+            writer.Append(Quote(new DbColumnName("Discriminator")));
+            writer.AppendLine(")");
+
+            writer.Append("VALUES (s.");
+            writer.Append(Quote(new DbColumnName("DocumentId")));
+            foreach (var mapping in mappings)
+            {
+                writer.Append(", s.");
+                writer.Append(Quote(mapping.SourceColumn));
+            }
+            writer.Append(", N'");
+            writer.Append(EscapeSqlLiteral(discriminatorValue));
+            writer.AppendLine("');");
         }
-        writer.Append(", N'");
-        writer.Append(EscapeSqlLiteral(discriminatorValue));
-        writer.AppendLine("');");
+
+        writer.AppendLine("END");
     }
 
     /// <summary>

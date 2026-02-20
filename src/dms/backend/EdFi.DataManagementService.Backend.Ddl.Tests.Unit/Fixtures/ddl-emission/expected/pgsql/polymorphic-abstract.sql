@@ -111,10 +111,12 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-    VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:LocalEducationAgency')
-    ON CONFLICT ("DocumentId")
-    DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
+    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:LocalEducationAgency')
+        ON CONFLICT ("DocumentId")
+        DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -128,14 +130,16 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 3);
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
+    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 3;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiLocalEducationAgency' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 3);
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -176,10 +180,12 @@ EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
-    VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:School')
-    ON CONFLICT ("DocumentId")
-    DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
+    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
+        INSERT INTO "edfi"."EducationOrganizationIdentity" ("DocumentId", "EducationOrganizationId", "Discriminator")
+        VALUES (NEW."DocumentId", NEW."EducationOrganizationId", 'Ed-Fi:School')
+        ON CONFLICT ("DocumentId")
+        DO UPDATE SET "EducationOrganizationId" = EXCLUDED."EducationOrganizationId";
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
@@ -193,14 +199,16 @@ EXECUTE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 2);
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
+    IF TG_OP = 'INSERT' OR (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 2);
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiEducationOrganization' || '$$.educationOrganizationId=' || NEW."EducationOrganizationId"::text), NEW."DocumentId", 1);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
