@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.ApiSchema;
 using EdFi.DataManagementService.Core.ApiSchema.Helpers;
@@ -18,6 +17,16 @@ namespace EdFi.DataManagementService.Core.Extraction;
 /// </summary>
 internal static class ReferenceExtractor
 {
+    /// <summary>
+    /// Strips the last dot-separated segment from a JSONPath string.
+    /// e.g. "$.classPeriods[*].classPeriodReference.classPeriodName" -> "$.classPeriods[*].classPeriodReference"
+    /// </summary>
+    private static string StripLastJsonPathSegment(string jsonPath)
+    {
+        int lastDotIndex = jsonPath.LastIndexOf('.');
+        return lastDotIndex > 0 ? jsonPath[..lastDotIndex] : jsonPath;
+    }
+
     /// <summary>
     /// Takes an API JSON body for the resource and extracts the document reference information from the JSON body.
     /// </summary>
@@ -44,33 +53,63 @@ internal static class ReferenceExtractor
                 continue;
             }
 
-            // Extract the reference values with concrete paths from the document
-            var referenceElements = documentPath
-                .ReferenceJsonPathsElements.Select(element => new
+            var identityElements = documentPath.ReferenceJsonPathsElements.ToArray();
+
+            if (identityElements.Length == 0)
+            {
+                throw new InvalidOperationException(
+                    $"Reference '{documentPath.ResourceName.Value}' has no identity elements in ReferenceJsonPathsElements"
+                );
+            }
+
+            // Group identity values by their concrete reference-object path.
+            var referenceGroups =
+                new List<(string parentPath, List<DocumentIdentityElement> identityElements)>();
+            var pathToGroupIndex = new Dictionary<string, int>();
+
+            foreach (var element in identityElements)
+            {
+                var pathValues = documentBody
+                    .SelectNodesAndLocationFromArrayPathCoerceToStrings(
+                        element.ReferenceJsonPath.Value,
+                        logger
+                    )
+                    .ToArray();
+
+                foreach (var pv in pathValues)
                 {
-                    element.IdentityJsonPath,
-                    PathValues = documentBody
-                        .SelectNodesAndLocationFromArrayPathCoerceToStrings(
-                            element.ReferenceJsonPath.Value,
-                            logger
-                        )
-                        .ToArray(),
-                })
-                .ToArray();
+                    string concreteParentPath = StripLastJsonPathSegment(pv.jsonPath);
 
-            int matchCount = referenceElements[0].PathValues.Length;
+                    if (!pathToGroupIndex.TryGetValue(concreteParentPath, out int groupIndex))
+                    {
+                        groupIndex = referenceGroups.Count;
+                        pathToGroupIndex[concreteParentPath] = groupIndex;
+                        referenceGroups.Add((concreteParentPath, []));
+                    }
 
-            // Number of document values from resolved JsonPaths should all be the same, otherwise something is very wrong
-            Trace.Assert(
-                Array.TrueForAll(referenceElements, x => x.PathValues.Length == matchCount),
-                "Length of document value slices are not equal",
-                ""
-            );
+                    referenceGroups[groupIndex]
+                        .identityElements.Add(
+                            new DocumentIdentityElement(element.IdentityJsonPath, pv.value)
+                        );
+                }
+            }
 
-            // If a JsonPath selection had no results, we can assume an optional reference wasn't there
-            if (matchCount == 0)
+            // If no matches, assume an optional reference wasn't there
+            if (referenceGroups.Count == 0)
             {
                 continue;
+            }
+
+            // Each reference group must have exactly one value per identity element
+            foreach (var (path, elements) in referenceGroups)
+            {
+                if (elements.Count != identityElements.Length)
+                {
+                    throw new InvalidOperationException(
+                        $"Reference '{documentPath.ResourceName.Value}' at '{path}': "
+                            + $"expected {identityElements.Length} identity elements but found {elements.Count}"
+                    );
+                }
             }
 
             BaseResourceInfo resourceInfo = new(
@@ -81,48 +120,26 @@ internal static class ReferenceExtractor
 
             List<DocumentReference> documentReferencesForThisArray = [];
 
-            // Build DocumentReferences with concrete paths including numeric indices
-            for (int index = 0; index < matchCount; index += 1)
+            foreach (var (parentPath, identityParts) in referenceGroups)
             {
-                // Derive the concrete reference-object path by stripping the final segment
-                // e.g. $.classPeriods[0].classPeriodReference.classPeriodName -> $.classPeriods[0].classPeriodReference
-                string concreteScalarPath = referenceElements[0].PathValues[index].jsonPath;
-                int lastDotIndex = concreteScalarPath.LastIndexOf('.');
-                string concreteReferenceObjectPath =
-                    lastDotIndex > 0 ? concreteScalarPath[..lastDotIndex] : concreteScalarPath;
-
-                List<DocumentIdentityElement> documentIdentityElements = [];
-
-                foreach (var element in referenceElements)
-                {
-                    documentIdentityElements.Add(
-                        new DocumentIdentityElement(element.IdentityJsonPath, element.PathValues[index].value)
-                    );
-                }
-
-                DocumentIdentity documentIdentity = new(documentIdentityElements.ToArray());
+                DocumentIdentity documentIdentity = new(identityParts.ToArray());
                 documentReferencesForThisArray.Add(
                     new(
                         resourceInfo,
                         documentIdentity,
                         ReferentialIdFrom(resourceInfo, documentIdentity),
-                        new JsonPath(concreteReferenceObjectPath)
+                        new JsonPath(parentPath)
                     )
                 );
             }
 
-            // Get the wildcard parent path from the first ReferenceJsonPathsElement
-            string firstReferenceJsonPath = documentPath
-                .ReferenceJsonPathsElements.First()
-                .ReferenceJsonPath.Value;
-            int wildcardLastDotIndex = firstReferenceJsonPath.LastIndexOf('.');
-            string parentPath =
-                wildcardLastDotIndex > 0
-                    ? firstReferenceJsonPath[..wildcardLastDotIndex]
-                    : firstReferenceJsonPath;
+            // Derive the wildcard parent path by stripping the last segment from the first identity element's path
+            string wildcardParentPath = StripLastJsonPathSegment(identityElements[0].ReferenceJsonPath.Value);
 
             documentReferences.AddRange(documentReferencesForThisArray);
-            documentReferenceArrays.Add(new(new(parentPath), documentReferencesForThisArray.ToArray()));
+            documentReferenceArrays.Add(
+                new(new(wildcardParentPath), documentReferencesForThisArray.ToArray())
+            );
         }
 
         return (documentReferences.ToArray(), documentReferenceArrays.ToArray());
