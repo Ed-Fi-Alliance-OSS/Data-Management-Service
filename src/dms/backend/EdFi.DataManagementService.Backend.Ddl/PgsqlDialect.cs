@@ -39,12 +39,6 @@ public sealed class PgsqlDialect : SqlDialectBase
     public override string OrdinalColumnType => "integer";
 
     /// <inheritdoc />
-    public override DdlPattern TriggerCreationPattern => DdlPattern.DropThenCreate;
-
-    /// <inheritdoc />
-    public override DdlPattern FunctionCreationPattern => DdlPattern.CreateOrReplace;
-
-    /// <inheritdoc />
     public override DdlPattern ViewCreationPattern => DdlPattern.CreateOrReplace;
 
     /// <inheritdoc />
@@ -154,8 +148,9 @@ public sealed class PgsqlDialect : SqlDialectBase
         var targetColumnList = string.Join(", ", targetColumns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
-        var escapedSchema = table.Schema.Value.Replace("'", "''");
-        var escapedTable = table.Name.Replace("'", "''");
+        // Pass the already-quoted identifier to to_regclass(); PostgreSQL needs the double
+        // quotes inside the string literal to preserve case for PascalCase table names.
+        var escapedQualifiedTable = QualifyTable(table).Replace("'", "''");
 
         // Use DO block to check if constraint exists before adding
         return $"""
@@ -164,7 +159,7 @@ public sealed class PgsqlDialect : SqlDialectBase
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = to_regclass('{escapedSchema}.{escapedTable}')
+                    AND conrelid = to_regclass('{escapedQualifiedTable}')
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -199,8 +194,9 @@ public sealed class PgsqlDialect : SqlDialectBase
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
-        var escapedSchema = table.Schema.Value.Replace("'", "''");
-        var escapedTable = table.Name.Replace("'", "''");
+        // Pass the already-quoted identifier to to_regclass(); PostgreSQL needs the double
+        // quotes inside the string literal to preserve case for PascalCase table names.
+        var escapedQualifiedTable = QualifyTable(table).Replace("'", "''");
 
         return $"""
             DO $$
@@ -208,7 +204,7 @@ public sealed class PgsqlDialect : SqlDialectBase
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = to_regclass('{escapedSchema}.{escapedTable}')
+                    AND conrelid = to_regclass('{escapedQualifiedTable}')
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -230,8 +226,9 @@ public sealed class PgsqlDialect : SqlDialectBase
 
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
-        var escapedSchema = table.Schema.Value.Replace("'", "''");
-        var escapedTable = table.Name.Replace("'", "''");
+        // Pass the already-quoted identifier to to_regclass(); PostgreSQL needs the double
+        // quotes inside the string literal to preserve case for PascalCase table names.
+        var escapedQualifiedTable = QualifyTable(table).Replace("'", "''");
 
         return $"""
             DO $$
@@ -239,7 +236,7 @@ public sealed class PgsqlDialect : SqlDialectBase
                 IF NOT EXISTS (
                     SELECT 1 FROM pg_constraint
                     WHERE conname = '{escapedConstraint}'
-                    AND conrelid = to_regclass('{escapedSchema}.{escapedTable}')
+                    AND conrelid = to_regclass('{escapedQualifiedTable}')
                 )
                 THEN
                     ALTER TABLE {QualifyTable(table)}
@@ -348,7 +345,7 @@ public sealed class PgsqlDialect : SqlDialectBase
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        return $"'{value.Replace("'", "''")}'";
+        return $"'{EscapeSingleQuote(value)}'";
     }
 
     /// <inheritdoc />
@@ -387,5 +384,31 @@ public sealed class PgsqlDialect : SqlDialectBase
 
         // PostgreSQL does not support CLUSTERED/NONCLUSTERED.
         return $"CONSTRAINT {QuoteIdentifier(constraintName)} PRIMARY KEY ({columnList})";
+    }
+
+    /// <inheritdoc />
+    public override string RenderComputedColumnDefinition(
+        DbColumnName columnName,
+        string sqlType,
+        DbColumnName canonicalColumn,
+        DbColumnName? presenceColumn
+    )
+    {
+        ArgumentNullException.ThrowIfNull(sqlType);
+
+        var quotedColumn = QuoteIdentifier(columnName.Value);
+        var quotedCanonical = QuoteIdentifier(canonicalColumn.Value);
+
+        // PostgreSQL uses GENERATED ALWAYS AS ... STORED for computed columns.
+        // When presenceColumn is provided, emit a CASE expression that returns NULL
+        // when the presence column is NULL; otherwise, return the canonical value.
+        if (presenceColumn is { Value: var presenceValue })
+        {
+            var quotedPresence = QuoteIdentifier(presenceValue);
+            return $"{quotedColumn} {sqlType} GENERATED ALWAYS AS (CASE WHEN {quotedPresence} IS NULL THEN NULL ELSE {quotedCanonical} END) STORED";
+        }
+
+        // No presence column — alias always returns the canonical value.
+        return $"{quotedColumn} {sqlType} GENERATED ALWAYS AS ({quotedCanonical}) STORED";
     }
 }

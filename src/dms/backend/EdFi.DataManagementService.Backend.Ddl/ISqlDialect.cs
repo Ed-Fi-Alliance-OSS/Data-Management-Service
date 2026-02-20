@@ -73,16 +73,6 @@ public interface ISqlDialect
     string DropTriggerIfExists(DbTableName table, string triggerName);
 
     /// <summary>
-    /// Gets the DDL pattern used for trigger creation.
-    /// </summary>
-    DdlPattern TriggerCreationPattern { get; }
-
-    /// <summary>
-    /// Gets the DDL pattern used for function creation.
-    /// </summary>
-    DdlPattern FunctionCreationPattern { get; }
-
-    /// <summary>
     /// Gets the DDL pattern used for view creation.
     /// </summary>
     DdlPattern ViewCreationPattern { get; }
@@ -326,4 +316,23 @@ public interface ISqlDialect
     /// <param name="value">The integer value.</param>
     /// <returns>The literal string representation.</returns>
     string RenderIntegerLiteral(int value);
+
+    /// <summary>
+    /// Renders a computed column definition for a unified alias column.
+    /// The computed value is the canonical column when the presence column is non-NULL
+    /// (or always, when there is no presence column), otherwise NULL.
+    /// PostgreSQL: <c>"alias" type GENERATED ALWAYS AS (CASE WHEN "presence" IS NULL THEN NULL ELSE "canonical" END) STORED</c>.
+    /// SQL Server: <c>[alias] AS (CASE WHEN [presence] IS NULL THEN NULL ELSE [canonical] END) PERSISTED</c>.
+    /// </summary>
+    /// <param name="columnName">The alias column name.</param>
+    /// <param name="sqlType">The SQL type for the column.</param>
+    /// <param name="canonicalColumn">The source canonical column name.</param>
+    /// <param name="presenceColumn">Optional presence-gate column; when NULL, no presence check is performed.</param>
+    /// <returns>The computed column definition.</returns>
+    string RenderComputedColumnDefinition(
+        DbColumnName columnName,
+        string sqlType,
+        DbColumnName canonicalColumn,
+        DbColumnName? presenceColumn
+    );
 }

@@ -31,13 +31,12 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
-    private static readonly DbSchemaName _dmsSchema = new("dms");
-    private static readonly DbTableName _descriptorTable = new(_dmsSchema, "Descriptor");
-    private static readonly DbTableName _documentTable = new(_dmsSchema, "Document");
-    private static readonly DbTableName _documentCacheTable = new(_dmsSchema, "DocumentCache");
-    private static readonly DbTableName _documentChangeEventTable = new(_dmsSchema, "DocumentChangeEvent");
+    private static readonly DbTableName _descriptorTable = DmsTableNames.Descriptor;
+    private static readonly DbTableName _documentTable = DmsTableNames.Document;
+    private static readonly DbTableName _documentCacheTable = DmsTableNames.DocumentCache;
+    private static readonly DbTableName _documentChangeEventTable = DmsTableNames.DocumentChangeEvent;
     private static readonly DbTableName _effectiveSchemaTable = DmsTableNames.EffectiveSchema;
-    private static readonly DbTableName _referentialIdentityTable = new(_dmsSchema, "ReferentialIdentity");
+    private static readonly DbTableName _referentialIdentityTable = DmsTableNames.ReferentialIdentity;
     private static readonly DbTableName _resourceKeyTable = DmsTableNames.ResourceKey;
     private static readonly DbTableName _schemaComponentTable = DmsTableNames.SchemaComponent;
 
@@ -71,7 +70,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// Gets the default expression for generating change/version values from the core change-version sequence.
     /// </summary>
     private string SequenceDefault =>
-        _dialect.RenderSequenceDefaultExpression(_dmsSchema, "ChangeVersionSequence");
+        _dialect.RenderSequenceDefaultExpression(DmsTableNames.DmsSchema, "ChangeVersionSequence");
 
     /// <summary>
     /// Generates the complete core <c>dms.*</c> DDL script for the configured dialect.
@@ -105,7 +104,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("-- ==========================================================");
         writer.AppendLine();
 
-        writer.AppendLine(_dialect.CreateSchemaIfNotExists(_dmsSchema));
+        writer.AppendLine(_dialect.CreateSchemaIfNotExists(DmsTableNames.DmsSchema));
         writer.AppendLine();
     }
 
@@ -129,7 +128,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitChangeVersionSequence(SqlWriter writer)
     {
-        writer.AppendLine(_dialect.CreateSequenceIfNotExists(_dmsSchema, "ChangeVersionSequence"));
+        writer.AppendLine(
+            _dialect.CreateSequenceIfNotExists(DmsTableNames.DmsSchema, "ChangeVersionSequence")
+        );
         writer.AppendLine();
     }
 
@@ -744,7 +745,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         var docTable = _dialect.QualifyTable(_documentTable);
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
-        var funcName = $"{Q(_dmsSchema.Value)}.{Q("TF_Document_Journal")}";
+        var funcName = $"{Q(DmsTableNames.DmsSchema.Value)}.{Q("TF_Document_Journal")}";
 
         // Trigger function
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
@@ -797,8 +798,10 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         var docTable = _dialect.QualifyTable(_documentTable);
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
-        var triggerName = $"{Q(_dmsSchema.Value)}.{Q("TR_Document_Journal")}";
+        var triggerName = $"{Q(DmsTableNames.DmsSchema.Value)}.{Q("TR_Document_Journal")}";
 
+        // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
+        writer.AppendLine("GO");
         writer.AppendLine($"CREATE OR ALTER TRIGGER {triggerName}");
         writer.AppendLine($"ON {docTable}");
         writer.AppendLine("AFTER INSERT, UPDATE");

@@ -157,7 +157,7 @@ public class Given_MssqlDialect_Rendering_String_Type_With_Length
 }
 
 [TestFixture]
-public class Given_MssqlDialect_Rendering_String_Type_Without_Length
+public class Given_MssqlDialect_Rendering_Unbounded_String_Type
 {
     private string _rendered = default!;
 
@@ -170,9 +170,9 @@ public class Given_MssqlDialect_Rendering_String_Type_Without_Length
     }
 
     [Test]
-    public void It_should_render_nvarchar_without_length()
+    public void It_should_render_nvarchar_max()
     {
-        _rendered.Should().Be("nvarchar");
+        _rendered.Should().Be("nvarchar(max)");
     }
 }
 
@@ -447,18 +447,6 @@ public class Given_MssqlDialect_Ddl_Patterns
     public void Setup()
     {
         _dialect = new MssqlDialect(new MssqlDialectRules());
-    }
-
-    [Test]
-    public void It_should_use_create_or_alter_for_triggers()
-    {
-        _dialect.TriggerCreationPattern.Should().Be(DdlPattern.CreateOrAlter);
-    }
-
-    [Test]
-    public void It_should_use_create_or_alter_for_functions()
-    {
-        _dialect.FunctionCreationPattern.Should().Be(DdlPattern.CreateOrAlter);
     }
 
     [Test]

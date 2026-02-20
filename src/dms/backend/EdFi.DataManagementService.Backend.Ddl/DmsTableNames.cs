@@ -13,9 +13,16 @@ namespace EdFi.DataManagementService.Backend.Ddl;
 /// </summary>
 internal static class DmsTableNames
 {
-    private static readonly DbSchemaName _dmsSchema = new("dms");
+    public static readonly DbSchemaName DmsSchema = new("dms");
 
-    public static readonly DbTableName EffectiveSchema = new(_dmsSchema, "EffectiveSchema");
-    public static readonly DbTableName ResourceKey = new(_dmsSchema, "ResourceKey");
-    public static readonly DbTableName SchemaComponent = new(_dmsSchema, "SchemaComponent");
+    public static readonly DbTableName Descriptor = new(DmsSchema, "Descriptor");
+    public static readonly DbTableName Document = new(DmsSchema, "Document");
+    public static readonly DbTableName DocumentCache = new(DmsSchema, "DocumentCache");
+    public static readonly DbTableName DocumentChangeEvent = new(DmsSchema, "DocumentChangeEvent");
+    public static readonly DbTableName EffectiveSchema = new(DmsSchema, "EffectiveSchema");
+    public static readonly DbTableName ReferentialIdentity = new(DmsSchema, "ReferentialIdentity");
+    public static readonly DbTableName ResourceKey = new(DmsSchema, "ResourceKey");
+    public static readonly DbTableName SchemaComponent = new(DmsSchema, "SchemaComponent");
+
+    public static readonly string ChangeVersionSequence = "ChangeVersionSequence";
 }

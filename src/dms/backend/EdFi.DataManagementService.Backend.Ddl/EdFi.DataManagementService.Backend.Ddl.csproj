@@ -6,6 +6,9 @@
         <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     </PropertyGroup>
     <ItemGroup>
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Ddl.Tests.Unit" />
+    </ItemGroup>
+    <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.External\EdFi.DataManagementService.Backend.External.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />
     </ItemGroup>

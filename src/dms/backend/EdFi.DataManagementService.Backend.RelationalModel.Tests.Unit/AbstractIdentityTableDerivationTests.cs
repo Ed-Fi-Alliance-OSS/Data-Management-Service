@@ -1196,6 +1196,120 @@ internal sealed class ForceRootColumnSourcePathNullPass(QualifiedResourceName re
 }
 
 /// <summary>
+/// Test fixture for subclass members with superclassIdentityJsonPath set but multiple identity paths.
+/// </summary>
+[TestFixture]
+public class Given_Abstract_Identity_Table_With_Superclass_Identity_Path_And_Multiple_Member_Identities
+{
+    private Exception? _exception;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        // Build a schema where a concrete member has superclassIdentityJsonPath set (non-null)
+        // but also has multiple identity paths — violating the single-identity invariant.
+        var projectSchema = new JsonObject
+        {
+            ["projectName"] = "Ed-Fi",
+            ["projectEndpointName"] = "ed-fi",
+            ["projectVersion"] = "5.0.0",
+            ["abstractResources"] = new JsonObject
+            {
+                ["EducationOrganization"] = new JsonObject
+                {
+                    ["resourceName"] = "EducationOrganization",
+                    ["identityJsonPaths"] = new JsonArray { "$.educationOrganizationId" },
+                },
+            },
+            ["resourceSchemas"] = new JsonObject
+            {
+                ["schools"] = new JsonObject
+                {
+                    ["resourceName"] = "School",
+                    ["isDescriptor"] = false,
+                    ["isResourceExtension"] = false,
+                    ["isSubclass"] = true,
+                    ["subclassType"] = "association",
+                    ["superclassProjectName"] = "Ed-Fi",
+                    ["superclassResourceName"] = "EducationOrganization",
+                    // Non-null superclassIdentityJsonPath triggers the guard
+                    ["superclassIdentityJsonPath"] = "$.schoolId",
+                    ["allowIdentityUpdates"] = false,
+                    ["documentPathsMapping"] = new JsonObject
+                    {
+                        ["SchoolId"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["path"] = "$.schoolId",
+                        },
+                        ["SchoolName"] = new JsonObject
+                        {
+                            ["isReference"] = false,
+                            ["isDescriptor"] = false,
+                            ["path"] = "$.schoolName",
+                        },
+                    },
+                    ["arrayUniquenessConstraints"] = new JsonArray(),
+                    ["decimalPropertyValidationInfos"] = new JsonArray(),
+                    // Multiple identity paths with superclassIdentityJsonPath set
+                    ["identityJsonPaths"] = new JsonArray { "$.schoolId", "$.schoolName" },
+                    ["jsonSchemaForInsert"] = new JsonObject
+                    {
+                        ["type"] = "object",
+                        ["properties"] = new JsonObject
+                        {
+                            ["schoolId"] = new JsonObject { ["type"] = "integer", ["format"] = "int64" },
+                            ["schoolName"] = new JsonObject { ["type"] = "string", ["maxLength"] = 75 },
+                        },
+                        ["required"] = new JsonArray { "schoolId", "schoolName" },
+                    },
+                },
+            },
+        };
+
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(new[] { project });
+        var builder = new DerivedRelationalModelSetBuilder(
+            new IRelationalModelSetPass[]
+            {
+                new BaseTraversalAndDescriptorBindingPass(),
+                new AbstractIdentityTableAndUnionViewDerivationPass(),
+            }
+        );
+
+        try
+        {
+            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        }
+        catch (Exception exception)
+        {
+            _exception = exception;
+        }
+    }
+
+    /// <summary>
+    /// It should fail fast when a member with superclassIdentityJsonPath has multiple identity paths.
+    /// The validation layer rejects this before the derivation pass runs.
+    /// </summary>
+    [Test]
+    public void It_should_fail_fast_when_superclass_identity_path_member_has_multiple_identities()
+    {
+        _exception.Should().BeOfType<InvalidOperationException>();
+        _exception!
+            .Message.Should()
+            .Contain("superclassIdentityJsonPath but must declare exactly one identityJsonPaths entry");
+        _exception.Message.Should().Contain("Ed-Fi:School");
+    }
+}
+
+/// <summary>
 /// Test type abstract identity table test schema builder.
 /// </summary>
 internal static class AbstractIdentityTableTestSchemaBuilder

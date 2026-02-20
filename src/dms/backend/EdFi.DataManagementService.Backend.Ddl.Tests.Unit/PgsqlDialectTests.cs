@@ -407,18 +407,6 @@ public class Given_PgsqlDialect_Ddl_Patterns
     }
 
     [Test]
-    public void It_should_use_drop_then_create_for_triggers()
-    {
-        _dialect.TriggerCreationPattern.Should().Be(DdlPattern.DropThenCreate);
-    }
-
-    [Test]
-    public void It_should_use_create_or_replace_for_functions()
-    {
-        _dialect.FunctionCreationPattern.Should().Be(DdlPattern.CreateOrReplace);
-    }
-
-    [Test]
     public void It_should_use_create_or_replace_for_views()
     {
         _dialect.ViewCreationPattern.Should().Be(DdlPattern.CreateOrReplace);

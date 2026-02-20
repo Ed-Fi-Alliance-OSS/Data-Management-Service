@@ -755,6 +755,8 @@ public class Given_A_Relational_Model_Manifest_Emitter
 
     /// <summary>
     /// Build a derived relational-model set from one in-memory project schema.
+    /// Uses a pass list that excludes index and trigger derivation since manifest emitter tests
+    /// use schemas with intentionally empty identity paths.
     /// </summary>
     private static DerivedRelationalModelSet BuildDerivedSet(JsonObject projectSchema)
     {
@@ -763,7 +765,25 @@ public class Given_A_Relational_Model_Manifest_Emitter
             isExtensionProject: false
         );
         var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
-        var builder = new DerivedRelationalModelSetBuilder(RelationalModelSetPasses.CreateDefault());
+        IRelationalModelSetPass[] passes =
+        [
+            new BaseTraversalAndDescriptorBindingPass(),
+            new DescriptorResourceMappingPass(),
+            new ExtensionTableDerivationPass(),
+            new ReferenceBindingPass(),
+            new KeyUnificationPass(),
+            new AbstractIdentityTableAndUnionViewDerivationPass(),
+            new ValidateUnifiedAliasMetadataPass(),
+            new RootIdentityConstraintPass(),
+            new ReferenceConstraintPass(),
+            new ArrayUniquenessConstraintPass(),
+            new DescriptorForeignKeyConstraintPass(),
+            new ApplyConstraintDialectHashingPass(),
+            new ValidateForeignKeyStorageInvariantPass(),
+            new ApplyDialectIdentifierShorteningPass(),
+            new CanonicalizeOrderingPass(),
+        ];
+        var builder = new DerivedRelationalModelSetBuilder(passes);
 
         return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }

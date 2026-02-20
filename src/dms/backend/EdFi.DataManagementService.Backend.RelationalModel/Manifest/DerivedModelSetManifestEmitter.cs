@@ -310,28 +310,114 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStartObject();
             writer.WriteString("name", trigger.Name.Value);
             writer.WritePropertyName("table");
-            WriteTableReference(writer, trigger.TriggerTable);
-            writer.WriteString("kind", trigger.Kind.ToString());
+            WriteTableReference(writer, trigger.Table);
+            writer.WriteString(
+                "kind",
+                trigger.Parameters switch
+                {
+                    TriggerKindParameters.DocumentStamping => "DocumentStamping",
+                    TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
+                    TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
+                    TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(trigger),
+                        "Unsupported trigger kind parameters type."
+                    ),
+                }
+            );
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, trigger.KeyColumns);
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            if (trigger.MaintenanceTargetTable is { } maintenanceTargetTable)
+            switch (trigger.Parameters)
             {
-                writer.WritePropertyName("target_table");
-                WriteTableReference(writer, maintenanceTargetTable);
-            }
+                case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
+                    writer.WritePropertyName("target_table");
+                    WriteTableReference(writer, abstractId.TargetTable);
+                    WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
+                    writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
+                    break;
 
-            if (trigger.PropagationFallback is { } propagationFallback)
-            {
-                writer.WritePropertyName("propagation_fallback");
-                WritePropagationFallback(writer, propagationFallback);
+                case TriggerKindParameters.IdentityPropagationFallback propagation:
+                    writer.WritePropertyName("referrer_updates");
+                    writer.WriteStartArray();
+                    foreach (var referrer in propagation.ReferrerUpdates)
+                    {
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("referrer_table");
+                        WriteTableReference(writer, referrer.ReferrerTable);
+                        writer.WriteString("referrer_fk_column", referrer.ReferrerFkColumn.Value);
+                        WriteTargetColumnMappings(writer, referrer.ColumnMappings);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                    break;
+
+                case TriggerKindParameters.ReferentialIdentityMaintenance refId:
+                    writer.WriteNumber("resource_key_id", refId.ResourceKeyId);
+                    writer.WriteString("project_name", refId.ProjectName);
+                    writer.WriteString("resource_name", refId.ResourceName);
+                    writer.WritePropertyName("identity_elements");
+                    writer.WriteStartArray();
+                    foreach (var element in refId.IdentityElements)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("column", element.Column.Value);
+                        writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+
+                    if (refId.SuperclassAlias is { } alias)
+                    {
+                        writer.WritePropertyName("superclass_alias");
+                        writer.WriteStartObject();
+                        writer.WriteNumber("resource_key_id", alias.ResourceKeyId);
+                        writer.WriteString("project_name", alias.ProjectName);
+                        writer.WriteString("resource_name", alias.ResourceName);
+                        writer.WritePropertyName("identity_elements");
+                        writer.WriteStartArray();
+                        foreach (var element in alias.IdentityElements)
+                        {
+                            writer.WriteStartObject();
+                            writer.WriteString("column", element.Column.Value);
+                            writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                            writer.WriteEndObject();
+                        }
+                        writer.WriteEndArray();
+                        writer.WriteEndObject();
+                    }
+                    break;
+
+                case TriggerKindParameters.DocumentStamping:
+                    // DocumentStamping has no additional properties
+                    break;
             }
 
             writer.WriteEndObject();
         }
 
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Writes a <c>target_column_mappings</c> array of source/target column pairs.
+    /// </summary>
+    private static void WriteTargetColumnMappings(
+        Utf8JsonWriter writer,
+        IReadOnlyList<TriggerColumnMapping> mappings
+    )
+    {
+        writer.WritePropertyName("target_column_mappings");
+        writer.WriteStartArray();
+        foreach (var mapping in mappings)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("source_column", mapping.SourceColumn.Value);
+            writer.WriteString("target_column", mapping.TargetColumn.Value);
+            writer.WriteEndObject();
+        }
         writer.WriteEndArray();
     }
 
@@ -653,46 +739,6 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStringValue(column.Value);
         }
         writer.WriteEndArray();
-    }
-
-    /// <summary>
-    /// Writes identity-propagation fallback payload details.
-    /// </summary>
-    private static void WritePropagationFallback(
-        Utf8JsonWriter writer,
-        DbIdentityPropagationFallbackInfo propagationFallback
-    )
-    {
-        writer.WriteStartObject();
-        writer.WritePropertyName("referrer_actions");
-        writer.WriteStartArray();
-
-        foreach (var referrerAction in propagationFallback.ReferrerActions)
-        {
-            writer.WriteStartObject();
-            writer.WritePropertyName("referrer_table");
-            WriteTableReference(writer, referrerAction.ReferrerTable);
-            writer.WriteString("referrer_document_id_column", referrerAction.ReferrerDocumentIdColumn.Value);
-            writer.WriteString(
-                "referenced_document_id_column",
-                referrerAction.ReferencedDocumentIdColumn.Value
-            );
-
-            writer.WritePropertyName("identity_column_pairs");
-            writer.WriteStartArray();
-            foreach (var columnPair in referrerAction.IdentityColumnPairs)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("referrer_storage_column", columnPair.ReferrerStorageColumn.Value);
-                writer.WriteString("referenced_storage_column", columnPair.ReferencedStorageColumn.Value);
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-        writer.WriteEndObject();
     }
 
     /// <summary>

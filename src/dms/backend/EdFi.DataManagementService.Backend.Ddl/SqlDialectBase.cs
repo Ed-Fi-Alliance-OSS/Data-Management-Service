@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -21,12 +22,6 @@ public abstract class SqlDialectBase : ISqlDialect
 
     /// <inheritdoc />
     public abstract string OrdinalColumnType { get; }
-
-    /// <inheritdoc />
-    public abstract DdlPattern TriggerCreationPattern { get; }
-
-    /// <inheritdoc />
-    public abstract DdlPattern FunctionCreationPattern { get; }
 
     /// <inheritdoc />
     public abstract DdlPattern ViewCreationPattern { get; }
@@ -224,9 +219,23 @@ public abstract class SqlDialectBase : ISqlDialect
     /// <inheritdoc />
     public abstract string RenderStringLiteral(string value);
 
-    /// <inheritdoc />
-    public virtual string RenderSmallintLiteral(short value) => value.ToString();
+    /// <summary>
+    /// Escapes single quotes for safe embedding in a SQL string literal.
+    /// Dialect-independent: both PostgreSQL and SQL Server use doubled single quotes.
+    /// </summary>
+    public static string EscapeSingleQuote(string value) => value.Replace("'", "''");
 
     /// <inheritdoc />
-    public virtual string RenderIntegerLiteral(int value) => value.ToString();
+    public virtual string RenderSmallintLiteral(short value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <inheritdoc />
+    public virtual string RenderIntegerLiteral(int value) => value.ToString(CultureInfo.InvariantCulture);
+
+    /// <inheritdoc />
+    public abstract string RenderComputedColumnDefinition(
+        DbColumnName columnName,
+        string sqlType,
+        DbColumnName canonicalColumn,
+        DbColumnName? presenceColumn
+    );
 }
