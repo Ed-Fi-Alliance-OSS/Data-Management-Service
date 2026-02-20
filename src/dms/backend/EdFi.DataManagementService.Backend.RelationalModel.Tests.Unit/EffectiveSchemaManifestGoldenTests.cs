@@ -200,9 +200,12 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
         var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
             TestContext.CurrentContext.TestDirectory
         );
+        var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
         var coreInputPath = Path.Combine(
-            fixtureRoot,
+            authoritativeFixtureRoot,
             "ds-5.2",
             "inputs",
             "ds-5.2-api-schema-authoritative.json"
@@ -280,15 +283,18 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
         var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
             TestContext.CurrentContext.TestDirectory
         );
+        var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
         var coreInputPath = Path.Combine(
-            fixtureRoot,
+            authoritativeFixtureRoot,
             "ds-5.2",
             "inputs",
             "ds-5.2-api-schema-authoritative.json"
         );
         var extensionInputPath = Path.Combine(
-            fixtureRoot,
+            authoritativeFixtureRoot,
             "sample",
             "inputs",
             "sample-api-schema-authoritative.json"

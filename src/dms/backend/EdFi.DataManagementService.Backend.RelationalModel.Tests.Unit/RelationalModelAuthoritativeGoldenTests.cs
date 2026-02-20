@@ -30,10 +30,18 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
     public void Setup()
     {
         var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
-        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
-        var inputPath = Path.Combine(fixtureRoot, "inputs", "ds-5.2-api-schema-authoritative.json");
+        var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var expectedFixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
+        var inputPath = Path.Combine(
+            authoritativeFixtureRoot,
+            "ds-5.2",
+            "inputs",
+            "ds-5.2-api-schema-authoritative.json"
+        );
         var expectedPath = Path.Combine(
-            fixtureRoot,
+            expectedFixtureRoot,
             "expected",
             "authoritative-relational-model.manifest.json"
         );

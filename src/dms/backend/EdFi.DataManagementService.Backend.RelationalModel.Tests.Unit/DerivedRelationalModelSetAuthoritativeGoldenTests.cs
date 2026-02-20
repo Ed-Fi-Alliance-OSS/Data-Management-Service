@@ -35,21 +35,24 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
     public void Setup()
     {
         var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
-        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
+        var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var expectedFixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative");
         var coreInputPath = Path.Combine(
-            fixtureRoot,
+            authoritativeFixtureRoot,
             "ds-5.2",
             "inputs",
             "ds-5.2-api-schema-authoritative.json"
         );
         var extensionInputPath = Path.Combine(
-            fixtureRoot,
+            authoritativeFixtureRoot,
             "sample",
             "inputs",
             "sample-api-schema-authoritative.json"
         );
         var expectedPath = Path.Combine(
-            fixtureRoot,
+            expectedFixtureRoot,
             "sample",
             "expected",
             "authoritative-derived-relational-model-set.json"
