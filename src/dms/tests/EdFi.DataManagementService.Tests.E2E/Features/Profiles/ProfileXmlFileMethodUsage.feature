@@ -121,7 +121,8 @@ Feature: Profile XML File Method Usage
              When a PUT request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-WriteOnly" for resource "School" with body
                   """
                   {
-                      "schoolId": 99000913,
+                      "id": "{id}",
+                      "schoolId": 99000914,
                       "nameOfInstitution": "WriteOnly Profile School Put",
                       "educationOrganizationCategories": [
                           {
