@@ -61,6 +61,12 @@ END $$;
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -75,13 +81,19 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
 CREATE TRIGGER "TR_School_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -91,13 +103,19 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolAddress_Stamp" ON "edfi"."SchoolAddress";
 CREATE TRIGGER "TR_SchoolAddress_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."SchoolAddress"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolAddress"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddress_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_SchoolAddressPhoneNumber_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -107,7 +125,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_SchoolAddressPhoneNumber_Stamp" ON "edfi"."SchoolAddressPhoneNumber";
 CREATE TRIGGER "TR_SchoolAddressPhoneNumber_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."SchoolAddressPhoneNumber"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."SchoolAddressPhoneNumber"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPhoneNumber_Stamp"();
 
