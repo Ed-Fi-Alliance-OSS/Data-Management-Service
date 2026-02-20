@@ -280,9 +280,12 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_not_emit_total_count_sql_when_not_requested()
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_not_emit_total_count_sql_when_not_requested(SqlDialect dialect)
     {
-        var plan = _compiler.Compile(CreateSpec([], []));
+        var compiler = new PageDocumentIdSqlCompiler(dialect);
+        var plan = compiler.Compile(CreateSpec([], []));
 
         plan.TotalCountSql.Should().BeNull();
     }
@@ -335,6 +338,14 @@ public class Given_PageDocumentIdSqlCompiler
         var act = () => _compiler.Compile(CreateSpec([], [], offsetParameterName: "1; DROP TABLE foo--"));
 
         act.Should().Throw<ArgumentException>().WithParameterName("OffsetParameterName");
+    }
+
+    [Test]
+    public void It_should_reject_limit_parameter_names_that_are_not_safe_to_emit()
+    {
+        var act = () => _compiler.Compile(CreateSpec([], [], limitParameterName: "1; DROP TABLE foo--"));
+
+        act.Should().Throw<ArgumentException>().WithParameterName("LimitParameterName");
     }
 
     private static PageDocumentIdQuerySpec CreateSpec(
