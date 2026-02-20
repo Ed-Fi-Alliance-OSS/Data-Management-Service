@@ -185,7 +185,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
                     superclassIdentityElements =
                     [
-                        new IdentityElementMapping(identityElements[0].Column, superclassIdentityJsonPath),
+                        new IdentityElementMapping(
+                            identityElements[0].Column,
+                            superclassIdentityJsonPath,
+                            identityElements[0].ScalarType
+                        ),
                     ];
                 }
                 else
@@ -637,6 +641,11 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             resource
         );
 
+        // Build a column-name-to-scalar-type lookup for type-aware identity hash formatting.
+        var columnScalarTypes = rootTable
+            .Columns.Where(c => c.ScalarType is not null)
+            .ToDictionary(c => c.ColumnName.Value, c => c.ScalarType!, StringComparer.Ordinal);
+
         HashSet<string> seenColumns = new(StringComparer.Ordinal);
         List<IdentityElementMapping> mappings = new(builderContext.IdentityJsonPaths.Count);
 
@@ -655,7 +664,18 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 {
                     if (seenColumns.Add(col.Value))
                     {
-                        mappings.Add(new IdentityElementMapping(col, identityPath.Canonical));
+                        mappings.Add(
+                            new IdentityElementMapping(
+                                col,
+                                identityPath.Canonical,
+                                LookupColumnScalarType(
+                                    columnScalarTypes,
+                                    col,
+                                    identityPath.Canonical,
+                                    resource
+                                )
+                            )
+                        );
                     }
                 }
                 continue;
@@ -671,11 +691,42 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
             if (seenColumns.Add(columnName.Value))
             {
-                mappings.Add(new IdentityElementMapping(columnName, identityPath.Canonical));
+                mappings.Add(
+                    new IdentityElementMapping(
+                        columnName,
+                        identityPath.Canonical,
+                        LookupColumnScalarType(
+                            columnScalarTypes,
+                            columnName,
+                            identityPath.Canonical,
+                            resource
+                        )
+                    )
+                );
             }
         }
 
         return mappings.ToArray();
+    }
+
+    /// <summary>
+    /// Resolves the <see cref="RelationalScalarType"/> for a given column from the pre-built lookup.
+    /// </summary>
+    private static RelationalScalarType LookupColumnScalarType(
+        Dictionary<string, RelationalScalarType> columnScalarTypes,
+        DbColumnName column,
+        string identityPath,
+        QualifiedResourceName resource
+    )
+    {
+        if (!columnScalarTypes.TryGetValue(column.Value, out var scalarType))
+        {
+            throw new InvalidOperationException(
+                $"Identity column '{column.Value}' for path '{identityPath}' on resource "
+                    + $"'{FormatResource(resource)}' has no scalar type metadata."
+            );
+        }
+        return scalarType;
     }
 
     /// <summary>

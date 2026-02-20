@@ -119,7 +119,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiStudentSchoolAssociation' + N'$$.schoolReference.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + CAST(i.[StudentUniqueId] AS nvarchar(max)) + N'#' + N'$$.entryDate=' + CAST(i.[EntryDate] AS nvarchar(max))), i.[DocumentId], 2
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiStudentSchoolAssociation' + N'$$.schoolReference.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23)), i.[DocumentId], 2
         FROM inserted i;
     END
     ELSE IF (UPDATE([SchoolId]) OR UPDATE([StudentUniqueId]) OR UPDATE([EntryDate]))
@@ -132,7 +132,7 @@ BEGIN
         DELETE FROM [dms].[ReferentialIdentity]
         WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 2;
         INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiStudentSchoolAssociation' + N'$$.schoolReference.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + CAST(i.[StudentUniqueId] AS nvarchar(max)) + N'#' + N'$$.entryDate=' + CAST(i.[EntryDate] AS nvarchar(max))), i.[DocumentId], 2
+        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', N'Ed-FiStudentSchoolAssociation' + N'$$.schoolReference.schoolId=' + CAST(i.[SchoolId] AS nvarchar(max)) + N'#' + N'$$.studentReference.studentUniqueId=' + i.[StudentUniqueId] + N'#' + N'$$.entryDate=' + CONVERT(nvarchar(10), i.[EntryDate], 23)), i.[DocumentId], 2
         FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
     END
 END;

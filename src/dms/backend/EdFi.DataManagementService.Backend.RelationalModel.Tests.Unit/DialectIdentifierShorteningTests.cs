@@ -721,12 +721,24 @@ file sealed class TriggerParameterColumnFixturePass(TriggerParameterColumnIdenti
                     1,
                     "Ed-Fi",
                     "School",
-                    [new IdentityElementMapping(new DbColumnName(identifiers.IdentityColumn), "$.id")],
+                    [
+                        new IdentityElementMapping(
+                            new DbColumnName(identifiers.IdentityColumn),
+                            "$.id",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ],
                     new SuperclassAliasInfo(
                         2,
                         "Ed-Fi",
                         "EducationOrganization",
-                        [new IdentityElementMapping(new DbColumnName(identifiers.AliasColumn), "$.parentId")]
+                        [
+                            new IdentityElementMapping(
+                                new DbColumnName(identifiers.AliasColumn),
+                                "$.parentId",
+                                new RelationalScalarType(ScalarKind.Int32)
+                            ),
+                        ]
                     )
                 )
             )
