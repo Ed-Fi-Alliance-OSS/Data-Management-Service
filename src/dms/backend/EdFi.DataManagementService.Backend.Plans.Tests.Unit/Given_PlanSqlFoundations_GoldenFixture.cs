@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -19,7 +19,10 @@ public class Given_PlanSqlFoundations_GoldenFixture
     [SetUp]
     public void Setup()
     {
-        var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
+        );
         var expectedRoot = Path.Combine(
             projectRoot,
             "Fixtures",
@@ -44,7 +47,7 @@ public class Given_PlanSqlFoundations_GoldenFixture
             File.WriteAllText(Path.Combine(actualRoot, fileName), sql);
         }
 
-        if (ShouldUpdateGoldens())
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(expectedRoot);
 
@@ -65,7 +68,7 @@ public class Given_PlanSqlFoundations_GoldenFixture
                 .Should()
                 .BeTrue($"golden SQL fixture missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate.");
 
-            _diffByFileName[fileName] = RunGitDiff(expectedPath, actualPath);
+            _diffByFileName[fileName] = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
         }
     }
 
@@ -157,77 +160,6 @@ public class Given_PlanSqlFoundations_GoldenFixture
                 new DbColumnName("StudentUniqueId"),
             ],
             orderedParameterNames: ["schoolId", "schoolYear", "studentUniqueId"]
-        );
-    }
-
-    private static bool ShouldUpdateGoldens()
-    {
-        var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
-
-        return string.Equals(update, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string RunGitDiff(string expectedPath, string actualPath)
-    {
-        var startInfo = new ProcessStartInfo("git")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        startInfo.ArgumentList.Add("diff");
-        startInfo.ArgumentList.Add("--no-index");
-        startInfo.ArgumentList.Add("--ignore-space-at-eol");
-        startInfo.ArgumentList.Add("--ignore-cr-at-eol");
-        startInfo.ArgumentList.Add("--");
-        startInfo.ArgumentList.Add(expectedPath);
-        startInfo.ArgumentList.Add(actualPath);
-
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-        var errorTask = process.StandardError.ReadToEndAsync();
-        var output = process.StandardOutput.ReadToEnd();
-        process.WaitForExit();
-        var error = errorTask.Result;
-
-        if (process.ExitCode == 0)
-        {
-            return string.Empty;
-        }
-
-        if (process.ExitCode == 1)
-        {
-            return output;
-        }
-
-        return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
-    }
-
-    private static string FindProjectRoot(string startDirectory)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(startDirectory);
-
-        var directory = new DirectoryInfo(startDirectory);
-
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName,
-                "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
-            );
-
-            if (File.Exists(candidate))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj in parent directories."
         );
     }
 }

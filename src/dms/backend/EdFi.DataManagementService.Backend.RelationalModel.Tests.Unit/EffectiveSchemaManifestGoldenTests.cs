@@ -3,8 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
@@ -25,8 +25,9 @@ public class Given_A_Small_EffectiveSchemaInfo
     [SetUp]
     public void Setup()
     {
-        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
-            TestContext.CurrentContext.TestDirectory
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
         );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema.manifest.json");
@@ -42,7 +43,7 @@ public class Given_A_Small_EffectiveSchemaInfo
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
 
-        if (EffectiveSchemaManifestGoldenHelpers.ShouldUpdateGoldens())
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
             File.WriteAllText(expectedPath, manifest);
@@ -54,7 +55,7 @@ public class Given_A_Small_EffectiveSchemaInfo
                 $"effective-schema manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
             );
 
-        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
     /// <summary>
@@ -84,8 +85,9 @@ public class Given_A_Small_EffectiveSchemaInfo_Without_ResourceKeys
     [SetUp]
     public void Setup()
     {
-        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
-            TestContext.CurrentContext.TestDirectory
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
         );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema-no-keys.manifest.json");
@@ -101,7 +103,7 @@ public class Given_A_Small_EffectiveSchemaInfo_Without_ResourceKeys
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
 
-        if (EffectiveSchemaManifestGoldenHelpers.ShouldUpdateGoldens())
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
             File.WriteAllText(expectedPath, manifest);
@@ -113,7 +115,7 @@ public class Given_A_Small_EffectiveSchemaInfo_Without_ResourceKeys
                 $"effective-schema no-keys manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
             );
 
-        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
     /// <summary>
@@ -143,8 +145,9 @@ public class Given_A_Small_EffectiveSchemaInfo_With_Default_Parameters
     [SetUp]
     public void Setup()
     {
-        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
-            TestContext.CurrentContext.TestDirectory
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
         );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema-no-keys.manifest.json");
@@ -166,7 +169,7 @@ public class Given_A_Small_EffectiveSchemaInfo_With_Default_Parameters
                 $"effective-schema no-keys manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
             );
 
-        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
     /// <summary>
@@ -197,8 +200,9 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
     [SetUp]
     public void Setup()
     {
-        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
-            TestContext.CurrentContext.TestDirectory
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
         );
         var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
             TestContext.CurrentContext.TestDirectory
@@ -237,7 +241,7 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
 
-        if (EffectiveSchemaManifestGoldenHelpers.ShouldUpdateGoldens())
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
             File.WriteAllText(expectedPath, manifest);
@@ -249,7 +253,7 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
                 $"authoritative effective-schema manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
             );
 
-        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
     /// <summary>
@@ -280,8 +284,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
     [SetUp]
     public void Setup()
     {
-        var projectRoot = EffectiveSchemaManifestGoldenHelpers.FindProjectRoot(
-            TestContext.CurrentContext.TestDirectory
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
         );
         var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
             TestContext.CurrentContext.TestDirectory
@@ -337,7 +342,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
 
-        if (EffectiveSchemaManifestGoldenHelpers.ShouldUpdateGoldens())
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
             File.WriteAllText(expectedPath, manifest);
@@ -349,7 +354,7 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
                 $"authoritative effective-schema manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
             );
 
-        _diffOutput = EffectiveSchemaManifestGoldenHelpers.RunGitDiff(expectedPath, actualPath);
+        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
     /// <summary>
@@ -484,77 +489,6 @@ file static class EffectiveSchemaManifestGoldenHelpers
             SchemaComponentsInEndpointOrder: schemaComponents,
             ResourceKeysInIdOrder: resourceKeys
         );
-    }
-
-    public static string FindProjectRoot(string startDirectory)
-    {
-        var directory = new DirectoryInfo(startDirectory);
-
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName,
-                "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
-            );
-            if (File.Exists(candidate))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
-        );
-    }
-
-    public static string RunGitDiff(string expectedPath, string actualPath)
-    {
-        var startInfo = new ProcessStartInfo("git")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        startInfo.ArgumentList.Add("diff");
-        startInfo.ArgumentList.Add("--no-index");
-        startInfo.ArgumentList.Add("--ignore-space-at-eol");
-        startInfo.ArgumentList.Add("--ignore-cr-at-eol");
-        startInfo.ArgumentList.Add("--");
-        startInfo.ArgumentList.Add(expectedPath);
-        startInfo.ArgumentList.Add(actualPath);
-
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-
-        // Read both streams asynchronously to avoid deadlock when one stream's buffer fills
-        var outputTask = process.StandardOutput.ReadToEndAsync();
-        var errorTask = process.StandardError.ReadToEndAsync();
-        process.WaitForExit();
-        var output = outputTask.Result;
-        var error = errorTask.Result;
-
-        if (process.ExitCode == 0)
-        {
-            return string.Empty;
-        }
-
-        if (process.ExitCode == 1)
-        {
-            return output;
-        }
-
-        return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
-    }
-
-    public static bool ShouldUpdateGoldens()
-    {
-        var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
-
-        return string.Equals(update, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public static JsonObject LoadProjectSchema(string path)
