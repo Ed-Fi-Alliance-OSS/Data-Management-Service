@@ -947,13 +947,14 @@ Alignment note:
 - SQL Server scalar types intentionally match Ed-Fi ODS SQL Server conventions (authoritative DDL uses `NVARCHAR`, `DATETIME2(7)`, `TIME(7)`, and `DATE`).
 
 Rules:
-- Scalar strings must have `maxLength`; missing `maxLength` is an error.
+- Scalar strings should have `maxLength`. When `maxLength` is omitted, PostgreSQL emits `varchar` (unbounded) and SQL Server emits `nvarchar(max)`.
 - Decimals must have `(totalDigits, decimalPlaces)` from `decimalPropertyValidationInfos`; missing info is an error.
 - `date-time` values are treated as UTC instants at the application boundary. SQL Server storage uses `datetime2(7)` (no offset), so any incoming offset is normalized to UTC at write time.
 
 | ApiSchema JSON schema | PostgreSQL type | SQL Server type |
 | --- | --- | --- |
-| `type: "string"` (no `format`) | `varchar(n)` | `nvarchar(n)` |
+| `type: "string"` (no `format`, with `maxLength`) | `varchar(n)` | `nvarchar(n)` |
+| `type: "string"` (no `format`, no `maxLength`) | `varchar` | `nvarchar(max)` |
 | `type: "string", format: "date"` | `date` | `date` |
 | `type: "string", format: "time"` | `time` | `time(7)` |
 | `type: "string", format: "date-time"` | `timestamp with time zone` | `datetime2(7)` |
