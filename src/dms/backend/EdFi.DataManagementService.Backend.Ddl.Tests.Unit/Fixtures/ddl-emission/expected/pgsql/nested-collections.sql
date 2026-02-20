@@ -132,10 +132,12 @@ EXECUTE FUNCTION "edfi"."TF_TR_SchoolAddressPhoneNumber_Stamp"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
 RETURNS TRIGGER AS $$
 BEGIN
-    DELETE FROM "dms"."ReferentialIdentity"
-    WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-    INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-    VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 1);
+    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
+        DELETE FROM "dms"."ReferentialIdentity"
+        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
+        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
+        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 1);
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
