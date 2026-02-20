@@ -598,9 +598,18 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
             foreach (var derivation in identityDerivations)
             {
+                var sourceColumnName = derivation.MemberSourceColumnsInMemberOrder[memberIndex];
+
+                // Look up the source column's scalar type from the concrete member table
+                // so the emitter can emit an explicit CAST when it differs from the canonical type.
+                var sourceColumnModel = member.Model.Root.Columns.FirstOrDefault(c =>
+                    c.ColumnName == sourceColumnName
+                );
+
                 projections.Add(
                     new AbstractUnionViewProjectionExpression.SourceColumn(
-                        derivation.MemberSourceColumnsInMemberOrder[memberIndex]
+                        sourceColumnName,
+                        sourceColumnModel?.ScalarType
                     )
                 );
             }
