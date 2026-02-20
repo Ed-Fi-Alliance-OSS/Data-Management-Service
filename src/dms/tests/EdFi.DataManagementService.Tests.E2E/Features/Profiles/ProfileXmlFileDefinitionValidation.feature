@@ -85,7 +85,7 @@ Feature: Profile XML File Definition Validation
                       ]
                   }
                   """
-             Then the profile response status is 406
+             Then the profile response status is 415
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
 
         Scenario: 04 Profile with non-existent property from XML file is rejected on write
@@ -112,5 +112,5 @@ Feature: Profile XML File Definition Validation
                       ]
                   }
                   """
-             Then the profile response status is 406
+             Then the profile response status is 415
               And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"

@@ -194,6 +194,7 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Response Filtering")]
     [Scope(Feature = "Profile Resolution")]
     [Scope(Feature = "Profile Header Validation")]
+    [Scope(Feature = "Multi-Resource Profile Usage")]
     [Scope(Feature = "Profile Collection Item Filtering")]
     [Scope(Feature = "Profile Extension Filtering")]
     [Scope(Feature = "Profile Write Filtering")]
