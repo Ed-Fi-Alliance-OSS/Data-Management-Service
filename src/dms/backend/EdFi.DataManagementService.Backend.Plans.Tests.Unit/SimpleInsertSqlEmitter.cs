@@ -39,8 +39,9 @@ public sealed class SimpleInsertSqlEmitter(SqlDialect dialect)
 
         if (orderedColumns.Count != orderedParameterNames.Count)
         {
-            throw new InvalidOperationException(
-                $"Column and parameter counts must match. Column count: {orderedColumns.Count}. Parameter count: {orderedParameterNames.Count}."
+            throw new ArgumentException(
+                $"Column and parameter counts must match. Column count: {orderedColumns.Count}. Parameter count: {orderedParameterNames.Count}.",
+                nameof(orderedParameterNames)
             );
         }
 

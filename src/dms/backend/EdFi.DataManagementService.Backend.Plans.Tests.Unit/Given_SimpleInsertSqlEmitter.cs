@@ -93,8 +93,11 @@ public class Given_SimpleInsertSqlEmitter
             );
 
         act.Should()
-            .Throw<InvalidOperationException>()
-            .WithMessage("Column and parameter counts must match. Column count: 2. Parameter count: 1.");
+            .Throw<ArgumentException>()
+            .WithMessage(
+                "Column and parameter counts must match. Column count: 2. Parameter count: 1. (Parameter 'orderedParameterNames')"
+            )
+            .WithParameterName("orderedParameterNames");
     }
 
     [Test]
