@@ -318,15 +318,45 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the ordered set of root identity projection columns by delegating to
-    /// <see cref="BuildIdentityElementMappings"/> and projecting just the column names.
+    /// Builds the ordered set of root identity projection columns for MSSQL <c>UPDATE()</c> guards
+    /// and PostgreSQL <c>IS DISTINCT FROM</c> comparisons. These columns must be physically stored
+    /// (writable) columns because SQL Server rejects <c>UPDATE(computedCol)</c> at trigger creation
+    /// time (Msg 2114). Under key unification, identity binding columns may be persisted computed
+    /// aliases; this method resolves each to its canonical storage column and de-duplicates.
     /// </summary>
     private static IReadOnlyList<DbColumnName> BuildRootIdentityProjectionColumns(
         RelationalResourceModel resourceModel,
         RelationalModelBuilderContext builderContext,
         QualifiedResourceName resource
-    ) =>
-        BuildIdentityElementMappings(resourceModel, builderContext, resource).Select(e => e.Column).ToArray();
+    )
+    {
+        var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
+
+        if (identityElements.Count == 0)
+        {
+            return [];
+        }
+
+        var rootTable = resourceModel.Root;
+
+        // Resolve each identity element column to its canonical stored column.
+        // Under key unification, binding columns may be unified aliases (computed);
+        // UPDATE() guards and IS DISTINCT FROM comparisons must reference stored columns.
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        List<DbColumnName> storedColumns = new(identityElements.Count);
+
+        foreach (var element in identityElements)
+        {
+            var resolved = ResolveToStoredColumn(element.Column, rootTable, resource);
+
+            if (seen.Add(resolved.Value))
+            {
+                storedColumns.Add(resolved);
+            }
+        }
+
+        return storedColumns.ToArray();
+    }
 
     /// <summary>
     /// Helper record for reverse reference index entries.
@@ -387,11 +417,16 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
                 triggerTable = concreteModel.RelationalModel.Root.Table;
 
-                // Identity projection columns from the root table.
-                identityProjectionColumns = concreteModel
-                    .RelationalModel.Root.Columns.Where(c => c.SourceJsonPath is not null)
-                    .Select(c => c.ColumnName)
-                    .ToArray();
+                // Identity projection columns from the root table, resolved to stored columns.
+                // Under key unification, some identity columns may be unified aliases (computed);
+                // SQL Server rejects UPDATE() on computed columns (Msg 2114).
+                identityProjectionColumns = ResolveColumnsToStored(
+                    concreteModel
+                        .RelationalModel.Root.Columns.Where(c => c.SourceJsonPath is not null)
+                        .Select(c => c.ColumnName),
+                    concreteModel.RelationalModel.Root,
+                    targetResource
+                );
             }
             else
             {
@@ -795,5 +830,65 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     private static string BuildTriggerName(DbTableName table, string purposeToken)
     {
         return $"TR_{table.Name}_{purposeToken}";
+    }
+
+    /// <summary>
+    /// Resolves a sequence of column names to their canonical stored columns, de-duplicating
+    /// by canonical column name. Convenience wrapper around <see cref="ResolveToStoredColumn"/>.
+    /// </summary>
+    private static IReadOnlyList<DbColumnName> ResolveColumnsToStored(
+        IEnumerable<DbColumnName> columns,
+        DbTableModel table,
+        QualifiedResourceName resource
+    )
+    {
+        HashSet<string> seen = new(StringComparer.Ordinal);
+        List<DbColumnName> result = [];
+
+        foreach (var column in columns)
+        {
+            var resolved = ResolveToStoredColumn(column, table, resource);
+
+            if (seen.Add(resolved.Value))
+            {
+                result.Add(resolved);
+            }
+        }
+
+        return result.ToArray();
+    }
+
+    /// <summary>
+    /// Resolves a column name to its canonical stored column. If the column is a unified alias
+    /// (persisted computed column), returns the canonical storage column; otherwise returns the
+    /// column itself.
+    /// </summary>
+    /// <remarks>
+    /// This is required for MSSQL trigger guards (<c>UPDATE()</c>) and propagation targets
+    /// (<c>SET r.[col]</c>), which SQL Server rejects for computed columns
+    /// (Msg 2114 and Msg 271 respectively).
+    /// </remarks>
+    private static DbColumnName ResolveToStoredColumn(
+        DbColumnName column,
+        DbTableModel table,
+        QualifiedResourceName resource
+    )
+    {
+        var columnModel = table.Columns.FirstOrDefault(c => c.ColumnName == column);
+
+        if (columnModel is null)
+        {
+            throw new InvalidOperationException(
+                $"Trigger derivation for resource '{FormatResource(resource)}': column "
+                    + $"'{column.Value}' not found on table "
+                    + $"'{table.Table.Schema.Value}.{table.Table.Name}'."
+            );
+        }
+
+        return columnModel.Storage switch
+        {
+            ColumnStorage.UnifiedAlias alias => alias.CanonicalColumn,
+            _ => columnModel.ColumnName,
+        };
     }
 }
