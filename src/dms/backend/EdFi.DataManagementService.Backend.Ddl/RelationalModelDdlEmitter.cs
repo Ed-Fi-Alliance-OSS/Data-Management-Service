@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -675,7 +676,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(" AND ");
         writer.Append(Quote(new DbColumnName("ResourceKeyId")));
         writer.Append(" = ");
-        writer.Append(resourceKeyId.ToString());
+        writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.AppendLine(";");
 
         // INSERT new row with UUIDv5
@@ -702,7 +703,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("), NEW.");
         writer.Append(Quote(new DbColumnName("DocumentId")));
         writer.Append(", ");
-        writer.Append(resourceKeyId.ToString());
+        writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.AppendLine(");");
     }
 
@@ -863,7 +864,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(") AND ");
         writer.Append(Quote(new DbColumnName("ResourceKeyId")));
         writer.Append(" = ");
-        writer.Append(resourceKeyId.ToString());
+        writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.AppendLine(";");
 
         // INSERT new rows with UUIDv5 — always join back to 'inserted' for column values
@@ -891,7 +892,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("), i.");
         writer.Append(documentIdCol);
         writer.Append(", ");
-        writer.AppendLine(resourceKeyId.ToString());
+        writer.AppendLine(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.Append("FROM inserted i");
         if (sourceAlias != "inserted")
         {
