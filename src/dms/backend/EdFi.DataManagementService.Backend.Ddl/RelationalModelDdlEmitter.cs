@@ -308,6 +308,33 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("BEGIN");
         using (writer.Indent())
         {
+            // DocumentStamping triggers fire on DELETE as well. On DELETE there is no NEW row,
+            // so we bump ContentVersion via OLD, return OLD, and skip the normal body.
+            if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
+            {
+                var deleteKeyColumn = trigger.KeyColumns[0];
+                writer.AppendLine("IF TG_OP = 'DELETE' THEN");
+                using (writer.Indent())
+                {
+                    writer.Append("UPDATE ");
+                    writer.AppendLine(Quote(DmsTableNames.Document));
+                    writer.Append("SET ");
+                    writer.Append(Quote(new DbColumnName("ContentVersion")));
+                    writer.Append(" = nextval('");
+                    writer.Append(FormatSequenceName());
+                    writer.Append("'), ");
+                    writer.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+                    writer.AppendLine(" = now()");
+                    writer.Append("WHERE ");
+                    writer.Append(Quote(new DbColumnName("DocumentId")));
+                    writer.Append(" = OLD.");
+                    writer.Append(Quote(deleteKeyColumn));
+                    writer.AppendLine(";");
+                    writer.AppendLine("RETURN OLD;");
+                }
+                writer.AppendLine("END IF;");
+            }
+
             EmitTriggerBody(writer, trigger);
             writer.AppendLine("RETURN NEW;");
         }
@@ -321,7 +348,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(_dialect.DropTriggerIfExists(trigger.Table, trigger.Name.Value));
         writer.Append("CREATE TRIGGER ");
         writer.AppendLine(Quote(trigger.Name));
-        writer.Append("BEFORE INSERT OR UPDATE ON ");
+
+        // DocumentStamping triggers must also fire on DELETE so that change-event consumers
+        // detect document removal via a bumped ContentVersion.
+        var pgsqlTriggerEvent =
+            trigger.Parameters is TriggerKindParameters.DocumentStamping
+                ? "BEFORE INSERT OR UPDATE OR DELETE ON "
+                : "BEFORE INSERT OR UPDATE ON ";
+        writer.Append(pgsqlTriggerEvent);
         writer.AppendLine(Quote(trigger.Table));
         writer.AppendLine("FOR EACH ROW");
         writer.Append("EXECUTE FUNCTION ");
@@ -345,11 +379,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(Quote(trigger.Name));
         writer.Append("ON ");
         writer.AppendLine(Quote(trigger.Table));
-        writer.AppendLine(
-            trigger.Parameters is TriggerKindParameters.IdentityPropagationFallback
-                ? "AFTER UPDATE"
-                : "AFTER INSERT, UPDATE"
-        );
+        var mssqlTriggerEvent = trigger.Parameters switch
+        {
+            TriggerKindParameters.IdentityPropagationFallback => "AFTER UPDATE",
+            TriggerKindParameters.DocumentStamping => "AFTER INSERT, UPDATE, DELETE",
+            _ => "AFTER INSERT, UPDATE",
+        };
+        writer.AppendLine(mssqlTriggerEvent);
         writer.AppendLine("AS");
         writer.AppendLine("BEGIN");
         using (writer.Indent())
@@ -484,7 +520,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         DbColumnName keyColumn
     )
     {
-        // ContentVersion stamp
+        // ContentVersion stamp — use a CTE that unions inserted and deleted so that
+        // INSERT, UPDATE, and DELETE all bump the version.
+        var quotedKeyColumn = Quote(keyColumn);
+        writer.Append(";WITH affectedDocs AS (SELECT ");
+        writer.Append(quotedKeyColumn);
+        writer.Append(" FROM inserted UNION SELECT ");
+        writer.Append(quotedKeyColumn);
+        writer.AppendLine(" FROM deleted)");
         writer.AppendLine("UPDATE d");
         writer.Append("SET d.");
         writer.Append(Quote(new DbColumnName("ContentVersion")));
@@ -496,10 +539,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("FROM ");
         writer.Append(documentTable);
         writer.AppendLine(" d");
-        writer.Append("INNER JOIN inserted i ON d.");
+        writer.Append("INNER JOIN affectedDocs a ON d.");
         writer.Append(Quote(new DbColumnName("DocumentId")));
-        writer.Append(" = i.");
-        writer.Append(Quote(keyColumn));
+        writer.Append(" = a.");
+        writer.Append(quotedKeyColumn);
         writer.AppendLine(";");
 
         // IdentityVersion stamp for root tables with identity projection columns

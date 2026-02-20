@@ -37,6 +37,12 @@ CREATE INDEX IF NOT EXISTS "edfi"."IX_Enrollment_SchoolId" ON "edfi"."Enrollment
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -51,13 +57,19 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
 CREATE TRIGGER "TR_School_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_Enrollment_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -72,7 +84,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_Enrollment_Stamp" ON "edfi"."Enrollment";
 CREATE TRIGGER "TR_Enrollment_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."Enrollment"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."Enrollment"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_Enrollment_Stamp"();
 

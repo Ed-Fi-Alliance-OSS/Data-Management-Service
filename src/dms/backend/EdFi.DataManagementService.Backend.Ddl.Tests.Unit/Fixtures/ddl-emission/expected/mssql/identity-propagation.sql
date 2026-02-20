@@ -34,14 +34,15 @@ ON UPDATE NO ACTION;
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_School_Stamp]
 ON [edfi].[School]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
-    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]))
     BEGIN
         UPDATE d
@@ -70,14 +71,15 @@ END;
 GO
 CREATE OR ALTER TRIGGER [edfi].[TR_StudentSchoolAssociation_Stamp]
 ON [edfi].[StudentSchoolAssociation]
-AFTER INSERT, UPDATE
+AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
+    ;WITH affectedDocs AS (SELECT [DocumentId] FROM inserted UNION SELECT [DocumentId] FROM deleted)
     UPDATE d
     SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
     FROM [dms].[Document] d
-    INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId];
+    INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM deleted) AND (UPDATE([SchoolId]) OR UPDATE([StudentUniqueId]) OR UPDATE([EntryDate]))
     BEGIN
         UPDATE d

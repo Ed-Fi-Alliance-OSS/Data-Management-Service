@@ -84,6 +84,12 @@ FROM "edfi"."LocalEducationAgency"
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -98,7 +104,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_Stamp" ON "edfi"."LocalEducationAgency";
 CREATE TRIGGER "TR_LocalEducationAgency_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 
@@ -143,6 +149,12 @@ EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
     UPDATE "dms"."Document"
     SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
     WHERE "DocumentId" = NEW."DocumentId";
@@ -157,7 +169,7 @@ $$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
 CREATE TRIGGER "TR_School_Stamp"
-BEFORE INSERT OR UPDATE ON "edfi"."School"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
