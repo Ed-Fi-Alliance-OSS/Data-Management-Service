@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -219,10 +220,10 @@ public abstract class SqlDialectBase : ISqlDialect
     public abstract string RenderStringLiteral(string value);
 
     /// <inheritdoc />
-    public virtual string RenderSmallintLiteral(short value) => value.ToString();
+    public virtual string RenderSmallintLiteral(short value) => value.ToString(CultureInfo.InvariantCulture);
 
     /// <inheritdoc />
-    public virtual string RenderIntegerLiteral(int value) => value.ToString();
+    public virtual string RenderIntegerLiteral(int value) => value.ToString(CultureInfo.InvariantCulture);
 
     /// <inheritdoc />
     public abstract string RenderComputedColumnDefinition(
