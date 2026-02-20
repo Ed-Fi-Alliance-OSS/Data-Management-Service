@@ -75,16 +75,31 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .ThenBy(predicate => predicate.ParameterName, StringComparer.Ordinal)
             .ToArray();
 
-        for (var index = 1; index < rewrittenPredicates.Length; index++)
+        for (var startIndex = 0; startIndex < rewrittenPredicates.Length; startIndex++)
         {
-            if (!HasDuplicateSortKey(rewrittenPredicates[index - 1], rewrittenPredicates[index]))
+            var endExclusiveIndex = startIndex + 1;
+
+            while (
+                endExclusiveIndex < rewrittenPredicates.Length
+                && HasDuplicateSemanticKey(
+                    rewrittenPredicates[startIndex],
+                    rewrittenPredicates[endExclusiveIndex]
+                )
+            )
             {
-                continue;
+                endExclusiveIndex++;
             }
 
-            throw new InvalidOperationException(
-                $"Duplicate predicate after unified alias rewrite for sort key ({FormatSortKey(rewrittenPredicates[index])})."
-            );
+            if (endExclusiveIndex - startIndex > 1)
+            {
+                throw CreateDuplicateSemanticPredicateException(
+                    rewrittenPredicates,
+                    startIndex,
+                    endExclusiveIndex
+                );
+            }
+
+            startIndex = endExclusiveIndex - 1;
         }
 
         return rewrittenPredicates;
@@ -110,6 +125,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         {
             return new RewrittenPredicate(
                 predicate.Column,
+                predicate.Column,
                 null,
                 predicate.Operator,
                 predicate.ParameterName
@@ -117,6 +133,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         }
 
         return new RewrittenPredicate(
+            predicate.Column,
             mapping.CanonicalColumn,
             mapping.PresenceColumn,
             predicate.Operator,
@@ -282,9 +299,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Formats the duplicate-detection sort key.
+    /// Formats the duplicate-detection semantic key.
     /// </summary>
-    private static string FormatSortKey(RewrittenPredicate predicate)
+    private static string FormatSemanticKey(RewrittenPredicate predicate)
     {
         var presenceColumn = predicate.PresenceColumn?.Value ?? "<none>";
 
@@ -294,12 +311,11 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 $"presenceColumn='{presenceColumn}'",
                 $"canonicalColumn='{predicate.CanonicalColumn.Value}'",
                 $"operator='{predicate.Operator}'",
-                $"parameterName='{predicate.ParameterName}'",
             ]
         );
     }
 
-    private static bool HasDuplicateSortKey(RewrittenPredicate left, RewrittenPredicate right)
+    private static bool HasDuplicateSemanticKey(RewrittenPredicate left, RewrittenPredicate right)
     {
         return string.Equals(
                 left.PresenceColumn?.Value ?? MissingPresenceColumnSortValue,
@@ -311,11 +327,41 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 right.CanonicalColumn.Value,
                 StringComparison.Ordinal
             )
-            && left.Operator == right.Operator
-            && string.Equals(left.ParameterName, right.ParameterName, StringComparison.Ordinal);
+            && left.Operator == right.Operator;
+    }
+
+    private static InvalidOperationException CreateDuplicateSemanticPredicateException(
+        IReadOnlyList<RewrittenPredicate> rewrittenPredicates,
+        int startIndex,
+        int endExclusiveIndex
+    )
+    {
+        var collidingOriginalColumns = new List<string>(endExclusiveIndex - startIndex);
+        var collidingParameterNames = new List<string>(endExclusiveIndex - startIndex);
+
+        for (var index = startIndex; index < endExclusiveIndex; index++)
+        {
+            collidingOriginalColumns.Add(rewrittenPredicates[index].OriginalColumn.Value);
+            collidingParameterNames.Add(rewrittenPredicates[index].ParameterName);
+        }
+
+        collidingOriginalColumns.Sort(StringComparer.Ordinal);
+        collidingParameterNames.Sort(StringComparer.Ordinal);
+
+        return new InvalidOperationException(
+            $"Duplicate predicate after unified alias rewrite for semantic key ({FormatSemanticKey(rewrittenPredicates[startIndex])}). "
+                + $"Colliding original columns: [{FormatCollisionValues(collidingOriginalColumns)}]. "
+                + $"Colliding parameter names: [{FormatCollisionValues(collidingParameterNames)}]."
+        );
+    }
+
+    private static string FormatCollisionValues(IReadOnlyList<string> values)
+    {
+        return string.Join(", ", values.Select(static value => $"'{value}'"));
     }
 
     private readonly record struct RewrittenPredicate(
+        DbColumnName OriginalColumn,
         DbColumnName CanonicalColumn,
         DbColumnName? PresenceColumn,
         QueryComparisonOperator Operator,
