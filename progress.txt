@@ -10,3 +10,9 @@ Decisions: kept scope to helper layer only (contracts unchanged for next task); 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Given_PlanSqlWriterExtensions.cs; tasks.json
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
 Blockers/notes: none. Next likely Contracts task (bare parameter names + optional total count SQL contract).
+2026-02-20
+Task: Contracts - bare parameter-name contracts + optional total-count SQL (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: made bare names canonical in contracts and compiler validation via PlanSqlWriterExtensions; kept compiler behavior same except render placeholders as @name and gate total-count SQL behind IncludeTotalCountSql.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdQueryModels.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Given_PageDocumentIdSqlCompiler.cs; tasks.json
+Feedback loops: dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass).
+Blockers/notes: none. Next likely Query Compiler task (SqlWriter/ISqlDialect internals + deterministic predicate ordering).

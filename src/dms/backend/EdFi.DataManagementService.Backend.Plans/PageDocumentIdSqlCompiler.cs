@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
-using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -29,8 +28,14 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(spec);
 
-        ValidateParameterName(spec.OffsetParameterName, nameof(spec.OffsetParameterName));
-        ValidateParameterName(spec.LimitParameterName, nameof(spec.LimitParameterName));
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            spec.OffsetParameterName,
+            nameof(spec.OffsetParameterName)
+        );
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            spec.LimitParameterName,
+            nameof(spec.LimitParameterName)
+        );
 
         var aliasMappingsByColumn = BuildAliasMappingLookup(spec.UnifiedAliasMappings);
         var whereClause = BuildWhereClause(spec.Predicates, aliasMappingsByColumn);
@@ -59,21 +64,27 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .Append(BuildPagingClause(spec.OffsetParameterName, spec.LimitParameterName))
             .Append(';');
 
-        var totalCountSql = new StringBuilder()
-            .Append("SELECT COUNT(1)")
-            .Append('\n')
-            .Append("FROM ")
-            .Append(quotedRootTable)
-            .Append(" r");
+        string? totalCountSql = null;
 
-        if (whereClause is not null)
+        if (spec.IncludeTotalCountSql)
         {
-            totalCountSql.Append('\n').Append("WHERE ").Append(whereClause);
+            var totalCountSqlBuilder = new StringBuilder()
+                .Append("SELECT COUNT(1)")
+                .Append('\n')
+                .Append("FROM ")
+                .Append(quotedRootTable)
+                .Append(" r");
+
+            if (whereClause is not null)
+            {
+                totalCountSqlBuilder.Append('\n').Append("WHERE ").Append(whereClause);
+            }
+
+            totalCountSqlBuilder.Append(';');
+            totalCountSql = totalCountSqlBuilder.ToString();
         }
 
-        totalCountSql.Append(';');
-
-        return new PageDocumentIdSqlPlan(pageSql.ToString(), totalCountSql.ToString());
+        return new PageDocumentIdSqlPlan(pageSql.ToString(), totalCountSql);
     }
 
     private const string DocumentIdColumnName = "DocumentId";
@@ -136,7 +147,10 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
         ArgumentNullException.ThrowIfNull(predicate);
         ArgumentNullException.ThrowIfNull(aliasMappingsByColumn);
 
-        ValidateParameterName(predicate.ParameterName, nameof(predicate.ParameterName));
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            predicate.ParameterName,
+            nameof(predicate.ParameterName)
+        );
 
         if (!aliasMappingsByColumn.TryGetValue(predicate.Column, out var mapping))
         {
@@ -173,7 +187,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
-        return $"r.{QuoteColumn(column)} {ToSqlOperator(@operator)} {parameterName}";
+        return $"r.{QuoteColumn(column)} {ToSqlOperator(@operator)} {ToParameterPlaceholder(parameterName)}";
     }
 
     /// <summary>
@@ -205,17 +219,25 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private string BuildPagingClause(string offsetParameterName, string limitParameterName)
     {
+        var offsetParameterPlaceholder = ToParameterPlaceholder(offsetParameterName);
+        var limitParameterPlaceholder = ToParameterPlaceholder(limitParameterName);
+
         return _dialect switch
         {
-            SqlDialect.Pgsql => $"LIMIT {limitParameterName} OFFSET {offsetParameterName}",
+            SqlDialect.Pgsql => $"LIMIT {limitParameterPlaceholder} OFFSET {offsetParameterPlaceholder}",
             SqlDialect.Mssql =>
-                $"OFFSET {offsetParameterName} ROWS FETCH NEXT {limitParameterName} ROWS ONLY",
+                $"OFFSET {offsetParameterPlaceholder} ROWS FETCH NEXT {limitParameterPlaceholder} ROWS ONLY",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(_dialect),
                 _dialect,
                 "Unsupported SQL dialect."
             ),
         };
+    }
+
+    private static string ToParameterPlaceholder(string parameterName)
+    {
+        return $"@{parameterName}";
     }
 
     /// <summary>
@@ -241,29 +263,4 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             ),
         };
     }
-
-    /// <summary>
-    /// Validates that a parameter name is safe to emit into SQL.
-    /// </summary>
-    private static void ValidateParameterName(string parameterName, string parameterNameArgumentName)
-    {
-        if (string.IsNullOrWhiteSpace(parameterName))
-        {
-            throw new ArgumentException(
-                "Parameter name cannot be null or whitespace.",
-                parameterNameArgumentName
-            );
-        }
-
-        if (!ParameterNameRegex().IsMatch(parameterName))
-        {
-            throw new ArgumentException(
-                "Parameter name must match pattern '^@[a-zA-Z_][a-zA-Z0-9_]*$'.",
-                parameterNameArgumentName
-            );
-        }
-    }
-
-    [GeneratedRegex("^@[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
-    private static partial Regex ParameterNameRegex();
 }
