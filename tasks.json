@@ -162,5 +162,31 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "SQL Foundations",
+    "description": "Deduplicate canonical multi-line `WHERE` emission between `PlanSqlWriterExtensions.AppendWhereClause(...)` and `PageDocumentIdSqlCompiler`. Acceptance: introduce a shared helper in `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs` that emits the canonical `WHERE` block layout (uppercase `WHERE`/`AND`, one predicate per line, stable indentation) while allowing callers to append predicate SQL without allocating intermediate predicate strings; refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs` to use the shared helper and remove its local `WHERE` layout duplication; emitted SQL remains byte-for-byte identical to existing goldens for both dialects.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "SQL Foundations",
+    "description": "Harden `PlanSqlWriterExtensions.AppendWhereClause(IReadOnlyList<string>)` against multi-line predicate fragments. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs` rejects any predicate string containing `\\r` or `\\n` by throwing a deterministic `ArgumentException`; add unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/` validating the failure behavior; existing formatting behavior for valid single-line predicates remains unchanged.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": false
+  },
+  {
+    "category": "Plan SQL",
+    "description": "Promote the simple insert SQL emitter out of the test assembly so it can be reused by future plan compilers. Acceptance: move `SimpleInsertSqlEmitter` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleInsertSqlEmitter.cs` into `src/dms/backend/EdFi.DataManagementService.Backend.Plans/` (keeping its public surface minimal and aligned with plan SQL foundations); update tests to reference the production emitter and delete the test-local implementation; golden fixture output remains unchanged and the solution builds warnings-as-errors clean.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": false
   }
 ]
