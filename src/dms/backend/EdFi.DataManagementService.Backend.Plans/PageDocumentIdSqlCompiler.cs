@@ -180,46 +180,53 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             return;
         }
 
-        var predicateSql = predicates.Select(BuildPredicateSql).ToArray();
-        writer.AppendWhereClause(predicateSql);
+        writer.AppendLine("WHERE");
+
+        using (writer.Indent())
+        {
+            for (var index = 0; index < predicates.Count; index++)
+            {
+                writer.Append(index == 0 ? "(" : "AND (");
+                AppendPredicateSql(writer, predicates[index]);
+                writer.AppendLine(")");
+            }
+        }
     }
 
     /// <summary>
-    /// Builds SQL for a single rewritten predicate.
+    /// Emits SQL for a single rewritten predicate.
     /// </summary>
-    private string BuildPredicateSql(RewrittenPredicate predicate)
+    private void AppendPredicateSql(SqlWriter writer, RewrittenPredicate predicate)
     {
-        var canonicalComparison = BuildComparisonSql(
-            predicate.CanonicalColumn,
-            predicate.Operator,
-            predicate.ParameterName
-        );
+        ArgumentNullException.ThrowIfNull(writer);
 
-        if (predicate.PresenceColumn is null)
+        if (predicate.PresenceColumn is not null)
         {
-            return canonicalComparison;
+            AppendIsNotNullSql(writer, predicate.PresenceColumn.Value);
+            writer.Append(" AND ");
         }
 
-        return $"{BuildIsNotNullSql(predicate.PresenceColumn.Value)} AND {canonicalComparison}";
+        AppendComparisonSql(writer, predicate.CanonicalColumn, predicate.Operator, predicate.ParameterName);
     }
 
     /// <summary>
-    /// Builds a simple binary comparison predicate against a table column.
+    /// Emits a simple binary comparison predicate against a table column.
     /// </summary>
-    private string BuildComparisonSql(
+    private void AppendComparisonSql(
+        SqlWriter writer,
         DbColumnName column,
         QueryComparisonOperator @operator,
         string parameterName
     )
     {
+        ArgumentNullException.ThrowIfNull(writer);
+
         if (@operator is QueryComparisonOperator.In)
         {
             throw new NotSupportedException(
                 $"Operator '{nameof(QueryComparisonOperator.In)}' is not supported by {nameof(PageDocumentIdSqlCompiler)}."
             );
         }
-
-        var writer = new SqlWriter(_sqlDialect, initialCapacity: 128);
 
         writer
             .Append("r.")
@@ -228,19 +235,15 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             .Append(ToSqlOperator(@operator))
             .Append(" ")
             .AppendParameter(parameterName);
-
-        return writer.ToString();
     }
 
     /// <summary>
-    /// Builds an <c>IS NOT NULL</c> predicate against a table column.
+    /// Emits an <c>IS NOT NULL</c> predicate against a table column.
     /// </summary>
-    private string BuildIsNotNullSql(DbColumnName column)
+    private static void AppendIsNotNullSql(SqlWriter writer, DbColumnName column)
     {
-        var writer = new SqlWriter(_sqlDialect, initialCapacity: 64);
+        ArgumentNullException.ThrowIfNull(writer);
         writer.Append("r.").AppendQuoted(column.Value).Append(" IS NOT NULL");
-
-        return writer.ToString();
     }
 
     /// <summary>

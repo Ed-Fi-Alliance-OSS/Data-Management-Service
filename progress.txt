@@ -88,3 +88,9 @@ Decisions: kept existing operator ordering semantics by replacing Enum.ToString 
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass).
 Blockers/notes: none. Remaining open tasks in tasks.json: Repository Hygiene, Query Compiler allocation reduction, Plans Tests consolidation.
+2026-02-20
+Task: Query Compiler - reduce WHERE-clause allocations by direct SqlWriter emission (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: emitted predicates directly into primary writer to remove intermediate string[] + per-predicate temporary SqlWriter; kept existing WHERE layout/parens/AND tokens so output remains byte-stable.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass); dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
+Blockers/notes: none. Next highest-priority open task appears Plans Tests consolidation across test project boundaries.
