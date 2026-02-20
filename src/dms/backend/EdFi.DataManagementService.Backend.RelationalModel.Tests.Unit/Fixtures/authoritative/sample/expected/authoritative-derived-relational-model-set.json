@@ -29899,8 +29899,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "ScoreRangeId"
       ],
       "resource_key_id": 25,
@@ -29932,8 +29932,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "ScoreRangeId"
       ]
     },
@@ -30236,7 +30236,7 @@
       "identity_projection_columns": [
         "AccountIdentifier",
         "EducationOrganization_EducationOrganizationId",
-        "FiscalYear"
+        "FiscalYear_Unified"
       ],
       "resource_key_id": 40,
       "project_name": "Ed-Fi",
@@ -30269,7 +30269,7 @@
       "identity_projection_columns": [
         "AccountIdentifier",
         "EducationOrganization_EducationOrganizationId",
-        "FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -31102,8 +31102,7 @@
       ],
       "identity_projection_columns": [
         "LocalCourseCode",
-        "School_SchoolId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ],
@@ -31145,8 +31144,7 @@
       ],
       "identity_projection_columns": [
         "LocalCourseCode",
-        "School_SchoolId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName"
       ]
@@ -32537,12 +32535,10 @@
         "GradeTypeDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodName",
-        "GradingPeriodGradingPeriod_SchoolId",
-        "GradingPeriodGradingPeriod_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "StudentSectionAssociation_BeginDate",
         "StudentSectionAssociation_LocalCourseCode",
-        "StudentSectionAssociation_SchoolId",
-        "StudentSectionAssociation_SchoolYear",
         "StudentSectionAssociation_SectionIdentifier",
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
@@ -32615,12 +32611,10 @@
         "GradeTypeDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
         "GradingPeriodGradingPeriod_GradingPeriodName",
-        "GradingPeriodGradingPeriod_SchoolId",
-        "GradingPeriodGradingPeriod_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "StudentSectionAssociation_BeginDate",
         "StudentSectionAssociation_LocalCourseCode",
-        "StudentSectionAssociation_SchoolId",
-        "StudentSectionAssociation_SchoolYear",
         "StudentSectionAssociation_SectionIdentifier",
         "StudentSectionAssociation_SessionName",
         "StudentSectionAssociation_StudentUniqueId"
@@ -33445,7 +33439,7 @@
       "identity_projection_columns": [
         "AccountIdentifier",
         "EducationOrganization_EducationOrganizationId",
-        "FiscalYear"
+        "FiscalYear_Unified"
       ],
       "resource_key_id": 164,
       "project_name": "Ed-Fi",
@@ -33478,7 +33472,7 @@
       "identity_projection_columns": [
         "AccountIdentifier",
         "EducationOrganization_EducationOrganizationId",
-        "FiscalYear"
+        "FiscalYear_Unified"
       ]
     },
     {
@@ -34082,8 +34076,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "IdentificationCode"
       ],
       "resource_key_id": 185,
@@ -34115,8 +34109,8 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "Assessment_AssessmentIdentifier",
-        "Assessment_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "IdentificationCode"
       ]
     },
@@ -34927,12 +34921,12 @@
       ],
       "identity_projection_columns": [
         "ProgramEvaluationElementTitle",
-        "ProgramEvaluation_ProgramEducationOrganizationId",
-        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-        "ProgramEvaluation_ProgramEvaluationTitle",
-        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-        "ProgramEvaluation_ProgramName",
-        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        "ProgramEducationOrganizationId_Unified",
+        "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+        "ProgramEvaluationTitle_Unified",
+        "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+        "ProgramName_Unified",
+        "ProgramTypeDescriptor_Unified_DescriptorId"
       ],
       "resource_key_id": 213,
       "project_name": "Ed-Fi",
@@ -34980,12 +34974,12 @@
       ],
       "identity_projection_columns": [
         "ProgramEvaluationElementTitle",
-        "ProgramEvaluation_ProgramEducationOrganizationId",
-        "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
-        "ProgramEvaluation_ProgramEvaluationTitle",
-        "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
-        "ProgramEvaluation_ProgramName",
-        "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId"
+        "ProgramEducationOrganizationId_Unified",
+        "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+        "ProgramEvaluationTitle_Unified",
+        "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+        "ProgramName_Unified",
+        "ProgramTypeDescriptor_Unified_DescriptorId"
       ]
     },
     {
@@ -35291,7 +35285,7 @@
       ],
       "identity_projection_columns": [
         "RestraintEventIdentifier",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Student_StudentUniqueId"
       ],
       "resource_key_id": 240,
@@ -35324,7 +35318,7 @@
       ],
       "identity_projection_columns": [
         "RestraintEventIdentifier",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Student_StudentUniqueId"
       ]
     },
@@ -35662,11 +35656,9 @@
       "identity_projection_columns": [
         "CalendarDate_CalendarCode",
         "CalendarDate_Date",
-        "CalendarDate_SchoolId",
-        "CalendarDate_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "Section_LocalCourseCode",
-        "Section_SchoolId",
-        "Section_SchoolYear",
         "Section_SectionIdentifier",
         "Section_SessionName"
       ],
@@ -35725,11 +35717,9 @@
       "identity_projection_columns": [
         "CalendarDate_CalendarCode",
         "CalendarDate_Date",
-        "CalendarDate_SchoolId",
-        "CalendarDate_SchoolYear",
+        "SchoolId_Unified",
+        "SchoolYear_Unified",
         "Section_LocalCourseCode",
-        "Section_SchoolId",
-        "Section_SchoolYear",
         "Section_SectionIdentifier",
         "Section_SessionName"
       ]
@@ -36186,7 +36176,7 @@
         "BeginDate",
         "EducationOrganization_EducationOrganizationId",
         "StaffClassificationDescriptor_DescriptorId",
-        "Staff_StaffUniqueId"
+        "StaffUniqueId_Unified"
       ],
       "resource_key_id": 271,
       "project_name": "Ed-Fi",
@@ -36224,7 +36214,7 @@
         "BeginDate",
         "EducationOrganization_EducationOrganizationId",
         "StaffClassificationDescriptor_DescriptorId",
-        "Staff_StaffUniqueId"
+        "StaffUniqueId_Unified"
       ]
     },
     {
@@ -36597,7 +36587,7 @@
       ],
       "identity_projection_columns": [
         "ProgramAssignmentDescriptor_DescriptorId",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Staff_StaffUniqueId"
       ],
       "resource_key_id": 278,
@@ -36630,7 +36620,7 @@
       ],
       "identity_projection_columns": [
         "ProgramAssignmentDescriptor_DescriptorId",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Staff_StaffUniqueId"
       ]
     },
@@ -37286,7 +37276,7 @@
         "AssessmentAdministration_AssigningEducationOrganizationId",
         "AssessmentAdministration_Namespace",
         "StudentEducationOrganizationAssociation_EducationOrganizationId",
-        "StudentEducationOrganizationAssociation_StudentUniqueId"
+        "StudentUniqueId_Unified"
       ],
       "resource_key_id": 286,
       "project_name": "Ed-Fi",
@@ -37334,7 +37324,7 @@
         "AssessmentAdministration_AssigningEducationOrganizationId",
         "AssessmentAdministration_Namespace",
         "StudentEducationOrganizationAssociation_EducationOrganizationId",
-        "StudentEducationOrganizationAssociation_StudentUniqueId"
+        "StudentUniqueId_Unified"
       ]
     },
     {
@@ -37373,13 +37363,11 @@
       ],
       "identity_projection_columns": [
         "AssessmentBatteryPart_AssessmentBatteryPartName",
-        "AssessmentBatteryPart_AssessmentIdentifier",
-        "AssessmentBatteryPart_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "StudentAssessmentRegistration_AdministrationIdentifier",
-        "StudentAssessmentRegistration_AssessmentIdentifier",
         "StudentAssessmentRegistration_AssigningEducationOrganizationId",
         "StudentAssessmentRegistration_EducationOrganizationId",
-        "StudentAssessmentRegistration_Namespace",
         "StudentAssessmentRegistration_StudentUniqueId"
       ],
       "resource_key_id": 287,
@@ -37436,13 +37424,11 @@
       ],
       "identity_projection_columns": [
         "AssessmentBatteryPart_AssessmentBatteryPartName",
-        "AssessmentBatteryPart_AssessmentIdentifier",
-        "AssessmentBatteryPart_Namespace",
+        "AssessmentIdentifier_Unified",
+        "Namespace_Unified",
         "StudentAssessmentRegistration_AdministrationIdentifier",
-        "StudentAssessmentRegistration_AssessmentIdentifier",
         "StudentAssessmentRegistration_AssigningEducationOrganizationId",
         "StudentAssessmentRegistration_EducationOrganizationId",
-        "StudentAssessmentRegistration_Namespace",
         "StudentAssessmentRegistration_StudentUniqueId"
       ]
     },
@@ -39782,7 +39768,7 @@
       ],
       "identity_projection_columns": [
         "EntryDate",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Student_StudentUniqueId"
       ],
       "resource_key_id": 310,
@@ -39815,7 +39801,7 @@
       ],
       "identity_projection_columns": [
         "EntryDate",
-        "School_SchoolId",
+        "SchoolId_Unified",
         "Student_StudentUniqueId"
       ]
     },
@@ -39856,8 +39842,7 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "School_SchoolId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName",
         "Student_StudentUniqueId"
@@ -39909,8 +39894,7 @@
       "identity_projection_columns": [
         "AttendanceEventCategoryDescriptor_DescriptorId",
         "EventDate",
-        "School_SchoolId",
-        "Session_SchoolId",
+        "SchoolId_Unified",
         "Session_SchoolYear",
         "Session_SessionName",
         "Student_StudentUniqueId"
@@ -41133,8 +41117,8 @@
       ],
       "identity_projection_columns": [
         "QuestionCode",
-        "Survey_Namespace",
-        "Survey_SurveyIdentifier"
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified"
       ],
       "resource_key_id": 327,
       "project_name": "Ed-Fi",
@@ -41166,8 +41150,8 @@
       ],
       "identity_projection_columns": [
         "QuestionCode",
-        "Survey_Namespace",
-        "Survey_SurveyIdentifier"
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified"
       ]
     },
     {
@@ -41193,11 +41177,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyQuestion_Namespace",
+        "Namespace_Unified",
         "SurveyQuestion_QuestionCode",
-        "SurveyQuestion_SurveyIdentifier",
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier"
       ],
       "resource_key_id": 328,
@@ -41241,11 +41223,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyQuestion_Namespace",
+        "Namespace_Unified",
         "SurveyQuestion_QuestionCode",
-        "SurveyQuestion_SurveyIdentifier",
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier"
       ]
     },
@@ -41589,11 +41569,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier",
-        "SurveySection_Namespace",
-        "SurveySection_SurveyIdentifier",
         "SurveySection_SurveySectionTitle"
       ],
       "resource_key_id": 334,
@@ -41637,11 +41615,9 @@
         "DocumentId"
       ],
       "identity_projection_columns": [
-        "SurveyResponse_Namespace",
-        "SurveyResponse_SurveyIdentifier",
+        "Namespace_Unified",
+        "SurveyIdentifier_Unified",
         "SurveyResponse_SurveyResponseIdentifier",
-        "SurveySection_Namespace",
-        "SurveySection_SurveyIdentifier",
         "SurveySection_SurveySectionTitle"
       ]
     },
