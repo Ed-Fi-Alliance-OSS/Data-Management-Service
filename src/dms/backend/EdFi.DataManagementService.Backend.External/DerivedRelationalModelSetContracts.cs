@@ -154,7 +154,13 @@ public abstract record AbstractUnionViewProjectionExpression
     /// Projects a source column from the arm's <see cref="AbstractUnionViewArm.FromTable"/>.
     /// </summary>
     /// <param name="ColumnName">The concrete source column.</param>
-    public sealed record SourceColumn(DbColumnName ColumnName) : AbstractUnionViewProjectionExpression;
+    /// <param name="SourceType">
+    /// The source column's scalar type on the concrete member table. When provided and different
+    /// from the view's canonical output type, the emitter wraps the column in an explicit CAST
+    /// to ensure cross-member type normalization in the <c>UNION ALL</c>.
+    /// </param>
+    public sealed record SourceColumn(DbColumnName ColumnName, RelationalScalarType? SourceType = null)
+        : AbstractUnionViewProjectionExpression;
 
     /// <summary>
     /// Projects a string literal.

@@ -1375,7 +1375,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         switch (expr)
         {
             case AbstractUnionViewProjectionExpression.SourceColumn sourceCol:
-                writer.Append(Quote(sourceCol.ColumnName));
+                if (sourceCol.SourceType is not null && sourceCol.SourceType != targetType)
+                {
+                    EmitColumnWithCast(writer, sourceCol.ColumnName, targetType);
+                }
+                else
+                {
+                    writer.Append(Quote(sourceCol.ColumnName));
+                }
                 break;
 
             case AbstractUnionViewProjectionExpression.StringLiteral literal:
@@ -1412,6 +1419,36 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("CAST(N'");
             writer.Append(EscapeSqlLiteral(value));
             writer.Append("' AS ");
+            writer.Append(sqlType);
+            writer.Append(")");
+        }
+    }
+
+    /// <summary>
+    /// Emits a column reference with a dialect-specific CAST to the target type.
+    /// Used when a source column's type differs from the view's canonical output type.
+    /// </summary>
+    private void EmitColumnWithCast(
+        SqlWriter writer,
+        DbColumnName columnName,
+        RelationalScalarType targetType
+    )
+    {
+        var sqlType = _dialect.RenderColumnType(targetType);
+
+        if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
+        {
+            // PostgreSQL: "ColumnName"::type
+            writer.Append(Quote(columnName));
+            writer.Append("::");
+            writer.Append(sqlType);
+        }
+        else
+        {
+            // SQL Server: CAST([ColumnName] AS type)
+            writer.Append("CAST(");
+            writer.Append(Quote(columnName));
+            writer.Append(" AS ");
             writer.Append(sqlType);
             writer.Append(")");
         }
