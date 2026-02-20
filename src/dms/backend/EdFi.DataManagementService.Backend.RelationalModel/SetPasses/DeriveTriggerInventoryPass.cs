@@ -261,6 +261,63 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
+    /// Resolves a reference-bearing identity path to its locally stored identity-part columns
+    /// (from <see cref="DocumentReferenceBinding.IdentityBindings"/>). Returns <c>null</c> if the
+    /// path does not match a reference binding, allowing the caller to fall through to direct
+    /// column lookup.
+    /// </summary>
+    private static IReadOnlyList<DbColumnName>? ResolveReferenceIdentityPartColumns(
+        string canonicalPath,
+        IReadOnlyDictionary<string, DocumentReferenceBinding> referenceBindingsByIdentityPath,
+        DbTableName rootTable,
+        QualifiedResourceName resource
+    )
+    {
+        if (!referenceBindingsByIdentityPath.TryGetValue(canonicalPath, out var binding))
+        {
+            return null;
+        }
+
+        if (binding.Table != rootTable)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
+                    + "must bind to the root table when resolving reference identity-part columns."
+            );
+        }
+
+        if (!binding.IsIdentityComponent)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
+                    + "mapped to a non-identity reference binding."
+            );
+        }
+
+        if (binding.IdentityBindings.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
+                    + "mapped to a reference binding with no identity-part columns."
+            );
+        }
+
+        var identityBindingsForPath = binding
+            .IdentityBindings.Where(ib => ib.ReferenceJsonPath.Canonical == canonicalPath)
+            .ToArray();
+
+        if (identityBindingsForPath.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Identity path '{canonicalPath}' on resource '{FormatResource(resource)}' "
+                    + "did not resolve to a local identity-part column."
+            );
+        }
+
+        return identityBindingsForPath.Select(ib => ib.Column).ToArray();
+    }
+
+    /// <summary>
     /// Builds the ordered set of root identity projection columns by resolving
     /// <c>identityJsonPaths</c> to physical column names. For identity-component references, this
     /// projects locally stored identity-part columns (from
@@ -290,51 +347,19 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
         foreach (var identityPath in builderContext.IdentityJsonPaths)
         {
-            if (referenceBindingsByIdentityPath.TryGetValue(identityPath.Canonical, out var binding))
+            var identityPartColumns = ResolveReferenceIdentityPartColumns(
+                identityPath.Canonical,
+                referenceBindingsByIdentityPath,
+                rootTable.Table,
+                resource
+            );
+
+            if (identityPartColumns is not null)
             {
-                if (binding.Table != rootTable.Table)
+                foreach (var col in identityPartColumns)
                 {
-                    throw new InvalidOperationException(
-                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
-                            + "must bind to the root table when deriving trigger identity projections."
-                    );
+                    AddUniqueColumn(col, uniqueColumns, seenColumns);
                 }
-
-                if (!binding.IsIdentityComponent)
-                {
-                    throw new InvalidOperationException(
-                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
-                            + "mapped to a non-identity reference binding during trigger derivation."
-                    );
-                }
-
-                if (binding.IdentityBindings.Count == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
-                            + "mapped to a reference binding with no identity-part columns."
-                    );
-                }
-
-                var identityBindingsForPath = binding
-                    .IdentityBindings.Where(identityBinding =>
-                        identityBinding.ReferenceJsonPath.Canonical == identityPath.Canonical
-                    )
-                    .ToArray();
-
-                if (identityBindingsForPath.Length == 0)
-                {
-                    throw new InvalidOperationException(
-                        $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
-                            + "did not resolve to a local identity-part column for trigger derivation."
-                    );
-                }
-
-                foreach (var identityBinding in identityBindingsForPath)
-                {
-                    AddUniqueColumn(identityBinding.Column, uniqueColumns, seenColumns);
-                }
-
                 continue;
             }
 
@@ -628,7 +653,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds identity element mappings for UUIDv5 computation by pairing each identity projection
-    /// column with its canonical JSON path.
+    /// column with its canonical JSON path. For identity-component references, this resolves to
+    /// locally stored identity-part columns (not the FK <c>..._DocumentId</c>) so the computed
+    /// UUIDv5 hash matches Core's <c>ReferentialIdCalculator</c>.
     /// </summary>
     private static IReadOnlyList<IdentityElementMapping> BuildIdentityElementMappings(
         RelationalResourceModel resourceModel,
@@ -653,17 +680,26 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
         foreach (var identityPath in builderContext.IdentityJsonPaths)
         {
-            DbColumnName column;
+            var identityPartColumns = ResolveReferenceIdentityPartColumns(
+                identityPath.Canonical,
+                referenceBindingsByIdentityPath,
+                rootTable.Table,
+                resource
+            );
 
-            if (referenceBindingsByIdentityPath.TryGetValue(identityPath.Canonical, out var binding))
+            if (identityPartColumns is not null)
             {
-                column = binding.FkColumn;
+                foreach (var col in identityPartColumns)
+                {
+                    if (seenColumns.Add(col.Value))
+                    {
+                        mappings.Add(new IdentityElementMapping(col, identityPath.Canonical));
+                    }
+                }
+                continue;
             }
-            else if (rootColumnsByPath.TryGetValue(identityPath.Canonical, out var columnName))
-            {
-                column = columnName;
-            }
-            else
+
+            if (!rootColumnsByPath.TryGetValue(identityPath.Canonical, out var columnName))
             {
                 throw new InvalidOperationException(
                     $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
@@ -671,9 +707,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            if (seenColumns.Add(column.Value))
+            if (seenColumns.Add(columnName.Value))
             {
-                mappings.Add(new IdentityElementMapping(column, identityPath.Canonical));
+                mappings.Add(new IdentityElementMapping(columnName, identityPath.Canonical));
             }
         }
 
@@ -682,7 +718,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
 
     /// <summary>
     /// Builds column mappings from concrete root table columns to abstract identity table columns
-    /// for <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers.
+    /// for <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers. For
+    /// identity-component references, resolves to locally stored identity-part columns (not the FK
+    /// <c>..._DocumentId</c>).
     /// </summary>
     private static IReadOnlyList<TriggerColumnMapping> BuildAbstractIdentityColumnMappings(
         DbTableModel abstractTable,
@@ -734,17 +772,30 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 concretePath = abstractPath;
             }
 
-            // Resolve the concrete source column.
-            DbColumnName sourceColumn;
-            if (referenceBindingsByIdentityPath.TryGetValue(concretePath, out var binding))
+            // Resolve the concrete source column via identity-part columns for references.
+            var identityPartColumns = ResolveReferenceIdentityPartColumns(
+                concretePath,
+                referenceBindingsByIdentityPath,
+                rootTable.Table,
+                resource
+            );
+
+            if (identityPartColumns is not null)
             {
-                sourceColumn = binding.FkColumn;
+                if (identityPartColumns.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"Abstract identity path '{abstractPath}' (concrete path '{concretePath}') "
+                            + $"on resource '{FormatResource(resource)}' expected exactly one identity-part column "
+                            + $"but found {identityPartColumns.Count}."
+                    );
+                }
+
+                mappings.Add(new TriggerColumnMapping(identityPartColumns[0], abstractColumn.ColumnName));
+                continue;
             }
-            else if (rootColumnsByPath.TryGetValue(concretePath, out var columnName))
-            {
-                sourceColumn = columnName;
-            }
-            else
+
+            if (!rootColumnsByPath.TryGetValue(concretePath, out var columnName))
             {
                 throw new InvalidOperationException(
                     $"Abstract identity path '{abstractPath}' (concrete path '{concretePath}') "
@@ -753,7 +804,7 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
-            mappings.Add(new TriggerColumnMapping(sourceColumn, abstractColumn.ColumnName));
+            mappings.Add(new TriggerColumnMapping(columnName, abstractColumn.ColumnName));
         }
 
         return mappings.ToArray();

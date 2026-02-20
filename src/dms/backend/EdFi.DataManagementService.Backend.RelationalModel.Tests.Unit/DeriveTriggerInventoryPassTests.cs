@@ -738,6 +738,93 @@ public class Given_Deterministic_Trigger_Ordering
 }
 
 /// <summary>
+/// Test fixture proving that reference-bearing identity elements resolve to identity-part
+/// columns (e.g. School_SchoolId) rather than FK DocumentId columns (e.g. School_DocumentId)
+/// in ReferentialIdentityMaintenance triggers.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Bearing_Identity_For_ReferentialIdentity_Trigger
+{
+    private IReadOnlyList<DbTriggerInfo> _triggers = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var coreProjectSchema = ConstraintDerivationTestSchemaBuilder.BuildReferenceIdentityProjectSchema();
+        var coreProject = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            coreProjectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([coreProject]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            TriggerInventoryTestSchemaBuilder.BuildPassesThroughTriggerDerivation()
+        );
+
+        var result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+        _triggers = result.TriggersInCreateOrder;
+    }
+
+    [Test]
+    public void It_should_use_identity_part_columns_not_FK_DocumentId_in_ReferentialIdentity_trigger()
+    {
+        var refIdentity = _triggers.SingleOrDefault(t =>
+            t.Table.Name == "Enrollment"
+            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+
+        refIdentity.Should().NotBeNull("Enrollment should have a ReferentialIdentityMaintenance trigger");
+        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity!.Parameters;
+
+        var columnNames = refIdParams.IdentityElements.Select(e => e.Column.Value).ToList();
+
+        // Must resolve to identity-part columns, not FK DocumentId columns
+        columnNames.Should().Contain("School_SchoolId");
+        columnNames.Should().Contain("School_EducationOrganizationId");
+        columnNames.Should().Contain("Student_StudentUniqueId");
+        columnNames.Should().NotContain("School_DocumentId");
+        columnNames.Should().NotContain("Student_DocumentId");
+    }
+
+    [Test]
+    public void It_should_pair_identity_part_columns_with_correct_json_paths()
+    {
+        var refIdentity = _triggers.Single(t =>
+            t.Table.Name == "Enrollment"
+            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+
+        var refIdParams = (TriggerKindParameters.ReferentialIdentityMaintenance)refIdentity.Parameters;
+
+        var mappings = refIdParams
+            .IdentityElements.Select(e => (e.Column.Value, e.IdentityJsonPath))
+            .ToList();
+
+        mappings
+            .Should()
+            .Contain(("School_SchoolId", "$.schoolReference.schoolId"))
+            .And.Contain(("School_EducationOrganizationId", "$.schoolReference.educationOrganizationId"))
+            .And.Contain(("Student_StudentUniqueId", "$.studentReference.studentUniqueId"));
+    }
+
+    [Test]
+    public void It_should_use_identity_part_columns_in_identity_projection_columns()
+    {
+        var refIdentity = _triggers.Single(t =>
+            t.Table.Name == "Enrollment"
+            && t.Parameters is TriggerKindParameters.ReferentialIdentityMaintenance
+        );
+
+        var projectionColumnNames = refIdentity.IdentityProjectionColumns.Select(c => c.Value).ToList();
+
+        projectionColumnNames.Should().Contain("School_SchoolId");
+        projectionColumnNames.Should().Contain("School_EducationOrganizationId");
+        projectionColumnNames.Should().Contain("Student_StudentUniqueId");
+        projectionColumnNames.Should().NotContain("School_DocumentId");
+        projectionColumnNames.Should().NotContain("Student_DocumentId");
+    }
+}
+
+/// <summary>
 /// Test schema builder for trigger inventory pass tests.
 /// </summary>
 internal static class TriggerInventoryTestSchemaBuilder
