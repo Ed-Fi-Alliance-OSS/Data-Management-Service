@@ -71,7 +71,7 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 StringComparer.Ordinal
             )
             .ThenBy(predicate => predicate.CanonicalColumn.Value, StringComparer.Ordinal)
-            .ThenBy(predicate => predicate.Operator.ToString(), StringComparer.Ordinal)
+            .ThenBy(predicate => GetOperatorSortKey(predicate.Operator), StringComparer.Ordinal)
             .ThenBy(predicate => predicate.ParameterName, StringComparer.Ordinal)
             .ToArray();
 
@@ -263,6 +263,29 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 nameof(@operator),
                 @operator,
                 "Unsupported query operator for now."
+            ),
+        };
+    }
+
+    /// <summary>
+    /// Returns a deterministic textual sort key for query operators without relying on <c>Enum.ToString()</c>.
+    /// </summary>
+    private static string GetOperatorSortKey(QueryComparisonOperator @operator)
+    {
+        return @operator switch
+        {
+            QueryComparisonOperator.Equal => nameof(QueryComparisonOperator.Equal),
+            QueryComparisonOperator.NotEqual => nameof(QueryComparisonOperator.NotEqual),
+            QueryComparisonOperator.LessThan => nameof(QueryComparisonOperator.LessThan),
+            QueryComparisonOperator.LessThanOrEqual => nameof(QueryComparisonOperator.LessThanOrEqual),
+            QueryComparisonOperator.GreaterThan => nameof(QueryComparisonOperator.GreaterThan),
+            QueryComparisonOperator.GreaterThanOrEqual => nameof(QueryComparisonOperator.GreaterThanOrEqual),
+            QueryComparisonOperator.Like => nameof(QueryComparisonOperator.Like),
+            QueryComparisonOperator.In => nameof(QueryComparisonOperator.In),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(@operator),
+                @operator,
+                "Unsupported query operator sort key."
             ),
         };
     }
