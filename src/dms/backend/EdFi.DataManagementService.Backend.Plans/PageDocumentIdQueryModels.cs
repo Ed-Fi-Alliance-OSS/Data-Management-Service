@@ -20,26 +20,12 @@ public sealed record QueryValuePredicate(
 );
 
 /// <summary>
-/// Declares how a unified alias column maps to a canonical storage column and optional presence gate.
-/// </summary>
-/// <param name="AliasColumn">The API-bound alias/binding column.</param>
-/// <param name="CanonicalColumn">The canonical storage column for value predicates.</param>
-/// <param name="PresenceColumn">
-/// Optional presence gate column. When populated, predicates on the alias imply this column is non-null.
-/// </param>
-public sealed record UnifiedAliasColumnMapping(
-    DbColumnName AliasColumn,
-    DbColumnName CanonicalColumn,
-    DbColumnName? PresenceColumn
-);
-
-/// <summary>
 /// Input specification for compiling page-<c>DocumentId</c> query SQL.
 /// </summary>
 /// <param name="RootTable">The resource root table queried for <c>DocumentId</c>.</param>
 /// <param name="Predicates">Value predicates are treated as an unordered set; compiler emits them in deterministic sorted order after rewrite</param>
-/// <param name="UnifiedAliasMappings">
-/// Unified alias mappings used for canonical-column predicate rewrite.
+/// <param name="UnifiedAliasMappingsByColumn">
+/// Unified alias metadata keyed by API-bound alias/binding column for canonical-column predicate rewrite.
 /// </param>
 /// <param name="OffsetParameterName">The bare paging offset parameter name.</param>
 /// <param name="LimitParameterName">The bare paging limit parameter name.</param>
@@ -49,7 +35,7 @@ public sealed record UnifiedAliasColumnMapping(
 public sealed record PageDocumentIdQuerySpec(
     DbTableName RootTable,
     IReadOnlyList<QueryValuePredicate> Predicates,
-    IReadOnlyList<UnifiedAliasColumnMapping> UnifiedAliasMappings,
+    IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> UnifiedAliasMappingsByColumn,
     string OffsetParameterName = "offset",
     string LimitParameterName = "limit",
     bool IncludeTotalCountSql = false
