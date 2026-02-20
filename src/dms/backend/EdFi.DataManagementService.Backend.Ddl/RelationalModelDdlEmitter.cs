@@ -93,6 +93,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         foreach (var resource in resources)
         {
+            // Descriptor resources use the shared dms.Descriptor table (emitted by core DDL).
+            if (resource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+                continue;
+
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
                 EmitCreateTable(writer, table);
@@ -183,9 +187,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTables
     )
     {
-        // Emit FKs for concrete resource tables
+        // Emit FKs for concrete resource tables (skip descriptors — they use shared dms.Descriptor)
         foreach (var resource in resources)
         {
+            if (resource.StorageKind == ResourceStorageKind.SharedDescriptorTable)
+                continue;
+
             foreach (var table in resource.RelationalModel.TablesInDependencyOrder)
             {
                 EmitTableForeignKeys(writer, table);

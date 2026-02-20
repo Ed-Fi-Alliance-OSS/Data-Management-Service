@@ -29366,7 +29366,7 @@
       "resource_name": "AcademicWeek",
       "identity_elements": [
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
@@ -29410,7 +29410,7 @@
       "resource_name": "AccountabilityRating",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -29418,7 +29418,7 @@
           "identity_json_path": "$.ratingTitle"
         },
         {
-          "column": "SchoolYear_DocumentId",
+          "column": "SchoolYear_SchoolYear",
           "identity_json_path": "$.schoolYearTypeReference.schoolYear"
         }
       ]
@@ -29519,11 +29519,15 @@
           "identity_json_path": "$.administrationIdentifier"
         },
         {
-          "column": "Assessment_DocumentId",
+          "column": "Assessment_AssessmentIdentifier",
           "identity_json_path": "$.assessmentReference.assessmentIdentifier"
         },
         {
-          "column": "AssigningEducationOrganization_DocumentId",
+          "column": "Assessment_Namespace",
+          "identity_json_path": "$.assessmentReference.namespace"
+        },
+        {
+          "column": "AssigningEducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.assigningEducationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -29579,11 +29583,23 @@
       "resource_name": "AssessmentAdministrationParticipation",
       "identity_elements": [
         {
-          "column": "AssessmentAdministration_DocumentId",
+          "column": "AssessmentAdministration_AdministrationIdentifier",
           "identity_json_path": "$.assessmentAdministrationReference.administrationIdentifier"
         },
         {
-          "column": "ParticipatingEducationOrganization_DocumentId",
+          "column": "AssessmentAdministration_AssessmentIdentifier",
+          "identity_json_path": "$.assessmentAdministrationReference.assessmentIdentifier"
+        },
+        {
+          "column": "AssessmentAdministration_AssigningEducationOrganizationId",
+          "identity_json_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId"
+        },
+        {
+          "column": "AssessmentAdministration_Namespace",
+          "identity_json_path": "$.assessmentAdministrationReference.namespace"
+        },
+        {
+          "column": "ParticipatingEducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.participatingEducationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -29678,8 +29694,12 @@
           "identity_json_path": "$.assessmentBatteryPartName"
         },
         {
-          "column": "Assessment_DocumentId",
+          "column": "Assessment_AssessmentIdentifier",
           "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "Assessment_Namespace",
+          "identity_json_path": "$.assessmentReference.namespace"
         }
       ]
     },
@@ -29743,8 +29763,12 @@
       "resource_name": "AssessmentItem",
       "identity_elements": [
         {
-          "column": "Assessment_DocumentId",
+          "column": "Assessment_AssessmentIdentifier",
           "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "Assessment_Namespace",
+          "identity_json_path": "$.assessmentReference.namespace"
         },
         {
           "column": "IdentificationCode",
@@ -29884,8 +29908,12 @@
       "resource_name": "AssessmentScoreRangeLearningStandard",
       "identity_elements": [
         {
-          "column": "Assessment_DocumentId",
+          "column": "Assessment_AssessmentIdentifier",
           "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "Assessment_Namespace",
+          "identity_json_path": "$.assessmentReference.namespace"
         },
         {
           "column": "ScoreRangeId",
@@ -30011,7 +30039,7 @@
           "identity_json_path": "$.bellScheduleName"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         }
       ]
@@ -30091,11 +30119,11 @@
           "identity_json_path": "$.calendarCode"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "SchoolYear_DocumentId",
+          "column": "SchoolYear_SchoolYear",
           "identity_json_path": "$.schoolYearTypeReference.schoolYear"
         }
       ]
@@ -30137,8 +30165,16 @@
       "resource_name": "CalendarDate",
       "identity_elements": [
         {
-          "column": "Calendar_DocumentId",
+          "column": "Calendar_CalendarCode",
           "identity_json_path": "$.calendarReference.calendarCode"
+        },
+        {
+          "column": "Calendar_SchoolId",
+          "identity_json_path": "$.calendarReference.schoolId"
+        },
+        {
+          "column": "Calendar_SchoolYear",
+          "identity_json_path": "$.calendarReference.schoolYear"
         },
         {
           "column": "Date",
@@ -30211,7 +30247,7 @@
           "identity_json_path": "$.accountIdentifier"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -30271,7 +30307,7 @@
           "identity_json_path": "$.classPeriodName"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         }
       ]
@@ -30326,7 +30362,7 @@
           "identity_json_path": "$.cohortIdentifier"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -30716,7 +30752,7 @@
       "resource_name": "CommunityProviderLicense",
       "identity_elements": [
         {
-          "column": "CommunityProvider_DocumentId",
+          "column": "CommunityProvider_CommunityProviderId",
           "identity_json_path": "$.communityProviderReference.communityProviderId"
         },
         {
@@ -30765,7 +30801,7 @@
       "resource_name": "CompetencyObjective",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -30962,7 +30998,7 @@
           "identity_json_path": "$.courseCode"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -31080,12 +31116,20 @@
           "identity_json_path": "$.localCourseCode"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "Session_DocumentId",
+          "column": "Session_SchoolId",
           "identity_json_path": "$.sessionReference.schoolId"
+        },
+        {
+          "column": "Session_SchoolYear",
+          "identity_json_path": "$.sessionReference.schoolYear"
+        },
+        {
+          "column": "Session_SessionName",
+          "identity_json_path": "$.sessionReference.sessionName"
         }
       ]
     },
@@ -31171,12 +31215,28 @@
           "identity_json_path": "$.courseAttemptResultDescriptor"
         },
         {
-          "column": "CourseCourse_DocumentId",
+          "column": "CourseCourse_CourseCode",
           "identity_json_path": "$.courseReference.courseCode"
         },
         {
-          "column": "StudentAcademicRecord_DocumentId",
+          "column": "CourseCourse_EducationOrganizationId",
+          "identity_json_path": "$.courseReference.educationOrganizationId"
+        },
+        {
+          "column": "StudentAcademicRecord_EducationOrganizationId",
           "identity_json_path": "$.studentAcademicRecordReference.educationOrganizationId"
+        },
+        {
+          "column": "StudentAcademicRecord_SchoolYear",
+          "identity_json_path": "$.studentAcademicRecordReference.schoolYear"
+        },
+        {
+          "column": "StudentAcademicRecord_StudentUniqueId",
+          "identity_json_path": "$.studentAcademicRecordReference.studentUniqueId"
+        },
+        {
+          "column": "StudentAcademicRecord_TermDescriptor_DescriptorId",
+          "identity_json_path": "$.studentAcademicRecordReference.termDescriptor"
         }
       ]
     },
@@ -31495,7 +31555,7 @@
           "identity_json_path": "$.disciplineDate"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -31575,7 +31635,7 @@
           "identity_json_path": "$.incidentIdentifier"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         }
       ]
@@ -31788,12 +31848,16 @@
       "resource_name": "EducationOrganizationInterventionPrescriptionAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "InterventionPrescriptionInterventionPrescription_DocumentId",
+          "column": "InterventionPrescriptionInterventionPrescription_Edu_532babb247",
           "identity_json_path": "$.interventionPrescriptionReference.educationOrganizationId"
+        },
+        {
+          "column": "InterventionPrescriptionInterventionPrescription_Int_409fc39d28",
+          "identity_json_path": "$.interventionPrescriptionReference.interventionPrescriptionIdentificationCode"
         }
       ]
     },
@@ -31913,11 +31977,11 @@
       "resource_name": "EducationOrganizationNetworkAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganizationNetwork_DocumentId",
+          "column": "EducationOrganizationNetwork_EducationOrganizationNetworkId",
           "identity_json_path": "$.educationOrganizationNetworkReference.educationOrganizationNetworkId"
         },
         {
-          "column": "MemberEducationOrganization_DocumentId",
+          "column": "MemberEducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.memberEducationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -32028,11 +32092,11 @@
       "resource_name": "EducationOrganizationPeerAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "PeerEducationOrganization_DocumentId",
+          "column": "PeerEducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.peerEducationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -32250,8 +32314,32 @@
           "identity_json_path": "$.evaluationRubricRating"
         },
         {
-          "column": "ProgramEvaluationElement_DocumentId",
+          "column": "ProgramEvaluationElement_ProgramEducationOrganizationId",
           "identity_json_path": "$.programEvaluationElementReference.programEducationOrganizationId"
+        },
+        {
+          "column": "ProgramEvaluationElement_ProgramEvaluationElementTitle",
+          "identity_json_path": "$.programEvaluationElementReference.programEvaluationElementTitle"
+        },
+        {
+          "column": "ProgramEvaluationElement_ProgramEvaluationPeriodDesc_cc4f929706",
+          "identity_json_path": "$.programEvaluationElementReference.programEvaluationPeriodDescriptor"
+        },
+        {
+          "column": "ProgramEvaluationElement_ProgramEvaluationTitle",
+          "identity_json_path": "$.programEvaluationElementReference.programEvaluationTitle"
+        },
+        {
+          "column": "ProgramEvaluationElement_ProgramEvaluationTypeDescri_18bd7f7e71",
+          "identity_json_path": "$.programEvaluationElementReference.programEvaluationTypeDescriptor"
+        },
+        {
+          "column": "ProgramEvaluationElement_ProgramName",
+          "identity_json_path": "$.programEvaluationElementReference.programName"
+        },
+        {
+          "column": "ProgramEvaluationElement_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationElementReference.programTypeDescriptor"
         }
       ]
     },
@@ -32300,11 +32388,11 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "FeederSchool_DocumentId",
+          "column": "FeederSchool_SchoolId",
           "identity_json_path": "$.feederSchoolReference.schoolId"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         }
       ]
@@ -32468,12 +32556,48 @@
           "identity_json_path": "$.gradeTypeDescriptor"
         },
         {
-          "column": "GradingPeriodGradingPeriod_DocumentId",
+          "column": "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
           "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
         },
         {
-          "column": "StudentSectionAssociation_DocumentId",
+          "column": "GradingPeriodGradingPeriod_GradingPeriodName",
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodName"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_SchoolId",
+          "identity_json_path": "$.gradingPeriodReference.schoolId"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_SchoolYear",
+          "identity_json_path": "$.gradingPeriodReference.schoolYear"
+        },
+        {
+          "column": "StudentSectionAssociation_BeginDate",
           "identity_json_path": "$.studentSectionAssociationReference.beginDate"
+        },
+        {
+          "column": "StudentSectionAssociation_LocalCourseCode",
+          "identity_json_path": "$.studentSectionAssociationReference.localCourseCode"
+        },
+        {
+          "column": "StudentSectionAssociation_SchoolId",
+          "identity_json_path": "$.studentSectionAssociationReference.schoolId"
+        },
+        {
+          "column": "StudentSectionAssociation_SchoolYear",
+          "identity_json_path": "$.studentSectionAssociationReference.schoolYear"
+        },
+        {
+          "column": "StudentSectionAssociation_SectionIdentifier",
+          "identity_json_path": "$.studentSectionAssociationReference.sectionIdentifier"
+        },
+        {
+          "column": "StudentSectionAssociation_SessionName",
+          "identity_json_path": "$.studentSectionAssociationReference.sessionName"
+        },
+        {
+          "column": "StudentSectionAssociation_StudentUniqueId",
+          "identity_json_path": "$.studentSectionAssociationReference.studentUniqueId"
         }
       ]
     },
@@ -32598,11 +32722,11 @@
           "identity_json_path": "$.gradingPeriodName"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "SchoolYear_DocumentId",
+          "column": "SchoolYear_SchoolYear",
           "identity_json_path": "$.schoolYearTypeReference.schoolYear"
         }
       ]
@@ -32644,7 +32768,7 @@
       "resource_name": "GraduationPlan",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -32652,7 +32776,7 @@
           "identity_json_path": "$.graduationPlanTypeDescriptor"
         },
         {
-          "column": "GraduationSchoolYear_DocumentId",
+          "column": "GraduationSchoolYear_GraduationSchoolYear",
           "identity_json_path": "$.graduationSchoolYearTypeReference.schoolYear"
         }
       ]
@@ -32764,7 +32888,7 @@
       "resource_name": "Intervention",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -32903,7 +33027,7 @@
       "resource_name": "InterventionPrescription",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -33042,7 +33166,7 @@
       "resource_name": "InterventionStudy",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -33259,11 +33383,11 @@
           "identity_json_path": "$.namespace"
         },
         {
-          "column": "SourceLearningStandard_DocumentId",
+          "column": "SourceLearningStandard_LearningStandardId",
           "identity_json_path": "$.sourceLearningStandardReference.learningStandardId"
         },
         {
-          "column": "TargetLearningStandard_DocumentId",
+          "column": "TargetLearningStandard_LearningStandardId",
           "identity_json_path": "$.targetLearningStandardReference.learningStandardId"
         }
       ]
@@ -33332,7 +33456,7 @@
           "identity_json_path": "$.accountIdentifier"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -33394,8 +33518,16 @@
           "identity_json_path": "$.asOfDate"
         },
         {
-          "column": "LocalAccount_DocumentId",
+          "column": "LocalAccount_AccountIdentifier",
           "identity_json_path": "$.localAccountReference.accountIdentifier"
+        },
+        {
+          "column": "LocalAccount_EducationOrganizationId",
+          "identity_json_path": "$.localAccountReference.educationOrganizationId"
+        },
+        {
+          "column": "LocalAccount_FiscalYear",
+          "identity_json_path": "$.localAccountReference.fiscalYear"
         }
       ]
     },
@@ -33441,8 +33573,16 @@
           "identity_json_path": "$.asOfDate"
         },
         {
-          "column": "LocalAccount_DocumentId",
+          "column": "LocalAccount_AccountIdentifier",
           "identity_json_path": "$.localAccountReference.accountIdentifier"
+        },
+        {
+          "column": "LocalAccount_EducationOrganizationId",
+          "identity_json_path": "$.localAccountReference.educationOrganizationId"
+        },
+        {
+          "column": "LocalAccount_FiscalYear",
+          "identity_json_path": "$.localAccountReference.fiscalYear"
         }
       ]
     },
@@ -33489,11 +33629,19 @@
           "identity_json_path": "$.asOfDate"
         },
         {
-          "column": "LocalAccount_DocumentId",
+          "column": "LocalAccount_AccountIdentifier",
           "identity_json_path": "$.localAccountReference.accountIdentifier"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "LocalAccount_EducationOrganizationId",
+          "identity_json_path": "$.localAccountReference.educationOrganizationId"
+        },
+        {
+          "column": "LocalAccount_FiscalYear",
+          "identity_json_path": "$.localAccountReference.fiscalYear"
+        },
+        {
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -33734,8 +33882,16 @@
           "identity_json_path": "$.asOfDate"
         },
         {
-          "column": "LocalAccount_DocumentId",
+          "column": "LocalAccount_AccountIdentifier",
           "identity_json_path": "$.localAccountReference.accountIdentifier"
+        },
+        {
+          "column": "LocalAccount_EducationOrganizationId",
+          "identity_json_path": "$.localAccountReference.educationOrganizationId"
+        },
+        {
+          "column": "LocalAccount_FiscalYear",
+          "identity_json_path": "$.localAccountReference.fiscalYear"
         }
       ]
     },
@@ -33782,11 +33938,19 @@
           "identity_json_path": "$.asOfDate"
         },
         {
-          "column": "LocalAccount_DocumentId",
+          "column": "LocalAccount_AccountIdentifier",
           "identity_json_path": "$.localAccountReference.accountIdentifier"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "LocalAccount_EducationOrganizationId",
+          "identity_json_path": "$.localAccountReference.educationOrganizationId"
+        },
+        {
+          "column": "LocalAccount_FiscalYear",
+          "identity_json_path": "$.localAccountReference.fiscalYear"
+        },
+        {
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -33832,7 +33996,7 @@
           "identity_json_path": "$.classroomIdentificationCode"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         }
       ]
@@ -33927,8 +34091,12 @@
       "resource_name": "ObjectiveAssessment",
       "identity_elements": [
         {
-          "column": "Assessment_DocumentId",
+          "column": "Assessment_AssessmentIdentifier",
           "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "Assessment_Namespace",
+          "identity_json_path": "$.assessmentReference.namespace"
         },
         {
           "column": "IdentificationCode",
@@ -34019,7 +34187,7 @@
       "resource_name": "OpenStaffPosition",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -34362,7 +34530,7 @@
           "identity_json_path": "$.postSecondaryEventCategoryDescriptor"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -34584,7 +34752,7 @@
       "resource_name": "Program",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -34715,8 +34883,16 @@
           "identity_json_path": "$.programEvaluationTypeDescriptor"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
+        },
+        {
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
         }
       ]
     },
@@ -34767,8 +34943,28 @@
           "identity_json_path": "$.programEvaluationElementTitle"
         },
         {
-          "column": "ProgramEvaluation_DocumentId",
+          "column": "ProgramEvaluation_ProgramEducationOrganizationId",
           "identity_json_path": "$.programEvaluationReference.programEducationOrganizationId"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationTitle",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTitle"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramName",
+          "identity_json_path": "$.programEvaluationReference.programName"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor"
         }
       ]
     },
@@ -34844,8 +35040,28 @@
           "identity_json_path": "$.programEvaluationObjectiveTitle"
         },
         {
-          "column": "ProgramEvaluation_DocumentId",
+          "column": "ProgramEvaluation_ProgramEducationOrganizationId",
           "identity_json_path": "$.programEvaluationReference.programEducationOrganizationId"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationTitle",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTitle"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramName",
+          "identity_json_path": "$.programEvaluationReference.programName"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor"
         }
       ]
     },
@@ -34983,15 +35199,27 @@
       "resource_name": "ReportCard",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "GradingPeriodGradingPeriod_DocumentId",
+          "column": "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
           "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "GradingPeriodGradingPeriod_GradingPeriodName",
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodName"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_SchoolId",
+          "identity_json_path": "$.gradingPeriodReference.schoolId"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_SchoolYear",
+          "identity_json_path": "$.gradingPeriodReference.schoolYear"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -35075,11 +35303,11 @@
           "identity_json_path": "$.restraintEventIdentifier"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -35377,8 +35605,24 @@
       "resource_name": "Section",
       "identity_elements": [
         {
-          "column": "CourseOffering_DocumentId",
+          "column": "CourseOffering_LocalCourseCode",
           "identity_json_path": "$.courseOfferingReference.localCourseCode"
+        },
+        {
+          "column": "CourseOffering_SchoolReferenceSchoolId",
+          "identity_json_path": "$.courseOfferingReference.schoolId"
+        },
+        {
+          "column": "CourseOffering_SessionReferenceSchoolId",
+          "identity_json_path": "$.courseOfferingReference.schoolId"
+        },
+        {
+          "column": "CourseOffering_SchoolYear",
+          "identity_json_path": "$.courseOfferingReference.schoolYear"
+        },
+        {
+          "column": "CourseOffering_SessionName",
+          "identity_json_path": "$.courseOfferingReference.sessionName"
         },
         {
           "column": "SectionIdentifier",
@@ -35431,12 +35675,40 @@
       "resource_name": "SectionAttendanceTakenEvent",
       "identity_elements": [
         {
-          "column": "CalendarDate_DocumentId",
+          "column": "CalendarDate_CalendarCode",
           "identity_json_path": "$.calendarDateReference.calendarCode"
         },
         {
-          "column": "Section_DocumentId",
+          "column": "CalendarDate_Date",
+          "identity_json_path": "$.calendarDateReference.date"
+        },
+        {
+          "column": "CalendarDate_SchoolId",
+          "identity_json_path": "$.calendarDateReference.schoolId"
+        },
+        {
+          "column": "CalendarDate_SchoolYear",
+          "identity_json_path": "$.calendarDateReference.schoolYear"
+        },
+        {
+          "column": "Section_LocalCourseCode",
           "identity_json_path": "$.sectionReference.localCourseCode"
+        },
+        {
+          "column": "Section_SchoolId",
+          "identity_json_path": "$.sectionReference.schoolId"
+        },
+        {
+          "column": "Section_SchoolYear",
+          "identity_json_path": "$.sectionReference.schoolYear"
+        },
+        {
+          "column": "Section_SectionIdentifier",
+          "identity_json_path": "$.sectionReference.sectionIdentifier"
+        },
+        {
+          "column": "Section_SessionName",
+          "identity_json_path": "$.sectionReference.sessionName"
         }
       ]
     },
@@ -35542,11 +35814,11 @@
       "resource_name": "Session",
       "identity_elements": [
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "SchoolYear_DocumentId",
+          "column": "SchoolYear_SchoolYear",
           "identity_json_path": "$.schoolYearTypeReference.schoolYear"
         },
         {
@@ -35715,7 +35987,7 @@
           "identity_json_path": "$.eventDate"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -35797,11 +36069,15 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "Cohort_DocumentId",
+          "column": "Cohort_CohortIdentifier",
           "identity_json_path": "$.cohortReference.cohortIdentifier"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Cohort_EducationOrganizationId",
+          "identity_json_path": "$.cohortReference.educationOrganizationId"
+        },
+        {
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -35855,11 +36131,15 @@
       "resource_name": "StaffDisciplineIncidentAssociation",
       "identity_elements": [
         {
-          "column": "DisciplineIncident_DocumentId",
+          "column": "DisciplineIncident_IncidentIdentifier",
           "identity_json_path": "$.disciplineIncidentReference.incidentIdentifier"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "DisciplineIncident_SchoolId",
+          "identity_json_path": "$.disciplineIncidentReference.schoolId"
+        },
+        {
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -35917,7 +36197,7 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -35925,7 +36205,7 @@
           "identity_json_path": "$.staffClassificationDescriptor"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -35971,11 +36251,11 @@
           "identity_json_path": "$.contactTitle"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -36041,7 +36321,7 @@
       "resource_name": "StaffEducationOrganizationEmploymentAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -36053,7 +36333,7 @@
           "identity_json_path": "$.hireDate"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -36175,7 +36455,7 @@
           "identity_json_path": "$.staffLeaveEventCategoryDescriptor"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -36246,11 +36526,19 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -36321,11 +36609,11 @@
           "identity_json_path": "$.programAssignmentDescriptor"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -36398,11 +36686,27 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "Section_DocumentId",
+          "column": "Section_LocalCourseCode",
           "identity_json_path": "$.sectionReference.localCourseCode"
         },
         {
-          "column": "Staff_DocumentId",
+          "column": "Section_SchoolId",
+          "identity_json_path": "$.sectionReference.schoolId"
+        },
+        {
+          "column": "Section_SchoolYear",
+          "identity_json_path": "$.sectionReference.schoolYear"
+        },
+        {
+          "column": "Section_SectionIdentifier",
+          "identity_json_path": "$.sectionReference.sectionIdentifier"
+        },
+        {
+          "column": "Section_SessionName",
+          "identity_json_path": "$.sectionReference.sessionName"
+        },
+        {
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         }
       ]
@@ -36714,15 +37018,15 @@
       "resource_name": "StudentAcademicRecord",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "SchoolYear_DocumentId",
+          "column": "SchoolYear_SchoolYear",
           "identity_json_path": "$.schoolYearTypeReference.schoolYear"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         },
         {
@@ -36829,15 +37133,19 @@
       "resource_name": "StudentAssessment",
       "identity_elements": [
         {
-          "column": "Assessment_DocumentId",
+          "column": "Assessment_AssessmentIdentifier",
           "identity_json_path": "$.assessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "Assessment_Namespace",
+          "identity_json_path": "$.assessmentReference.namespace"
         },
         {
           "column": "StudentAssessmentIdentifier",
           "identity_json_path": "$.studentAssessmentIdentifier"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -36898,12 +37206,24 @@
           "identity_json_path": "$.educationOrganizationAssociationTypeDescriptor"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "StudentAssessment_DocumentId",
+          "column": "StudentAssessment_AssessmentIdentifier",
           "identity_json_path": "$.studentAssessmentReference.assessmentIdentifier"
+        },
+        {
+          "column": "StudentAssessment_Namespace",
+          "identity_json_path": "$.studentAssessmentReference.namespace"
+        },
+        {
+          "column": "StudentAssessment_StudentAssessmentIdentifier",
+          "identity_json_path": "$.studentAssessmentReference.studentAssessmentIdentifier"
+        },
+        {
+          "column": "StudentAssessment_StudentUniqueId",
+          "identity_json_path": "$.studentAssessmentReference.studentUniqueId"
         }
       ]
     },
@@ -36973,12 +37293,28 @@
       "resource_name": "StudentAssessmentRegistration",
       "identity_elements": [
         {
-          "column": "AssessmentAdministration_DocumentId",
+          "column": "AssessmentAdministration_AdministrationIdentifier",
           "identity_json_path": "$.assessmentAdministrationReference.administrationIdentifier"
         },
         {
-          "column": "StudentEducationOrganizationAssociation_DocumentId",
+          "column": "AssessmentAdministration_AssessmentIdentifier",
+          "identity_json_path": "$.assessmentAdministrationReference.assessmentIdentifier"
+        },
+        {
+          "column": "AssessmentAdministration_AssigningEducationOrganizationId",
+          "identity_json_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId"
+        },
+        {
+          "column": "AssessmentAdministration_Namespace",
+          "identity_json_path": "$.assessmentAdministrationReference.namespace"
+        },
+        {
+          "column": "StudentEducationOrganizationAssociation_EducationOrganizationId",
           "identity_json_path": "$.studentEducationOrganizationAssociationReference.educationOrganizationId"
+        },
+        {
+          "column": "StudentEducationOrganizationAssociation_StudentUniqueId",
+          "identity_json_path": "$.studentEducationOrganizationAssociationReference.studentUniqueId"
         }
       ]
     },
@@ -37051,12 +37387,40 @@
       "resource_name": "StudentAssessmentRegistrationBatteryPartAssociation",
       "identity_elements": [
         {
-          "column": "AssessmentBatteryPart_DocumentId",
+          "column": "AssessmentBatteryPart_AssessmentBatteryPartName",
           "identity_json_path": "$.assessmentBatteryPartReference.assessmentBatteryPartName"
         },
         {
-          "column": "StudentAssessmentRegistration_DocumentId",
+          "column": "AssessmentBatteryPart_AssessmentIdentifier",
+          "identity_json_path": "$.assessmentBatteryPartReference.assessmentIdentifier"
+        },
+        {
+          "column": "AssessmentBatteryPart_Namespace",
+          "identity_json_path": "$.assessmentBatteryPartReference.namespace"
+        },
+        {
+          "column": "StudentAssessmentRegistration_AdministrationIdentifier",
           "identity_json_path": "$.studentAssessmentRegistrationReference.administrationIdentifier"
+        },
+        {
+          "column": "StudentAssessmentRegistration_AssessmentIdentifier",
+          "identity_json_path": "$.studentAssessmentRegistrationReference.assessmentIdentifier"
+        },
+        {
+          "column": "StudentAssessmentRegistration_AssigningEducationOrganizationId",
+          "identity_json_path": "$.studentAssessmentRegistrationReference.assigningEducationOrganizationId"
+        },
+        {
+          "column": "StudentAssessmentRegistration_EducationOrganizationId",
+          "identity_json_path": "$.studentAssessmentRegistrationReference.educationOrganizationId"
+        },
+        {
+          "column": "StudentAssessmentRegistration_Namespace",
+          "identity_json_path": "$.studentAssessmentRegistrationReference.namespace"
+        },
+        {
+          "column": "StudentAssessmentRegistration_StudentUniqueId",
+          "identity_json_path": "$.studentAssessmentRegistrationReference.studentUniqueId"
         }
       ]
     },
@@ -37170,23 +37534,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -37219,15 +37583,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -37241,15 +37613,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -37323,11 +37703,15 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "Cohort_DocumentId",
+          "column": "Cohort_CohortIdentifier",
           "identity_json_path": "$.cohortReference.cohortIdentifier"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Cohort_EducationOrganizationId",
+          "identity_json_path": "$.cohortReference.educationOrganizationId"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37386,15 +37770,35 @@
       "resource_name": "StudentCompetencyObjective",
       "identity_elements": [
         {
-          "column": "GradingPeriodGradingPeriod_DocumentId",
+          "column": "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
           "identity_json_path": "$.gradingPeriodReference.gradingPeriodDescriptor"
         },
         {
-          "column": "ObjectiveCompetencyObjective_DocumentId",
+          "column": "GradingPeriodGradingPeriod_GradingPeriodName",
+          "identity_json_path": "$.gradingPeriodReference.gradingPeriodName"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_SchoolId",
+          "identity_json_path": "$.gradingPeriodReference.schoolId"
+        },
+        {
+          "column": "GradingPeriodGradingPeriod_SchoolYear",
+          "identity_json_path": "$.gradingPeriodReference.schoolYear"
+        },
+        {
+          "column": "ObjectiveCompetencyObjective_EducationOrganizationId",
           "identity_json_path": "$.objectiveCompetencyObjectiveReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ObjectiveCompetencyObjective_Objective",
+          "identity_json_path": "$.objectiveCompetencyObjectiveReference.objective"
+        },
+        {
+          "column": "ObjectiveCompetencyObjective_ObjectiveGradeLevelDesc_5b5c253e2e",
+          "identity_json_path": "$.objectiveCompetencyObjectiveReference.objectiveGradeLevelDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37463,11 +37867,11 @@
       "resource_name": "StudentContactAssociation",
       "identity_elements": [
         {
-          "column": "Contact_DocumentId",
+          "column": "Contact_ContactUniqueId",
           "identity_json_path": "$.contactReference.contactUniqueId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37512,11 +37916,15 @@
           "identity_json_path": "$.behaviorDescriptor"
         },
         {
-          "column": "DisciplineIncident_DocumentId",
+          "column": "DisciplineIncident_IncidentIdentifier",
           "identity_json_path": "$.disciplineIncidentReference.incidentIdentifier"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "DisciplineIncident_SchoolId",
+          "identity_json_path": "$.disciplineIncidentReference.schoolId"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37582,11 +37990,15 @@
       "resource_name": "StudentDisciplineIncidentNonOffenderAssociation",
       "identity_elements": [
         {
-          "column": "DisciplineIncident_DocumentId",
+          "column": "DisciplineIncident_IncidentIdentifier",
           "identity_json_path": "$.disciplineIncidentReference.incidentIdentifier"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "DisciplineIncident_SchoolId",
+          "identity_json_path": "$.disciplineIncidentReference.schoolId"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37638,11 +38050,11 @@
       "resource_name": "StudentEducationOrganizationAssessmentAccommodation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37693,11 +38105,11 @@
       "resource_name": "StudentEducationOrganizationAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -37970,7 +38382,7 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -37978,7 +38390,7 @@
           "identity_json_path": "$.responsibilityDescriptor"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -38020,11 +38432,15 @@
       "resource_name": "StudentGradebookEntry",
       "identity_elements": [
         {
-          "column": "GradebookEntry_DocumentId",
+          "column": "GradebookEntry_GradebookEntryIdentifier",
           "identity_json_path": "$.gradebookEntryReference.gradebookEntryIdentifier"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "GradebookEntry_Namespace",
+          "identity_json_path": "$.gradebookEntryReference.namespace"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -38064,11 +38480,11 @@
       "resource_name": "StudentHealth",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -38164,23 +38580,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -38213,15 +38629,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -38235,15 +38659,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -38324,11 +38756,15 @@
       "resource_name": "StudentInterventionAssociation",
       "identity_elements": [
         {
-          "column": "Intervention_DocumentId",
+          "column": "Intervention_EducationOrganizationId",
           "identity_json_path": "$.interventionReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Intervention_InterventionIdentificationCode",
+          "identity_json_path": "$.interventionReference.interventionIdentificationCode"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -38391,11 +38827,15 @@
           "identity_json_path": "$.eventDate"
         },
         {
-          "column": "Intervention_DocumentId",
+          "column": "Intervention_EducationOrganizationId",
           "identity_json_path": "$.interventionReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Intervention_InterventionIdentificationCode",
+          "identity_json_path": "$.interventionReference.interventionIdentificationCode"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -38446,23 +38886,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -38495,15 +38935,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -38517,15 +38965,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -38614,23 +39070,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -38663,15 +39119,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -38685,15 +39149,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -38770,23 +39242,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -38819,15 +39291,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -38841,15 +39321,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -38950,23 +39438,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -38999,15 +39487,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -39021,15 +39517,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -39106,7 +39610,7 @@
           "identity_json_path": "$.attendanceEventCategoryDescriptor"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
@@ -39114,11 +39618,19 @@
           "identity_json_path": "$.eventDate"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -39172,11 +39684,31 @@
           "identity_json_path": "$.evaluationDate"
         },
         {
-          "column": "ProgramEvaluation_DocumentId",
+          "column": "ProgramEvaluation_ProgramEducationOrganizationId",
           "identity_json_path": "$.programEvaluationReference.programEducationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramEvaluation_ProgramEvaluationPeriodDescriptor__bd73e5d64e",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationPeriodDescriptor"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationTitle",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTitle"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationReference.programEvaluationTypeDescriptor"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramName",
+          "identity_json_path": "$.programEvaluationReference.programName"
+        },
+        {
+          "column": "ProgramEvaluation_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programEvaluationReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -39262,11 +39794,11 @@
           "identity_json_path": "$.entryDate"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -39343,15 +39875,23 @@
           "identity_json_path": "$.eventDate"
         },
         {
-          "column": "School_DocumentId",
+          "column": "School_SchoolId",
           "identity_json_path": "$.schoolReference.schoolId"
         },
         {
-          "column": "Session_DocumentId",
+          "column": "Session_SchoolId",
           "identity_json_path": "$.sessionReference.schoolId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Session_SchoolYear",
+          "identity_json_path": "$.sessionReference.schoolYear"
+        },
+        {
+          "column": "Session_SessionName",
+          "identity_json_path": "$.sessionReference.sessionName"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -39404,23 +39944,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -39453,15 +39993,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -39475,15 +40023,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -39560,23 +40116,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -39609,15 +40165,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -39631,15 +40195,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -39704,11 +40276,27 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "Section_DocumentId",
+          "column": "Section_LocalCourseCode",
           "identity_json_path": "$.sectionReference.localCourseCode"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Section_SchoolId",
+          "identity_json_path": "$.sectionReference.schoolId"
+        },
+        {
+          "column": "Section_SchoolYear",
+          "identity_json_path": "$.sectionReference.schoolYear"
+        },
+        {
+          "column": "Section_SectionIdentifier",
+          "identity_json_path": "$.sectionReference.sectionIdentifier"
+        },
+        {
+          "column": "Section_SessionName",
+          "identity_json_path": "$.sectionReference.sessionName"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -39778,11 +40366,27 @@
           "identity_json_path": "$.eventDate"
         },
         {
-          "column": "Section_DocumentId",
+          "column": "Section_LocalCourseCode",
           "identity_json_path": "$.sectionReference.localCourseCode"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "Section_SchoolId",
+          "identity_json_path": "$.sectionReference.schoolId"
+        },
+        {
+          "column": "Section_SchoolYear",
+          "identity_json_path": "$.sectionReference.schoolYear"
+        },
+        {
+          "column": "Section_SectionIdentifier",
+          "identity_json_path": "$.sectionReference.sectionIdentifier"
+        },
+        {
+          "column": "Section_SessionName",
+          "identity_json_path": "$.sectionReference.sessionName"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -39848,23 +40452,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -39897,15 +40501,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -39919,15 +40531,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -40051,15 +40671,23 @@
           "identity_json_path": "$.consentToEvaluationReceivedDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
@@ -40111,23 +40739,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -40160,15 +40788,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -40182,15 +40818,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -40258,11 +40902,11 @@
       "resource_name": "StudentTransportation",
       "identity_elements": [
         {
-          "column": "Student_DocumentId",
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         },
         {
-          "column": "TransportationEducationOrganization_DocumentId",
+          "column": "TransportationEducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.transportationEducationOrganizationReference.educationOrganizationId"
         }
       ]
@@ -40382,12 +41026,20 @@
       "resource_name": "SurveyCourseAssociation",
       "identity_elements": [
         {
-          "column": "Course_DocumentId",
+          "column": "Course_CourseCode",
           "identity_json_path": "$.courseReference.courseCode"
         },
         {
-          "column": "Survey_DocumentId",
+          "column": "Course_EducationOrganizationId",
+          "identity_json_path": "$.courseReference.educationOrganizationId"
+        },
+        {
+          "column": "Survey_Namespace",
           "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "Survey_SurveyIdentifier",
+          "identity_json_path": "$.surveyReference.surveyIdentifier"
         }
       ]
     },
@@ -40430,12 +41082,24 @@
       "resource_name": "SurveyProgramAssociation",
       "identity_elements": [
         {
-          "column": "Program_DocumentId",
+          "column": "Program_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Survey_DocumentId",
+          "column": "Program_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "Program_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Survey_Namespace",
           "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "Survey_SurveyIdentifier",
+          "identity_json_path": "$.surveyReference.surveyIdentifier"
         }
       ]
     },
@@ -40481,8 +41145,12 @@
           "identity_json_path": "$.questionCode"
         },
         {
-          "column": "Survey_DocumentId",
+          "column": "Survey_Namespace",
           "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "Survey_SurveyIdentifier",
+          "identity_json_path": "$.surveyReference.surveyIdentifier"
         }
       ]
     },
@@ -40537,12 +41205,28 @@
       "resource_name": "SurveyQuestionResponse",
       "identity_elements": [
         {
-          "column": "SurveyQuestion_DocumentId",
+          "column": "SurveyQuestion_Namespace",
           "identity_json_path": "$.surveyQuestionReference.namespace"
         },
         {
-          "column": "SurveyResponse_DocumentId",
+          "column": "SurveyQuestion_QuestionCode",
+          "identity_json_path": "$.surveyQuestionReference.questionCode"
+        },
+        {
+          "column": "SurveyQuestion_SurveyIdentifier",
+          "identity_json_path": "$.surveyQuestionReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveyResponse_Namespace",
           "identity_json_path": "$.surveyResponseReference.namespace"
+        },
+        {
+          "column": "SurveyResponse_SurveyIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveyResponse_SurveyResponseIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyResponseIdentifier"
         }
       ]
     },
@@ -40621,8 +41305,12 @@
       "resource_name": "SurveyResponse",
       "identity_elements": [
         {
-          "column": "Survey_DocumentId",
+          "column": "Survey_Namespace",
           "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "Survey_SurveyIdentifier",
+          "identity_json_path": "$.surveyReference.surveyIdentifier"
         },
         {
           "column": "SurveyResponseIdentifier",
@@ -40667,12 +41355,20 @@
       "resource_name": "SurveyResponseEducationOrganizationTargetAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "SurveyResponse_DocumentId",
+          "column": "SurveyResponse_Namespace",
           "identity_json_path": "$.surveyResponseReference.namespace"
+        },
+        {
+          "column": "SurveyResponse_SurveyIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveyResponse_SurveyResponseIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyResponseIdentifier"
         }
       ]
     },
@@ -40714,12 +41410,20 @@
       "resource_name": "SurveyResponseStaffTargetAssociation",
       "identity_elements": [
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         },
         {
-          "column": "SurveyResponse_DocumentId",
+          "column": "SurveyResponse_Namespace",
           "identity_json_path": "$.surveyResponseReference.namespace"
+        },
+        {
+          "column": "SurveyResponse_SurveyIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveyResponse_SurveyResponseIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyResponseIdentifier"
         }
       ]
     },
@@ -40772,8 +41476,12 @@
       "resource_name": "SurveySection",
       "identity_elements": [
         {
-          "column": "Survey_DocumentId",
+          "column": "Survey_Namespace",
           "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "Survey_SurveyIdentifier",
+          "identity_json_path": "$.surveyReference.surveyIdentifier"
         },
         {
           "column": "SurveySectionTitle",
@@ -40821,12 +41529,32 @@
       "resource_name": "SurveySectionAssociation",
       "identity_elements": [
         {
-          "column": "Section_DocumentId",
+          "column": "Section_LocalCourseCode",
           "identity_json_path": "$.sectionReference.localCourseCode"
         },
         {
-          "column": "Survey_DocumentId",
+          "column": "Section_SchoolId",
+          "identity_json_path": "$.sectionReference.schoolId"
+        },
+        {
+          "column": "Section_SchoolYear",
+          "identity_json_path": "$.sectionReference.schoolYear"
+        },
+        {
+          "column": "Section_SectionIdentifier",
+          "identity_json_path": "$.sectionReference.sectionIdentifier"
+        },
+        {
+          "column": "Section_SessionName",
+          "identity_json_path": "$.sectionReference.sessionName"
+        },
+        {
+          "column": "Survey_Namespace",
           "identity_json_path": "$.surveyReference.namespace"
+        },
+        {
+          "column": "Survey_SurveyIdentifier",
+          "identity_json_path": "$.surveyReference.surveyIdentifier"
         }
       ]
     },
@@ -40873,12 +41601,28 @@
       "resource_name": "SurveySectionResponse",
       "identity_elements": [
         {
-          "column": "SurveyResponse_DocumentId",
+          "column": "SurveyResponse_Namespace",
           "identity_json_path": "$.surveyResponseReference.namespace"
         },
         {
-          "column": "SurveySection_DocumentId",
+          "column": "SurveyResponse_SurveyIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveyResponse_SurveyResponseIdentifier",
+          "identity_json_path": "$.surveyResponseReference.surveyResponseIdentifier"
+        },
+        {
+          "column": "SurveySection_Namespace",
           "identity_json_path": "$.surveySectionReference.namespace"
+        },
+        {
+          "column": "SurveySection_SurveyIdentifier",
+          "identity_json_path": "$.surveySectionReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveySection_SurveySectionTitle",
+          "identity_json_path": "$.surveySectionReference.surveySectionTitle"
         }
       ]
     },
@@ -40945,12 +41689,32 @@
       "resource_name": "SurveySectionResponseEducationOrganizationTargetAssociation",
       "identity_elements": [
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "SurveySectionResponse_DocumentId",
+          "column": "SurveySectionResponse_SurveyResponseReferenceNamespace",
           "identity_json_path": "$.surveySectionResponseReference.namespace"
+        },
+        {
+          "column": "SurveySectionResponse_SurveySectionReferenceNamespace",
+          "identity_json_path": "$.surveySectionResponseReference.namespace"
+        },
+        {
+          "column": "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+          "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+          "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveySectionResponse_SurveyResponseIdentifier",
+          "identity_json_path": "$.surveySectionResponseReference.surveyResponseIdentifier"
+        },
+        {
+          "column": "SurveySectionResponse_SurveySectionTitle",
+          "identity_json_path": "$.surveySectionResponseReference.surveySectionTitle"
         }
       ]
     },
@@ -40978,12 +41742,32 @@
       "resource_name": "SurveySectionResponseStaffTargetAssociation",
       "identity_elements": [
         {
-          "column": "Staff_DocumentId",
+          "column": "Staff_StaffUniqueId",
           "identity_json_path": "$.staffReference.staffUniqueId"
         },
         {
-          "column": "SurveySectionResponse_DocumentId",
+          "column": "SurveySectionResponse_SurveyResponseReferenceNamespace",
           "identity_json_path": "$.surveySectionResponseReference.namespace"
+        },
+        {
+          "column": "SurveySectionResponse_SurveySectionReferenceNamespace",
+          "identity_json_path": "$.surveySectionResponseReference.namespace"
+        },
+        {
+          "column": "SurveySectionResponse_SurveyResponseReferenceSurveyIdentifier",
+          "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveySectionResponse_SurveySectionReferenceSurveyIdentifier",
+          "identity_json_path": "$.surveySectionResponseReference.surveyIdentifier"
+        },
+        {
+          "column": "SurveySectionResponse_SurveyResponseIdentifier",
+          "identity_json_path": "$.surveySectionResponseReference.surveyResponseIdentifier"
+        },
+        {
+          "column": "SurveySectionResponse_SurveySectionTitle",
+          "identity_json_path": "$.surveySectionResponseReference.surveySectionTitle"
         }
       ]
     },
@@ -41063,7 +41847,7 @@
       "resource_name": "BusRoute",
       "identity_elements": [
         {
-          "column": "Bus_DocumentId",
+          "column": "Bus_BusId",
           "identity_json_path": "$.busReference.busId"
         },
         {
@@ -41331,23 +42115,23 @@
           "target_column": "BeginDate"
         },
         {
-          "source_column": "EducationOrganization_DocumentId",
+          "source_column": "EducationOrganization_EducationOrganizationId",
           "target_column": "EducationOrganizationReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_EducationOrganizationId",
           "target_column": "ProgramReferenceEducationOrganizationId"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramName",
           "target_column": "ProgramReferenceProgramName"
         },
         {
-          "source_column": "ProgramProgram_DocumentId",
+          "source_column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
           "target_column": "ProgramReferenceProgramTypeDescriptor"
         },
         {
-          "source_column": "Student_DocumentId",
+          "source_column": "Student_StudentUniqueId",
           "target_column": "StudentReferenceStudentUniqueId"
         }
       ],
@@ -41380,15 +42164,23 @@
           "identity_json_path": "$.beginDate"
         },
         {
-          "column": "EducationOrganization_DocumentId",
+          "column": "EducationOrganization_EducationOrganizationId",
           "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
         },
         {
-          "column": "ProgramProgram_DocumentId",
+          "column": "ProgramProgram_EducationOrganizationId",
           "identity_json_path": "$.programReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "ProgramProgram_ProgramName",
+          "identity_json_path": "$.programReference.programName"
+        },
+        {
+          "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.programReference.programTypeDescriptor"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ],
@@ -41402,15 +42194,23 @@
             "identity_json_path": "$.beginDate"
           },
           {
-            "column": "EducationOrganization_DocumentId",
+            "column": "EducationOrganization_EducationOrganizationId",
             "identity_json_path": "$.educationOrganizationReference.educationOrganizationId"
           },
           {
-            "column": "ProgramProgram_DocumentId",
+            "column": "ProgramProgram_EducationOrganizationId",
             "identity_json_path": "$.programReference.educationOrganizationId"
           },
           {
-            "column": "Student_DocumentId",
+            "column": "ProgramProgram_ProgramName",
+            "identity_json_path": "$.programReference.programName"
+          },
+          {
+            "column": "ProgramProgram_ProgramTypeDescriptor_DescriptorId",
+            "identity_json_path": "$.programReference.programTypeDescriptor"
+          },
+          {
+            "column": "Student_StudentUniqueId",
             "identity_json_path": "$.studentReference.studentUniqueId"
           }
         ]
@@ -41744,11 +42544,19 @@
       "resource_name": "StudentGraduationPlanAssociation",
       "identity_elements": [
         {
-          "column": "GraduationPlan_DocumentId",
+          "column": "GraduationPlan_EducationOrganizationId",
           "identity_json_path": "$.graduationPlanReference.educationOrganizationId"
         },
         {
-          "column": "Student_DocumentId",
+          "column": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+          "identity_json_path": "$.graduationPlanReference.graduationPlanTypeDescriptor"
+        },
+        {
+          "column": "GraduationPlan_GraduationSchoolYear",
+          "identity_json_path": "$.graduationPlanReference.graduationSchoolYear"
+        },
+        {
+          "column": "Student_StudentUniqueId",
           "identity_json_path": "$.studentReference.studentUniqueId"
         }
       ]
