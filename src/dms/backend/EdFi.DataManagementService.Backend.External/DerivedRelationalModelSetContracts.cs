@@ -293,7 +293,12 @@ public readonly record struct DbTriggerName(string Value);
 /// </summary>
 /// <param name="Column">The physical column on the root table.</param>
 /// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
-public sealed record IdentityElementMapping(DbColumnName Column, string IdentityJsonPath);
+/// <param name="ScalarType">The scalar type metadata for type-aware string formatting in hash expressions.</param>
+public sealed record IdentityElementMapping(
+    DbColumnName Column,
+    string IdentityJsonPath,
+    RelationalScalarType ScalarType
+);
 
 /// <summary>
 /// Superclass alias information for subclass resources that must also maintain referential identity

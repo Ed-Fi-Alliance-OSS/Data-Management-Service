@@ -707,7 +707,13 @@ internal static class NestedCollectionsFixture
                     1,
                     "Ed-Fi",
                     "School",
-                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                    [
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
                 )
             ),
         ];
@@ -951,7 +957,13 @@ internal static class PolymorphicAbstractFixture
             1,
             "Ed-Fi",
             "EducationOrganization",
-            [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")]
+            [
+                new IdentityElementMapping(
+                    organizationIdColumn,
+                    "$.educationOrganizationId",
+                    new RelationalScalarType(ScalarKind.Int32)
+                ),
+            ]
         );
 
         List<DbTriggerInfo> triggers =
@@ -986,7 +998,13 @@ internal static class PolymorphicAbstractFixture
                     3,
                     "Ed-Fi",
                     "LocalEducationAgency",
-                    [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")],
+                    [
+                        new IdentityElementMapping(
+                            organizationIdColumn,
+                            "$.educationOrganizationId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ],
                     superclassAlias
                 )
             ),
@@ -1020,7 +1038,13 @@ internal static class PolymorphicAbstractFixture
                     2,
                     "Ed-Fi",
                     "School",
-                    [new IdentityElementMapping(organizationIdColumn, "$.educationOrganizationId")],
+                    [
+                        new IdentityElementMapping(
+                            organizationIdColumn,
+                            "$.educationOrganizationId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ],
                     superclassAlias
                 )
             ),
@@ -1305,7 +1329,13 @@ internal static class ExtensionMappingFixture
                     1,
                     "Ed-Fi",
                     "School",
-                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                    [
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
                 )
             ),
         ];
@@ -1504,7 +1534,13 @@ internal static class IdentityPropagationFixture
                     1,
                     "Ed-Fi",
                     "School",
-                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                    [
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
                 )
             ),
             // DocumentStamping on StudentSchoolAssociation root
@@ -1526,9 +1562,21 @@ internal static class IdentityPropagationFixture
                     "Ed-Fi",
                     "StudentSchoolAssociation",
                     [
-                        new IdentityElementMapping(schoolIdColumn, "$.schoolReference.schoolId"),
-                        new IdentityElementMapping(studentIdColumn, "$.studentReference.studentUniqueId"),
-                        new IdentityElementMapping(entryDateColumn, "$.entryDate"),
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolReference.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                        new IdentityElementMapping(
+                            studentIdColumn,
+                            "$.studentReference.studentUniqueId",
+                            new RelationalScalarType(ScalarKind.String)
+                        ),
+                        new IdentityElementMapping(
+                            entryDateColumn,
+                            "$.entryDate",
+                            new RelationalScalarType(ScalarKind.Date)
+                        ),
                     ]
                 )
             ),
@@ -2007,7 +2055,13 @@ internal static class KeyUnificationFixture
                     1,
                     "Ed-Fi",
                     "School",
-                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                    [
+                        new IdentityElementMapping(
+                            schoolIdColumn,
+                            "$.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                    ]
                 )
             ),
             // ── CourseRegistration triggers ──
@@ -2034,14 +2088,24 @@ internal static class KeyUnificationFixture
                     [
                         new IdentityElementMapping(
                             courseOfferingSchoolIdColumn,
-                            "$.courseOfferingReference.schoolId"
+                            "$.courseOfferingReference.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
                         ),
                         new IdentityElementMapping(
                             localCourseCodeColumn,
-                            "$.courseOfferingReference.localCourseCode"
+                            "$.courseOfferingReference.localCourseCode",
+                            new RelationalScalarType(ScalarKind.String)
                         ),
-                        new IdentityElementMapping(schoolSchoolIdColumn, "$.schoolReference.schoolId"),
-                        new IdentityElementMapping(registrationDateColumn, "$.registrationDate"),
+                        new IdentityElementMapping(
+                            schoolSchoolIdColumn,
+                            "$.schoolReference.schoolId",
+                            new RelationalScalarType(ScalarKind.Int32)
+                        ),
+                        new IdentityElementMapping(
+                            registrationDateColumn,
+                            "$.registrationDate",
+                            new RelationalScalarType(ScalarKind.Date)
+                        ),
                     ]
                 )
             ),

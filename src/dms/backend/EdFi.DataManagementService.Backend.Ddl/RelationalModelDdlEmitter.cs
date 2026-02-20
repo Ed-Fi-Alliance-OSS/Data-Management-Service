@@ -717,9 +717,35 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(" || '#' || ");
             writer.Append("'$");
             writer.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
-            writer.Append("=' || NEW.");
-            writer.Append(Quote(elements[i].Column));
-            writer.Append("::text");
+            writer.Append("=' || ");
+            EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
+        }
+    }
+
+    /// <summary>
+    /// Emits a type-aware text conversion for an identity column value in PostgreSQL.
+    /// Uses <c>::text</c> for most types (already ISO-stable) but explicit <c>to_char()</c>
+    /// for <see cref="ScalarKind.DateTime"/> where <c>::text</c> omits the ISO 8601 T separator.
+    /// </summary>
+    private void EmitPgsqlColumnToText(SqlWriter writer, DbColumnName column, RelationalScalarType scalarType)
+    {
+        var quoted = Quote(column);
+        switch (scalarType.Kind)
+        {
+            case ScalarKind.DateTime:
+                // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
+                // Use to_char for ISO 8601 with T separator.
+                writer.Append("to_char(NEW.");
+                writer.Append(quoted);
+                writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
+                break;
+
+            default:
+                // String, Int32, Int64, Date, Time, Decimal, Boolean — ::text is deterministic.
+                writer.Append("NEW.");
+                writer.Append(quoted);
+                writer.Append("::text");
+                break;
         }
     }
 
@@ -890,9 +916,58 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(" + N'#' + ");
             writer.Append("N'$");
             writer.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
-            writer.Append("=' + CAST(i.");
-            writer.Append(Quote(elements[i].Column));
-            writer.Append(" AS nvarchar(max))");
+            writer.Append("=' + ");
+            EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);
+        }
+    }
+
+    /// <summary>
+    /// Emits a type-aware nvarchar conversion for an identity column value in MSSQL.
+    /// Uses deterministic CONVERT styles for temporal types to ensure cross-engine parity
+    /// with PostgreSQL and Core's <c>JsonValue.ToString()</c>.
+    /// </summary>
+    private void EmitMssqlColumnToNvarchar(
+        SqlWriter writer,
+        DbColumnName column,
+        RelationalScalarType scalarType
+    )
+    {
+        var quoted = Quote(column);
+        switch (scalarType.Kind)
+        {
+            case ScalarKind.String:
+                // Already nvarchar — no cast needed.
+                writer.Append("i.");
+                writer.Append(quoted);
+                break;
+
+            case ScalarKind.Date:
+                // ISO 8601: YYYY-MM-DD (CONVERT style 23).
+                writer.Append("CONVERT(nvarchar(10), i.");
+                writer.Append(quoted);
+                writer.Append(", 23)");
+                break;
+
+            case ScalarKind.DateTime:
+                // ISO 8601: YYYY-MM-DDTHH:mm:ss.nnnnnnn (CONVERT style 126).
+                writer.Append("CONVERT(nvarchar(33), i.");
+                writer.Append(quoted);
+                writer.Append(", 126)");
+                break;
+
+            case ScalarKind.Time:
+                // HH:mm:ss (CONVERT style 108).
+                writer.Append("CONVERT(nvarchar(8), i.");
+                writer.Append(quoted);
+                writer.Append(", 108)");
+                break;
+
+            default:
+                // Int32, Int64, Decimal, Boolean — CAST is deterministic.
+                writer.Append("CAST(i.");
+                writer.Append(quoted);
+                writer.Append(" AS nvarchar(max))");
+                break;
         }
     }
 
