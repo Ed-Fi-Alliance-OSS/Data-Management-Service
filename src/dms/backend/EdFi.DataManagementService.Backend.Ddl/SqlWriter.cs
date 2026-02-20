@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
-using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -97,42 +96,6 @@ public sealed class SqlWriter
     {
         _builder.Append('\n');
         _atLineStart = true;
-        return this;
-    }
-
-    /// <summary>
-    /// Appends a quoted identifier using the dialect's quoting rules.
-    /// </summary>
-    /// <param name="identifier">The identifier to quote and append.</param>
-    /// <returns>This writer for method chaining.</returns>
-    public SqlWriter AppendQuoted(string identifier)
-    {
-        WriteIndentIfNeeded();
-        _builder.Append(Dialect.QuoteIdentifier(identifier));
-        return this;
-    }
-
-    /// <summary>
-    /// Appends a qualified table name (schema.table) with quoting.
-    /// </summary>
-    /// <param name="table">The table name.</param>
-    /// <returns>This writer for method chaining.</returns>
-    public SqlWriter AppendTable(DbTableName table)
-    {
-        WriteIndentIfNeeded();
-        _builder.Append(Dialect.QualifyTable(table));
-        return this;
-    }
-
-    /// <summary>
-    /// Appends a column type definition.
-    /// </summary>
-    /// <param name="scalarType">The scalar type metadata.</param>
-    /// <returns>This writer for method chaining.</returns>
-    public SqlWriter AppendColumnType(RelationalScalarType scalarType)
-    {
-        WriteIndentIfNeeded();
-        _builder.Append(Dialect.RenderColumnType(scalarType));
         return this;
     }
 

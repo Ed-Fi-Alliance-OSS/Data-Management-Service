@@ -20,10 +20,4 @@ public enum DdlPattern
     /// SQL Server-style: CREATE OR ALTER FUNCTION/VIEW/TRIGGER.
     /// </summary>
     CreateOrAlter,
-
-    /// <summary>
-    /// Drop-then-create pattern for objects that do not support idempotent creation
-    /// (e.g., PostgreSQL triggers).
-    /// </summary>
-    DropThenCreate,
 }

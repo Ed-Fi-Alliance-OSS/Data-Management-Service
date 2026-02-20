@@ -23,12 +23,6 @@ public abstract class SqlDialectBase : ISqlDialect
     public abstract string OrdinalColumnType { get; }
 
     /// <inheritdoc />
-    public abstract DdlPattern TriggerCreationPattern { get; }
-
-    /// <inheritdoc />
-    public abstract DdlPattern FunctionCreationPattern { get; }
-
-    /// <inheritdoc />
     public abstract DdlPattern ViewCreationPattern { get; }
 
     /// <inheritdoc />
