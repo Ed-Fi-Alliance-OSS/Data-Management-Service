@@ -1396,6 +1396,8 @@ internal static class IdentityPropagationFixture
         var schoolDocumentIdColumn = new DbColumnName("School_DocumentId");
         var studentIdColumn = new DbColumnName("StudentUniqueId");
         var entryDateColumn = new DbColumnName("EntryDate");
+        var entryTimestampColumn = new DbColumnName("EntryTimestamp");
+        var isActiveColumn = new DbColumnName("IsActive");
 
         // School resource
         var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
@@ -1480,6 +1482,22 @@ internal static class IdentityPropagationFixture
                     SourceJsonPath: null,
                     TargetResource: null
                 ),
+                new DbColumnModel(
+                    entryTimestampColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    isActiveColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Boolean),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
             ],
             [
                 new TableConstraint.ForeignKey(
@@ -1548,7 +1566,7 @@ internal static class IdentityPropagationFixture
                 new DbTriggerName("TR_StudentSchoolAssociation_Stamp"),
                 assocTableName,
                 [documentIdColumn],
-                [schoolIdColumn, studentIdColumn, entryDateColumn],
+                [schoolIdColumn, studentIdColumn, entryDateColumn, entryTimestampColumn, isActiveColumn],
                 new TriggerKindParameters.DocumentStamping()
             ),
             // ReferentialIdentityMaintenance on StudentSchoolAssociation
@@ -1556,7 +1574,7 @@ internal static class IdentityPropagationFixture
                 new DbTriggerName("TR_StudentSchoolAssociation_ReferentialIdentity"),
                 assocTableName,
                 [documentIdColumn],
-                [schoolIdColumn, studentIdColumn, entryDateColumn],
+                [schoolIdColumn, studentIdColumn, entryDateColumn, entryTimestampColumn, isActiveColumn],
                 new TriggerKindParameters.ReferentialIdentityMaintenance(
                     2,
                     "Ed-Fi",
@@ -1576,6 +1594,16 @@ internal static class IdentityPropagationFixture
                             entryDateColumn,
                             "$.entryDate",
                             new RelationalScalarType(ScalarKind.Date)
+                        ),
+                        new IdentityElementMapping(
+                            entryTimestampColumn,
+                            "$.entryTimestamp",
+                            new RelationalScalarType(ScalarKind.DateTime)
+                        ),
+                        new IdentityElementMapping(
+                            isActiveColumn,
+                            "$.isActive",
+                            new RelationalScalarType(ScalarKind.Boolean)
                         ),
                     ]
                 )
