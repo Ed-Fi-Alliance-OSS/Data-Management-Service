@@ -8,7 +8,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
 public class Given_PageDocumentIdSqlCompiler
