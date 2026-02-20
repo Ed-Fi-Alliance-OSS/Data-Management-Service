@@ -22,4 +22,9 @@ Authorization objects remain out of scope.
 
 ## Stories
 
-- `DMS-1028` — `00-plan-compilation.md` — Runtime plan compilation + caching (shared)
+- `DMS-1043` — `01-plan-sql-foundations.md` — Plan SQL foundations (shared canonical writer + dialect helpers)
+- `DMS-1044` — `02-plan-contracts-and-deterministic-bindings.md` — Plan contracts + deterministic bindings (parameter naming, ordering, metadata)
+- `DMS-1028` — `03-thin-slice-runtime-plan-compilation-and-cache.md` — Thin slice: runtime plan compilation + caching (root-only)
+- `DMS-1045` — `04-write-plan-compiler-collections-and-extensions.md` — Write-plan compilation for child/extension tables (replace semantics)
+- `DMS-1046` — `05-read-plan-compiler-hydration.md` — Read/hydration plan compilation (`SelectByKeysetSql`) for all tables
+- `DMS-1047` — `06-projection-plan-compilers.md` — Projection plan compilation (reference identity + descriptor URI)

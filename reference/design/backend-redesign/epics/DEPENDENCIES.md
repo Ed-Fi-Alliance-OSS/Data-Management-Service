@@ -3,7 +3,7 @@
 Status: Draft (planning aid derived from `reference/design/backend-redesign/epics/*`).
 
 Scope:
-- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 87 stories).
+- Includes all epics/stories under `reference/design/backend-redesign/epics/` (currently 16 epics, 94 stories).
 - Captures *implementation* dependencies implied by acceptance criteria and shared design contracts.
 - Does not attempt to define ownership, sequencing within sprints, or exact delivery dates.
 
@@ -180,8 +180,8 @@ Epic: `05-mpack-generation/EPIC.md`
 | --- | --- | --- | --- | --- |
 | E05-S00 | [`00-protobuf-contracts.md`](05-mpack-generation/00-protobuf-contracts.md) | — | — | Contracts project/package for PackFormatVersion=1 |
 | E05-S01 | [`01-pack-payload-shape.md`](05-mpack-generation/01-pack-payload-shape.md) | E05-S00, E00-S03, E01-S05 | — | Payload builder + ordering invariants + validation |
-| E05-S03 | [`03-pack-build-cli.md`](05-mpack-generation/03-pack-build-cli.md) | E05-S01, E15-S00, E00-S02 | — | CLI: `pack build` produces `.mpack` keyed by `EffectiveSchemaHash` |
-| E05-S04 | [`04-pack-manifests.md`](05-mpack-generation/04-pack-manifests.md) | E05-S01, E15-S00 | — | Deterministic `pack.manifest.json` + `mappingset.manifest.json` |
+| E05-S03 | [`03-pack-build-cli.md`](05-mpack-generation/03-pack-build-cli.md) | E05-S01, E15-S06, E00-S02 | — | CLI: `pack build` produces `.mpack` keyed by `EffectiveSchemaHash` |
+| E05-S04 | [`04-pack-manifests.md`](05-mpack-generation/04-pack-manifests.md) | E05-S01, E15-S06 | — | Deterministic `pack.manifest.json` + `mappingset.manifest.json` |
 | E05-S05 | [`05-pack-loader-validation.md`](05-mpack-generation/05-pack-loader-validation.md) | E05-S03, E05-S04 | E06-S01 | Pack selection + decode/validate + DB seed gate |
 | E05-S06 | [`06-pack-equivalence-tests.md`](05-mpack-generation/06-pack-equivalence-tests.md) | E05-S05 | — | Equivalence: runtime compile vs pack decode mapping-set semantics |
 | E05-S07 | [`07-pack-manifest-command.md`](05-mpack-generation/07-pack-manifest-command.md) | E05-S05 | E05-S04 | CLI: validate/decode pack and emit manifests (no rebuild) |
@@ -194,7 +194,7 @@ Epic: `06-runtime-mapping-selection/EPIC.md`
 | --- | --- | --- | --- | --- |
 | E06-S00 | [`00-read-effective-schema.md`](06-runtime-mapping-selection/00-read-effective-schema.md) | E02-S01, E03-S01 | — | Runtime DB fingerprint reader + per-connection-string cache |
 | E06-S01 | [`01-resourcekey-validation.md`](06-runtime-mapping-selection/01-resourcekey-validation.md) | E06-S00, E00-S03 | — | Fast-path seed gate via `dms.EffectiveSchema`; slow-path `dms.ResourceKey` diff |
-| E06-S02 | [`02-mapping-set-selection.md`](06-runtime-mapping-selection/02-mapping-set-selection.md) | E06-S00, E06-S01, E15-S00 | E05-S05 | Mapping set selection/caching (pack-backed optional; runtime compile fallback) |
+| E06-S02 | [`02-mapping-set-selection.md`](06-runtime-mapping-selection/02-mapping-set-selection.md) | E06-S00, E06-S01, E15-S03 | E05-S05 | Mapping set selection/caching (pack-backed optional; runtime compile fallback) |
 | E06-S03 | [`03-config-and-failure-modes.md`](06-runtime-mapping-selection/03-config-and-failure-modes.md) | E06-S02 | — | Config surface + error contracts + multi-DB-safe failure behavior |
 | E06-S04 | [`04-remove-hot-reload.md`](06-runtime-mapping-selection/04-remove-hot-reload.md) | E06-S00–E06-S03 | — | Remove schema reload/hot-reload hooks; align tests/workflow to provisioning model |
 
@@ -218,11 +218,11 @@ Epic: `08-relational-read-path/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E08-S00 | [`00-hydrate-multiresult.md`](08-relational-read-path/00-hydrate-multiresult.md) | E06-S02 | E15-S00 | Multi-result hydration queries for root/child/_ext tables |
+| E08-S00 | [`00-hydrate-multiresult.md`](08-relational-read-path/00-hydrate-multiresult.md) | E06-S02 | E15-S05 | Multi-result hydration queries for root/child/_ext tables |
 | E08-S01 | [`01-json-reconstitution.md`](08-relational-read-path/01-json-reconstitution.md) | E08-S00 | — | JSON writer/reconstituter (ordering, null handling, `_ext` overlay) |
 | E08-S02 | [`02-reference-identity-projection.md`](08-relational-read-path/02-reference-identity-projection.md) | E08-S00, E02-S02 | E01-S04 | Reference identity projection (incl. abstract targets via `{Abstract}_View`) |
 | E08-S03 | [`03-descriptor-projection.md`](08-relational-read-path/03-descriptor-projection.md) | E08-S00, E02-S01 | — | Descriptor URI projection from `dms.Descriptor` |
-| E08-S04 | [`04-query-execution.md`](08-relational-read-path/04-query-execution.md) | E06-S02 | E15-S00 | Root-table-only query execution + deterministic paging |
+| E08-S04 | [`04-query-execution.md`](08-relational-read-path/04-query-execution.md) | E06-S02 | E15-S01 | Root-table-only query execution + deterministic paging |
 | E08-S05 | [`05-descriptor-endpoints.md`](08-relational-read-path/05-descriptor-endpoints.md) | E06-S02, E01-S06 | E02-S05 | Descriptor GET/query endpoints served from `dms.Descriptor` |
 
 ### E09 — Strict Identity Maintenance & Concurrency
@@ -300,7 +300,12 @@ Epic: `15-plan-compilation/EPIC.md`
 
 | Story | Title | Hard Depends On | Soft Depends On | Produces / Touches |
 | --- | --- | --- | --- | --- |
-| E15-S00 | [`00-plan-compilation.md`](15-plan-compilation/00-plan-compilation.md) | E02-S00, E01-S05 | E01-S02 | Shared plan compiler + runtime cache (dialect-specific SQL plans) |
+| E15-S01 | [`01-plan-sql-foundations.md`](15-plan-compilation/01-plan-sql-foundations.md) | E02-S00 | — | Shared plan SQL writer/canonicalization + query plan foundations |
+| E15-S02 | [`02-plan-contracts-and-deterministic-bindings.md`](15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md) | E15-S01, E01-S05 | E01-S02 | Plan contracts + deterministic parameter naming/binding metadata |
+| E15-S03 | [`03-thin-slice-runtime-plan-compilation-and-cache.md`](15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md) | E15-S02 | E01-S02 | Root-only plan compiler + runtime cache/provider (first usable runtime compile fallback) |
+| E15-S04 | [`04-write-plan-compiler-collections-and-extensions.md`](15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md) | E15-S03 | — | Full write plans for child/extension tables (replace semantics, batching) |
+| E15-S05 | [`05-read-plan-compiler-hydration.md`](15-plan-compilation/05-read-plan-compiler-hydration.md) | E15-S03 | — | Full hydration read plans (`SelectByKeysetSql`) for all tables |
+| E15-S06 | [`06-projection-plan-compilers.md`](15-plan-compilation/06-projection-plan-compilers.md) | E15-S05 | E15-S04 | Projection plans (reference identity + descriptor URI) |
 
 ---
 
@@ -312,7 +317,7 @@ This is the smallest “end-to-end usable” spine that enables: generate DDL �
 2. E01-S00 → E01-S01 → E01-S02 → E01-S03 → E01-S04 → E01-S05
 3. E02-S00 → E02-S01 → E02-S06 → E02-S02 → E02-S03 → E02-S04
 4. E03-S00 → E03-S01 → E03-S02
-5. E15-S00
+5. E15-S01 → E15-S02 → E15-S03
 6. E06-S00 → E06-S01 → E06-S02 → E06-S03 → E06-S04
 7. E07-S00 → E07-S01 → E07-S02 → E07-S03 → E07-S04 → E07-S05
 8. E08-S00 → E08-S01 → E08-S02 → E08-S03 → E08-S04
@@ -348,7 +353,7 @@ These are areas where diverging implementations will create long-term drift; the
 
 1. **Effective schema loader + OpenAPI stripping**
    - Source: E00-S00
-   - Consumers: E00-S02/E00-S03, E01, E02-S03, E05-S03, E15-S00 (runtime compile), E06 (selection)
+   - Consumers: E00-S02/E00-S03, E01, E02-S03, E05-S03, E15-S03 (runtime compile), E06 (selection)
 
 2. **Canonical JSON**
    - Source: E00-S01
@@ -360,11 +365,11 @@ These are areas where diverging implementations will create long-term drift; the
 
 4. **Naming + identifier shortening**
    - Source: E01-S02 (rules), reused by E02 DDL emission and any compiled SQL plan generation
-   - Consumers: E02, E15-S00 (plan compilation), E11-S01 fallback conflict mapping
+   - Consumers: E02, E15-S03 (plan compilation), E11-S01 fallback conflict mapping
 
 5. **Dialect abstraction**
    - Source: E02-S00
-   - Consumers: E02 DDL, E03 provisioning execution, E15-S00 plan compilation, E07/E08 runtime SQL execution utilities
+   - Consumers: E02 DDL, E03 provisioning execution, E15-S01 plan compilation, E07/E08 runtime SQL execution utilities
 
 6. **`dms.ResourceKey` seed gate**
    - Source: E00-S03 (seed derivation), E02-S03 (seed DDL), E06-S01 (runtime validation)
@@ -478,9 +483,9 @@ Recommended Jira link creation:
 | Hard | `E05-S00` | `DMS-964` | `05-mpack-generation/00-protobuf-contracts.md` | `E05-S01` | `DMS-965` | `05-mpack-generation/01-pack-payload-shape.md` |
 | Hard | `E00-S02` | `DMS-925` | `00-effective-schema-hash/02-effective-schema-hash.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
 | Hard | `E05-S01` | `DMS-965` | `05-mpack-generation/01-pack-payload-shape.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
-| Hard | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
+| Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` |
 | Hard | `E05-S01` | `DMS-965` | `05-mpack-generation/01-pack-payload-shape.md` | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` |
-| Hard | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` |
+| Hard | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` |
 | Hard | `E05-S03` | `DMS-966` | `05-mpack-generation/03-pack-build-cli.md` | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` |
 | Hard | `E05-S04` | `DMS-967` | `05-mpack-generation/04-pack-manifests.md` | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` |
 | Soft | `E06-S01` | `DMS-976` | `06-runtime-mapping-selection/01-resourcekey-validation.md` | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` |
@@ -494,7 +499,7 @@ Recommended Jira link creation:
 | Soft | `E05-S05` | `DMS-968` | `05-mpack-generation/05-pack-loader-validation.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
 | Hard | `E06-S00` | `DMS-975` | `06-runtime-mapping-selection/00-read-effective-schema.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
 | Hard | `E06-S01` | `DMS-976` | `06-runtime-mapping-selection/01-resourcekey-validation.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
-| Hard | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
+| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E06-S03` | `DMS-978` | `06-runtime-mapping-selection/03-config-and-failure-modes.md` |
 | Hard | `E06-S00` | `DMS-975` | `06-runtime-mapping-selection/00-read-effective-schema.md` | `E06-S04` | `DMS-979` | `06-runtime-mapping-selection/04-remove-hot-reload.md` |
 | Hard | `E06-S01` | `DMS-976` | `06-runtime-mapping-selection/01-resourcekey-validation.md` | `E06-S04` | `DMS-979` | `06-runtime-mapping-selection/04-remove-hot-reload.md` |
@@ -517,7 +522,7 @@ Recommended Jira link creation:
 | Hard | `E02-S05` | `DMS-943` | `02-ddl-emission/05-descriptor-ddl.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
-| Soft | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
+| Soft | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` |
 | Hard | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` | `E08-S01` | `DMS-990` | `08-relational-read-path/01-json-reconstitution.md` |
 | Soft | `E01-S04` | `DMS-933` | `01-relational-model/04-abstract-union-views.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
 | Hard | `E02-S02` | `DMS-938` | `02-ddl-emission/02-project-and-resource-ddl.md` | `E08-S02` | `DMS-991` | `08-relational-read-path/02-reference-identity-projection.md` |
@@ -525,7 +530,7 @@ Recommended Jira link creation:
 | Hard | `E02-S01` | `DMS-937` | `02-ddl-emission/01-core-dms-ddl.md` | `E08-S03` | `DMS-992` | `08-relational-read-path/03-descriptor-projection.md` |
 | Hard | `E08-S00` | `DMS-989` | `08-relational-read-path/00-hydrate-multiresult.md` | `E08-S03` | `DMS-992` | `08-relational-read-path/03-descriptor-projection.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S04` | `DMS-993` | `08-relational-read-path/04-query-execution.md` |
-| Soft | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` | `E08-S04` | `DMS-993` | `08-relational-read-path/04-query-execution.md` |
+| Soft | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` | `E08-S04` | `DMS-993` | `08-relational-read-path/04-query-execution.md` |
 | Hard | `E01-S06` | `DMS-942` | `01-relational-model/06-descriptor-resource-mapping.md` | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` |
 | Soft | `E02-S05` | `DMS-943` | `02-ddl-emission/05-descriptor-ddl.md` | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` |
 | Hard | `E06-S02` | `DMS-977` | `06-runtime-mapping-selection/02-mapping-set-selection.md` | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` |
@@ -579,7 +584,13 @@ Recommended Jira link creation:
 | Soft | `E03-S05` | `DMS-955` | `03-provisioning-workflow/05-seed-descriptors.md` | `E13-S04` | `DMS-1025` | `13-test-migration/04-descriptor-tests.md` |
 | Hard | `E07-S06` | `DMS-987` | `07-relational-write-path/06-descriptor-writes.md` | `E13-S04` | `DMS-1025` | `13-test-migration/04-descriptor-tests.md` |
 | Hard | `E08-S05` | `DMS-994` | `08-relational-read-path/05-descriptor-endpoints.md` | `E13-S04` | `DMS-1025` | `13-test-migration/04-descriptor-tests.md` |
-| Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` |
-| Hard | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` |
-| Hard | `E02-S00` | `DMS-936` | `02-ddl-emission/00-dialect-abstraction.md` | `E15-S00` | `DMS-1028` | `15-plan-compilation/00-plan-compilation.md` |
+| Hard | `E02-S00` | `DMS-936` | `02-ddl-emission/00-dialect-abstraction.md` | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` |
+| Soft | `E01-S02` | `DMS-931` | `01-relational-model/02-naming-and-overrides.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
+| Hard | `E01-S05` | `DMS-934` | `01-relational-model/05-relational-model-manifest.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
+| Hard | `E15-S01` | `DMS-1043` | `15-plan-compilation/01-plan-sql-foundations.md` | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` |
+| Hard | `E15-S02` | `DMS-1044` | `15-plan-compilation/02-plan-contracts-and-deterministic-bindings.md` | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` |
+| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` |
+| Hard | `E15-S03` | `DMS-1028` | `15-plan-compilation/03-thin-slice-runtime-plan-compilation-and-cache.md` | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` |
+| Soft | `E15-S04` | `DMS-1045` | `15-plan-compilation/04-write-plan-compiler-collections-and-extensions.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
+| Hard | `E15-S05` | `DMS-1046` | `15-plan-compilation/05-read-plan-compiler-hydration.md` | `E15-S06` | `DMS-1047` | `15-plan-compilation/06-projection-plan-compilers.md` |
 <!-- END STORY DEPENDENCY EDGES -->
