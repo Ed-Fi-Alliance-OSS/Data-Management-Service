@@ -5,13 +5,14 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 
-namespace EdFi.DataManagementService.Backend.Plans;
+namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 /// <summary>
 /// Emits deterministic parameterized <c>INSERT</c> SQL for plan-compilation foundations.
 /// </summary>
-public sealed class ToyInsertSqlEmitter(SqlDialect dialect)
+public sealed class SimpleInsertSqlEmitter(SqlDialect dialect)
 {
     private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
 

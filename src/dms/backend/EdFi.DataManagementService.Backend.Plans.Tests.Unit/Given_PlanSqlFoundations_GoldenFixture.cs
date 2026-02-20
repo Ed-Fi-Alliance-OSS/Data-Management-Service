@@ -9,7 +9,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
 public class Given_PlanSqlFoundations_GoldenFixture
@@ -109,8 +109,8 @@ public class Given_PlanSqlFoundations_GoldenFixture
         {
             ["pgsql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Pgsql),
             ["mssql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Mssql),
-            ["pgsql.toy-insert.sql"] = BuildToyInsertSql(SqlDialect.Pgsql),
-            ["mssql.toy-insert.sql"] = BuildToyInsertSql(SqlDialect.Mssql),
+            ["pgsql.toy-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
+            ["mssql.toy-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
         };
     }
 
@@ -146,9 +146,9 @@ public class Given_PlanSqlFoundations_GoldenFixture
         return plan.PageDocumentIdSql;
     }
 
-    private static string BuildToyInsertSql(SqlDialect dialect)
+    private static string BuildSimpleInsertSql(SqlDialect dialect)
     {
-        return new ToyInsertSqlEmitter(dialect).Emit(
+        return new SimpleInsertSqlEmitter(dialect).Emit(
             table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             orderedColumns:
             [
@@ -215,7 +215,7 @@ public class Given_PlanSqlFoundations_GoldenFixture
         {
             var candidate = Path.Combine(
                 directory.FullName,
-                "EdFi.DataManagementService.Backend.Tests.Unit.csproj"
+                "EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj"
             );
 
             if (File.Exists(candidate))
@@ -227,7 +227,7 @@ public class Given_PlanSqlFoundations_GoldenFixture
         }
 
         throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.Tests.Unit.csproj in parent directories."
+            "Unable to locate EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj in parent directories."
         );
     }
 }

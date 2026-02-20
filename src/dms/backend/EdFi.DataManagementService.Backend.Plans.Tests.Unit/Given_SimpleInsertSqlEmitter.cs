@@ -4,19 +4,18 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 using FluentAssertions;
 using NUnit.Framework;
 
-namespace EdFi.DataManagementService.Backend.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 
 [TestFixture]
-public class Given_ToyInsertSqlEmitter
+public class Given_SimpleInsertSqlEmitter
 {
     [Test]
     public void It_should_emit_pgsql_insert_sql_with_canonical_multiline_format()
     {
-        var sql = new ToyInsertSqlEmitter(SqlDialect.Pgsql).Emit(
+        var sql = new SimpleInsertSqlEmitter(SqlDialect.Pgsql).Emit(
             table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             orderedColumns:
             [
@@ -51,7 +50,7 @@ public class Given_ToyInsertSqlEmitter
     [Test]
     public void It_should_emit_mssql_insert_sql_with_canonical_multiline_format()
     {
-        var sql = new ToyInsertSqlEmitter(SqlDialect.Mssql).Emit(
+        var sql = new SimpleInsertSqlEmitter(SqlDialect.Mssql).Emit(
             table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             orderedColumns:
             [
@@ -87,7 +86,7 @@ public class Given_ToyInsertSqlEmitter
     public void It_should_fail_fast_when_column_and_parameter_counts_do_not_match()
     {
         var act = () =>
-            new ToyInsertSqlEmitter(SqlDialect.Pgsql).Emit(
+            new SimpleInsertSqlEmitter(SqlDialect.Pgsql).Emit(
                 table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
                 orderedColumns: [new DbColumnName("SchoolId"), new DbColumnName("SchoolYear")],
                 orderedParameterNames: ["schoolId"]
@@ -102,7 +101,7 @@ public class Given_ToyInsertSqlEmitter
     public void It_should_reject_invalid_bare_parameter_names()
     {
         var act = () =>
-            new ToyInsertSqlEmitter(SqlDialect.Pgsql).Emit(
+            new SimpleInsertSqlEmitter(SqlDialect.Pgsql).Emit(
                 table: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
                 orderedColumns: [new DbColumnName("SchoolId"), new DbColumnName("SchoolYear")],
                 orderedParameterNames: ["schoolId", "@schoolYear"]
