@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
@@ -681,12 +680,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
-        // Defensive assertion: model derivation in DeriveTriggerInventoryPass guarantees non-empty identity elements.
-        // If this fires, there's a bug in the model derivation phase.
-        Debug.Assert(
-            identityElements.Count > 0,
-            $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
-        );
+        if (identityElements.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"ReferentialIdentityMaintenance trigger requires at least one identity element "
+                    + $"for resource '{resourceName}'. This indicates a bug in the model derivation phase."
+            );
+        }
 
         var uuidv5Func = FormatUuidv5FunctionName();
 
@@ -807,12 +807,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
-        // Defensive assertion: model derivation in DeriveTriggerInventoryPass guarantees non-empty identity elements.
-        // If this fires, there's a bug in the model derivation phase.
-        Debug.Assert(
-            identityElements.Count > 0,
-            $"ReferentialIdentityMaintenance trigger requires at least one identity element for resource '{resourceName}'."
-        );
+        if (identityElements.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"ReferentialIdentityMaintenance trigger requires at least one identity element "
+                    + $"for resource '{resourceName}'. This indicates a bug in the model derivation phase."
+            );
+        }
 
         var uuidv5Func = FormatUuidv5FunctionName();
 
@@ -1315,12 +1316,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(" AS");
 
         // Emit UNION ALL arms
-        // Defensive assertion: model derivation guarantees at least one union arm for abstract views.
-        // If this fires, there's a bug in the model derivation phase.
-        Debug.Assert(
-            viewInfo.UnionArmsInOrder.Count > 0,
-            $"Abstract union view '{viewInfo.ViewName.Schema.Value}.{viewInfo.ViewName.Name}' has no union arms."
-        );
+        if (viewInfo.UnionArmsInOrder.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"Abstract union view '{viewInfo.ViewName.Schema.Value}.{viewInfo.ViewName.Name}' "
+                    + "has no union arms. This indicates a bug in the model derivation phase."
+            );
+        }
 
         for (int i = 0; i < viewInfo.UnionArmsInOrder.Count; i++)
         {
