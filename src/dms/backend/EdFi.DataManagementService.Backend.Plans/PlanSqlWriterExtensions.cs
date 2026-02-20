@@ -91,6 +91,22 @@ public static partial class PlanSqlWriterExtensions
             {
                 var predicate = predicates[index];
 
+                if (predicate is null)
+                {
+                    throw new ArgumentException(
+                        $"Predicate at index {index} cannot be null or whitespace.",
+                        nameof(predicates)
+                    );
+                }
+
+                if (predicate.IndexOfAny('\r', '\n') >= 0)
+                {
+                    throw new ArgumentException(
+                        $"Predicate at index {index} cannot contain carriage return or newline characters.",
+                        nameof(predicates)
+                    );
+                }
+
                 if (string.IsNullOrWhiteSpace(predicate))
                 {
                     throw new ArgumentException(

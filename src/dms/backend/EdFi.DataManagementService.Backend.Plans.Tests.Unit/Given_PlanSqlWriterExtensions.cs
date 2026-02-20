@@ -74,6 +74,20 @@ public class Given_PlanSqlWriterExtensions
         sql.Split('\n').Should().OnlyContain(line => line.Length == 0 || !line.EndsWith(' '));
     }
 
+    [TestCase("r.\"SchoolId\" = @schoolId\nAND r.\"SchoolYear\" >= @schoolYear")]
+    [TestCase("r.\"SchoolId\" = @schoolId\r\nAND r.\"SchoolYear\" >= @schoolYear")]
+    [TestCase("\r")]
+    [TestCase("\n")]
+    public void It_should_reject_predicates_with_line_break_characters(string predicate)
+    {
+        var act = () => _writer.AppendWhereClause([predicate]);
+
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage("*Predicate at index 0 cannot contain carriage return or newline characters.*")
+            .WithParameterName("predicates");
+    }
+
     [Test]
     public void It_should_not_append_where_when_no_predicates_are_supplied()
     {
