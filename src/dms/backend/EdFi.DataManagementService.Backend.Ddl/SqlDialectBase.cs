@@ -219,6 +219,12 @@ public abstract class SqlDialectBase : ISqlDialect
     /// <inheritdoc />
     public abstract string RenderStringLiteral(string value);
 
+    /// <summary>
+    /// Escapes single quotes for safe embedding in a SQL string literal.
+    /// Dialect-independent: both PostgreSQL and SQL Server use doubled single quotes.
+    /// </summary>
+    public static string EscapeSingleQuote(string value) => value.Replace("'", "''");
+
     /// <inheritdoc />
     public virtual string RenderSmallintLiteral(short value) => value.ToString(CultureInfo.InvariantCulture);
 

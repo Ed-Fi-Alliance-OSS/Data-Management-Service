@@ -345,7 +345,7 @@ public sealed class PgsqlDialect : SqlDialectBase
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        return $"'{value.Replace("'", "''")}'";
+        return $"'{EscapeSingleQuote(value)}'";
     }
 
     /// <inheritdoc />
