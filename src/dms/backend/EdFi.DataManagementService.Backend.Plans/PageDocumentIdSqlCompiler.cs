@@ -41,8 +41,10 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             nameof(spec.LimitParameterName)
         );
 
-        var aliasMappingsByColumn = BuildAliasMappingLookup(spec.UnifiedAliasMappings);
-        var rewrittenPredicates = RewriteAndSortPredicates(spec.Predicates, aliasMappingsByColumn);
+        var rewrittenPredicates = RewriteAndSortPredicates(
+            spec.Predicates,
+            spec.UnifiedAliasMappingsByColumn
+        );
         var pageSql = BuildPageDocumentIdSql(spec, rewrittenPredicates);
         var totalCountSql = spec.IncludeTotalCountSql
             ? BuildTotalCountSql(spec.RootTable, rewrittenPredicates)
@@ -52,35 +54,11 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     }
 
     /// <summary>
-    /// Builds a lookup of unified-alias mappings keyed by the alias/binding column.
-    /// </summary>
-    private static IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> BuildAliasMappingLookup(
-        IReadOnlyList<UnifiedAliasColumnMapping> mappings
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mappings);
-
-        var lookup = new Dictionary<DbColumnName, UnifiedAliasColumnMapping>();
-
-        foreach (var mapping in mappings)
-        {
-            if (!lookup.TryAdd(mapping.AliasColumn, mapping))
-            {
-                throw new InvalidOperationException(
-                    $"Duplicate unified alias mapping for column '{mapping.AliasColumn.Value}'."
-                );
-            }
-        }
-
-        return lookup;
-    }
-
-    /// <summary>
     /// Rewrites predicates into canonical storage-column form and sorts by deterministic key.
     /// </summary>
     private static IReadOnlyList<RewrittenPredicate> RewriteAndSortPredicates(
         IReadOnlyList<QueryValuePredicate> predicates,
-        IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> aliasMappingsByColumn
+        IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> aliasMappingsByColumn
     )
     {
         ArgumentNullException.ThrowIfNull(predicates);
@@ -117,7 +95,7 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static RewrittenPredicate RewritePredicate(
         QueryValuePredicate predicate,
-        IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> aliasMappingsByColumn
+        IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> aliasMappingsByColumn
     )
     {
         ArgumentNullException.ThrowIfNull(predicate);

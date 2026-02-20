@@ -34,7 +34,7 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                 ],
                 [
-                    new UnifiedAliasColumnMapping(
+                    CreateUnifiedAliasMapping(
                         new DbColumnName("Student_StudentUniqueId"),
                         new DbColumnName("StudentUniqueId_Unified"),
                         new DbColumnName("Student_DocumentId")
@@ -65,7 +65,7 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                 ],
                 [
-                    new UnifiedAliasColumnMapping(
+                    CreateUnifiedAliasMapping(
                         new DbColumnName("GradingPeriodSchoolYear"),
                         new DbColumnName("SchoolYear_Unified"),
                         new DbColumnName("GradingPeriodSchoolYear_Present")
@@ -96,7 +96,7 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                 ],
                 [
-                    new UnifiedAliasColumnMapping(
+                    CreateUnifiedAliasMapping(
                         new DbColumnName("SectionIdentifier"),
                         new DbColumnName("SectionIdentifier_Unified"),
                         null
@@ -154,12 +154,12 @@ public class Given_PageDocumentIdSqlCompiler
                     ),
                 ],
                 [
-                    new UnifiedAliasColumnMapping(
+                    CreateUnifiedAliasMapping(
                         new DbColumnName("AliasA"),
                         new DbColumnName("CanonicalA"),
                         new DbColumnName("PresenceA")
                     ),
-                    new UnifiedAliasColumnMapping(
+                    CreateUnifiedAliasMapping(
                         new DbColumnName("AliasB"),
                         new DbColumnName("CanonicalB"),
                         null
@@ -205,12 +205,12 @@ public class Given_PageDocumentIdSqlCompiler
                         ),
                     ],
                     [
-                        new UnifiedAliasColumnMapping(
+                        CreateUnifiedAliasMapping(
                             new DbColumnName("AliasOne"),
                             new DbColumnName("CanonicalStudentUniqueId"),
                             new DbColumnName("Student_DocumentId")
                         ),
-                        new UnifiedAliasColumnMapping(
+                        CreateUnifiedAliasMapping(
                             new DbColumnName("AliasTwo"),
                             new DbColumnName("CanonicalStudentUniqueId"),
                             new DbColumnName("Student_DocumentId")
@@ -350,19 +350,38 @@ public class Given_PageDocumentIdSqlCompiler
 
     private static PageDocumentIdQuerySpec CreateSpec(
         IReadOnlyList<QueryValuePredicate> predicates,
-        IReadOnlyList<UnifiedAliasColumnMapping> unifiedAliasMappings,
+        IReadOnlyList<KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias>> unifiedAliasMappings,
         string offsetParameterName = "offset",
         string limitParameterName = "limit",
         bool includeTotalCountSql = false
     )
     {
+        var unifiedAliasMappingsByColumn = new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>();
+
+        foreach (var (aliasColumn, unifiedAlias) in unifiedAliasMappings)
+        {
+            unifiedAliasMappingsByColumn.Add(aliasColumn, unifiedAlias);
+        }
+
         return new PageDocumentIdQuerySpec(
             RootTable: new DbTableName(new DbSchemaName("edfi"), "StudentSchoolAssociation"),
             Predicates: predicates,
-            UnifiedAliasMappings: unifiedAliasMappings,
+            UnifiedAliasMappingsByColumn: unifiedAliasMappingsByColumn,
             OffsetParameterName: offsetParameterName,
             LimitParameterName: limitParameterName,
             IncludeTotalCountSql: includeTotalCountSql
+        );
+    }
+
+    private static KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias> CreateUnifiedAliasMapping(
+        DbColumnName aliasColumn,
+        DbColumnName canonicalColumn,
+        DbColumnName? presenceColumn
+    )
+    {
+        return new KeyValuePair<DbColumnName, ColumnStorage.UnifiedAlias>(
+            aliasColumn,
+            new ColumnStorage.UnifiedAlias(canonicalColumn, presenceColumn)
         );
     }
 }

@@ -133,14 +133,13 @@ public class Given_PlanSqlFoundations_GoldenFixture
                         "studentUniqueId"
                     ),
                 ],
-                UnifiedAliasMappings:
-                [
-                    new UnifiedAliasColumnMapping(
-                        new DbColumnName("Student_StudentUniqueId"),
+                UnifiedAliasMappingsByColumn: new Dictionary<DbColumnName, ColumnStorage.UnifiedAlias>
+                {
+                    [new DbColumnName("Student_StudentUniqueId")] = new ColumnStorage.UnifiedAlias(
                         new DbColumnName("StudentUniqueId_Unified"),
                         new DbColumnName("Student_DocumentId")
                     ),
-                ]
+                }
             )
         );
 
