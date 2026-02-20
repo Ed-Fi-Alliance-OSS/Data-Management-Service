@@ -118,3 +118,9 @@ Decisions: prioritized emitter promotion over remaining hardening task as strong
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleInsertSqlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleInsertSqlEmitter.cs (deleted); src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_SimpleInsertSqlEmitter.cs; tasks.json
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass, transient MSB3026 copy-retry warnings only).
 Blockers/notes: none. Remaining open task in tasks.json: SQL Foundations hardening for multiline predicate fragments.
+2026-02-20
+Task: SQL Foundations - harden AppendWhereClause(IReadOnlyList<string>) against multiline predicate fragments (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: enforced single-line predicate contract before trim/formatting so newline-bearing fragments fail fast deterministically; preserved existing canonical WHERE layout and null/whitespace rejection behavior for valid single-line inputs.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_PlanSqlWriterExtensions.cs; tasks.json
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
+Blockers/notes: none. All tasks in tasks.json complete for this story.
