@@ -187,31 +187,31 @@ public class Given_PageDocumentIdSqlCompiler
     }
 
     [Test]
-    public void It_should_fail_fast_for_duplicate_predicates_after_unified_alias_rewrite()
+    public void It_should_fail_fast_for_duplicate_semantic_predicates_after_unified_alias_rewrite()
     {
         var act = () =>
             _compiler.Compile(
                 CreateSpec(
                     [
                         new QueryValuePredicate(
-                            new DbColumnName("AliasOne"),
-                            QueryComparisonOperator.Equal,
-                            "studentUniqueId"
-                        ),
-                        new QueryValuePredicate(
                             new DbColumnName("AliasTwo"),
                             QueryComparisonOperator.Equal,
-                            "studentUniqueId"
+                            "zParam"
+                        ),
+                        new QueryValuePredicate(
+                            new DbColumnName("AliasOne"),
+                            QueryComparisonOperator.Equal,
+                            "aParam"
                         ),
                     ],
                     [
                         CreateUnifiedAliasMapping(
-                            new DbColumnName("AliasOne"),
+                            new DbColumnName("AliasTwo"),
                             new DbColumnName("CanonicalStudentUniqueId"),
                             new DbColumnName("Student_DocumentId")
                         ),
                         CreateUnifiedAliasMapping(
-                            new DbColumnName("AliasTwo"),
+                            new DbColumnName("AliasOne"),
                             new DbColumnName("CanonicalStudentUniqueId"),
                             new DbColumnName("Student_DocumentId")
                         ),
@@ -222,7 +222,7 @@ public class Given_PageDocumentIdSqlCompiler
         act.Should()
             .Throw<InvalidOperationException>()
             .WithMessage(
-                "Duplicate predicate after unified alias rewrite for sort key (presenceColumn='Student_DocumentId', canonicalColumn='CanonicalStudentUniqueId', operator='Equal', parameterName='studentUniqueId')."
+                "Duplicate predicate after unified alias rewrite for semantic key (presenceColumn='Student_DocumentId', canonicalColumn='CanonicalStudentUniqueId', operator='Equal'). Colliding original columns: ['AliasOne', 'AliasTwo']. Colliding parameter names: ['aParam', 'zParam']."
             );
     }
 

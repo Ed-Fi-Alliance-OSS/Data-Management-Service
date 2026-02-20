@@ -188,5 +188,15 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
     ],
     "completed": true
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Strengthen duplicate predicate detection after unified-alias rewrite in `PageDocumentIdSqlCompiler` by treating predicates as duplicates when they share the same rewritten semantic key, ignoring parameter-name differences. Acceptance: (1) duplicate detection key is `(PresenceColumn (or empty), CanonicalColumn, Operator)` and does not include `ParameterName`; (2) `ParameterName` remains a deterministic tie-breaker for emission ordering; (3) when duplicates are detected, compilation fails fast with a deterministic `InvalidOperationException` message that includes the semantic key values and lists all colliding original predicate columns and parameter names in stable `StringComparer.Ordinal` order; (4) compiled SQL output for non-duplicate inputs remains byte-for-byte identical to existing plan-sql-foundations goldens for pgsql+mssql.",
+    "steps-to-verify": [
+      "Add/adjust unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_PageDocumentIdSqlCompiler.cs` covering duplicate semantic predicates with different parameter names and validating deterministic exception output.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
   }
 ]
