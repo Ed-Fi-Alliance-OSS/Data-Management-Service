@@ -73,16 +73,6 @@ public interface ISqlDialect
     string DropTriggerIfExists(DbTableName table, string triggerName);
 
     /// <summary>
-    /// Gets the DDL pattern used for trigger creation.
-    /// </summary>
-    DdlPattern TriggerCreationPattern { get; }
-
-    /// <summary>
-    /// Gets the DDL pattern used for function creation.
-    /// </summary>
-    DdlPattern FunctionCreationPattern { get; }
-
-    /// <summary>
     /// Gets the DDL pattern used for view creation.
     /// </summary>
     DdlPattern ViewCreationPattern { get; }

@@ -39,12 +39,6 @@ public sealed class PgsqlDialect : SqlDialectBase
     public override string OrdinalColumnType => "integer";
 
     /// <inheritdoc />
-    public override DdlPattern TriggerCreationPattern => DdlPattern.DropThenCreate;
-
-    /// <inheritdoc />
-    public override DdlPattern FunctionCreationPattern => DdlPattern.CreateOrReplace;
-
-    /// <inheritdoc />
     public override DdlPattern ViewCreationPattern => DdlPattern.CreateOrReplace;
 
     /// <inheritdoc />

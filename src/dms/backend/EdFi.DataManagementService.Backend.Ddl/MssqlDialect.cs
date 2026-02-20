@@ -39,12 +39,6 @@ public sealed class MssqlDialect : SqlDialectBase
     public override string OrdinalColumnType => "int";
 
     /// <inheritdoc />
-    public override DdlPattern TriggerCreationPattern => DdlPattern.CreateOrAlter;
-
-    /// <inheritdoc />
-    public override DdlPattern FunctionCreationPattern => DdlPattern.CreateOrAlter;
-
-    /// <inheritdoc />
     public override DdlPattern ViewCreationPattern => DdlPattern.CreateOrAlter;
 
     /// <inheritdoc />

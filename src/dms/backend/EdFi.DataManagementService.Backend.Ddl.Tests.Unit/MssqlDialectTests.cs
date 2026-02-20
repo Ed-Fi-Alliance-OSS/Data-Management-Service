@@ -450,18 +450,6 @@ public class Given_MssqlDialect_Ddl_Patterns
     }
 
     [Test]
-    public void It_should_use_create_or_alter_for_triggers()
-    {
-        _dialect.TriggerCreationPattern.Should().Be(DdlPattern.CreateOrAlter);
-    }
-
-    [Test]
-    public void It_should_use_create_or_alter_for_functions()
-    {
-        _dialect.FunctionCreationPattern.Should().Be(DdlPattern.CreateOrAlter);
-    }
-
-    [Test]
     public void It_should_use_create_or_alter_for_views()
     {
         _dialect.ViewCreationPattern.Should().Be(DdlPattern.CreateOrAlter);
