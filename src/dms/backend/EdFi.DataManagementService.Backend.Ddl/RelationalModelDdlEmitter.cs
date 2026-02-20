@@ -696,8 +696,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
         // with no separator — do not add one without updating the calculator.
         writer.Append("'::uuid, '");
-        writer.Append(EscapeSqlLiteral(projectName));
-        writer.Append(EscapeSqlLiteral(resourceName));
+        writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
+        writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
         writer.Append("' || ");
         EmitPgsqlIdentityHashExpression(writer, identityElements);
         writer.Append("), NEW.");
@@ -717,7 +717,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             if (i > 0)
                 writer.Append(" || '#' || ");
             writer.Append("'$");
-            writer.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
+            writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' || ");
             EmitPgsqlColumnToText(writer, elements[i].Column, elements[i].ScalarType);
         }
@@ -885,8 +885,8 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
         // with no separator — do not add one without updating the calculator.
         writer.Append("', N'");
-        writer.Append(EscapeSqlLiteral(projectName));
-        writer.Append(EscapeSqlLiteral(resourceName));
+        writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
+        writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
         writer.Append("' + ");
         EmitMssqlIdentityHashExpression(writer, identityElements);
         writer.Append("), i.");
@@ -916,7 +916,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             if (i > 0)
                 writer.Append(" + N'#' + ");
             writer.Append("N'$");
-            writer.Append(EscapeSqlLiteral(elements[i].IdentityJsonPath));
+            writer.Append(SqlDialectBase.EscapeSingleQuote(elements[i].IdentityJsonPath));
             writer.Append("=' + ");
             EmitMssqlColumnToNvarchar(writer, elements[i].Column, elements[i].ScalarType);
         }
@@ -1053,7 +1053,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append(Quote(mapping.SourceColumn));
             }
             writer.Append(", '");
-            writer.Append(EscapeSqlLiteral(discriminatorValue));
+            writer.Append(SqlDialectBase.EscapeSingleQuote(discriminatorValue));
             writer.AppendLine("')");
 
             writer.Append("ON CONFLICT (");
@@ -1190,7 +1190,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(mapping.SourceColumn));
         }
         writer.Append(", N'");
-        writer.Append(EscapeSqlLiteral(discriminatorValue));
+        writer.Append(SqlDialectBase.EscapeSingleQuote(discriminatorValue));
         writer.AppendLine("');");
     }
 
@@ -1638,7 +1638,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // PostgreSQL: 'literal'::type
             writer.Append("'");
-            writer.Append(EscapeSqlLiteral(value));
+            writer.Append(SqlDialectBase.EscapeSingleQuote(value));
             writer.Append("'::");
             writer.Append(sqlType);
         }
@@ -1646,7 +1646,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         {
             // SQL Server: CAST(N'literal' AS type)
             writer.Append("CAST(N'");
-            writer.Append(EscapeSqlLiteral(value));
+            writer.Append(SqlDialectBase.EscapeSingleQuote(value));
             writer.Append("' AS ");
             writer.Append(sqlType);
             writer.Append(")");
@@ -1741,20 +1741,4 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         return $"{Quote(DmsTableNames.Document.Schema)}.{Quote("uuidv5")}";
     }
-
-    /// <summary>
-    /// Escapes single quotes in a value for safe embedding in a SQL string literal.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Inputs are schema-derived and pre-validated (project names, resource names, JSON paths)
-    /// from the API schema loader. These are not user-supplied runtime values.
-    /// </para>
-    /// <para>
-    /// Assumes <c>standard_conforming_strings = on</c> (PostgreSQL default since 9.1),
-    /// so backslashes are treated as literal characters and do not need escaping.
-    /// For MSSQL, <c>SET QUOTED_IDENTIFIER ON</c> (the default) provides similar semantics.
-    /// </para>
-    /// </remarks>
-    private static string EscapeSqlLiteral(string value) => value.Replace("'", "''");
 }

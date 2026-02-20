@@ -399,7 +399,7 @@ public sealed class MssqlDialect : SqlDialectBase
     {
         ArgumentNullException.ThrowIfNull(value);
 
-        return $"N'{value.Replace("'", "''")}'";
+        return $"N'{EscapeSingleQuote(value)}'";
     }
 
     /// <inheritdoc />
