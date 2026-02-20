@@ -318,64 +318,15 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds the ordered set of root identity projection columns by resolving
-    /// <c>identityJsonPaths</c> to physical column names. For identity-component references, this
-    /// projects locally stored identity-part columns (from
-    /// <see cref="DocumentReferenceBinding.IdentityBindings"/>) so trigger compare sets detect value
-    /// changes even when <c>..._DocumentId</c> remains stable.
+    /// Builds the ordered set of root identity projection columns by delegating to
+    /// <see cref="BuildIdentityElementMappings"/> and projecting just the column names.
     /// </summary>
     private static IReadOnlyList<DbColumnName> BuildRootIdentityProjectionColumns(
         RelationalResourceModel resourceModel,
         RelationalModelBuilderContext builderContext,
         QualifiedResourceName resource
-    )
-    {
-        if (builderContext.IdentityJsonPaths.Count == 0)
-        {
-            return [];
-        }
-
-        var rootTable = resourceModel.Root;
-        var rootColumnsByPath = BuildColumnNameLookupBySourceJsonPath(rootTable, resource);
-        var referenceBindingsByIdentityPath = BuildReferenceIdentityBindings(
-            resourceModel.DocumentReferenceBindings,
-            resource
-        );
-
-        HashSet<string> seenColumns = new(StringComparer.Ordinal);
-        List<DbColumnName> uniqueColumns = new(builderContext.IdentityJsonPaths.Count);
-
-        foreach (var identityPath in builderContext.IdentityJsonPaths)
-        {
-            var identityPartColumns = ResolveReferenceIdentityPartColumns(
-                identityPath.Canonical,
-                referenceBindingsByIdentityPath,
-                rootTable.Table,
-                resource
-            );
-
-            if (identityPartColumns is not null)
-            {
-                foreach (var col in identityPartColumns)
-                {
-                    AddUniqueColumn(col, uniqueColumns, seenColumns);
-                }
-                continue;
-            }
-
-            if (!rootColumnsByPath.TryGetValue(identityPath.Canonical, out var columnName))
-            {
-                throw new InvalidOperationException(
-                    $"Identity path '{identityPath.Canonical}' on resource '{FormatResource(resource)}' "
-                        + "did not map to a root table column during trigger derivation."
-                );
-            }
-
-            AddUniqueColumn(columnName, uniqueColumns, seenColumns);
-        }
-
-        return uniqueColumns.ToArray();
-    }
+    ) =>
+        BuildIdentityElementMappings(resourceModel, builderContext, resource).Select(e => e.Column).ToArray();
 
     /// <summary>
     /// Helper record for reverse reference index entries.
