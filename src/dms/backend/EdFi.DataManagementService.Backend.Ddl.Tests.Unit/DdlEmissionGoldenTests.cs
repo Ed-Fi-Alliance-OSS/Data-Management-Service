@@ -333,6 +333,103 @@ public class Given_DdlEmitter_With_ExtensionMapping_For_Mssql : DdlEmissionGolde
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// Golden File Tests - Key Unification
+// ═══════════════════════════════════════════════════════════════════
+
+[TestFixture]
+public class Given_DdlEmitter_With_KeyUnification_For_Pgsql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = KeyUnificationFixture.Build(SqlDialect.Pgsql);
+        _paths = EmitDdl("key-unification", SqlDialect.Pgsql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_stored_generated_column_for_alias()
+    {
+        _ddlContent.Should().Contain("GENERATED ALWAYS AS", "alias columns should emit GENERATED ALWAYS AS");
+        _ddlContent.Should().Contain("STORED", "alias columns should be STORED in PostgreSQL");
+    }
+}
+
+[TestFixture]
+public class Given_DdlEmitter_With_KeyUnification_For_Mssql : DdlEmissionGoldenTestBase
+{
+    private GoldenTestPaths _paths = default!;
+    private string _ddlContent = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var modelSet = KeyUnificationFixture.Build(SqlDialect.Mssql);
+        _paths = EmitDdl("key-unification", SqlDialect.Mssql, modelSet);
+        _ddlContent = File.ReadAllText(_paths.ActualPath);
+    }
+
+    [Test]
+    public void It_should_emit_ddl_matching_golden_file()
+    {
+        AssertGoldenMatch(_paths);
+    }
+
+    [Test]
+    public void It_should_emit_persisted_computed_column_for_alias()
+    {
+        _ddlContent.Should().Contain("PERSISTED", "alias columns should be PERSISTED in MSSQL");
+    }
+
+    [Test]
+    public void It_should_not_use_update_on_alias_columns()
+    {
+        // Alias columns are computed — UPDATE() on them would fail with Msg 2114
+        _ddlContent
+            .Should()
+            .NotContain("UPDATE([CourseOffering_SchoolId])", "UPDATE() must not reference alias columns");
+        _ddlContent
+            .Should()
+            .NotContain("UPDATE([School_SchoolId])", "UPDATE() must not reference alias columns");
+    }
+
+    [Test]
+    public void It_should_not_set_alias_columns_in_propagation()
+    {
+        // Alias columns are computed — SET on them would fail with Msg 271
+        _ddlContent
+            .Should()
+            .NotContain("SET r.[CourseOffering_SchoolId]", "SET must not target alias columns");
+        _ddlContent.Should().NotContain("SET r.[School_SchoolId]", "SET must not target alias columns");
+    }
+
+    [Test]
+    public void It_should_use_canonical_column_in_update_guard()
+    {
+        _ddlContent
+            .Should()
+            .Contain("UPDATE([SchoolId_Unified])", "UPDATE() should reference canonical stored column");
+    }
+
+    [Test]
+    public void It_should_use_canonical_column_in_propagation_set()
+    {
+        _ddlContent
+            .Should()
+            .Contain("[SchoolId_Unified]", "propagation SET should reference canonical stored column");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // Golden File Tests - FK Support Indexes
 // ═══════════════════════════════════════════════════════════════════
 
@@ -1674,6 +1771,339 @@ internal static class FkSupportIndexFixture
             [],
             [],
             indexes,
+            triggers
+        );
+    }
+}
+
+/// <summary>
+/// Fixture for key unification with triggers scenario:
+/// CourseRegistration has two references (courseOfferingReference and schoolReference) that both
+/// carry a SchoolId identity field. Key unification merges them into a canonical SchoolId_Unified
+/// column with two persisted computed alias columns (CourseOffering_SchoolId, School_SchoolId).
+///
+/// Validates:
+/// - Computed column definitions (PERSISTED for MSSQL, GENERATED ALWAYS AS ... STORED for PostgreSQL)
+/// - UPDATE() guards in MSSQL triggers reference the canonical stored column, not aliases
+/// - Propagation trigger SET targets reference canonical stored columns, not aliases
+/// - Identity hash expressions in ReferentialIdentity triggers read alias columns from inserted/NEW
+/// - FK constraints use the DocumentId FK columns (not identity alias columns)
+/// </summary>
+internal static class KeyUnificationFixture
+{
+    internal static DerivedRelationalModelSet Build(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var documentIdColumn = new DbColumnName("DocumentId");
+
+        // ── School resource (referenced entity, source of propagation) ──
+        var schoolResource = new QualifiedResourceName("Ed-Fi", "School");
+        var schoolResourceKey = new ResourceKeyEntry(1, schoolResource, "1.0.0", false);
+        var schoolIdColumn = new DbColumnName("SchoolId");
+
+        var schoolTableName = new DbTableName(schema, "School");
+        var schoolTable = new DbTableModel(
+            schoolTableName,
+            new JsonPathExpression("$", []),
+            new TableKey("PK_School", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    schoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var schoolRelationalModel = new RelationalResourceModel(
+            schoolResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            schoolTable,
+            [schoolTable],
+            [],
+            []
+        );
+
+        // ── CourseRegistration resource (referrer with key-unified alias columns) ──
+        var regResource = new QualifiedResourceName("Ed-Fi", "CourseRegistration");
+        var regResourceKey = new ResourceKeyEntry(2, regResource, "1.0.0", false);
+
+        // Column names — post-unification layout
+        var courseOfferingDocIdColumn = new DbColumnName("CourseOffering_DocumentId");
+        var schoolDocIdColumn = new DbColumnName("School_DocumentId");
+        var courseOfferingSchoolIdColumn = new DbColumnName("CourseOffering_SchoolId");
+        var schoolSchoolIdColumn = new DbColumnName("School_SchoolId");
+        var schoolIdUnifiedColumn = new DbColumnName("SchoolId_Unified");
+        var localCourseCodeColumn = new DbColumnName("CourseOffering_LocalCourseCode");
+        var registrationDateColumn = new DbColumnName("RegistrationDate");
+
+        var regTableName = new DbTableName(schema, "CourseRegistration");
+        var regTable = new DbTableModel(
+            regTableName,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_CourseRegistration",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                // DocumentId (PK)
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                // CourseOffering_DocumentId (FK to CourseOffering)
+                new DbColumnModel(
+                    courseOfferingDocIdColumn,
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: new QualifiedResourceName("Ed-Fi", "CourseOffering")
+                ),
+                // School_DocumentId (FK to School)
+                new DbColumnModel(
+                    schoolDocIdColumn,
+                    ColumnKind.DocumentFk,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: schoolResource
+                ),
+                // CourseOffering_SchoolId — UNIFIED ALIAS → SchoolId_Unified (presence-gated by CourseOffering_DocumentId)
+                new(
+                    courseOfferingSchoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.courseOfferingReference.schoolId", []),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(schoolIdUnifiedColumn, courseOfferingDocIdColumn)
+                ),
+                // CourseOffering_LocalCourseCode — stored identity column
+                new DbColumnModel(
+                    localCourseCodeColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 60),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.courseOfferingReference.localCourseCode", []),
+                    TargetResource: null
+                ),
+                // School_SchoolId — UNIFIED ALIAS → SchoolId_Unified (presence-gated by School_DocumentId)
+                new(
+                    schoolSchoolIdColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.schoolReference.schoolId", []),
+                    TargetResource: null,
+                    Storage: new ColumnStorage.UnifiedAlias(schoolIdUnifiedColumn, schoolDocIdColumn)
+                ),
+                // RegistrationDate — stored own-identity column
+                new DbColumnModel(
+                    registrationDateColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Date),
+                    IsNullable: false,
+                    SourceJsonPath: new JsonPathExpression("$.registrationDate", []),
+                    TargetResource: null
+                ),
+                // SchoolId_Unified — canonical stored column (added by key unification)
+                new DbColumnModel(
+                    schoolIdUnifiedColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    "FK_CourseRegistration_CourseOffering",
+                    [courseOfferingDocIdColumn],
+                    new DbTableName(schema, "CourseOffering"),
+                    [documentIdColumn],
+                    ReferentialAction.NoAction,
+                    ReferentialAction.NoAction
+                ),
+                new TableConstraint.ForeignKey(
+                    "FK_CourseRegistration_School",
+                    [schoolDocIdColumn],
+                    schoolTableName,
+                    [documentIdColumn],
+                    ReferentialAction.NoAction,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        )
+        {
+            KeyUnificationClasses =
+            [
+                new KeyUnificationClass(
+                    schoolIdUnifiedColumn,
+                    [courseOfferingSchoolIdColumn, schoolSchoolIdColumn]
+                ),
+            ],
+        };
+
+        var regRelationalModel = new RelationalResourceModel(
+            regResource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            regTable,
+            [regTable],
+            [],
+            []
+        );
+
+        // ── Triggers ──
+
+        // Identity projection columns for CourseRegistration use CANONICAL stored columns only.
+        // The two alias columns (CourseOffering_SchoolId, School_SchoolId) resolve to the same
+        // canonical SchoolId_Unified, so after de-duplication the projection is:
+        //   [SchoolId_Unified, CourseOffering_LocalCourseCode, RegistrationDate]
+        IReadOnlyList<DbColumnName> regIdentityProjectionColumns =
+        [
+            schoolIdUnifiedColumn,
+            localCourseCodeColumn,
+            registrationDateColumn,
+        ];
+
+        List<DbTriggerInfo> triggers =
+        [
+            // ── School triggers ──
+            // DocumentStamping on School root
+            new(
+                new DbTriggerName("TR_School_Stamp"),
+                schoolTableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            // ReferentialIdentityMaintenance on School
+            new(
+                new DbTriggerName("TR_School_ReferentialIdentity"),
+                schoolTableName,
+                [documentIdColumn],
+                [schoolIdColumn],
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    1,
+                    "Ed-Fi",
+                    "School",
+                    [new IdentityElementMapping(schoolIdColumn, "$.schoolId")]
+                )
+            ),
+            // ── CourseRegistration triggers ──
+            // DocumentStamping on CourseRegistration root (identity projection = canonical columns)
+            new(
+                new DbTriggerName("TR_CourseRegistration_Stamp"),
+                regTableName,
+                [documentIdColumn],
+                regIdentityProjectionColumns,
+                new TriggerKindParameters.DocumentStamping()
+            ),
+            // ReferentialIdentityMaintenance on CourseRegistration
+            // IdentityElements use alias columns (readable from inserted/NEW for hash computation).
+            // IdentityProjectionColumns use canonical stored columns (for UPDATE guards).
+            new(
+                new DbTriggerName("TR_CourseRegistration_ReferentialIdentity"),
+                regTableName,
+                [documentIdColumn],
+                regIdentityProjectionColumns,
+                new TriggerKindParameters.ReferentialIdentityMaintenance(
+                    2,
+                    "Ed-Fi",
+                    "CourseRegistration",
+                    [
+                        new IdentityElementMapping(
+                            courseOfferingSchoolIdColumn,
+                            "$.courseOfferingReference.schoolId"
+                        ),
+                        new IdentityElementMapping(
+                            localCourseCodeColumn,
+                            "$.courseOfferingReference.localCourseCode"
+                        ),
+                        new IdentityElementMapping(schoolSchoolIdColumn, "$.schoolReference.schoolId"),
+                        new IdentityElementMapping(registrationDateColumn, "$.registrationDate"),
+                    ]
+                )
+            ),
+        ];
+
+        // IdentityPropagationFallback — MSSQL only.
+        // School propagates SchoolId changes to CourseRegistration.
+        // The target column is the CANONICAL stored column (SchoolId_Unified), not the alias.
+        if (dialect == SqlDialect.Mssql)
+        {
+            triggers.Add(
+                new DbTriggerInfo(
+                    new DbTriggerName("TR_School_Propagation"),
+                    schoolTableName,
+                    [documentIdColumn],
+                    [schoolIdColumn],
+                    new TriggerKindParameters.IdentityPropagationFallback([
+                        new PropagationReferrerTarget(
+                            regTableName,
+                            schoolDocIdColumn,
+                            [new TriggerColumnMapping(schoolIdColumn, schoolIdUnifiedColumn)]
+                        ),
+                    ])
+                )
+            );
+        }
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "hash",
+                2,
+                [0x01, 0x02],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [schoolResourceKey, regResourceKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, schema)],
+            [
+                new ConcreteResourceModel(
+                    schoolResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    schoolRelationalModel
+                ),
+                new ConcreteResourceModel(
+                    regResourceKey,
+                    ResourceStorageKind.RelationalTables,
+                    regRelationalModel
+                ),
+            ],
+            [],
+            [],
+            [],
             triggers
         );
     }
