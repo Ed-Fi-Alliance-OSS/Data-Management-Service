@@ -15,7 +15,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Predicates over unified alias columns are rewritten to canonical storage columns and,
 /// when required, include an explicit non-null presence gate.
 /// </remarks>
-public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
+public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
     private const string DocumentIdColumnName = "DocumentId";
     private const string MissingPresenceColumnSortValue = "";
