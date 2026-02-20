@@ -68,8 +68,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                     );
                 }
 
-                ThrowIfDuplicateMemberResourceNames(members, abstractResource);
-
                 var identityDerivations = BuildIdentityColumnDerivations(
                     identityJsonPaths,
                     abstractResource,
@@ -220,6 +218,7 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 (IReadOnlyList<ConcreteResourceMetadata>)
                     pair
                         .Value.OrderBy(metadata => metadata.Resource.ResourceName, StringComparer.Ordinal)
+                        .ThenBy(metadata => metadata.Resource.ProjectName, StringComparer.Ordinal)
                         .ToArray()
         );
     }
@@ -565,7 +564,7 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     }
 
     /// <summary>
-    /// Builds deterministic union-view arms ordered by member <c>ResourceName</c> using ordinal comparison.
+    /// Builds deterministic union-view arms ordered by member <c>(ResourceName, ProjectName)</c> using ordinal comparison.
     /// </summary>
     private static IReadOnlyList<AbstractUnionViewArm> BuildUnionArms(
         IReadOnlyList<IdentityColumnDerivation> identityDerivations,
@@ -602,14 +601,17 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
                 // Look up the source column's scalar type from the concrete member table
                 // so the emitter can emit an explicit CAST when it differs from the canonical type.
-                var sourceColumnModel = member.Model.Root.Columns.FirstOrDefault(c =>
-                    c.ColumnName == sourceColumnName
-                );
+                var sourceColumnModel =
+                    member.Model.Root.Columns.FirstOrDefault(c => c.ColumnName == sourceColumnName)
+                    ?? throw new InvalidOperationException(
+                        $"Column '{sourceColumnName}' not found in root table of member "
+                            + $"'{FormatResource(member.Resource)}' during abstract union view derivation."
+                    );
 
                 projections.Add(
                     new AbstractUnionViewProjectionExpression.SourceColumn(
                         sourceColumnName,
-                        sourceColumnModel?.ScalarType
+                        sourceColumnModel.ScalarType
                     )
                 );
             }
@@ -626,46 +628,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         }
 
         return arms;
-    }
-
-    /// <summary>
-    /// Fails fast when multiple concrete members of the same abstract resource share a <c>ResourceName</c>
-    /// across different projects.
-    /// </summary>
-    private static void ThrowIfDuplicateMemberResourceNames(
-        IReadOnlyList<ConcreteResourceMetadata> members,
-        QualifiedResourceName abstractResource
-    )
-    {
-        var duplicates = members
-            .GroupBy(member => member.Resource.ResourceName, StringComparer.Ordinal)
-            .Where(group => group.Count() > 1)
-            .OrderBy(group => group.Key, StringComparer.Ordinal)
-            .ToArray();
-
-        if (duplicates.Length == 0)
-        {
-            return;
-        }
-
-        var details = string.Join(
-            "; ",
-            duplicates.Select(group =>
-            {
-                var membersWithName = string.Join(
-                    ", ",
-                    group
-                        .Select(member => FormatResource(member.Resource))
-                        .OrderBy(label => label, StringComparer.Ordinal)
-                );
-                return $"'{group.Key}' ({membersWithName})";
-            })
-        );
-
-        throw new InvalidOperationException(
-            $"Abstract resource '{FormatResource(abstractResource)}' has duplicate member "
-                + $"ResourceName values across projects: {details}."
-        );
     }
 
     /// <summary>
