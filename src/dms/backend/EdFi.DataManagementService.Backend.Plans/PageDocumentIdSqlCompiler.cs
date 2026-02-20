@@ -315,6 +315,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Returns <see langword="true"/> when both rewritten predicates share the same semantic key after unified-alias
+    /// rewrite, ignoring parameter-name differences.
+    /// </summary>
+    /// <param name="left">The first rewritten predicate.</param>
+    /// <param name="right">The second rewritten predicate.</param>
+    /// <returns><see langword="true"/> when the semantic key collides; otherwise <see langword="false"/>.</returns>
     private static bool HasDuplicateSemanticKey(RewrittenPredicate left, RewrittenPredicate right)
     {
         return string.Equals(
@@ -330,6 +337,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             && left.Operator == right.Operator;
     }
 
+    /// <summary>
+    /// Creates a deterministic exception for a duplicate semantic predicate set, listing all colliding original
+    /// columns and parameter names in stable ordinal order.
+    /// </summary>
+    /// <param name="rewrittenPredicates">The full rewritten and sorted predicate list.</param>
+    /// <param name="startIndex">Start index of the collision group.</param>
+    /// <param name="endExclusiveIndex">End (exclusive) index of the collision group.</param>
+    /// <returns>An exception describing the duplicate semantic predicate collision.</returns>
     private static InvalidOperationException CreateDuplicateSemanticPredicateException(
         IReadOnlyList<RewrittenPredicate> rewrittenPredicates,
         int startIndex,
@@ -355,11 +370,25 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         );
     }
 
+    /// <summary>
+    /// Formats values as a deterministic, comma-delimited list of single-quoted tokens.
+    /// </summary>
+    /// <param name="values">Values to format.</param>
+    /// <returns>A comma-delimited list of quoted values.</returns>
     private static string FormatCollisionValues(IReadOnlyList<string> values)
     {
         return string.Join(", ", values.Select(static value => $"'{value}'"));
     }
 
+    /// <summary>
+    /// Represents a predicate rewritten into canonical storage-column form, with an optional presence gate
+    /// for unified-alias mappings.
+    /// </summary>
+    /// <param name="OriginalColumn">The original API-bound predicate column.</param>
+    /// <param name="CanonicalColumn">The canonical storage column used for SQL emission.</param>
+    /// <param name="PresenceColumn">An optional presence gate column that must be <c>IS NOT NULL</c>.</param>
+    /// <param name="Operator">The comparison operator.</param>
+    /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
     private readonly record struct RewrittenPredicate(
         DbColumnName OriginalColumn,
         DbColumnName CanonicalColumn,

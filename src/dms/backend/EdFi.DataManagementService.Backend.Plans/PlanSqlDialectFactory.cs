@@ -7,8 +7,17 @@ using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
 
+/// <summary>
+/// Factory for constructing dialect-specific helpers used by plan/query SQL compilers.
+/// </summary>
 internal static class PlanSqlDialectFactory
 {
+    /// <summary>
+    /// Creates a plan/query SQL dialect helper for the supplied backend dialect.
+    /// </summary>
+    /// <param name="dialect">The backend SQL dialect.</param>
+    /// <returns>The dialect-specific plan/query SQL helper.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">Thrown when the dialect is not supported.</exception>
     public static IPlanSqlDialect Create(SqlDialect dialect)
     {
         return dialect switch

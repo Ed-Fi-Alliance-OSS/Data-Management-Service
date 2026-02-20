@@ -142,6 +142,9 @@ public static partial class PlanSqlWriterExtensions
         }
     }
 
+    /// <summary>
+    /// Gets the compiled regular expression used to validate bare parameter names.
+    /// </summary>
     [GeneratedRegex(BareParameterNamePattern, RegexOptions.CultureInvariant)]
     private static partial Regex BareParameterNameRegex();
 }
