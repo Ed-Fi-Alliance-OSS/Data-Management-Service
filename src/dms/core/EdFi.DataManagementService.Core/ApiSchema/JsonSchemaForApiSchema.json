@@ -232,6 +232,24 @@
                                 "type": "string"
                             }
                         },
+                        "commonExtensionOverrides": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "insertionLocations": {
+                                        "type": "array",
+                                        "items": {
+                                            "$ref": "#/definitions/JsonPath"
+                                        }
+                                    },
+                                    "schemaFragment": {
+                                        "type": "object"
+                                    }
+                                },
+                                "required": ["insertionLocations", "schemaFragment"]
+                            }
+                        },
                         "dateJsonPaths": {
                             "type": "array",
                             "items": {
