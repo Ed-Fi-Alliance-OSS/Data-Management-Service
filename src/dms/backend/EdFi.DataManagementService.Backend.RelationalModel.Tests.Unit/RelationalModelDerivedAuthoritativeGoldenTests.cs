@@ -4,11 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Buffers;
-using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.RelationalModel;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers;
@@ -30,11 +30,22 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
     [SetUp]
     public void Setup()
     {
-        var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
-        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
-        var inputPath = Path.Combine(fixtureRoot, "inputs", "ds-5.2-api-schema-authoritative.json");
+        var projectRoot = GoldenFixtureTestHelpers.FindProjectRoot(
+            TestContext.CurrentContext.TestDirectory,
+            "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
+        );
+        var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var expectedFixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
+        var inputPath = Path.Combine(
+            authoritativeFixtureRoot,
+            "ds-5.2",
+            "inputs",
+            "ds-5.2-api-schema-authoritative.json"
+        );
         var expectedPath = Path.Combine(
-            fixtureRoot,
+            expectedFixtureRoot,
             "expected",
             "authoritative-relational-model.derived.manifest.json"
         );
@@ -68,7 +79,7 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
         Directory.CreateDirectory(Path.GetDirectoryName(actualPath)!);
         File.WriteAllText(actualPath, manifest);
 
-        if (ShouldUpdateGoldens())
+        if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
         {
             Directory.CreateDirectory(Path.GetDirectoryName(expectedPath)!);
             File.WriteAllText(expectedPath, manifest);
@@ -80,7 +91,7 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
                 $"authoritative derived manifest missing at {expectedPath}. Set UPDATE_GOLDENS=1 to generate."
             );
 
-        _diffOutput = RunGitDiff(expectedPath, actualPath);
+        _diffOutput = GoldenFixtureTestHelpers.RunGitDiff(expectedPath, actualPath);
     }
 
     /// <summary>
@@ -261,82 +272,6 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
         var json = Encoding.UTF8.GetString(buffer.WrittenSpan);
 
         return json + "\n";
-    }
-
-    /// <summary>
-    /// Run git diff.
-    /// </summary>
-    private static string RunGitDiff(string expectedPath, string actualPath)
-    {
-        var startInfo = new ProcessStartInfo("git")
-        {
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            UseShellExecute = false,
-        };
-
-        startInfo.ArgumentList.Add("diff");
-        startInfo.ArgumentList.Add("--no-index");
-        startInfo.ArgumentList.Add("--ignore-space-at-eol");
-        startInfo.ArgumentList.Add("--ignore-cr-at-eol");
-        startInfo.ArgumentList.Add("--");
-        startInfo.ArgumentList.Add(expectedPath);
-        startInfo.ArgumentList.Add(actualPath);
-
-        using var process = new Process { StartInfo = startInfo };
-        process.Start();
-        var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
-        process.WaitForExit();
-
-        if (process.ExitCode == 0)
-        {
-            return string.Empty;
-        }
-
-        if (process.ExitCode == 1)
-        {
-            return output;
-        }
-
-        return string.IsNullOrWhiteSpace(error) ? output : $"{error}\n{output}".Trim();
-    }
-
-    /// <summary>
-    /// Should update goldens.
-    /// </summary>
-    private static bool ShouldUpdateGoldens()
-    {
-        var update = Environment.GetEnvironmentVariable("UPDATE_GOLDENS");
-
-        return string.Equals(update, "1", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(update, "true", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Find project root.
-    /// </summary>
-    private static string FindProjectRoot(string startDirectory)
-    {
-        var directory = new DirectoryInfo(startDirectory);
-
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName,
-                "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
-            );
-            if (File.Exists(candidate))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
-        );
     }
 
     /// <summary>

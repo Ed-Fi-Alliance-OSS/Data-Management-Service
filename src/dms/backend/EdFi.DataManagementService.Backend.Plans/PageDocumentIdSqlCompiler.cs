@@ -3,8 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Text;
-using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -16,9 +15,13 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// Predicates over unified alias columns are rewritten to canonical storage columns and,
 /// when required, include an explicit non-null presence gate.
 /// </remarks>
-public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
+public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
 {
-    private readonly SqlDialect _dialect = dialect;
+    private const string DocumentIdColumnName = "DocumentId";
+    private const string MissingPresenceColumnSortValue = "";
+
+    private readonly ISqlDialect _sqlDialect = SqlDialectFactory.Create(dialect);
+    private readonly IPlanSqlDialect _planSqlDialect = PlanSqlDialectFactory.Create(dialect);
 
     /// <summary>
     /// Compiles page keyset SQL and total-count SQL for the supplied query specification.
@@ -29,143 +32,200 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
     {
         ArgumentNullException.ThrowIfNull(spec);
 
-        ValidateParameterName(spec.OffsetParameterName, nameof(spec.OffsetParameterName));
-        ValidateParameterName(spec.LimitParameterName, nameof(spec.LimitParameterName));
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            spec.OffsetParameterName,
+            nameof(spec.OffsetParameterName)
+        );
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            spec.LimitParameterName,
+            nameof(spec.LimitParameterName)
+        );
 
-        var aliasMappingsByColumn = BuildAliasMappingLookup(spec.UnifiedAliasMappings);
-        var whereClause = BuildWhereClause(spec.Predicates, aliasMappingsByColumn);
-        var quotedRootTable = SqlIdentifierQuoter.QuoteTableName(_dialect, spec.RootTable);
-        var quotedDocumentId = QuoteColumn(DocumentIdColumnName);
+        var rewrittenPredicates = RewriteAndSortPredicates(
+            spec.Predicates,
+            spec.UnifiedAliasMappingsByColumn
+        );
+        var pageSql = BuildPageDocumentIdSql(spec, rewrittenPredicates);
+        var totalCountSql = spec.IncludeTotalCountSql
+            ? BuildTotalCountSql(spec.RootTable, rewrittenPredicates)
+            : null;
 
-        var pageSql = new StringBuilder()
-            .Append("SELECT r.")
-            .Append(quotedDocumentId)
-            .Append('\n')
-            .Append("FROM ")
-            .Append(quotedRootTable)
-            .Append(" r");
-
-        if (whereClause is not null)
-        {
-            pageSql.Append('\n').Append("WHERE ").Append(whereClause);
-        }
-
-        pageSql
-            .Append('\n')
-            .Append("ORDER BY r.")
-            .Append(quotedDocumentId)
-            .Append(" ASC")
-            .Append('\n')
-            .Append(BuildPagingClause(spec.OffsetParameterName, spec.LimitParameterName))
-            .Append(';');
-
-        var totalCountSql = new StringBuilder()
-            .Append("SELECT COUNT(1)")
-            .Append('\n')
-            .Append("FROM ")
-            .Append(quotedRootTable)
-            .Append(" r");
-
-        if (whereClause is not null)
-        {
-            totalCountSql.Append('\n').Append("WHERE ").Append(whereClause);
-        }
-
-        totalCountSql.Append(';');
-
-        return new PageDocumentIdSqlPlan(pageSql.ToString(), totalCountSql.ToString());
-    }
-
-    private const string DocumentIdColumnName = "DocumentId";
-
-    /// <summary>
-    /// Builds a lookup of unified-alias mappings keyed by the alias/binding column.
-    /// </summary>
-    private static IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> BuildAliasMappingLookup(
-        IReadOnlyList<UnifiedAliasColumnMapping> mappings
-    )
-    {
-        ArgumentNullException.ThrowIfNull(mappings);
-
-        var lookup = new Dictionary<DbColumnName, UnifiedAliasColumnMapping>();
-
-        foreach (var mapping in mappings)
-        {
-            if (!lookup.TryAdd(mapping.AliasColumn, mapping))
-            {
-                throw new InvalidOperationException(
-                    $"Duplicate unified alias mapping for column '{mapping.AliasColumn.Value}'."
-                );
-            }
-        }
-
-        return lookup;
+        return new PageDocumentIdSqlPlan(pageSql, totalCountSql);
     }
 
     /// <summary>
-    /// Builds a deterministic <c>WHERE</c> clause for the provided predicate set.
+    /// Rewrites predicates into canonical storage-column form and sorts by deterministic key.
     /// </summary>
-    private string? BuildWhereClause(
+    private static IReadOnlyList<RewrittenPredicate> RewriteAndSortPredicates(
         IReadOnlyList<QueryValuePredicate> predicates,
-        IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> aliasMappingsByColumn
+        IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> aliasMappingsByColumn
     )
     {
         ArgumentNullException.ThrowIfNull(predicates);
         ArgumentNullException.ThrowIfNull(aliasMappingsByColumn);
 
-        if (predicates.Count == 0)
-        {
-            return null;
-        }
-
-        var predicateSql = predicates
-            .Select(predicate => $"({BuildPredicateSql(predicate, aliasMappingsByColumn)})")
+        var rewrittenPredicates = predicates
+            .Select(predicate => RewritePredicate(predicate, aliasMappingsByColumn))
+            .OrderBy(
+                predicate => predicate.PresenceColumn?.Value ?? MissingPresenceColumnSortValue,
+                StringComparer.Ordinal
+            )
+            .ThenBy(predicate => predicate.CanonicalColumn.Value, StringComparer.Ordinal)
+            .ThenBy(predicate => GetOperatorSortKey(predicate.Operator), StringComparer.Ordinal)
+            .ThenBy(predicate => predicate.ParameterName, StringComparer.Ordinal)
             .ToArray();
 
-        return string.Join(" AND ", predicateSql);
+        for (var startIndex = 0; startIndex < rewrittenPredicates.Length; startIndex++)
+        {
+            var endExclusiveIndex = startIndex + 1;
+
+            while (
+                endExclusiveIndex < rewrittenPredicates.Length
+                && HasDuplicateSemanticKey(
+                    rewrittenPredicates[startIndex],
+                    rewrittenPredicates[endExclusiveIndex]
+                )
+            )
+            {
+                endExclusiveIndex++;
+            }
+
+            if (endExclusiveIndex - startIndex > 1)
+            {
+                throw CreateDuplicateSemanticPredicateException(
+                    rewrittenPredicates,
+                    startIndex,
+                    endExclusiveIndex
+                );
+            }
+
+            startIndex = endExclusiveIndex - 1;
+        }
+
+        return rewrittenPredicates;
     }
 
     /// <summary>
-    /// Builds SQL for a single predicate, rewriting unified-alias bindings to canonical storage columns.
+    /// Rewrites a single predicate to its canonical storage-column representation.
     /// </summary>
-    private string BuildPredicateSql(
+    private static RewrittenPredicate RewritePredicate(
         QueryValuePredicate predicate,
-        IReadOnlyDictionary<DbColumnName, UnifiedAliasColumnMapping> aliasMappingsByColumn
+        IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> aliasMappingsByColumn
     )
     {
         ArgumentNullException.ThrowIfNull(predicate);
         ArgumentNullException.ThrowIfNull(aliasMappingsByColumn);
 
-        ValidateParameterName(predicate.ParameterName, nameof(predicate.ParameterName));
+        PlanSqlWriterExtensions.ValidateBareParameterName(
+            predicate.ParameterName,
+            nameof(predicate.ParameterName)
+        );
 
         if (!aliasMappingsByColumn.TryGetValue(predicate.Column, out var mapping))
         {
-            return BuildComparisonSql(predicate.Column, predicate.Operator, predicate.ParameterName);
+            return new RewrittenPredicate(
+                predicate.Column,
+                predicate.Column,
+                null,
+                predicate.Operator,
+                predicate.ParameterName
+            );
         }
 
-        var canonicalComparison = BuildComparisonSql(
+        return new RewrittenPredicate(
+            predicate.Column,
             mapping.CanonicalColumn,
+            mapping.PresenceColumn,
             predicate.Operator,
             predicate.ParameterName
         );
-
-        if (mapping.PresenceColumn is null)
-        {
-            return canonicalComparison;
-        }
-
-        return $"{BuildIsNotNullSql(mapping.PresenceColumn.Value)} AND {canonicalComparison}";
     }
 
     /// <summary>
-    /// Builds a simple binary comparison predicate against a table column.
+    /// Emits canonical SQL for page-<c>DocumentId</c> selection.
     /// </summary>
-    private string BuildComparisonSql(
+    private string BuildPageDocumentIdSql(
+        PageDocumentIdQuerySpec spec,
+        IReadOnlyList<RewrittenPredicate> predicates
+    )
+    {
+        var writer = new SqlWriter(_sqlDialect);
+
+        writer
+            .Append("SELECT r.")
+            .AppendQuoted(DocumentIdColumnName)
+            .AppendLine()
+            .Append("FROM ")
+            .AppendTable(spec.RootTable)
+            .AppendLine(" r");
+
+        AppendWhereClause(writer, predicates);
+
+        writer.Append("ORDER BY r.").AppendQuoted(DocumentIdColumnName).AppendLine(" ASC");
+
+        _planSqlDialect.AppendPagingClause(writer, spec.OffsetParameterName, spec.LimitParameterName);
+        writer.AppendLine(";");
+
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// Emits canonical SQL for total-row count selection.
+    /// </summary>
+    private string BuildTotalCountSql(DbTableName rootTable, IReadOnlyList<RewrittenPredicate> predicates)
+    {
+        var writer = new SqlWriter(_sqlDialect);
+
+        writer.AppendLine("SELECT COUNT(1)").Append("FROM ").AppendTable(rootTable).AppendLine(" r");
+
+        AppendWhereClause(writer, predicates);
+        writer.AppendLine(";");
+
+        return writer.ToString();
+    }
+
+    /// <summary>
+    /// Emits a deterministic multi-line <c>WHERE</c> clause.
+    /// </summary>
+    private void AppendWhereClause(SqlWriter writer, IReadOnlyList<RewrittenPredicate> predicates)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(predicates);
+
+        writer.AppendWhereClause(
+            predicates.Count,
+            (predicateWriter, index) => AppendPredicateSql(predicateWriter, predicates[index])
+        );
+    }
+
+    /// <summary>
+    /// Emits SQL for a single rewritten predicate.
+    /// </summary>
+    private void AppendPredicateSql(SqlWriter writer, RewrittenPredicate predicate)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+
+        if (predicate.PresenceColumn is not null)
+        {
+            AppendIsNotNullSql(writer, predicate.PresenceColumn.Value);
+            writer.Append(" AND ");
+        }
+
+        AppendComparisonSql(writer, predicate.CanonicalColumn, predicate.Operator, predicate.ParameterName);
+    }
+
+    /// <summary>
+    /// Emits a simple binary comparison predicate against a table column.
+    /// </summary>
+    private void AppendComparisonSql(
+        SqlWriter writer,
         DbColumnName column,
         QueryComparisonOperator @operator,
         string parameterName
     )
     {
+        ArgumentNullException.ThrowIfNull(writer);
+
         if (@operator is QueryComparisonOperator.In)
         {
             throw new NotSupportedException(
@@ -173,49 +233,22 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             );
         }
 
-        return $"r.{QuoteColumn(column)} {ToSqlOperator(@operator)} {parameterName}";
+        writer
+            .Append("r.")
+            .AppendQuoted(column.Value)
+            .Append(" ")
+            .Append(ToSqlOperator(@operator))
+            .Append(" ")
+            .AppendParameter(parameterName);
     }
 
     /// <summary>
-    /// Builds an <c>IS NOT NULL</c> predicate against a table column.
+    /// Emits an <c>IS NOT NULL</c> predicate against a table column.
     /// </summary>
-    private string BuildIsNotNullSql(DbColumnName column)
+    private static void AppendIsNotNullSql(SqlWriter writer, DbColumnName column)
     {
-        return $"r.{QuoteColumn(column)} IS NOT NULL";
-    }
-
-    /// <summary>
-    /// Quotes a derived model column identifier for the configured dialect.
-    /// </summary>
-    private string QuoteColumn(DbColumnName column)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialect, column);
-    }
-
-    /// <summary>
-    /// Quotes a raw SQL column identifier for the configured dialect.
-    /// </summary>
-    private string QuoteColumn(string column)
-    {
-        return SqlIdentifierQuoter.QuoteIdentifier(_dialect, column);
-    }
-
-    /// <summary>
-    /// Builds the paging clause for the configured SQL dialect.
-    /// </summary>
-    private string BuildPagingClause(string offsetParameterName, string limitParameterName)
-    {
-        return _dialect switch
-        {
-            SqlDialect.Pgsql => $"LIMIT {limitParameterName} OFFSET {offsetParameterName}",
-            SqlDialect.Mssql =>
-                $"OFFSET {offsetParameterName} ROWS FETCH NEXT {limitParameterName} ROWS ONLY",
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(_dialect),
-                _dialect,
-                "Unsupported SQL dialect."
-            ),
-        };
+        ArgumentNullException.ThrowIfNull(writer);
+        writer.Append("r.").AppendQuoted(column.Value).Append(" IS NOT NULL");
     }
 
     /// <summary>
@@ -237,33 +270,130 @@ public sealed partial class PageDocumentIdSqlCompiler(SqlDialect dialect)
             _ => throw new ArgumentOutOfRangeException(
                 nameof(@operator),
                 @operator,
-                "Unsupported query operator."
+                "Unsupported query operator for now."
             ),
         };
     }
 
     /// <summary>
-    /// Validates that a parameter name is safe to emit into SQL.
+    /// Returns a deterministic textual sort key for query operators without relying on <c>Enum.ToString()</c>.
     /// </summary>
-    private static void ValidateParameterName(string parameterName, string parameterNameArgumentName)
+    private static string GetOperatorSortKey(QueryComparisonOperator @operator)
     {
-        if (string.IsNullOrWhiteSpace(parameterName))
+        return @operator switch
         {
-            throw new ArgumentException(
-                "Parameter name cannot be null or whitespace.",
-                parameterNameArgumentName
-            );
-        }
-
-        if (!ParameterNameRegex().IsMatch(parameterName))
-        {
-            throw new ArgumentException(
-                "Parameter name must match pattern '^@[a-zA-Z_][a-zA-Z0-9_]*$'.",
-                parameterNameArgumentName
-            );
-        }
+            QueryComparisonOperator.Equal => nameof(QueryComparisonOperator.Equal),
+            QueryComparisonOperator.NotEqual => nameof(QueryComparisonOperator.NotEqual),
+            QueryComparisonOperator.LessThan => nameof(QueryComparisonOperator.LessThan),
+            QueryComparisonOperator.LessThanOrEqual => nameof(QueryComparisonOperator.LessThanOrEqual),
+            QueryComparisonOperator.GreaterThan => nameof(QueryComparisonOperator.GreaterThan),
+            QueryComparisonOperator.GreaterThanOrEqual => nameof(QueryComparisonOperator.GreaterThanOrEqual),
+            QueryComparisonOperator.Like => nameof(QueryComparisonOperator.Like),
+            QueryComparisonOperator.In => nameof(QueryComparisonOperator.In),
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(@operator),
+                @operator,
+                "Unsupported query operator sort key."
+            ),
+        };
     }
 
-    [GeneratedRegex("^@[a-zA-Z_][a-zA-Z0-9_]*$", RegexOptions.CultureInvariant)]
-    private static partial Regex ParameterNameRegex();
+    /// <summary>
+    /// Formats the duplicate-detection semantic key.
+    /// </summary>
+    private static string FormatSemanticKey(RewrittenPredicate predicate)
+    {
+        var presenceColumn = predicate.PresenceColumn?.Value ?? "<none>";
+
+        return string.Join(
+            ", ",
+            [
+                $"presenceColumn='{presenceColumn}'",
+                $"canonicalColumn='{predicate.CanonicalColumn.Value}'",
+                $"operator='{predicate.Operator}'",
+            ]
+        );
+    }
+
+    /// <summary>
+    /// Returns <see langword="true"/> when both rewritten predicates share the same semantic key after unified-alias
+    /// rewrite, ignoring parameter-name differences.
+    /// </summary>
+    /// <param name="left">The first rewritten predicate.</param>
+    /// <param name="right">The second rewritten predicate.</param>
+    /// <returns><see langword="true"/> when the semantic key collides; otherwise <see langword="false"/>.</returns>
+    private static bool HasDuplicateSemanticKey(RewrittenPredicate left, RewrittenPredicate right)
+    {
+        return string.Equals(
+                left.PresenceColumn?.Value ?? MissingPresenceColumnSortValue,
+                right.PresenceColumn?.Value ?? MissingPresenceColumnSortValue,
+                StringComparison.Ordinal
+            )
+            && string.Equals(
+                left.CanonicalColumn.Value,
+                right.CanonicalColumn.Value,
+                StringComparison.Ordinal
+            )
+            && left.Operator == right.Operator;
+    }
+
+    /// <summary>
+    /// Creates a deterministic exception for a duplicate semantic predicate set, listing all colliding original
+    /// columns and parameter names in stable ordinal order.
+    /// </summary>
+    /// <param name="rewrittenPredicates">The full rewritten and sorted predicate list.</param>
+    /// <param name="startIndex">Start index of the collision group.</param>
+    /// <param name="endExclusiveIndex">End (exclusive) index of the collision group.</param>
+    /// <returns>An exception describing the duplicate semantic predicate collision.</returns>
+    private static InvalidOperationException CreateDuplicateSemanticPredicateException(
+        IReadOnlyList<RewrittenPredicate> rewrittenPredicates,
+        int startIndex,
+        int endExclusiveIndex
+    )
+    {
+        var collidingOriginalColumns = new List<string>(endExclusiveIndex - startIndex);
+        var collidingParameterNames = new List<string>(endExclusiveIndex - startIndex);
+
+        for (var index = startIndex; index < endExclusiveIndex; index++)
+        {
+            collidingOriginalColumns.Add(rewrittenPredicates[index].OriginalColumn.Value);
+            collidingParameterNames.Add(rewrittenPredicates[index].ParameterName);
+        }
+
+        collidingOriginalColumns.Sort(StringComparer.Ordinal);
+        collidingParameterNames.Sort(StringComparer.Ordinal);
+
+        return new InvalidOperationException(
+            $"Duplicate predicate after unified alias rewrite for semantic key ({FormatSemanticKey(rewrittenPredicates[startIndex])}). "
+                + $"Colliding original columns: [{FormatCollisionValues(collidingOriginalColumns)}]. "
+                + $"Colliding parameter names: [{FormatCollisionValues(collidingParameterNames)}]."
+        );
+    }
+
+    /// <summary>
+    /// Formats values as a deterministic, comma-delimited list of single-quoted tokens.
+    /// </summary>
+    /// <param name="values">Values to format.</param>
+    /// <returns>A comma-delimited list of quoted values.</returns>
+    private static string FormatCollisionValues(IReadOnlyList<string> values)
+    {
+        return string.Join(", ", values.Select(static value => $"'{value}'"));
+    }
+
+    /// <summary>
+    /// Represents a predicate rewritten into canonical storage-column form, with an optional presence gate
+    /// for unified-alias mappings.
+    /// </summary>
+    /// <param name="OriginalColumn">The original API-bound predicate column.</param>
+    /// <param name="CanonicalColumn">The canonical storage column used for SQL emission.</param>
+    /// <param name="PresenceColumn">An optional presence gate column that must be <c>IS NOT NULL</c>.</param>
+    /// <param name="Operator">The comparison operator.</param>
+    /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
+    private readonly record struct RewrittenPredicate(
+        DbColumnName OriginalColumn,
+        DbColumnName CanonicalColumn,
+        DbColumnName? PresenceColumn,
+        QueryComparisonOperator Operator,
+        string ParameterName
+    );
 }

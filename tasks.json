@@ -1,0 +1,202 @@
+[
+  {
+    "category": "Dependencies",
+    "description": "Add a project reference from `src/dms/backend/EdFi.DataManagementService.Backend.Plans` to `src/dms/backend/EdFi.DataManagementService.Backend.Ddl` so plan/query SQL emission can reuse `SqlWriter` + `ISqlDialect`. Acceptance: `Backend.Plans` compiles against `Backend.Ddl` without duplicating quoting/formatting logic and `dotnet build` succeeds for the DMS solution.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "SQL Foundations",
+    "description": "Introduce small plan/query-focused `SqlWriter` helpers in `Backend.Plans` (extensions/helpers, not a generic AST) including parameter placeholder rendering. Acceptance: `AppendParameter(bareName)` validates `bareName` with a strict pattern (e.g., `^[a-zA-Z_][a-zA-Z0-9_]*$`) and emits `@{bareName}`; helpers support multi-line `WHERE` with canonical indentation and uppercase keywords; helpers do not change `Backend.Ddl.SqlWriter` canonicalization rules (line endings `\\n`, no trailing whitespace).",
+    "steps-to-verify": [
+      "Add/adjust unit tests covering parameter-name validation (valid/invalid cases).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Contracts",
+    "description": "Update page-query contracts in `Backend.Plans` to carry bare parameter names and support optional total-count SQL. Acceptance: `PageDocumentIdQuerySpec.OffsetParameterName`, `LimitParameterName`, and `QueryValuePredicate.ParameterName` are bare names (no leading `@`); `PageDocumentIdQuerySpec` adds `IncludeTotalCountSql` with default `false`; `PageDocumentIdSqlPlan.TotalCountSql` becomes nullable (`string?`) and is `null` when `IncludeTotalCountSql=false`; all call sites compile with no warnings-as-errors.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Refactor `PageDocumentIdSqlCompiler` to use `Backend.Ddl.SqlWriter` + `ISqlDialect` internally (public API stays `SqlDialect`). Acceptance: emitted SQL is canonical and deterministic for both Pgsql and Mssql; all keywords are uppercase; line endings are `\\n`; no trailing whitespace; statements are complete and end with `;\\n`; parameter placeholders are rendered as `@name` from bare names; predicates are treated as an unordered set and emitted in stable sorted order after unified-alias rewrite (sort key: presence column name (if any), canonical column name, operator, parameter bare name using `StringComparer.Ordinal`); duplicate predicates after rewrite/sort fail fast with a deterministic exception; total-count SQL is only produced when `IncludeTotalCountSql=true`.",
+    "steps-to-verify": [
+      "Add/adjust unit tests for: predicate sorting, duplicate predicate detection, `IncludeTotalCountSql` behavior, and statement termination (`;\\n`).",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Unit Tests",
+    "description": "Update existing `Given_PageDocumentIdSqlCompiler` tests to the new contract semantics and canonical formatting. Acceptance: tests pass with bare parameter names; expected SQL uses `@name` placeholders; assertions cover both dialects where applicable; tests validate failure behavior for invalid bare parameter names and for unsupported operators; tests validate `TotalCountSql` is `null` when not requested.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Plan SQL",
+    "description": "Implement a small, dedicated INSERT SQL emitter (toy plan foundation) using `SqlWriter` + `ISqlDialect` and the new plan helpers (no generic statement builder). Acceptance: given a `DbTableName`, ordered column list, and ordered bare parameter list, the emitter produces deterministic `INSERT` SQL for Pgsql/Mssql with quoted identifiers, uppercase keywords, formatted multi-line style, and statement termination `;\\n`; invalid parameter names or mismatched column/parameter counts fail fast deterministically.",
+    "steps-to-verify": [
+      "Add unit tests for Pgsql + Mssql toy insert output and error cases.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Golden Fixtures",
+    "description": "Add a minimal plan-sql-foundations golden fixture and a golden test harness in `EdFi.DataManagementService.Backend.Tests.Unit` that compares generated SQL to checked-in `expected/` files using `git diff --no-index` and `UPDATE_GOLDENS=1` behavior. Acceptance: fixture directory exists at `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Fixtures/small/plan-sql-foundations/minimal/expected/` with files: `pgsql.page-document-id.sql`, `mssql.page-document-id.sql`, `pgsql.toy-insert.sql` (or `pgsql.toy-plan.sql`), `mssql.toy-insert.sql` (or `mssql.toy-plan.sql`); tests write `actual/` outputs under `TestContext.CurrentContext.WorkDirectory` (not checked in); tests fail with a readable diff on mismatch and update expected outputs when `UPDATE_GOLDENS=1`.",
+    "steps-to-verify": [
+      "Run once to generate expected outputs: `UPDATE_GOLDENS=1 dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run again to verify diffs are clean: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Test Infrastructure",
+    "description": "Create a shared authoritative fixture root at `src/dms/backend/Fixtures/authoritative/` and update backend test projects to locate fixtures relative to the solution root (`src/dms/EdFi.DataManagementService.sln`) instead of borrowing fixtures from other test projects. Acceptance: inputs exist at `src/dms/backend/Fixtures/authoritative/sample/inputs/sample-api-schema-authoritative.json` and `src/dms/backend/Fixtures/authoritative/ds-5.2/inputs/ds-5.2-api-schema-authoritative.json`; tests that currently read authoritative fixtures are updated to resolve paths via solution-root discovery and `Path.Combine(solutionRoot, \"backend\", \"Fixtures\", ...)`; all affected tests pass and no fixture paths reference another test project’s `Fixtures/` directory.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Plan Dialect",
+    "description": "Introduce a plan/query SQL dialect abstraction in `src/dms/backend/EdFi.DataManagementService.Backend.Plans` (e.g., `IPlanSqlDialect`, `PgsqlPlanDialect`, `MssqlPlanDialect`, and a small factory) that encapsulates plan/query emission differences starting with paging clause emission. Acceptance: `PageDocumentIdSqlCompiler` no longer contains a `switch`/`if` on `SqlDialect` for paging; paging is emitted via the plan dialect abstraction; quoting + canonicalization continue to use `Backend.Ddl.SqlWriter` and `Backend.Ddl.ISqlDialect`; output for both dialects remains byte-for-byte identical to the existing goldens.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Contracts",
+    "description": "Remove `UnifiedAliasColumnMapping` duplication by using `ColumnStorage.UnifiedAlias` directly in page-query contracts. Acceptance: `PageDocumentIdQuerySpec` carries unified-alias rewrite metadata as `IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias>` (or an equivalent shape that does not re-declare canonical/presence fields); `UnifiedAliasColumnMapping` is deleted; `PageDocumentIdSqlCompiler` predicate rewrite uses the `ColumnStorage.UnifiedAlias` values and preserves presence-gate semantics; all unit tests and plan-sql-foundations goldens are updated and continue to pass.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Code Cleanup",
+    "description": "Remove the unnecessary `partial` keyword from `PageDocumentIdSqlCompiler`. Acceptance: `PageDocumentIdSqlCompiler` is no longer declared `partial` and there are no other partial declarations for this type; build succeeds with warnings-as-errors.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Plans Tests",
+    "description": "Rename `ToyInsertSqlEmitter` to `SimpleInsertSqlEmitter` and move it out of production code into a new unit test project `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit`. Acceptance: `EdFi.DataManagementService.Backend.Plans` no longer contains `ToyInsertSqlEmitter`; new test project exists, is included in `src/dms/EdFi.DataManagementService.sln`, references `EdFi.DataManagementService.Backend.Plans`, and contains `SimpleInsertSqlEmitter` plus unit tests validating canonical INSERT SQL for Pgsql + Mssql; the plan-sql-foundations golden fixture test (and its checked-in `expected/*.sql` files) run from this new test project and continue to pass.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Error Handling",
+    "description": "Update the insert emitter to treat mismatched column/parameter counts as an argument contract violation. Acceptance: `SimpleInsertSqlEmitter.Emit` throws an `ArgumentException` (not `InvalidOperationException`) when `orderedColumns.Count != orderedParameterNames.Count`, with a deterministic message including both counts and a stable `paramName` value; unit tests are updated accordingly.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Test Infrastructure",
+    "description": "Create a shared helper for golden/snapshot-style fixture tests to reduce duplicated logic and standardize diff/update behavior. Acceptance: add a new backend test-utilities class library project at `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common` containing `GoldenFixtureTestHelpers` in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/GoldenFixtureTestHelpers.cs`; the helper provides `ShouldUpdateGoldens()` (`UPDATE_GOLDENS`), `RunGitDiff(expected, actual)` (reads stdout + stderr asynchronously to avoid deadlocks), and a root-discovery helper where needed; refactor the plan-sql-foundations golden fixture test and existing backend authoritative golden tests to use this shared helper; test projects reference `Backend.Tests.Common` (do not reference other test projects): `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`, `EdFi.DataManagementService.Backend.Tests.Unit`, and `EdFi.DataManagementService.Backend.Plans.Tests.Unit`; duplicated helper methods are removed from individual fixtures; all affected tests still fail with readable diffs and pass when goldens match.",
+    "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Repository Hygiene",
+    "description": "Remove duplicated authoritative ApiSchema input fixtures and keep a single source of truth under `src/dms/backend/Fixtures/authoritative/`. Acceptance: delete the duplicate inputs currently under `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/Fixtures/authoritative/` (ds-5.2 + sample); all authoritative-golden tests load their inputs via `BackendFixturePaths.GetAuthoritativeFixtureRoot()` (solution-root discovery) and do not reference any other test project's `Fixtures/authoritative` directory; `rg` finds no remaining references to the deleted fixture paths; all backend unit tests still pass.",
+    "steps-to-verify": [
+      "Run: `rg -n \"RelationalModel\\.Tests\\.Unit/Fixtures/authoritative\" -S src/dms || true` and verify no matches.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Remove `Enum.ToString()` from predicate ordering to make determinism explicit and avoid hidden work. Acceptance: `PageDocumentIdSqlCompiler.RewriteAndSortPredicates` no longer calls `predicate.Operator.ToString()` for sort keys; operator ordering is still deterministic and implemented via an explicit, allocation-free sort key (e.g., a `switch` returning `nameof(QueryComparisonOperator.X)` strings); emitted SQL remains byte-for-byte identical to current plan-sql-foundations goldens for both dialects.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Reduce allocations in `PageDocumentIdSqlCompiler` by emitting the `WHERE` clause directly to the primary `SqlWriter` (avoid per-predicate `SqlWriter` instances and the intermediate `string[]` predicate list). Acceptance: `AppendWhereClause` no longer allocates a `string[]` of predicate fragments; per-predicate helpers do not allocate `SqlWriter` instances just to return strings; compiled SQL output (including whitespace, casing, quoting, and `;\\n` termination) remains byte-for-byte identical to existing goldens for pgsql+mssql.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Plans Tests",
+    "description": "Consolidate `Backend.Plans` unit tests into `EdFi.DataManagementService.Backend.Plans.Tests.Unit` to keep project boundaries clean. Acceptance: move `Given_PageDocumentIdSqlCompiler` and `Given_PlanSqlWriterExtensions` into `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/`; remove the `Backend.Plans` project reference from `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj` if nothing else in that project depends on it; all tests continue to pass and solution build remains warnings-as-errors clean.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "SQL Foundations",
+    "description": "Deduplicate canonical multi-line `WHERE` emission between `PlanSqlWriterExtensions.AppendWhereClause(...)` and `PageDocumentIdSqlCompiler`. Acceptance: introduce a shared helper in `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs` that emits the canonical `WHERE` block layout (uppercase `WHERE`/`AND`, one predicate per line, stable indentation) while allowing callers to append predicate SQL without allocating intermediate predicate strings; refactor `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs` to use the shared helper and remove its local `WHERE` layout duplication; emitted SQL remains byte-for-byte identical to existing goldens for both dialects.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "SQL Foundations",
+    "description": "Harden `PlanSqlWriterExtensions.AppendWhereClause(IReadOnlyList<string>)` against multi-line predicate fragments. Acceptance: `src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs` rejects any predicate string containing `\\r` or `\\n` by throwing a deterministic `ArgumentException`; add unit tests in `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/` validating the failure behavior; existing formatting behavior for valid single-line predicates remains unchanged.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Plan SQL",
+    "description": "Promote the simple insert SQL emitter out of the test assembly so it can be reused by future plan compilers. Acceptance: move `SimpleInsertSqlEmitter` from `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleInsertSqlEmitter.cs` into `src/dms/backend/EdFi.DataManagementService.Backend.Plans/` (keeping its public surface minimal and aligned with plan SQL foundations); update tests to reference the production emitter and delete the test-local implementation; golden fixture output remains unchanged and the solution builds warnings-as-errors clean.",
+    "steps-to-verify": [
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  },
+  {
+    "category": "Query Compiler",
+    "description": "Strengthen duplicate predicate detection after unified-alias rewrite in `PageDocumentIdSqlCompiler` by treating predicates as duplicates when they share the same rewritten semantic key, ignoring parameter-name differences. Acceptance: (1) duplicate detection key is `(PresenceColumn (or empty), CanonicalColumn, Operator)` and does not include `ParameterName`; (2) `ParameterName` remains a deterministic tie-breaker for emission ordering; (3) when duplicates are detected, compilation fails fast with a deterministic `InvalidOperationException` message that includes the semantic key values and lists all colliding original predicate columns and parameter names in stable `StringComparer.Ordinal` order; (4) compiled SQL output for non-duplicate inputs remains byte-for-byte identical to existing plan-sql-foundations goldens for pgsql+mssql.",
+    "steps-to-verify": [
+      "Add/adjust unit tests in `./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_PageDocumentIdSqlCompiler.cs` covering duplicate semantic predicates with different parameter names and validating deterministic exception output.",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`",
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`"
+    ],
+    "completed": true
+  }
+]

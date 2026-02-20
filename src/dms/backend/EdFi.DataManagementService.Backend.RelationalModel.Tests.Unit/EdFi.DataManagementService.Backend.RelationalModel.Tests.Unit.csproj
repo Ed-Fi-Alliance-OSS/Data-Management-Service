@@ -29,6 +29,7 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.RelationalModel\EdFi.DataManagementService.Backend.RelationalModel.csproj" />
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Ddl\EdFi.DataManagementService.Backend.Ddl.csproj" />
+        <ProjectReference Include="..\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
     </ItemGroup>
     <ItemGroup>
         <Content Include="Fixtures\relational-model-fixture.json">
