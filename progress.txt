@@ -46,3 +46,9 @@ Decisions: widened dialect-agnostic null-total-count assertion to both Pgsql/Mss
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/Given_PageDocumentIdSqlCompiler.cs; tasks.json
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
 Blockers/notes: none. All tasks in tasks.json now complete.
+2026-02-20
+Task: Plan Dialect - introduce plan/query paging abstraction in Backend.Plans (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: added internal IPlanSqlDialect + Pgsql/Mssql implementations behind PlanSqlDialectFactory; kept quoting/canonicalization in Backend.Ddl (SqlWriter/ISqlDialect) and only delegated paging token shape; aligned unsupported In-operator exception text with existing unit-test contract during feedback-loop fix.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/IPlanSqlDialect.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PgsqlPlanDialect.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/MssqlPlanDialect.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlDialectFactory.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
+Blockers/notes: none. Next highest-priority open work is contracts cleanup (UnifiedAliasColumnMapping removal) or plans-test project extraction.

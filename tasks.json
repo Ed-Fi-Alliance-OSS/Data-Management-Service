@@ -77,7 +77,7 @@
       "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`"
     ],
-    "completed": false
+    "completed": true
   },
   {
     "category": "Contracts",
@@ -116,9 +116,11 @@
   },
   {
     "category": "Test Infrastructure",
-    "description": "Create a shared helper for golden/snapshot-style fixture tests to reduce duplicated logic and standardize diff/update behavior. Acceptance: introduce a reusable helper (e.g., `GoldenFixtureTestHelpers`) that provides `ShouldUpdateGoldens()` (`UPDATE_GOLDENS`), `RunGitDiff(expected, actual)` (reads stdout + stderr asynchronously to avoid deadlocks), and a root-discovery helper where needed; refactor the plan-sql-foundations golden fixture test and existing backend authoritative golden tests to use this shared helper; duplicated helper methods are removed from individual fixtures; all affected tests still fail with readable diffs and pass when goldens match.",
+    "description": "Create a shared helper for golden/snapshot-style fixture tests to reduce duplicated logic and standardize diff/update behavior. Acceptance: add a new backend test-utilities class library project at `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common` containing `GoldenFixtureTestHelpers` in `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Common/GoldenFixtureTestHelpers.cs`; the helper provides `ShouldUpdateGoldens()` (`UPDATE_GOLDENS`), `RunGitDiff(expected, actual)` (reads stdout + stderr asynchronously to avoid deadlocks), and a root-discovery helper where needed; refactor the plan-sql-foundations golden fixture test and existing backend authoritative golden tests to use this shared helper; test projects reference `Backend.Tests.Common` (do not reference other test projects): `EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit`, `EdFi.DataManagementService.Backend.Tests.Unit`, and `EdFi.DataManagementService.Backend.Plans.Tests.Unit`; duplicated helper methods are removed from individual fixtures; all affected tests still fail with readable diffs and pass when goldens match.",
     "steps-to-verify": [
+      "Run: `dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj`",
+      "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit/EdFi.DataManagementService.Backend.Tests.Unit.csproj`",
       "Run: `dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj`"
     ],
     "completed": false
