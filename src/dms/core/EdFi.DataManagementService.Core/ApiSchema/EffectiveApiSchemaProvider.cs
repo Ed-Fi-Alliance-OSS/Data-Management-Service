@@ -19,6 +19,8 @@ namespace EdFi.DataManagementService.Core.ApiSchema;
 /// </summary>
 internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
 {
+    private const string JsonSchemaForInsertProperties = "jsonSchemaForInsert.properties";
+
     private readonly ILogger _logger;
     private readonly ICompiledSchemaCache _compiledSchemaCache;
     private readonly object _initLock = new();
@@ -91,7 +93,7 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 "booleanJsonPaths",
                 "numericJsonPaths",
                 "documentPathsMapping",
-                "jsonSchemaForInsert.properties",
+                JsonSchemaForInsertProperties,
                 "equalityConstraints",
                 "arrayUniquenessConstraints",
             ];
@@ -141,7 +143,7 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     }
 
     /// <summary>
-    /// Builds a lookup of core resources by name, detecting and logging duplicates.
+    /// Builds a lookup of core resources by name, detecting and throwing on duplicates.
     /// </summary>
     private static Dictionary<string, JsonNode> BuildCoreResourceByName(List<JsonNode> coreResources)
     {
@@ -195,9 +197,8 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             )
         )
         {
-            var coreResource = coreResourceByName[
-                extensionResource.GetRequiredNode("resourceName").GetValue<string>()
-            ];
+            var resourceName = extensionResource.GetRequiredNode("resourceName").GetValue<string>();
+            var coreResource = coreResourceByName[resourceName];
 
             var sourceExtensionNode = GetNodeByPath(extensionResource, nodeKey);
             var targetCoreNode = GetNodeByPath(coreResource, nodeKey);
@@ -211,7 +212,9 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                     MergeExtensionObjectIntoCore(
                         sourceExtensionNode,
                         targetCoreNode,
-                        hasCommonExtensionOverrides
+                        hasCommonExtensionOverrides,
+                        resourceName,
+                        nodeKey
                     );
                     break;
                 case JsonValueKind.Array:
@@ -242,7 +245,9 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     private void MergeExtensionObjectIntoCore(
         JsonNode sourceExtensionNode,
         JsonNode targetCoreNode,
-        bool hasCommonExtensionOverrides
+        bool hasCommonExtensionOverrides,
+        string resourceName,
+        string nodeKey
     )
     {
         var targetObject = targetCoreNode.AsObject();
@@ -261,18 +266,20 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             {
                 targetObject.Add(new(sourceObject.Key, sourceObject.Value?.DeepClone()));
             }
-            else if (hasCommonExtensionOverrides)
+            else if (hasCommonExtensionOverrides && nodeKey == JsonSchemaForInsertProperties)
             {
                 // Duplicate key is expected — it will be handled by ApplyCommonExtensionOverrides
                 _logger.LogDebug(
-                    "Skipping duplicate key '{Key}' during extension merge — will be handled by common extension overrides",
-                    LoggingSanitizer.SanitizeForLogging(sourceObject.Key)
+                    "Skipping duplicate key '{Key}' in '{NodeKey}' for resource '{ResourceName}' during extension merge — will be handled by common extension overrides",
+                    LoggingSanitizer.SanitizeForLogging(sourceObject.Key),
+                    LoggingSanitizer.SanitizeForLogging(nodeKey),
+                    LoggingSanitizer.SanitizeForLogging(resourceName)
                 );
             }
             else
             {
                 throw new InvalidOperationException(
-                    $"Duplicate key '{sourceObject.Key}' found during extension merge with no commonExtensionOverrides to handle it"
+                    $"Duplicate key '{sourceObject.Key}' in '{nodeKey}' for resource '{resourceName}' found during extension merge"
                 );
             }
         }
@@ -285,14 +292,18 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     private static void MergeExtFragment(JsonObject existingExt, JsonObject newExt)
     {
         // Merge properties
-        if (
-            existingExt["properties"] is JsonObject existingProps
-            && newExt["properties"] is JsonObject newProps
-        )
+        if (newExt["properties"] is JsonObject newProps)
         {
-            foreach (var item in newProps)
+            if (existingExt["properties"] is JsonObject existingProps)
             {
-                existingProps[item.Key] = item.Value?.DeepClone();
+                foreach (var item in newProps)
+                {
+                    existingProps[item.Key] = item.Value?.DeepClone();
+                }
+            }
+            else
+            {
+                existingExt["properties"] = newProps.DeepClone();
             }
         }
 
@@ -325,6 +336,17 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// </summary>
     private static void MergeArrayUniquenessConstraints(JsonArray source, JsonArray target)
     {
+        // Build an index of existing target constraints by their paths for O(1) lookup
+        var targetIndex = new Dictionary<string, JsonNode>();
+        foreach (var targetItem in target)
+        {
+            if (targetItem?["paths"]?.AsArray() is JsonArray paths)
+            {
+                var key = PathArrayToKey(paths);
+                targetIndex.TryAdd(key, targetItem);
+            }
+        }
+
         foreach (var sourceItem in source)
         {
             if (sourceItem is null)
@@ -332,20 +354,11 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 continue;
             }
 
-            var sourcePaths = sourceItem["paths"]?.ToJsonString();
-
-            // Find a matching core constraint with the same top-level paths
             JsonNode? matchingTarget = null;
-            if (sourcePaths is not null)
+            if (sourceItem["paths"]?.AsArray() is JsonArray sourcePaths)
             {
-                foreach (var targetItem in target)
-                {
-                    if (targetItem?["paths"]?.ToJsonString() == sourcePaths)
-                    {
-                        matchingTarget = targetItem;
-                        break;
-                    }
-                }
+                var key = PathArrayToKey(sourcePaths);
+                targetIndex.TryGetValue(key, out matchingTarget);
             }
 
             if (matchingTarget is not null)
@@ -373,6 +386,15 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 target.Add(sourceItem.DeepClone());
             }
         }
+    }
+
+    /// <summary>
+    /// Creates a stable dictionary key from a JSON array of string paths
+    /// by joining the individual string values with a null separator.
+    /// </summary>
+    private static string PathArrayToKey(JsonArray paths)
+    {
+        return string.Join('\0', paths.Select(p => p?.GetValue<string>() ?? string.Empty));
     }
 
     /// <summary>
@@ -434,6 +456,13 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
                 {
                     throw new InvalidOperationException(
                         $"Common extension override for resource '{resourceName}' is missing required insertionLocations or schemaFragment"
+                    );
+                }
+
+                if (schemaFragment is not JsonObject)
+                {
+                    throw new InvalidOperationException(
+                        $"Common extension override schemaFragment for resource '{resourceName}' must be a JSON object, but was {schemaFragment.GetValueKind()}"
                     );
                 }
 
