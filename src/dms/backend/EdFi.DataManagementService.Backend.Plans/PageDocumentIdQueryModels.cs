@@ -12,7 +12,7 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// </summary>
 /// <param name="Column">The API-bound predicate column (binding/path column).</param>
 /// <param name="Operator">The value-comparison operator.</param>
-/// <param name="ParameterName">The SQL parameter name that supplies the value.</param>
+/// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
 public sealed record QueryValuePredicate(
     DbColumnName Column,
     QueryComparisonOperator Operator,
@@ -41,19 +41,25 @@ public sealed record UnifiedAliasColumnMapping(
 /// <param name="UnifiedAliasMappings">
 /// Unified alias mappings used for canonical-column predicate rewrite.
 /// </param>
-/// <param name="OffsetParameterName">The paging offset parameter name.</param>
-/// <param name="LimitParameterName">The paging limit parameter name.</param>
+/// <param name="OffsetParameterName">The bare paging offset parameter name.</param>
+/// <param name="LimitParameterName">The bare paging limit parameter name.</param>
+/// <param name="IncludeTotalCountSql">
+/// Indicates whether the compiler should include total-count SQL in the emitted plan.
+/// </param>
 public sealed record PageDocumentIdQuerySpec(
     DbTableName RootTable,
     IReadOnlyList<QueryValuePredicate> Predicates,
     IReadOnlyList<UnifiedAliasColumnMapping> UnifiedAliasMappings,
-    string OffsetParameterName = "@offset",
-    string LimitParameterName = "@limit"
+    string OffsetParameterName = "offset",
+    string LimitParameterName = "limit",
+    bool IncludeTotalCountSql = false
 );
 
 /// <summary>
 /// Compiled SQL for page keyset selection and total-count evaluation.
 /// </summary>
 /// <param name="PageDocumentIdSql">Parameterized SQL selecting a page of <c>DocumentId</c>s.</param>
-/// <param name="TotalCountSql">Parameterized SQL selecting total row count for the same filter set.</param>
-public sealed record PageDocumentIdSqlPlan(string PageDocumentIdSql, string TotalCountSql);
+/// <param name="TotalCountSql">
+/// Parameterized SQL selecting total row count for the same filter set, when requested.
+/// </param>
+public sealed record PageDocumentIdSqlPlan(string PageDocumentIdSql, string? TotalCountSql);

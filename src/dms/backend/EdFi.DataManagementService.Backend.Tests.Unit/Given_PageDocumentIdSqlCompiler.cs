@@ -30,7 +30,7 @@ public class Given_PageDocumentIdSqlCompiler
                     new QueryValuePredicate(
                         new DbColumnName("Student_StudentUniqueId"),
                         QueryComparisonOperator.Equal,
-                        "@studentUniqueId"
+                        "studentUniqueId"
                     ),
                 ],
                 [
@@ -39,7 +39,8 @@ public class Given_PageDocumentIdSqlCompiler
                         new DbColumnName("StudentUniqueId_Unified"),
                         new DbColumnName("Student_DocumentId")
                     ),
-                ]
+                ],
+                includeTotalCountSql: true
             )
         );
 
@@ -60,7 +61,7 @@ public class Given_PageDocumentIdSqlCompiler
                     new QueryValuePredicate(
                         new DbColumnName("GradingPeriodSchoolYear"),
                         QueryComparisonOperator.Equal,
-                        "@schoolYear"
+                        "schoolYear"
                     ),
                 ],
                 [
@@ -69,7 +70,8 @@ public class Given_PageDocumentIdSqlCompiler
                         new DbColumnName("SchoolYear_Unified"),
                         new DbColumnName("GradingPeriodSchoolYear_Present")
                     ),
-                ]
+                ],
+                includeTotalCountSql: true
             )
         );
 
@@ -90,7 +92,7 @@ public class Given_PageDocumentIdSqlCompiler
                     new QueryValuePredicate(
                         new DbColumnName("SectionIdentifier"),
                         QueryComparisonOperator.Like,
-                        "@sectionIdentifier"
+                        "sectionIdentifier"
                     ),
                 ],
                 [
@@ -117,10 +119,11 @@ public class Given_PageDocumentIdSqlCompiler
                     new QueryValuePredicate(
                         new DbColumnName("SchoolId"),
                         QueryComparisonOperator.GreaterThanOrEqual,
-                        "@schoolId"
+                        "schoolId"
                     ),
                 ],
-                []
+                [],
+                includeTotalCountSql: true
             )
         );
 
@@ -138,7 +141,7 @@ public class Given_PageDocumentIdSqlCompiler
                         new QueryValuePredicate(
                             new DbColumnName("SchoolId"),
                             QueryComparisonOperator.In,
-                            "@schoolIds"
+                            "schoolIds"
                         ),
                     ],
                     []
@@ -166,6 +169,14 @@ public class Given_PageDocumentIdSqlCompiler
         var plan = compiler.Compile(CreateSpec([], []));
 
         plan.PageDocumentIdSql.Should().Contain("OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY");
+    }
+
+    [Test]
+    public void It_should_not_emit_total_count_sql_when_not_requested()
+    {
+        var plan = _compiler.Compile(CreateSpec([], []));
+
+        plan.TotalCountSql.Should().BeNull();
     }
 
     [Test]
@@ -199,8 +210,9 @@ public class Given_PageDocumentIdSqlCompiler
     private static PageDocumentIdQuerySpec CreateSpec(
         IReadOnlyList<QueryValuePredicate> predicates,
         IReadOnlyList<UnifiedAliasColumnMapping> unifiedAliasMappings,
-        string offsetParameterName = "@offset",
-        string limitParameterName = "@limit"
+        string offsetParameterName = "offset",
+        string limitParameterName = "limit",
+        bool includeTotalCountSql = false
     )
     {
         return new PageDocumentIdQuerySpec(
@@ -208,7 +220,8 @@ public class Given_PageDocumentIdSqlCompiler
             Predicates: predicates,
             UnifiedAliasMappings: unifiedAliasMappings,
             OffsetParameterName: offsetParameterName,
-            LimitParameterName: limitParameterName
+            LimitParameterName: limitParameterName,
+            IncludeTotalCountSql: includeTotalCountSql
         );
     }
 }
