@@ -112,3 +112,9 @@ Decisions: centralized WHERE/AND/parens/indent layout in PlanSqlWriterExtensions
 Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans/PageDocumentIdSqlCompiler.cs; tasks.json
 Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass).
 Blockers/notes: none. Next highest-priority open task appears SQL Foundations hardening for multiline predicate fragments.
+2026-02-20
+Task: Plan SQL - promote SimpleInsertSqlEmitter into Backend.Plans production assembly (story: reference/design/backend-redesign/epics/15-plan-compilation/01-plan-sql-foundations.md)
+Decisions: prioritized emitter promotion over remaining hardening task as stronger core abstraction/integration for future plan compilers; kept emitter API/SQL formatting unchanged to preserve existing goldens.
+Files changed: src/dms/backend/EdFi.DataManagementService.Backend.Plans/SimpleInsertSqlEmitter.cs; src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/SimpleInsertSqlEmitter.cs (deleted); src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/Given_SimpleInsertSqlEmitter.cs; tasks.json
+Feedback loops: dotnet test --no-restore ./src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit/EdFi.DataManagementService.Backend.Plans.Tests.Unit.csproj (pass); dotnet build --no-restore ./src/dms/EdFi.DataManagementService.sln (pass, transient MSB3026 copy-retry warnings only).
+Blockers/notes: none. Remaining open task in tasks.json: SQL Foundations hardening for multiline predicate fragments.

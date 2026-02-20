@@ -5,9 +5,8 @@
 
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
-using EdFi.DataManagementService.Backend.Plans;
 
-namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
+namespace EdFi.DataManagementService.Backend.Plans;
 
 /// <summary>
 /// Emits deterministic parameterized <c>INSERT</c> SQL for plan-compilation foundations.
