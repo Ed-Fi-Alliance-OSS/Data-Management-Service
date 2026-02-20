@@ -33,14 +33,28 @@ public static partial class PlanSqlWriterExtensions
     /// Appends a multi-line <c>WHERE</c> clause using canonical uppercase keywords and indentation.
     /// </summary>
     /// <param name="writer">The SQL writer.</param>
-    /// <param name="predicates">Predicate SQL fragments without surrounding parentheses.</param>
+    /// <param name="predicateCount">Number of predicates to emit.</param>
+    /// <param name="appendPredicateSql">Callback that appends each predicate SQL fragment by index.</param>
     /// <returns>The same writer for fluent chaining.</returns>
-    public static SqlWriter AppendWhereClause(this SqlWriter writer, IReadOnlyList<string> predicates)
+    public static SqlWriter AppendWhereClause(
+        this SqlWriter writer,
+        int predicateCount,
+        Action<SqlWriter, int> appendPredicateSql
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
-        ArgumentNullException.ThrowIfNull(predicates);
+        ArgumentNullException.ThrowIfNull(appendPredicateSql);
 
-        if (predicates.Count == 0)
+        if (predicateCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(predicateCount),
+                predicateCount,
+                "Predicate count cannot be negative."
+            );
+        }
+
+        if (predicateCount == 0)
         {
             return writer;
         }
@@ -49,7 +63,31 @@ public static partial class PlanSqlWriterExtensions
 
         using (writer.Indent())
         {
-            for (var index = 0; index < predicates.Count; index++)
+            for (var index = 0; index < predicateCount; index++)
+            {
+                writer.Append(index == 0 ? "(" : "AND (");
+                appendPredicateSql(writer, index);
+                writer.AppendLine(")");
+            }
+        }
+
+        return writer;
+    }
+
+    /// <summary>
+    /// Appends a multi-line <c>WHERE</c> clause using canonical uppercase keywords and indentation.
+    /// </summary>
+    /// <param name="writer">The SQL writer.</param>
+    /// <param name="predicates">Predicate SQL fragments without surrounding parentheses.</param>
+    /// <returns>The same writer for fluent chaining.</returns>
+    public static SqlWriter AppendWhereClause(this SqlWriter writer, IReadOnlyList<string> predicates)
+    {
+        ArgumentNullException.ThrowIfNull(writer);
+        ArgumentNullException.ThrowIfNull(predicates);
+
+        return writer.AppendWhereClause(
+            predicates.Count,
+            (predicateWriter, index) =>
             {
                 var predicate = predicates[index];
 
@@ -61,13 +99,9 @@ public static partial class PlanSqlWriterExtensions
                     );
                 }
 
-                var normalizedPredicate = predicate.Trim();
-                var line = index == 0 ? $"({normalizedPredicate})" : $"AND ({normalizedPredicate})";
-                writer.AppendLine(line);
+                predicateWriter.Append(predicate.Trim());
             }
-        }
-
-        return writer;
+        );
     }
 
     /// <summary>
