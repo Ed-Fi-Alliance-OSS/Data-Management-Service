@@ -3,6 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System;
+using System.Collections.Generic;
+
 namespace EdFi.DataManagementService.Tests.E2E.Profiles;
 
 /// <summary>
@@ -57,6 +60,25 @@ public static class ProfileDefinitions
     public const string SchoolIncludeAllXml = """
         <Profile name="E2E-Test-School-IncludeAll">
             <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+        </Profile>
+        """;
+
+    /// <summary>
+    /// Profile for School and Student with IncludeAll mode - includes all fields.
+    /// Used for multi-resource profile usage tests.
+    /// </summary>
+    public const string StudentAndSchoolIncludeAllName = "E2E-Test-Student-And-School-IncludeAll";
+
+    public const string StudentAndSchoolIncludeAllXml = """
+        <Profile name="E2E-Test-Student-And-School-IncludeAll">
+            <Resource name="School">
+                <ReadContentType memberSelection="IncludeAll"/>
+                <WriteContentType memberSelection="IncludeAll"/>
+            </Resource>
+            <Resource name="Student">
                 <ReadContentType memberSelection="IncludeAll"/>
                 <WriteContentType memberSelection="IncludeAll"/>
             </Resource>
@@ -579,39 +601,70 @@ public static class ProfileDefinitions
     /// Returns all profile definitions as name-XML pairs for bulk creation.
     /// </summary>
     public static IReadOnlyList<(string Name, string Xml)> AllProfiles =>
-        [
-            (SchoolIncludeOnlyName, SchoolIncludeOnlyXml),
-            (SchoolExcludeOnlyName, SchoolExcludeOnlyXml),
-            (SchoolIncludeAllName, SchoolIncludeAllXml),
-            (SchoolGradeLevelFilterName, SchoolGradeLevelFilterXml),
-            (SchoolGradeLevelExcludeFilterName, SchoolGradeLevelExcludeFilterXml),
-            (SchoolIncludeOnlyAltName, SchoolIncludeOnlyAltXml),
-            (SchoolExtensionIncludeOnlyName, SchoolExtensionIncludeOnlyXml),
-            (SchoolExtensionExcludeOnlyName, SchoolExtensionExcludeOnlyXml),
-            (SchoolIncludeOnlyNoExtensionRuleName, SchoolIncludeOnlyNoExtensionRuleXml),
-            (SchoolExcludeOnlyNoExtensionRuleName, SchoolExcludeOnlyNoExtensionRuleXml),
-            // Write filtering profiles
-            (SchoolWriteIncludeOnlyName, SchoolWriteIncludeOnlyXml),
-            (SchoolWriteExcludeOnlyName, SchoolWriteExcludeOnlyXml),
-            (SchoolWriteGradeLevelFilterName, SchoolWriteGradeLevelFilterXml),
-            // Creatability validation profiles
-            (SchoolWriteExcludeRequiredName, SchoolWriteExcludeRequiredXml),
-            (SchoolWriteExcludeRequiredCollectionName, SchoolWriteExcludeRequiredCollectionXml),
-            (SchoolWriteIncludeOnlyMissingRequiredName, SchoolWriteIncludeOnlyMissingRequiredXml),
-            (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
-            (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
-            // PUT merge profiles
-            (SchoolWriteAddressExcludeNameOfCountyName, SchoolWriteAddressExcludeNameOfCountyXml),
-            (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
-            // Nested identity preservation profiles
-            (CalendarWriteIncludeOnlyName, CalendarWriteIncludeOnlyXml),
-            // Profile definition validation test profiles
-            (InvalidNonExistentResourceName, InvalidNonExistentResourceXml),
-            (InvalidIncludeOnlyPropertyName, InvalidIncludeOnlyPropertyXml),
-            (InvalidIncludeOnlyObjectName, InvalidIncludeOnlyObjectXml),
-            (InvalidIncludeOnlyCollectionName, InvalidIncludeOnlyCollectionXml),
-            (InvalidExtensionPropertyName, InvalidExtensionPropertyXml),
-            (WarningExcludeIdentityName, WarningExcludeIdentityXml),
-            (InvalidNestedCollectionPropertyName, InvalidNestedCollectionPropertyXml),
-        ];
+        DeduplicateByName(
+            [
+                (SchoolIncludeOnlyName, SchoolIncludeOnlyXml),
+                (SchoolExcludeOnlyName, SchoolExcludeOnlyXml),
+                (SchoolIncludeAllName, SchoolIncludeAllXml),
+                (StudentAndSchoolIncludeAllName, StudentAndSchoolIncludeAllXml),
+                (SchoolGradeLevelFilterName, SchoolGradeLevelFilterXml),
+                (SchoolGradeLevelExcludeFilterName, SchoolGradeLevelExcludeFilterXml),
+                (SchoolIncludeOnlyAltName, SchoolIncludeOnlyAltXml),
+                (SchoolExtensionIncludeOnlyName, SchoolExtensionIncludeOnlyXml),
+                (SchoolExtensionExcludeOnlyName, SchoolExtensionExcludeOnlyXml),
+                (SchoolIncludeOnlyNoExtensionRuleName, SchoolIncludeOnlyNoExtensionRuleXml),
+                (SchoolExcludeOnlyNoExtensionRuleName, SchoolExcludeOnlyNoExtensionRuleXml),
+                // Write filtering profiles
+                (SchoolWriteIncludeOnlyName, SchoolWriteIncludeOnlyXml),
+                (SchoolWriteExcludeOnlyName, SchoolWriteExcludeOnlyXml),
+                (SchoolWriteGradeLevelFilterName, SchoolWriteGradeLevelFilterXml),
+                // Creatability validation profiles
+                (SchoolWriteExcludeRequiredName, SchoolWriteExcludeRequiredXml),
+                (SchoolWriteExcludeRequiredCollectionName, SchoolWriteExcludeRequiredCollectionXml),
+                (SchoolWriteIncludeOnlyMissingRequiredName, SchoolWriteIncludeOnlyMissingRequiredXml),
+                (SchoolWriteIncludeAllName, SchoolWriteIncludeAllXml),
+                (SchoolWriteRequiredCollectionWithRuleName, SchoolWriteRequiredCollectionWithRuleXml),
+                // PUT merge profiles
+                (SchoolWriteAddressExcludeNameOfCountyName, SchoolWriteAddressExcludeNameOfCountyXml),
+                (SchoolWriteGradeLevelFilterPreserveName, SchoolWriteGradeLevelFilterPreserveXml),
+                // Nested identity preservation profiles
+                (CalendarWriteIncludeOnlyName, CalendarWriteIncludeOnlyXml),
+                // Profile definition validation test profiles
+                (InvalidNonExistentResourceName, InvalidNonExistentResourceXml),
+                (InvalidIncludeOnlyPropertyName, InvalidIncludeOnlyPropertyXml),
+                (InvalidIncludeOnlyObjectName, InvalidIncludeOnlyObjectXml),
+                (InvalidIncludeOnlyCollectionName, InvalidIncludeOnlyCollectionXml),
+                (InvalidExtensionPropertyName, InvalidExtensionPropertyXml),
+                (WarningExcludeIdentityName, WarningExcludeIdentityXml),
+                (InvalidNestedCollectionPropertyName, InvalidNestedCollectionPropertyXml),
+            ],
+            ProfileXmlFileLoader.LoadProfiles("Profiles/TestXmls/Profiles.xml")
+        );
+
+    private static IReadOnlyList<(string Name, string Xml)> DeduplicateByName(
+        IReadOnlyList<(string Name, string Xml)> primaryProfiles,
+        IReadOnlyList<(string Name, string Xml)> additionalProfiles
+    )
+    {
+        var uniqueProfiles = new List<(string Name, string Xml)>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach ((string Name, string Xml) profile in primaryProfiles)
+        {
+            if (seen.Add(profile.Name))
+            {
+                uniqueProfiles.Add(profile);
+            }
+        }
+
+        foreach ((string Name, string Xml) profile in additionalProfiles)
+        {
+            if (seen.Add(profile.Name))
+            {
+                uniqueProfiles.Add(profile);
+            }
+        }
+
+        return uniqueProfiles;
+    }
 }

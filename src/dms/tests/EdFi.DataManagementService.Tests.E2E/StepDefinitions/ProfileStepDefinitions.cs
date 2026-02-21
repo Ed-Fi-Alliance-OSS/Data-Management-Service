@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
@@ -67,6 +69,16 @@ public class ProfileStepDefinitions(
             _logger.log.Error(ex, "Failed to create profile '{ProfileName}'", profileName);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Creates a profile using XML loaded from a file in the test project.
+    /// </summary>
+    [Given(@"a profile ""([^""]*)"" is created from XML file ""([^""]*)""")]
+    public async Task GivenAProfileIsCreatedFromXmlFile(string profileName, string relativePath)
+    {
+        string profileXml = ProfileXmlFileLoader.LoadProfileXml(relativePath, profileName);
+        await GivenAProfileIsCreatedWithXml(profileName, profileXml);
     }
 
     #endregion
@@ -182,6 +194,7 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Response Filtering")]
     [Scope(Feature = "Profile Resolution")]
     [Scope(Feature = "Profile Header Validation")]
+    [Scope(Feature = "Multi-Resource Profile Usage")]
     [Scope(Feature = "Profile Collection Item Filtering")]
     [Scope(Feature = "Profile Extension Filtering")]
     [Scope(Feature = "Profile Write Filtering")]
@@ -570,6 +583,21 @@ public class ProfileStepDefinitions(
         string body = _apiResponse.TextAsync().Result;
         _logger.log.Information($"Validating status {expectedStatus}, actual: {_apiResponse.Status}");
         _apiResponse.Status.Should().Be(expectedStatus, body);
+    }
+
+    [Then(@"the profile response status is (\d+) or (\d+)")]
+    public void ThenTheProfileResponseStatusIsOneOf(int firstStatus, int secondStatus)
+    {
+        string body = _apiResponse.TextAsync().Result;
+        _logger.log.Information(
+            $"Validating status {firstStatus} or {secondStatus}, actual: {_apiResponse.Status}"
+        );
+        _apiResponse
+            .Status.Should()
+            .BeOneOf(
+                new[] { firstStatus, secondStatus },
+                $"Expected status {firstStatus} or {secondStatus}. Response: {body}"
+            );
     }
 
     /// <summary>
@@ -1053,7 +1081,7 @@ public class ProfileStepDefinitions(
         _logger.log.Information($"POST url: {url}");
         _logger.log.Information($"POST body: {body}");
 
-        // Build headers, including Content-Type for multi-profile apps
+        // Build headers, including Content-Type for multi-profile applications
         var headers = GetHeadersForPost(url);
 
         _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
@@ -1145,6 +1173,85 @@ public class ProfileStepDefinitions(
 
         return pluralName;
     }
+
+    #endregion
+
+    #region Metadata Specification Validation Steps
+
+    [Then(@"the metadata specifications should include sections ""([^""]*)""")]
+    public async Task ThenTheMetadataSpecificationsShouldIncludeSections(string sectionsCsv)
+    {
+        JsonArray sections = await GetMetadataSpecificationSectionsAsync();
+        var actualSectionNames = sections
+            .Select(node => node as JsonObject)
+            .Where(obj => obj is not null)
+            .Select(obj => obj!["name"]?.GetValue<string>())
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (string expected in SplitCommaSeparatedValues(sectionsCsv))
+        {
+            actualSectionNames
+                .Should()
+                .Contain(expected, $"Metadata specifications should include section '{expected}'");
+        }
+    }
+
+    [Then(@"the metadata specifications should include a profile entry for ""([^""]*)""")]
+    public async Task ThenTheMetadataSpecificationsShouldIncludeProfileEntryFor(string profileName)
+    {
+        JsonArray sections = await GetMetadataSpecificationSectionsAsync();
+        JsonObject? profileSection = sections
+            .Select(node => node as JsonObject)
+            .FirstOrDefault(obj =>
+                obj is not null
+                && string.Equals(
+                    obj!["prefix"]?.GetValue<string>(),
+                    "Profiles",
+                    StringComparison.OrdinalIgnoreCase
+                )
+                && string.Equals(
+                    obj!["name"]?.GetValue<string>(),
+                    profileName,
+                    StringComparison.OrdinalIgnoreCase
+                )
+            );
+
+        profileSection
+            .Should()
+            .NotBeNull($"Metadata specifications should include a profile entry for '{profileName}'");
+
+        string? endpointUri = profileSection?["endpointUri"]?.GetValue<string>();
+        endpointUri.Should().NotBeNull($"Profile entry for '{profileName}' should include an endpointUri");
+
+        string expectedPath = BuildProfileResourcesSpecPath(profileName);
+        endpointUri!
+            .Should()
+            .Contain(expectedPath, $"Profile entry for '{profileName}' should reference its resources spec");
+    }
+
+    private static IEnumerable<string> SplitCommaSeparatedValues(string csv) =>
+        csv.Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(value => value.Trim())
+            .Where(value => !string.IsNullOrEmpty(value));
+
+    private async Task<JsonArray> GetMetadataSpecificationSectionsAsync()
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode? rootNode = JsonNode.Parse(responseBody);
+        rootNode.Should().NotBeNull("Metadata specifications response should be valid JSON");
+
+        rootNode
+            .Should()
+            .BeOfType<JsonArray>(
+                $"Metadata specifications response should be a JSON array but was {rootNode?.GetType().Name ?? "null"}"
+            );
+
+        return (JsonArray)rootNode!;
+    }
+
+    private static string BuildProfileResourcesSpecPath(string profileName) =>
+        $"/metadata/specifications/profiles/{Uri.EscapeDataString(profileName)}/resources-spec.json";
 
     #endregion
 
