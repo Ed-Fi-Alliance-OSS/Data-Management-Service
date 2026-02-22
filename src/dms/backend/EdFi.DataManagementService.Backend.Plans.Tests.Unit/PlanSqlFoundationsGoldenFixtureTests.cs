@@ -85,15 +85,15 @@ public class Given_PlanSqlFoundations_GoldenFixture
     }
 
     [Test]
-    public void It_should_match_pgsql_toy_insert_sql_golden()
+    public void It_should_match_pgsql_minimal_insert_sql_golden()
     {
-        AssertGoldenMatches("pgsql.toy-insert.sql");
+        AssertGoldenMatches("pgsql.minimal-insert.sql");
     }
 
     [Test]
-    public void It_should_match_mssql_toy_insert_sql_golden()
+    public void It_should_match_mssql_minimal_insert_sql_golden()
     {
-        AssertGoldenMatches("mssql.toy-insert.sql");
+        AssertGoldenMatches("mssql.minimal-insert.sql");
     }
 
     private void AssertGoldenMatches(string fileName)
@@ -112,8 +112,8 @@ public class Given_PlanSqlFoundations_GoldenFixture
         {
             ["pgsql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Pgsql),
             ["mssql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Mssql),
-            ["pgsql.toy-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
-            ["mssql.toy-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
+            ["pgsql.minimal-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
+            ["mssql.minimal-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
         };
     }
 
