@@ -42,7 +42,14 @@ public static class ProfileSetupHooks
         int successCount = 0;
         int failCount = 0;
 
-        foreach ((string name, string xml) in ProfileDefinitions.AllProfiles)
+        // Create built-in in-code profiles and XML file profiles up front so DMS
+        // profile catalog caching sees a complete set for the run.
+        var allProfiles = ProfileDefinitions
+            .AllProfiles.Concat(ProfileXmlFileLoader.LoadProfiles("Profiles/TestXmls/Profiles.xml"))
+            .GroupBy(profile => profile.Name, StringComparer.Ordinal)
+            .Select(group => group.First());
+
+        foreach ((string name, string xml) in allProfiles)
         {
             try
             {

@@ -1,6 +1,6 @@
 Feature: Profile XML File Method Usage
-    As an API client with XML-defined profiles
-    I want method access to respect profile read/write definitions
+              As an API client with XML-defined profiles
+              I want method access to respect profile read/write definitions
     So that read-only and write-only profiles enforce correct HTTP methods
 
     Rule: Read-only profile allows GET and rejects POST
@@ -70,6 +70,10 @@ Feature: Profile XML File Method Usage
                   }
                   """
              Then the profile response status is 405
+              And the response body should have error type "urn:ed-fi:api:profile:method-usage"
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy. An attempt was made to access a resource that is not writable using the profile."
+              And the response body status should equal the response status code
+              And the response body errors should match regex "(?i)Resource class 'School' is not writable using API profile 'test-profile-resource-readonly'\."
 
     Rule: Write-only profile rejects GET
 
@@ -100,6 +104,10 @@ Feature: Profile XML File Method Usage
               And the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Test-Profile-Resource-WriteOnly" and namespacePrefixes "uri://ed-fi.org"
              When a GET request is made to "/ed-fi/schools/{id}" with profile "Test-Profile-Resource-WriteOnly" for resource "School"
              Then the profile response status is 405
+              And the response body should have error type "urn:ed-fi:api:profile:method-usage"
+              And the response body should have detail "The request construction was invalid with respect to usage of a data policy. An attempt was made to access a resource that is not readable using the profile."
+              And the response body status should equal the response status code
+              And the response body errors should match regex "(?i)Resource class 'School' is not readable using API profile 'test-profile-resource-writeonly'\."
              When a POST request is made to "/ed-fi/schools" with profile "Test-Profile-Resource-WriteOnly" for resource "School" with body
                   """
                   {

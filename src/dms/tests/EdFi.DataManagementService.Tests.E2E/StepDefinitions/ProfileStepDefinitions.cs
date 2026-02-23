@@ -6,6 +6,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Tests.E2E.Authorization;
 using EdFi.DataManagementService.Tests.E2E.Extensions;
 using EdFi.DataManagementService.Tests.E2E.Management;
@@ -201,6 +202,12 @@ public class ProfileStepDefinitions(
     [Scope(Feature = "Profile Creatability Validation")]
     [Scope(Feature = "Profile PUT Merge Functionality")]
     [Scope(Feature = "Profile Nested Identity Preservation")]
+    [Scope(Feature = "Profile Undefined and Misconfigured Usage")]
+    [Scope(Feature = "Profile Response Content Types")]
+    [Scope(Feature = "Profile Embedded Object Filtering")]
+    [Scope(Feature = "Profile Assigned Profiles")]
+    [Scope(Feature = "Profile Definition Advanced Filtering")]
+    [Scope(Feature = "Profile Reference Filtering")]
     public async Task GivenTheSystemHasTheseDescriptors(DataTable dataTable)
     {
         string descriptorToken = await GetTokenForExtensionDescriptors();
@@ -974,6 +981,113 @@ public class ProfileStepDefinitions(
             {
                 throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Verifies the response body contains a specific problem details detail value.
+    /// </summary>
+    [Then(@"the response body should have detail ""([^""]*)""")]
+    public async Task ThenTheResponseBodyShouldHaveDetail(string expectedDetail)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (jsonObject.TryGetPropertyValue("detail", out JsonNode? detailNode))
+            {
+                string? actualDetail = detailNode?.ToString();
+                actualDetail.Should().Be(expectedDetail, $"Response: {responseBody}");
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'detail' field: {responseBody}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies at least one entry in the response errors array matches the regex pattern.
+    /// </summary>
+    [Then(@"the response body errors should match regex ""([^""]*)""")]
+    public async Task ThenTheResponseBodyErrorsShouldMatchRegex(string regexPattern)
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (
+                jsonObject.TryGetPropertyValue("errors", out JsonNode? errorsNode)
+                && errorsNode is JsonArray errorsArray
+            )
+            {
+                List<string> errorMessages = errorsArray
+                    .Select(e => e?.ToString())
+                    .Where(message => !string.IsNullOrEmpty(message))
+                    .Select(message => message!)
+                    .ToList();
+
+                errorMessages
+                    .Exists(message => Regex.IsMatch(message, regexPattern))
+                    .Should()
+                    .BeTrue(
+                        $"Expected at least one error to match regex '{regexPattern}'. Actual errors: {string.Join(", ", errorMessages)}. Response: {responseBody}"
+                    );
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies problem details status field equals the HTTP response status code.
+    /// </summary>
+    [Then(@"the response body status should equal the response status code")]
+    public async Task ThenTheResponseBodyStatusShouldEqualTheResponseStatusCode()
+    {
+        string responseBody = await _apiResponse.TextAsync();
+        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+
+        if (responseJson is JsonObject jsonObject)
+        {
+            if (jsonObject.TryGetPropertyValue("status", out JsonNode? statusNode))
+            {
+                int? bodyStatus = statusNode?.GetValue<int>();
+                bodyStatus.Should().Be(_apiResponse.Status, $"Response: {responseBody}");
+            }
+            else
+            {
+                throw new AssertionException($"Response does not contain 'status' field: {responseBody}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Verifies response headers for the last profile request.
+    /// Expected headers are provided as a JSON object.
+    /// </summary>
+    [Then(@"the profile response headers include")]
+    public void ThenTheProfileResponseHeadersInclude(string headers)
+    {
+        JsonNode expectedHeaders = JsonNode.Parse(headers)!;
+        foreach ((string? key, JsonNode? value) in expectedHeaders.AsObject())
+        {
+            string expectedValue = value?.ToString() ?? string.Empty;
+
+            string? actualHeaderKey = _apiResponse.Headers.Keys.FirstOrDefault(k =>
+                k.Equals(key, StringComparison.OrdinalIgnoreCase)
+            );
+
+            actualHeaderKey.Should().NotBeNull($"Response should include header '{key}'");
+
+            _apiResponse
+                .Headers[actualHeaderKey!]
+                .Should()
+                .Contain(expectedValue, $"Header '{key}' should contain '{expectedValue}'");
         }
     }
 
