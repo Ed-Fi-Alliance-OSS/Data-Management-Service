@@ -130,6 +130,12 @@ internal static class ConstraintDerivationHelpers
     /// Builds a lookup from source JSONPath canonical string to physical column name, throwing when a single
     /// source path maps to multiple column kinds.
     /// </summary>
+    /// <remarks>
+    /// Same-kind duplicates (multiple columns with the same SourceJsonPath and same ColumnKind) are expected
+    /// and intentional — they arise from key unification, where a canonical column and its unified alias(es)
+    /// share the same source JSON path. The first column in alphabetical order wins, which is the canonical
+    /// stored column.
+    /// </remarks>
     internal static IReadOnlyDictionary<string, DbColumnName> BuildColumnNameLookupBySourceJsonPath(
         DbTableModel table,
         QualifiedResourceName resource
@@ -194,7 +200,7 @@ internal static class ConstraintDerivationHelpers
         var updatedTables = resourceModel
             .TablesInDependencyOrder.Select(table => mutation.BuildTable(table))
             .ToArray();
-        var updatedRoot = updatedTables.Single(table => table.Table.Equals(resourceModel.Root.Table));
+        var updatedRoot = updatedTables.Single(table => table.JsonScope.Equals(resourceModel.Root.JsonScope));
 
         return resourceModel with
         {

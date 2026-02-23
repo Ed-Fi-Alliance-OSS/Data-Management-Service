@@ -65,14 +65,16 @@ public abstract class DdlEmissionGoldenTestBase
         process.Start();
         var outputTask = process.StandardOutput.ReadToEndAsync();
         var errorTask = process.StandardError.ReadToEndAsync();
-        var output = outputTask.GetAwaiter().GetResult();
-        var error = errorTask.GetAwaiter().GetResult();
 
         if (!process.WaitForExit(30_000))
         {
             process.Kill();
+            process.WaitForExit();
             throw new TimeoutException("git diff timed out after 30 seconds");
         }
+
+        var output = outputTask.GetAwaiter().GetResult();
+        var error = errorTask.GetAwaiter().GetResult();
 
         if (process.ExitCode == 0)
         {

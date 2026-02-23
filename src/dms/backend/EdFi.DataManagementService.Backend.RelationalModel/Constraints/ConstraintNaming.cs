@@ -54,6 +54,17 @@ internal static class ConstraintNaming
     }
 
     /// <summary>
+    /// Resolves the primary key constraint name, falling back to the conventional default when unset.
+    /// Shared by DDL emission, index inventory derivation, and identifier shortening.
+    /// </summary>
+    internal static string ResolvePrimaryKeyConstraintName(DbTableName table, TableKey key)
+    {
+        return string.IsNullOrWhiteSpace(key.ConstraintName)
+            ? BuildPrimaryKeyName(table)
+            : key.ConstraintName;
+    }
+
+    /// <summary>
     /// Builds a foreign key constraint name using the supplied tokens.
     /// </summary>
     internal static string BuildForeignKeyName(DbTableName table, params string[] tokens)

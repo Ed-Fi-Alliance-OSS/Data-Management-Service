@@ -96,15 +96,29 @@ public sealed class ValidateForeignKeyStorageInvariantPass : IRelationalModelSet
     {
         Dictionary<DbTableName, DbTableModel> tablesByName = new();
 
+        // Concrete resources may share a physical table (e.g., descriptors share dms.Descriptor),
+        // so we use DistinctBy to avoid processing the same physical table more than once.
         foreach (
             var table in context
                 .ConcreteResourcesInNameOrder.SelectMany(resource =>
                     resource.RelationalModel.TablesInDependencyOrder
                 )
-                .Concat(context.AbstractIdentityTablesInNameOrder.Select(table => table.TableModel))
+                .DistinctBy(t => t.Table)
         )
         {
-            tablesByName.TryAdd(table.Table, table);
+            tablesByName.Add(table.Table, table);
+        }
+
+        foreach (var abstractTable in context.AbstractIdentityTablesInNameOrder)
+        {
+            if (!tablesByName.TryAdd(abstractTable.TableModel.Table, abstractTable.TableModel))
+            {
+                throw new InvalidOperationException(
+                    $"Duplicate table name '{abstractTable.TableModel.Table.Schema.Value}.{abstractTable.TableModel.Table.Name}' "
+                        + "encountered during foreign key storage validation. "
+                        + "This indicates a naming collision in the derived model set."
+                );
+            }
         }
 
         return tablesByName;

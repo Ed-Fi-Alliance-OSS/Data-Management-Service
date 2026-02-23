@@ -50,8 +50,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             table.AbstractResourceKey.Resource
         );
 
-        var resourceContextsByResource = BuildResourceContextLookup(context);
-
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
             if (IsResourceExtension(resourceContext))
@@ -80,10 +78,14 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
             var rootTable = resourceModel.Root;
             var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
 
+            // Build identity element mappings once — shared by both identity projection columns
+            // and the referential identity trigger below.
+            var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
+
             // Resolve identity projection columns for the root table.
             var identityProjectionColumns = BuildRootIdentityProjectionColumns(
                 resourceModel,
-                builderContext,
+                identityElements,
                 resource
             );
 
@@ -117,9 +119,6 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                     )
                 );
             }
-
-            // Build identity element mappings for UUIDv5 computation.
-            var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
 
             // Every concrete resource must have at least one identity element for referential identity computation.
             // Empty identity elements would produce a degenerate UUIDv5 hash with no identity data.
@@ -254,6 +253,8 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
         // due to multiple cascade paths.
         if (context.Dialect == SqlDialect.Mssql)
         {
+            var resourceContextsByResource = BuildResourceContextLookup(context);
+
             EmitPropagationFallbackTriggers(
                 context,
                 abstractTablesByResource,
@@ -329,12 +330,10 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
     /// </summary>
     private static IReadOnlyList<DbColumnName> BuildRootIdentityProjectionColumns(
         RelationalResourceModel resourceModel,
-        RelationalModelBuilderContext builderContext,
+        IReadOnlyList<IdentityElementMapping> identityElements,
         QualifiedResourceName resource
     )
     {
-        var identityElements = BuildIdentityElementMappings(resourceModel, builderContext, resource);
-
         if (identityElements.Count == 0)
         {
             return [];
@@ -463,6 +462,13 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 );
             }
 
+            // Skip trigger creation when no referrers need propagation updates.
+            // This can happen when all referrer bindings resolve to non-root tables.
+            if (referrerUpdates.Count == 0)
+            {
+                continue;
+            }
+
             context.TriggerInventory.Add(
                 new DbTriggerInfo(
                     new DbTriggerName(BuildTriggerName(triggerTable, PropagationFallbackPrefix)),
@@ -498,6 +504,9 @@ public sealed class DeriveTriggerInventoryPass : IRelationalModelSetPass
                 resourceContext.ResourceName
             );
 
+            // Continue intentionally filters abstract and unmodeled resources — they have
+            // schema entries but no concrete resource model (e.g., abstract base resources
+            // or resources that do not produce relational tables).
             if (!concreteResourcesByName.TryGetValue(referrerResource, out var referrerModel))
             {
                 continue;

@@ -30,18 +30,13 @@ public sealed class SqlWriter
     /// <summary>
     /// Initializes a new instance of the <see cref="SqlWriter"/> class.
     /// </summary>
-    /// <param name="dialect">The SQL dialect to use for quoting and type rendering.</param>
+    /// <param name="dialect">The SQL dialect (reserved for future use).</param>
     /// <param name="initialCapacity">Initial capacity of the internal buffer.</param>
     public SqlWriter(ISqlDialect dialect, int initialCapacity = 4096)
     {
-        Dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
+        ArgumentNullException.ThrowIfNull(dialect);
         _builder = new StringBuilder(initialCapacity);
     }
-
-    /// <summary>
-    /// Gets the SQL dialect used for quoting and type rendering.
-    /// </summary>
-    public ISqlDialect Dialect { get; }
 
     /// <summary>
     /// Creates an indented scope that increments indent on construction and decrements on disposal.
@@ -106,21 +101,6 @@ public sealed class SqlWriter
     public override string ToString()
     {
         return Canonicalize(_builder.ToString());
-    }
-
-    /// <summary>
-    /// Gets the current length of the internal buffer.
-    /// </summary>
-    public int Length => _builder.Length;
-
-    /// <summary>
-    /// Clears the internal buffer and resets indentation.
-    /// </summary>
-    public void Clear()
-    {
-        _builder.Clear();
-        _indentLevel = 0;
-        _atLineStart = true;
     }
 
     /// <summary>

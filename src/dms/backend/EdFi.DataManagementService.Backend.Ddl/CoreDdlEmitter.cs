@@ -741,11 +741,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitPgsqlJournalingTrigger(SqlWriter writer)
     {
-        string Q(string id) => _dialect.QuoteIdentifier(id);
-
         var docTable = _dialect.QualifyTable(_documentTable);
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
-        var funcName = $"{Q(DmsTableNames.DmsSchema.Value)}.{Q("TF_Document_Journal")}";
+        var funcName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TF_Document_Journal")}";
 
         // Trigger function
         writer.AppendLine($"CREATE OR REPLACE FUNCTION {funcName}()");
@@ -754,16 +752,16 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine(
-                $"INSERT INTO {changeTable} ({Q("ChangeVersion")}, {Q("DocumentId")}, {Q("ResourceKeyId")}, {Q("CreatedAt")})"
+                $"INSERT INTO {changeTable} ({Quote("ChangeVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("CreatedAt")})"
             );
             writer.AppendLine(
-                $"SELECT d.{Q("ContentVersion")}, d.{Q("DocumentId")}, d.{Q("ResourceKeyId")}, now()"
+                $"SELECT d.{Quote("ContentVersion")}, d.{Quote("DocumentId")}, d.{Quote("ResourceKeyId")}, now()"
             );
             writer.AppendLine("FROM (");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"SELECT DISTINCT ON ({Q("DocumentId")}) {Q("ContentVersion")}, {Q("DocumentId")}, {Q("ResourceKeyId")}"
+                    $"SELECT DISTINCT ON ({Quote("DocumentId")}) {Quote("ContentVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}"
                 );
                 writer.AppendLine("FROM new_table");
             }
@@ -776,10 +774,10 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
 
         // Drop and recreate trigger
         writer.AppendLine(_dialect.DropTriggerIfExists(_documentTable, "TR_Document_Journal"));
-        writer.AppendLine($"CREATE TRIGGER {Q("TR_Document_Journal")}");
+        writer.AppendLine($"CREATE TRIGGER {Quote("TR_Document_Journal")}");
         using (writer.Indent())
         {
-            writer.AppendLine($"AFTER INSERT OR UPDATE OF {Q("ContentVersion")} ON {docTable}");
+            writer.AppendLine($"AFTER INSERT OR UPDATE OF {Quote("ContentVersion")} ON {docTable}");
             writer.AppendLine("REFERENCING NEW TABLE AS new_table");
             writer.AppendLine("FOR EACH STATEMENT");
             writer.AppendLine($"EXECUTE FUNCTION {funcName}();");
@@ -794,11 +792,9 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitMssqlJournalingTrigger(SqlWriter writer)
     {
-        string Q(string id) => _dialect.QuoteIdentifier(id);
-
         var docTable = _dialect.QualifyTable(_documentTable);
         var changeTable = _dialect.QualifyTable(_documentChangeEventTable);
-        var triggerName = $"{Q(DmsTableNames.DmsSchema.Value)}.{Q("TR_Document_Journal")}";
+        var triggerName = $"{Quote(DmsTableNames.DmsSchema.Value)}.{Quote("TR_Document_Journal")}";
 
         // CREATE OR ALTER TRIGGER must be the first statement in a T-SQL batch.
         writer.AppendLine("GO");
@@ -810,15 +806,15 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             writer.AppendLine("SET NOCOUNT ON;");
-            writer.AppendLine($"IF UPDATE({Q("ContentVersion")}) OR NOT EXISTS (SELECT 1 FROM deleted)");
+            writer.AppendLine($"IF UPDATE({Quote("ContentVersion")}) OR NOT EXISTS (SELECT 1 FROM deleted)");
             writer.AppendLine("BEGIN");
             using (writer.Indent())
             {
                 writer.AppendLine(
-                    $"INSERT INTO {changeTable} ({Q("ChangeVersion")}, {Q("DocumentId")}, {Q("ResourceKeyId")}, {Q("CreatedAt")})"
+                    $"INSERT INTO {changeTable} ({Quote("ChangeVersion")}, {Quote("DocumentId")}, {Quote("ResourceKeyId")}, {Quote("CreatedAt")})"
                 );
                 writer.AppendLine(
-                    $"SELECT i.{Q("ContentVersion")}, i.{Q("DocumentId")}, i.{Q("ResourceKeyId")}, sysutcdatetime()"
+                    $"SELECT i.{Quote("ContentVersion")}, i.{Quote("DocumentId")}, i.{Quote("ResourceKeyId")}, sysutcdatetime()"
                 );
                 writer.AppendLine("FROM inserted i;");
             }
@@ -827,4 +823,6 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
         writer.AppendLine("END;");
         writer.AppendLine();
     }
+
+    private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
 }

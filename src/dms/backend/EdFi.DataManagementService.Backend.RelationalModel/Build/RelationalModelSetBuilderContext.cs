@@ -1014,7 +1014,7 @@ public sealed class RelationalModelSetBuilderContext
         QualifiedResourceName? resource
     )
     {
-        List<string> contextParts = new();
+        List<string> contextParts = [];
 
         if (resource is { } resourceValue)
         {

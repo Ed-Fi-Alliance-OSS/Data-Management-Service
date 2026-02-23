@@ -33,69 +33,76 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     {
         UpdateProjectSchemas(context, dialectRules);
 
-        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
-        {
-            var entry = context.ConcreteResourcesInNameOrder[index];
-            var updatedModel = ApplyToResource(entry.RelationalModel, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.ConcreteResourcesInNameOrder,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToResource(entry.RelationalModel, rules, out var changed);
+                return changed ? entry with { RelationalModel = updated } : null;
+            },
+            dialectRules
+        );
 
-            context.ConcreteResourcesInNameOrder[index] = entry with { RelationalModel = updatedModel };
-        }
-
-        for (var index = 0; index < context.AbstractIdentityTablesInNameOrder.Count; index++)
-        {
-            var entry = context.AbstractIdentityTablesInNameOrder[index];
-            var updatedTable = ApplyToTable(entry.TableModel, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.AbstractIdentityTablesInNameOrder,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToTable(entry.TableModel, rules, out var changed);
+                return changed ? entry with { TableModel = updated } : null;
+            },
+            dialectRules
+        );
 
-            context.AbstractIdentityTablesInNameOrder[index] = entry with { TableModel = updatedTable };
-        }
-
-        for (var index = 0; index < context.AbstractUnionViewsInNameOrder.Count; index++)
-        {
-            var entry = context.AbstractUnionViewsInNameOrder[index];
-            var updatedView = ApplyToUnionView(entry, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.AbstractUnionViewsInNameOrder,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToUnionView(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
 
-            context.AbstractUnionViewsInNameOrder[index] = updatedView;
-        }
-
-        for (var index = 0; index < context.IndexInventory.Count; index++)
-        {
-            var entry = context.IndexInventory[index];
-            var updatedIndex = ApplyToIndex(entry, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.IndexInventory,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToIndex(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
 
-            context.IndexInventory[index] = updatedIndex;
-        }
-
-        for (var index = 0; index < context.TriggerInventory.Count; index++)
-        {
-            var entry = context.TriggerInventory[index];
-            var updatedTrigger = ApplyToTrigger(entry, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.TriggerInventory,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToTrigger(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
+    }
 
-            context.TriggerInventory[index] = updatedTrigger;
+    /// <summary>
+    /// Applies a transformation to each element of a list in-place, replacing only
+    /// those elements for which the transform returns a non-null result.
+    /// </summary>
+    private static void ApplyInPlace<T>(
+        IList<T> list,
+        Func<T, ISqlDialectRules, T?> transform,
+        ISqlDialectRules dialectRules
+    )
+        where T : class
+    {
+        for (var index = 0; index < list.Count; index++)
+        {
+            var updated = transform(list[index], dialectRules);
+
+            if (updated is not null)
+            {
+                list[index] = updated;
+            }
         }
     }
 
@@ -325,9 +332,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     )
     {
         changed = false;
-        var keyName = string.IsNullOrWhiteSpace(key.ConstraintName)
-            ? ConstraintNaming.BuildPrimaryKeyName(table)
-            : key.ConstraintName;
+        var keyName = ConstraintNaming.ResolvePrimaryKeyConstraintName(table, key);
         var updatedConstraintName = dialectRules.ShortenIdentifier(keyName);
 
         if (!string.Equals(updatedConstraintName, key.ConstraintName, StringComparison.Ordinal))
@@ -1426,7 +1431,10 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     registeredColumns.Add((table.Table, column.ColumnName));
                 }
 
-                var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(table.Table, table.Key);
+                var primaryKeyConstraintName = ConstraintNaming.ResolvePrimaryKeyConstraintName(
+                    table.Table,
+                    table.Key
+                );
 
                 detector.RegisterConstraint(
                     table.Table,
@@ -1486,7 +1494,10 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 registeredColumns.Add((tableModel.Table, column.ColumnName));
             }
 
-            var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(tableModel.Table, tableModel.Key);
+            var primaryKeyConstraintName = ConstraintNaming.ResolvePrimaryKeyConstraintName(
+                tableModel.Table,
+                tableModel.Key
+            );
 
             detector.RegisterConstraint(
                 tableModel.Table,
@@ -1564,11 +1575,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             detector.RegisterTrigger(
                 trigger.Table,
                 trigger.Name,
-                BuildOrigin(
-                    $"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}",
-                    null,
-                    null
-                )
+                BuildOrigin($"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}", null, null)
             );
         }
 
@@ -1732,16 +1739,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     private static string FormatColumn(DbTableName table, DbColumnName column)
     {
         return $"{FormatTable(table)}.{column.Value}";
-    }
-
-    /// <summary>
-    /// Resolves a primary key constraint name for collision registration.
-    /// </summary>
-    private static string ResolvePrimaryKeyConstraintName(DbTableName table, TableKey key)
-    {
-        return string.IsNullOrWhiteSpace(key.ConstraintName)
-            ? ConstraintNaming.BuildPrimaryKeyName(table)
-            : key.ConstraintName;
     }
 
     /// <summary>

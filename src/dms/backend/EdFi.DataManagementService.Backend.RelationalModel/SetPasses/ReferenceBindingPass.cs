@@ -369,11 +369,6 @@ public sealed class ReferenceBindingPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Captures the index and model for a base (non-extension) resource used when resolving extensions.
-    /// </summary>
-    private sealed record BaseResourceEntry(int Index, ConcreteResourceModel Model);
-
-    /// <summary>
     /// Captures a table scope and its accumulator for prefix matching against reference object paths.
     /// </summary>
     private sealed record TableScopeEntry(JsonPathExpression Scope, TableColumnAccumulator Builder);

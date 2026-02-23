@@ -78,7 +78,7 @@ public sealed class MssqlDialect : SqlDialectBase
         // SQL Server does not support IF NOT EXISTS for CREATE TABLE directly,
         // so we use an OBJECT_ID check pattern.
         var qualifiedTable = QualifyTable(table);
-        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
+        var escapedTableForObjectId = EscapeTableForObjectId(table);
 
         return $"IF OBJECT_ID(N'{escapedTableForObjectId}', N'U') IS NULL\n"
             + $"CREATE TABLE {qualifiedTable}";
@@ -185,7 +185,7 @@ public sealed class MssqlDialect : SqlDialectBase
         var targetColumnList = string.Join(", ", targetColumns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
-        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
+        var escapedTableForObjectId = EscapeTableForObjectId(table);
 
         return $"""
             IF NOT EXISTS (
@@ -222,7 +222,7 @@ public sealed class MssqlDialect : SqlDialectBase
         var columnList = string.Join(", ", columns.Select(c => QuoteIdentifier(c.Value)));
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
-        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
+        var escapedTableForObjectId = EscapeTableForObjectId(table);
 
         return $"""
             IF NOT EXISTS (
@@ -246,7 +246,7 @@ public sealed class MssqlDialect : SqlDialectBase
 
         var quotedConstraint = QuoteIdentifier(constraintName);
         var escapedConstraint = constraintName.Replace("'", "''");
-        var escapedTableForObjectId = $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
+        var escapedTableForObjectId = EscapeTableForObjectId(table);
 
         return $"""
             IF NOT EXISTS (
@@ -475,5 +475,13 @@ public sealed class MssqlDialect : SqlDialectBase
 
         // No presence column — alias always returns the canonical value.
         return $"{quotedColumn} AS ({quotedCanonical}) PERSISTED";
+    }
+
+    /// <summary>
+    /// Returns the schema-qualified table name escaped for use in <c>OBJECT_ID()</c> calls.
+    /// </summary>
+    private static string EscapeTableForObjectId(DbTableName table)
+    {
+        return $"{table.Schema.Value}.{table.Name}".Replace("'", "''");
     }
 }

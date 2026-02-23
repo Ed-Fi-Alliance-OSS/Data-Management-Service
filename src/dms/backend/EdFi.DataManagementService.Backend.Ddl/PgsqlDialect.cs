@@ -150,7 +150,7 @@ public sealed class PgsqlDialect : SqlDialectBase
         var escapedConstraint = constraintName.Replace("'", "''");
         // Pass the already-quoted identifier to to_regclass(); PostgreSQL needs the double
         // quotes inside the string literal to preserve case for PascalCase table names.
-        var escapedQualifiedTable = QualifyTable(table).Replace("'", "''");
+        var escapedQualifiedTable = EscapeQualifiedTable(table);
 
         // Use DO block to check if constraint exists before adding
         return $"""
@@ -196,7 +196,7 @@ public sealed class PgsqlDialect : SqlDialectBase
         var escapedConstraint = constraintName.Replace("'", "''");
         // Pass the already-quoted identifier to to_regclass(); PostgreSQL needs the double
         // quotes inside the string literal to preserve case for PascalCase table names.
-        var escapedQualifiedTable = QualifyTable(table).Replace("'", "''");
+        var escapedQualifiedTable = EscapeQualifiedTable(table);
 
         return $"""
             DO $$
@@ -228,7 +228,7 @@ public sealed class PgsqlDialect : SqlDialectBase
         var escapedConstraint = constraintName.Replace("'", "''");
         // Pass the already-quoted identifier to to_regclass(); PostgreSQL needs the double
         // quotes inside the string literal to preserve case for PascalCase table names.
-        var escapedQualifiedTable = QualifyTable(table).Replace("'", "''");
+        var escapedQualifiedTable = EscapeQualifiedTable(table);
 
         return $"""
             DO $$
@@ -410,5 +410,14 @@ public sealed class PgsqlDialect : SqlDialectBase
 
         // No presence column — alias always returns the canonical value.
         return $"{quotedColumn} {sqlType} GENERATED ALWAYS AS ({quotedCanonical}) STORED";
+    }
+
+    /// <summary>
+    /// Returns the fully-qualified, quoted table name escaped for use in string literals
+    /// (e.g., <c>to_regclass()</c> calls).
+    /// </summary>
+    private string EscapeQualifiedTable(DbTableName table)
+    {
+        return QualifyTable(table).Replace("'", "''");
     }
 }

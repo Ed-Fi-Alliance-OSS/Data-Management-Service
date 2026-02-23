@@ -24,5 +24,5 @@ internal static class DmsTableNames
     public static readonly DbTableName ResourceKey = new(DmsSchema, "ResourceKey");
     public static readonly DbTableName SchemaComponent = new(DmsSchema, "SchemaComponent");
 
-    public static readonly string ChangeVersionSequence = "ChangeVersionSequence";
+    public const string ChangeVersionSequence = "ChangeVersionSequence";
 }

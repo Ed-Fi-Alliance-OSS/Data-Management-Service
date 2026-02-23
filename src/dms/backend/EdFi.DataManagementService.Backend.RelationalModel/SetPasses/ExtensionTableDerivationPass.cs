@@ -206,7 +206,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 
         var orderedTables = extensionTablesByScope
             .Values.Select(builder => builder.Build())
-            .OrderBy(table => CountArrayDepth(table.JsonScope))
+            .OrderBy(table => SetPassHelpers.CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ToArray();
 
@@ -1766,14 +1766,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Counts the number of wildcard array segments in a scope path.
-    /// </summary>
-    private static int CountArrayDepth(JsonPathExpression scope)
-    {
-        return scope.Segments.Count(segment => segment is JsonPathSegment.AnyArrayElement);
-    }
-
-    /// <summary>
     /// Builds the root table key for an extension table aligned to the base root scope.
     /// </summary>
     private static TableKey BuildRootTableKey(DbTableName tableName)
@@ -1879,11 +1871,6 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             ),
         };
     }
-
-    /// <summary>
-    /// Captures the index and model for a base (non-extension) resource used when resolving extensions.
-    /// </summary>
-    private sealed record BaseResourceEntry(int Index, ConcreteResourceModel Model);
 
     /// <summary>
     /// Captures the derived extension table models and descriptor edge sources for an extension resource.

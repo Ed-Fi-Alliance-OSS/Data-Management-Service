@@ -483,15 +483,6 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         var canonicalScale = Math.Max(currentDecimal.Scale, memberDecimal.Scale);
         var canonicalPrecision = canonicalIntegerDigits + canonicalScale;
 
-        if (canonicalScale > canonicalPrecision)
-        {
-            throw new InvalidOperationException(
-                $"Canonical decimal type is invalid for abstract identity path '{identityPath.Canonical}' on "
-                    + $"resource '{FormatResource(abstractResource)}'. Precision {canonicalPrecision} must be "
-                    + $"greater than or equal to scale {canonicalScale}."
-            );
-        }
-
         return new RelationalScalarType(ScalarKind.Decimal, Decimal: (canonicalPrecision, canonicalScale));
     }
 

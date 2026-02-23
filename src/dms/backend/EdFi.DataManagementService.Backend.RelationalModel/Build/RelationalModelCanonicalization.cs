@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
+
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 /// <summary>
@@ -20,7 +22,7 @@ internal static class RelationalModelCanonicalization
 
         var canonicalTables = resourceModel
             .TablesInDependencyOrder.Select(RelationalModelOrdering.CanonicalizeTable)
-            .OrderBy(table => CountArrayDepth(table.JsonScope))
+            .OrderBy(table => SetPassHelpers.CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
@@ -108,23 +110,5 @@ internal static class RelationalModelCanonicalization
             .ThenBy(site => site.ExtensionPath.Canonical, StringComparer.Ordinal)
             .ThenBy(site => string.Join("|", site.ProjectKeys), StringComparer.Ordinal)
             .ToArray();
-    }
-
-    /// <summary>
-    /// Counts the number of array wildcard segments in the scope, used for depth-first ordering.
-    /// </summary>
-    private static int CountArrayDepth(JsonPathExpression scope)
-    {
-        var depth = 0;
-
-        foreach (var segment in scope.Segments)
-        {
-            if (segment is JsonPathSegment.AnyArrayElement)
-            {
-                depth++;
-            }
-        }
-
-        return depth;
     }
 }

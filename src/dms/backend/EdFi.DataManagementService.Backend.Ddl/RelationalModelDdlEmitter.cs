@@ -15,6 +15,16 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 {
     private readonly ISqlDialect _dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
 
+    // Frequently-used column names, allocated once to avoid repetitive allocations.
+    private static readonly DbColumnName DocumentIdColumn = new("DocumentId");
+    private static readonly DbColumnName ContentVersionColumn = new("ContentVersion");
+    private static readonly DbColumnName ContentLastModifiedAtColumn = new("ContentLastModifiedAt");
+    private static readonly DbColumnName IdentityVersionColumn = new("IdentityVersion");
+    private static readonly DbColumnName IdentityLastModifiedAtColumn = new("IdentityLastModifiedAt");
+    private static readonly DbColumnName ReferentialIdColumn = new("ReferentialId");
+    private static readonly DbColumnName ResourceKeyIdColumn = new("ResourceKeyId");
+    private static readonly DbColumnName DiscriminatorColumn = new("Discriminator");
+
     /// <summary>
     /// Builds a SQL script that creates all schemas, tables, indexes, views, and triggers in the model set.
     /// </summary>
@@ -311,6 +321,13 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             // so we bump ContentVersion via OLD, return OLD, and skip the normal body.
             if (trigger.Parameters is TriggerKindParameters.DocumentStamping)
             {
+                if (trigger.KeyColumns.Count != 1)
+                {
+                    throw new InvalidOperationException(
+                        $"DocumentStamping trigger '{trigger.Name.Value}' requires exactly one key column in the PgSQL path, but has {trigger.KeyColumns.Count}."
+                    );
+                }
+
                 var deleteKeyColumn = trigger.KeyColumns[0];
                 writer.AppendLine("IF TG_OP = 'DELETE' THEN");
                 using (writer.Indent())
@@ -318,14 +335,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                     writer.Append("UPDATE ");
                     writer.AppendLine(Quote(DmsTableNames.Document));
                     writer.Append("SET ");
-                    writer.Append(Quote(new DbColumnName("ContentVersion")));
+                    writer.Append(Quote(ContentVersionColumn));
                     writer.Append(" = nextval('");
                     writer.Append(FormatSequenceName());
                     writer.Append("'), ");
-                    writer.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+                    writer.Append(Quote(ContentLastModifiedAtColumn));
                     writer.AppendLine(" = now()");
                     writer.Append("WHERE ");
-                    writer.Append(Quote(new DbColumnName("DocumentId")));
+                    writer.Append(Quote(DocumentIdColumn));
                     writer.Append(" = OLD.");
                     writer.Append(Quote(deleteKeyColumn));
                     writer.AppendLine(";");
@@ -457,14 +474,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("UPDATE ");
         writer.AppendLine(documentTable);
         writer.Append("SET ");
-        writer.Append(Quote(new DbColumnName("ContentVersion")));
+        writer.Append(Quote(ContentVersionColumn));
         writer.Append(" = nextval('");
         writer.Append(sequenceName);
         writer.Append("'), ");
-        writer.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+        writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.AppendLine(" = now()");
         writer.Append("WHERE ");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(Quote(DocumentIdColumn));
         writer.Append(" = NEW.");
         writer.Append(Quote(keyColumn));
         writer.AppendLine(";");
@@ -485,14 +502,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 writer.Append("UPDATE ");
                 writer.AppendLine(documentTable);
                 writer.Append("SET ");
-                writer.Append(Quote(new DbColumnName("IdentityVersion")));
+                writer.Append(Quote(IdentityVersionColumn));
                 writer.Append(" = nextval('");
                 writer.Append(sequenceName);
                 writer.Append("'), ");
-                writer.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
+                writer.Append(Quote(IdentityLastModifiedAtColumn));
                 writer.AppendLine(" = now()");
                 writer.Append("WHERE ");
-                writer.Append(Quote(new DbColumnName("DocumentId")));
+                writer.Append(Quote(DocumentIdColumn));
                 writer.Append(" = NEW.");
                 writer.Append(Quote(keyColumn));
                 writer.AppendLine(";");
@@ -520,17 +537,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.AppendLine(" FROM deleted)");
         writer.AppendLine("UPDATE d");
         writer.Append("SET d.");
-        writer.Append(Quote(new DbColumnName("ContentVersion")));
+        writer.Append(Quote(ContentVersionColumn));
         writer.Append(" = NEXT VALUE FOR ");
         writer.Append(sequenceName);
         writer.Append(", d.");
-        writer.Append(Quote(new DbColumnName("ContentLastModifiedAt")));
+        writer.Append(Quote(ContentLastModifiedAtColumn));
         writer.AppendLine(" = sysutcdatetime()");
         writer.Append("FROM ");
         writer.Append(documentTable);
         writer.AppendLine(" d");
         writer.Append("INNER JOIN affectedDocs a ON d.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(Quote(DocumentIdColumn));
         writer.Append(" = a.");
         writer.Append(quotedKeyColumn);
         writer.AppendLine(";");
@@ -551,17 +568,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             {
                 writer.AppendLine("UPDATE d");
                 writer.Append("SET d.");
-                writer.Append(Quote(new DbColumnName("IdentityVersion")));
+                writer.Append(Quote(IdentityVersionColumn));
                 writer.Append(" = NEXT VALUE FOR ");
                 writer.Append(sequenceName);
                 writer.Append(", d.");
-                writer.Append(Quote(new DbColumnName("IdentityLastModifiedAt")));
+                writer.Append(Quote(IdentityLastModifiedAtColumn));
                 writer.AppendLine(" = sysutcdatetime()");
                 writer.Append("FROM ");
                 writer.Append(documentTable);
                 writer.AppendLine(" d");
                 writer.Append("INNER JOIN inserted i ON d.");
-                writer.Append(Quote(new DbColumnName("DocumentId")));
+                writer.Append(Quote(DocumentIdColumn));
                 writer.Append(" = i.");
                 writer.AppendLine(Quote(keyColumn));
                 writer.Append("INNER JOIN deleted del ON del.");
@@ -595,6 +612,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         TriggerKindParameters.ReferentialIdentityMaintenance refId
     )
     {
+        // Consolidated guard: both dialect paths require at least one identity element.
+        if (refId.IdentityElements.Count == 0)
+        {
+            throw new InvalidOperationException(
+                $"ReferentialIdentityMaintenance trigger requires at least one identity element "
+                    + $"for resource '{refId.ResourceName}'. This indicates a bug in the model derivation phase."
+            );
+        }
+
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
             EmitPgsqlReferentialIdentityBody(writer, trigger.IdentityProjectionColumns, refId);
@@ -656,25 +682,17 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<IdentityElementMapping> identityElements
     )
     {
-        if (identityElements.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"ReferentialIdentityMaintenance trigger requires at least one identity element "
-                    + $"for resource '{resourceName}'. This indicates a bug in the model derivation phase."
-            );
-        }
-
         var uuidv5Func = FormatUuidv5FunctionName();
 
         // DELETE existing row
         writer.Append("DELETE FROM ");
         writer.AppendLine(refIdTable);
         writer.Append("WHERE ");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(Quote(DocumentIdColumn));
         writer.Append(" = NEW.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(Quote(DocumentIdColumn));
         writer.Append(" AND ");
-        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.Append(Quote(ResourceKeyIdColumn));
         writer.Append(" = ");
         writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.AppendLine(";");
@@ -683,11 +701,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("INSERT INTO ");
         writer.Append(refIdTable);
         writer.Append(" (");
-        writer.Append(Quote(new DbColumnName("ReferentialId")));
+        writer.Append(Quote(ReferentialIdColumn));
         writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(Quote(DocumentIdColumn));
         writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.Append(Quote(ResourceKeyIdColumn));
         writer.AppendLine(")");
         writer.Append("VALUES (");
         writer.Append(uuidv5Func);
@@ -701,12 +719,20 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("' || ");
         EmitPgsqlIdentityHashExpression(writer, identityElements);
         writer.Append("), NEW.");
-        writer.Append(Quote(new DbColumnName("DocumentId")));
+        writer.Append(Quote(DocumentIdColumn));
         writer.Append(", ");
         writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.AppendLine(");");
     }
 
+    /// <summary>
+    /// Emits the PostgreSQL identity hash expression for UUIDv5 computation.
+    /// </summary>
+    /// <remarks>
+    /// Identity columns are guaranteed NOT NULL because they are resource key parts
+    /// (the identity of the resource). The column model derivation ensures these columns
+    /// are created with <c>NOT NULL</c> constraints, so COALESCE is not needed here.
+    /// </remarks>
     private void EmitPgsqlIdentityHashExpression(
         SqlWriter writer,
         IReadOnlyList<IdentityElementMapping> elements
@@ -736,6 +762,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             case ScalarKind.DateTime:
                 // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
                 // Use to_char for ISO 8601 with T separator.
+                //
+                // Timezone is intentionally omitted: both PG (timestamp without time zone) and
+                // MSSQL (datetime2, CONVERT style 126 truncated to 19 chars) produce timezone-free
+                // representations. This is by design to ensure cross-engine identity hash parity
+                // with Core's ReferentialIdCalculator. See also EmitMssqlColumnToNvarchar.
                 writer.Append("to_char(NEW.");
                 writer.Append(quoted);
                 writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
@@ -758,45 +789,23 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     {
         var refIdTable = Quote(DmsTableNames.ReferentialIdentity);
 
-        // INSERT case: no deleted rows, so always maintain referential identity for all inserted rows.
-        writer.AppendLine("IF NOT EXISTS (SELECT 1 FROM deleted)");
-        writer.AppendLine("BEGIN");
-
-        using (writer.Indent())
-        {
-            EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, "inserted");
-        }
-
-        writer.AppendLine("END");
-
-        // UPDATE case: use UPDATE(col) as a performance pre-filter only, then compute a value-diff
-        // workset to find rows whose identity projection values actually changed (null-safe).
-        // This is critical for key-unification correctness: UPDATE(aliasColumn) returns false when
-        // a CASCADE updates the canonical column, so UPDATE() alone would miss those changes.
-        writer.Append("ELSE IF (");
-        EmitMssqlUpdateColumnDisjunction(writer, identityProjectionColumns);
-        writer.AppendLine(")");
-        writer.AppendLine("BEGIN");
-
-        using (writer.Indent())
-        {
-            EmitMssqlValueDiffWorkset(writer, identityProjectionColumns);
-            EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, "@changedDocs");
-        }
-
-        writer.AppendLine("END");
+        EmitMssqlInsertUpdateDispatch(
+            writer,
+            identityProjectionColumns,
+            isInsert => EmitMssqlReferentialIdentityBlock(writer, refIdTable, refId, isInsert)
+        );
     }
 
     /// <summary>
-    /// Emits the DELETE + INSERT block for one referential identity resource key, scoping
-    /// to rows from <paramref name="sourceAlias"/> (either <c>inserted</c> for INSERTs or
-    /// <c>changedDocs</c> for value-diff UPDATE worksets).
+    /// Emits the DELETE + INSERT block for one referential identity resource key.
+    /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
+    /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
     /// </summary>
     private void EmitMssqlReferentialIdentityBlock(
         SqlWriter writer,
         string refIdTable,
         TriggerKindParameters.ReferentialIdentityMaintenance refId,
-        string sourceAlias
+        bool isInsert
     )
     {
         // Primary referential identity
@@ -807,7 +816,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             refId.ProjectName,
             refId.ResourceName,
             refId.IdentityElements,
-            sourceAlias
+            isInsert
         );
 
         // Superclass alias
@@ -820,16 +829,15 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 alias.ProjectName,
                 alias.ResourceName,
                 alias.IdentityElements,
-                sourceAlias
+                isInsert
             );
         }
     }
 
     /// <summary>
     /// Emits a DELETE + INSERT pair for a single resource key's referential identity rows.
-    /// The <paramref name="sourceAlias"/> controls which rows are processed: <c>inserted</c>
-    /// for INSERT triggers (all new rows) or <c>@changedDocs</c> for UPDATE triggers
-    /// (only rows whose identity projection values actually changed).
+    /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
+    /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
     /// </summary>
     private void EmitMssqlReferentialIdentityUpsert(
         SqlWriter writer,
@@ -838,19 +846,12 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string projectName,
         string resourceName,
         IReadOnlyList<IdentityElementMapping> identityElements,
-        string sourceAlias
+        bool isInsert
     )
     {
-        if (identityElements.Count == 0)
-        {
-            throw new InvalidOperationException(
-                $"ReferentialIdentityMaintenance trigger requires at least one identity element "
-                    + $"for resource '{resourceName}'. This indicates a bug in the model derivation phase."
-            );
-        }
-
+        var sourceAlias = isInsert ? "inserted" : "@changedDocs";
         var uuidv5Func = FormatUuidv5FunctionName();
-        var documentIdCol = Quote(new DbColumnName("DocumentId"));
+        var documentIdCol = Quote(DocumentIdColumn);
 
         // DELETE existing rows scoped to the source (all inserted or only changed)
         writer.Append("DELETE FROM ");
@@ -862,7 +863,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(" FROM ");
         writer.Append(sourceAlias);
         writer.Append(") AND ");
-        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.Append(Quote(ResourceKeyIdColumn));
         writer.Append(" = ");
         writer.Append(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.AppendLine(";");
@@ -872,11 +873,11 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append("INSERT INTO ");
         writer.Append(refIdTable);
         writer.Append(" (");
-        writer.Append(Quote(new DbColumnName("ReferentialId")));
+        writer.Append(Quote(ReferentialIdColumn));
         writer.Append(", ");
         writer.Append(documentIdCol);
         writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("ResourceKeyId")));
+        writer.Append(Quote(ResourceKeyIdColumn));
         writer.AppendLine(")");
         writer.Append("SELECT ");
         writer.Append(uuidv5Func);
@@ -894,7 +895,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(", ");
         writer.AppendLine(resourceKeyId.ToString(CultureInfo.InvariantCulture));
         writer.Append("FROM inserted i");
-        if (sourceAlias != "inserted")
+        if (!isInsert)
         {
             writer.Append(" INNER JOIN ");
             writer.Append(sourceAlias);
@@ -1035,18 +1036,18 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append("INSERT INTO ");
             writer.Append(targetTable);
             writer.Append(" (");
-            writer.Append(Quote(new DbColumnName("DocumentId")));
+            writer.Append(Quote(DocumentIdColumn));
             foreach (var mapping in mappings)
             {
                 writer.Append(", ");
                 writer.Append(Quote(mapping.TargetColumn));
             }
             writer.Append(", ");
-            writer.Append(Quote(new DbColumnName("Discriminator")));
+            writer.Append(Quote(DiscriminatorColumn));
             writer.AppendLine(")");
 
             writer.Append("VALUES (NEW.");
-            writer.Append(Quote(new DbColumnName("DocumentId")));
+            writer.Append(Quote(DocumentIdColumn));
             foreach (var mapping in mappings)
             {
                 writer.Append(", NEW.");
@@ -1057,7 +1058,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.AppendLine("')");
 
             writer.Append("ON CONFLICT (");
-            writer.Append(Quote(new DbColumnName("DocumentId")));
+            writer.Append(Quote(DocumentIdColumn));
             writer.AppendLine(")");
 
             writer.Append("DO UPDATE SET ");
@@ -1083,13 +1084,37 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         string discriminatorValue
     )
     {
-        // INSERT case: no deleted rows, so always maintain abstract identity for all inserted rows.
+        EmitMssqlInsertUpdateDispatch(
+            writer,
+            identityProjectionColumns,
+            isInsert =>
+                EmitMssqlAbstractIdentityMerge(
+                    writer,
+                    targetTableName,
+                    mappings,
+                    discriminatorValue,
+                    isInsert
+                )
+        );
+    }
+
+    /// <summary>
+    /// Shared MSSQL INSERT/UPDATE dispatch skeleton. Emits the IF NOT EXISTS (deleted) / ELSE IF UPDATE()
+    /// branching structure, delegating the block-specific logic to <paramref name="emitBlock"/>.
+    /// </summary>
+    private void EmitMssqlInsertUpdateDispatch(
+        SqlWriter writer,
+        IReadOnlyList<DbColumnName> identityProjectionColumns,
+        Action<bool> emitBlock
+    )
+    {
+        // INSERT case: no deleted rows, so process all inserted rows.
         writer.AppendLine("IF NOT EXISTS (SELECT 1 FROM deleted)");
         writer.AppendLine("BEGIN");
 
         using (writer.Indent())
         {
-            EmitMssqlAbstractIdentityMerge(writer, targetTableName, mappings, discriminatorValue, "inserted");
+            emitBlock(true);
         }
 
         writer.AppendLine("END");
@@ -1106,47 +1131,40 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         using (writer.Indent())
         {
             EmitMssqlValueDiffWorkset(writer, identityProjectionColumns);
-            EmitMssqlAbstractIdentityMerge(
-                writer,
-                targetTableName,
-                mappings,
-                discriminatorValue,
-                "@changedDocs"
-            );
+            emitBlock(false);
         }
 
         writer.AppendLine("END");
     }
 
     /// <summary>
-    /// Emits a MERGE statement for abstract identity maintenance, scoping the source to
-    /// <paramref name="sourceAlias"/> (<c>inserted</c> for INSERTs or <c>@changedDocs</c>
-    /// for value-diff UPDATE worksets). When the source is not <c>inserted</c>, the MERGE
-    /// joins through to <c>inserted</c> for column values.
+    /// Emits a MERGE statement for abstract identity maintenance.
+    /// When <paramref name="isInsert"/> is true, scopes to all <c>inserted</c> rows;
+    /// otherwise scopes to the <c>@changedDocs</c> value-diff workset.
     /// </summary>
     private void EmitMssqlAbstractIdentityMerge(
         SqlWriter writer,
         DbTableName targetTableName,
         IReadOnlyList<TriggerColumnMapping> mappings,
         string discriminatorValue,
-        string sourceAlias
+        bool isInsert
     )
     {
         var targetTable = Quote(targetTableName);
-        var documentIdCol = Quote(new DbColumnName("DocumentId"));
+        var documentIdCol = Quote(DocumentIdColumn);
 
         // Build the USING source: either 'inserted' directly, or 'inserted' filtered via changedDocs.
         writer.Append("MERGE ");
         writer.Append(targetTable);
         writer.AppendLine(" AS t");
-        if (sourceAlias == "inserted")
+        if (isInsert)
         {
             writer.Append("USING inserted AS s ON t.");
         }
         else
         {
             writer.Append("USING (SELECT i.* FROM inserted i INNER JOIN ");
-            writer.Append(sourceAlias);
+            writer.Append("@changedDocs");
             writer.Append(" cd ON cd.");
             writer.Append(documentIdCol);
             writer.Append(" = i.");
@@ -1179,7 +1197,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
             writer.Append(Quote(mapping.TargetColumn));
         }
         writer.Append(", ");
-        writer.Append(Quote(new DbColumnName("Discriminator")));
+        writer.Append(Quote(DiscriminatorColumn));
         writer.AppendLine(")");
 
         writer.Append("VALUES (s.");
@@ -1214,10 +1232,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         if (propagation.ReferrerUpdates.Count == 0)
         {
-            return;
+            throw new InvalidOperationException(
+                "IdentityPropagationFallback trigger was created with zero referrer updates. "
+                    + "This indicates a bug in DeriveTriggerInventoryPass — triggers with no "
+                    + "referrers should be skipped."
+            );
         }
 
-        var documentIdCol = Quote(new DbColumnName("DocumentId"));
+        var documentIdCol = Quote(DocumentIdColumn);
 
         // Emit an UPDATE statement for each referrer table.
         foreach (var referrer in propagation.ReferrerUpdates)
@@ -1330,7 +1352,7 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         IReadOnlyList<DbColumnName> identityProjectionColumns
     )
     {
-        var documentIdCol = Quote(new DbColumnName("DocumentId"));
+        var documentIdCol = Quote(DocumentIdColumn);
         writer.Append("DECLARE @changedDocs TABLE (");
         writer.Append(documentIdCol);
         writer.AppendLine(" bigint NOT NULL);");
@@ -1519,8 +1541,9 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitCreateView(SqlWriter writer, AbstractUnionViewInfo viewInfo)
     {
-        // MSSQL: CREATE OR ALTER VIEW must be the first statement in a T-SQL batch.
-        if (_dialect.Rules.Dialect == SqlDialect.Mssql)
+        // CREATE OR ALTER must be the first statement in a T-SQL batch; emit GO separator
+        // when the dialect uses the CreateOrAlter pattern (e.g., MSSQL).
+        if (_dialect.ViewCreationPattern == DdlPattern.CreateOrAlter)
         {
             writer.AppendLine("GO");
         }
