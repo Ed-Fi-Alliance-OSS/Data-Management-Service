@@ -109,52 +109,91 @@ public class ExtractDocumentReferencesTests
         [Test]
         public void It_has_extracted_the_course_offering_reference()
         {
-            var documentReference = documentReferences[0];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.courseOfferingReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("CourseOffering");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(4);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.localCourseCode");
-            documentIdentityElements[0].IdentityValue.Should().Be("aLocalCourseCode");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.localCourseCode")
+                .IdentityValue.Should()
+                .Be("aLocalCourseCode");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("23");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.sessionReference.schoolYear")
+                .IdentityValue.Should()
+                .Be("1234");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.sessionReference.sessionName")
+                .IdentityValue.Should()
+                .Be("aSessionName");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("23");
-
-            documentIdentityElements[2].IdentityJsonPath.Value.Should().Be("$.sessionReference.schoolYear");
-            documentIdentityElements[2].IdentityValue.Should().Be("1234");
-
-            documentIdentityElements[3].IdentityJsonPath.Value.Should().Be("$.sessionReference.sessionName");
-            documentIdentityElements[3].IdentityValue.Should().Be("aSessionName");
+        [Test]
+        public void It_has_extracted_the_course_offering_reference_path()
+        {
+            documentReferences.Should().Contain(r => r.Path.Value == "$.courseOfferingReference");
         }
 
         [Test]
         public void It_has_extracted_the_first_class_period_reference()
         {
-            var documentReference = documentReferences[1];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.classPeriods[0].classPeriodReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(2);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.classPeriodName");
-            documentIdentityElements[0].IdentityValue.Should().Be("Class Period 1");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.classPeriodName")
+                .IdentityValue.Should()
+                .Be("Class Period 1");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("111");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("111");
+        [Test]
+        public void It_has_extracted_the_first_class_period_reference_path_with_index()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.classPeriods[0].classPeriodReference");
         }
 
         [Test]
         public void It_has_extracted_the_second_class_period_reference()
         {
-            var documentReference = documentReferences[2];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.classPeriods[1].classPeriodReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(2);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.classPeriodName");
-            documentIdentityElements[0].IdentityValue.Should().Be("Class Period 2");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.classPeriodName")
+                .IdentityValue.Should()
+                .Be("Class Period 2");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("222");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("222");
+        [Test]
+        public void It_has_extracted_the_second_class_period_reference_path_with_index()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.classPeriods[1].classPeriodReference");
         }
 
         [Test]
@@ -169,7 +208,7 @@ public class ExtractDocumentReferencesTests
             courseOfferingArray.Should().NotBeNull();
             courseOfferingArray!.DocumentReferences.Should().ContainSingle();
             courseOfferingArray
-                .DocumentReferences[0]
+                .DocumentReferences.Single()
                 .ResourceInfo.ResourceName.Value.Should()
                 .Be("CourseOffering");
             var classPeriodArray = Array.Find(
@@ -233,31 +272,57 @@ public class ExtractDocumentReferencesTests
         [Test]
         public void It_has_extracted_the_first_class_period_reference()
         {
-            var documentReference = documentReferences[0];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.classPeriods[0].classPeriodReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(2);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.classPeriodName");
-            documentIdentityElements[0].IdentityValue.Should().Be("Class Period 1");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.classPeriodName")
+                .IdentityValue.Should()
+                .Be("Class Period 1");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("111");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("111");
+        [Test]
+        public void It_has_extracted_the_first_class_period_reference_path_with_index()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.classPeriods[0].classPeriodReference");
         }
 
         [Test]
         public void It_has_extracted_the_second_class_period_reference()
         {
-            var documentReference = documentReferences[1];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.classPeriods[1].classPeriodReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(2);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.classPeriodName");
-            documentIdentityElements[0].IdentityValue.Should().Be("Class Period 2");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.classPeriodName")
+                .IdentityValue.Should()
+                .Be("Class Period 2");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("222");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("222");
+        [Test]
+        public void It_has_extracted_the_second_class_period_reference_path_with_index()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.classPeriods[1].classPeriodReference");
         }
 
         [Test]
@@ -321,16 +386,29 @@ public class ExtractDocumentReferencesTests
         [Test]
         public void It_has_extracted_the_first_class_period_reference()
         {
-            var documentReference = documentReferences[0];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.classPeriods[0].classPeriodReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(2);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.classPeriodName");
-            documentIdentityElements[0].IdentityValue.Should().Be("Class Period 1");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.classPeriodName")
+                .IdentityValue.Should()
+                .Be("Class Period 1");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("111");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("111");
+        [Test]
+        public void It_has_extracted_the_first_class_period_reference_path_with_index()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.classPeriods[0].classPeriodReference");
         }
 
         [Test]
@@ -344,7 +422,10 @@ public class ExtractDocumentReferencesTests
             );
             classPeriodArray.Should().NotBeNull();
             classPeriodArray!.DocumentReferences.Should().HaveCount(1);
-            classPeriodArray.DocumentReferences[0].ResourceInfo.ResourceName.Value.Should().Be("ClassPeriod");
+            classPeriodArray
+                .DocumentReferences.Single()
+                .ResourceInfo.ResourceName.Value.Should()
+                .Be("ClassPeriod");
         }
     }
 
@@ -424,22 +505,35 @@ public class ExtractDocumentReferencesTests
         [Test]
         public void It_has_extracted_the_course_offering_reference()
         {
-            var documentReference = documentReferences[0];
+            var documentReference = documentReferences.Single(r =>
+                r.Path.Value == "$.courseOfferingReference"
+            );
             documentReference.ResourceInfo.ResourceName.Value.Should().Be("CourseOffering");
 
             var documentIdentityElements = documentReference.DocumentIdentity.DocumentIdentityElements;
             documentIdentityElements.Should().HaveCount(4);
-            documentIdentityElements[0].IdentityJsonPath.Value.Should().Be("$.localCourseCode");
-            documentIdentityElements[0].IdentityValue.Should().Be("aLocalCourseCode");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.localCourseCode")
+                .IdentityValue.Should()
+                .Be("aLocalCourseCode");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("23");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.sessionReference.schoolYear")
+                .IdentityValue.Should()
+                .Be("1234");
+            documentIdentityElements
+                .Single(e => e.IdentityJsonPath.Value == "$.sessionReference.sessionName")
+                .IdentityValue.Should()
+                .Be("aSessionName");
+        }
 
-            documentIdentityElements[1].IdentityJsonPath.Value.Should().Be("$.schoolReference.schoolId");
-            documentIdentityElements[1].IdentityValue.Should().Be("23");
-
-            documentIdentityElements[2].IdentityJsonPath.Value.Should().Be("$.sessionReference.schoolYear");
-            documentIdentityElements[2].IdentityValue.Should().Be("1234");
-
-            documentIdentityElements[3].IdentityJsonPath.Value.Should().Be("$.sessionReference.sessionName");
-            documentIdentityElements[3].IdentityValue.Should().Be("aSessionName");
+        [Test]
+        public void It_has_extracted_the_course_offering_reference_path()
+        {
+            documentReferences.Should().Contain(r => r.Path.Value == "$.courseOfferingReference");
         }
 
         [Test]
@@ -454,7 +548,7 @@ public class ExtractDocumentReferencesTests
             courseOfferingArray.Should().NotBeNull();
             courseOfferingArray!.DocumentReferences.Should().ContainSingle();
             courseOfferingArray
-                .DocumentReferences[0]
+                .DocumentReferences.Single()
                 .ResourceInfo.ResourceName.Value.Should()
                 .Be("CourseOffering");
         }
@@ -496,6 +590,175 @@ public class ExtractDocumentReferencesTests
         public void It_has_extracted_no_document_reference_arrays()
         {
             documentReferenceArrays.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Extracting_Document_References_With_Nested_Collections
+    {
+        internal DocumentReference[] documentReferences = [];
+        internal DocumentReferenceArray[] documentReferenceArrays = [];
+
+        internal static ApiSchemaDocuments BuildNestedApiSchemaDocuments()
+        {
+            return new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("StudentEducationOrganizationAssociation")
+                .WithIdentityJsonPaths(["$.studentReference.studentUniqueId"])
+                .WithStartDocumentPathsMapping()
+                .WithDocumentPathReference(
+                    "Calendar",
+                    [
+                        new("$.calendarCode", "$.addresses[*].periods[*].calendarReference.calendarCode"),
+                        new(
+                            "$.schoolReference.schoolId",
+                            "$.addresses[*].periods[*].calendarReference.schoolId"
+                        ),
+                    ]
+                )
+                .WithEndDocumentPathsMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            ApiSchemaDocuments apiSchemaDocument = BuildNestedApiSchemaDocuments();
+            ResourceSchema resourceSchema = BuildResourceSchema(
+                apiSchemaDocument,
+                "studentEducationOrganizationAssociations"
+            );
+
+            (documentReferences, documentReferenceArrays) = resourceSchema.ExtractReferences(
+                JsonNode.Parse(
+                    """
+                    {
+                        "studentReference": { "studentUniqueId": "s001" },
+                        "addresses": [
+                            {
+                                "periods": [
+                                    {
+                                        "calendarReference": {
+                                            "calendarCode": "2024",
+                                            "schoolId": "100"
+                                        }
+                                    }
+                                ]
+                            },
+                            {
+                                "periods": [
+                                    {
+                                        "calendarReference": {
+                                            "calendarCode": "2025",
+                                            "schoolId": "200"
+                                        }
+                                    },
+                                    {
+                                        "calendarReference": {
+                                            "calendarCode": "2026",
+                                            "schoolId": "300"
+                                        }
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+"""
+                )!,
+                NullLogger.Instance
+            );
+        }
+
+        [Test]
+        public void It_has_extracted_three_references()
+        {
+            documentReferences.Should().HaveCount(3);
+        }
+
+        [Test]
+        public void It_has_extracted_the_first_reference_path_with_nested_indices()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.addresses[0].periods[0].calendarReference");
+        }
+
+        [Test]
+        public void It_has_extracted_the_first_reference_identity()
+        {
+            var elements = documentReferences
+                .Single(r => r.Path.Value == "$.addresses[0].periods[0].calendarReference")
+                .DocumentIdentity.DocumentIdentityElements;
+            elements.Should().HaveCount(2);
+            elements
+                .Single(e => e.IdentityJsonPath.Value == "$.calendarCode")
+                .IdentityValue.Should()
+                .Be("2024");
+            elements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("100");
+        }
+
+        [Test]
+        public void It_has_extracted_the_second_reference_path_with_nested_indices()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.addresses[1].periods[0].calendarReference");
+        }
+
+        [Test]
+        public void It_has_extracted_the_second_reference_identity()
+        {
+            var elements = documentReferences
+                .Single(r => r.Path.Value == "$.addresses[1].periods[0].calendarReference")
+                .DocumentIdentity.DocumentIdentityElements;
+            elements.Should().HaveCount(2);
+            elements
+                .Single(e => e.IdentityJsonPath.Value == "$.calendarCode")
+                .IdentityValue.Should()
+                .Be("2025");
+            elements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("200");
+        }
+
+        [Test]
+        public void It_has_extracted_the_third_reference_path_with_nested_indices()
+        {
+            documentReferences
+                .Should()
+                .Contain(r => r.Path.Value == "$.addresses[1].periods[1].calendarReference");
+        }
+
+        [Test]
+        public void It_has_extracted_the_third_reference_identity()
+        {
+            var elements = documentReferences
+                .Single(r => r.Path.Value == "$.addresses[1].periods[1].calendarReference")
+                .DocumentIdentity.DocumentIdentityElements;
+            elements.Should().HaveCount(2);
+            elements
+                .Single(e => e.IdentityJsonPath.Value == "$.calendarCode")
+                .IdentityValue.Should()
+                .Be("2026");
+            elements
+                .Single(e => e.IdentityJsonPath.Value == "$.schoolReference.schoolId")
+                .IdentityValue.Should()
+                .Be("300");
+        }
+
+        [Test]
+        public void It_has_extracted_one_document_reference_array_with_wildcard_path()
+        {
+            var refArray = documentReferenceArrays.Should().ContainSingle().Subject;
+            refArray.arrayPath.Value.Should().Be("$.addresses[*].periods[*].calendarReference");
+            refArray.DocumentReferences.Should().HaveCount(3);
         }
     }
 }
