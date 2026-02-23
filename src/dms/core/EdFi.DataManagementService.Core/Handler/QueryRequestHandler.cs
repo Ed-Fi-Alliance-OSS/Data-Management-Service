@@ -32,7 +32,7 @@ internal class QueryRequestHandler(
         var queryHandler = _serviceProvider.GetRequiredService<IQueryHandler>();
 
         int attemptCount = 0;
-        var queryResult = await _resiliencePipeline.ExecuteAsync(async t =>
+        var queryResult = await _resiliencePipeline.ExecuteAsync(async _ =>
         {
             attemptCount++;
             return await queryHandler.QueryDocuments(

@@ -39,7 +39,7 @@ internal class UpsertHandler(
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         int attemptCount = 0;
-        var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
+        var upsertResult = await _resiliencePipeline.ExecuteAsync(async _ =>
         {
             attemptCount++;
 

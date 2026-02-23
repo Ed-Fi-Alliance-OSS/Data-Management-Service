@@ -122,7 +122,7 @@ public static class DmsCoreServiceExtensions
             deadlockRetryConfiguration.Bind(retrySettings);
             ValidateDeadlockRetrySettings(retrySettings);
 
-            var loggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger));
+            var loggerFactory = LoggerFactory.Create(loggingBuilder => loggingBuilder.AddSerilog(logger));
             var cbFailureLogger = loggerFactory.CreateLogger("CircuitBreakerFailureDetection");
             var cbLogger = loggerFactory.CreateLogger("CircuitBreaker");
             var retryLogger = loggerFactory.CreateLogger("DeadlockRetry");
@@ -219,30 +219,14 @@ public static class DmsCoreServiceExtensions
                 }),
                 OnRetry = args =>
                 {
-                    if (args.Outcome.Exception != null)
-                    {
-                        retryLogger.LogWarning(
-                            args.Outcome.Exception,
-                            "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                                + "after {DelayMs}ms. Exception: {ExceptionType} - {ExceptionMessage}",
-                            args.AttemptNumber,
-                            retrySettings.MaxRetryAttempts,
-                            args.RetryDelay.TotalMilliseconds,
-                            args.Outcome.Exception.GetType().Name,
-                            args.Outcome.Exception.Message
-                        );
-                    }
-                    else
-                    {
-                        retryLogger.LogWarning(
-                            "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                                + "after {DelayMs}ms. OperationType: {OperationType}",
-                            args.AttemptNumber,
-                            retrySettings.MaxRetryAttempts,
-                            args.RetryDelay.TotalMilliseconds,
-                            args.Outcome.Result?.GetType().Name
-                        );
-                    }
+                    retryLogger.LogWarning(
+                        "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
+                            + "after {DelayMs}ms. OperationType: {OperationType}",
+                        args.AttemptNumber,
+                        retrySettings.MaxRetryAttempts,
+                        args.RetryDelay.TotalMilliseconds,
+                        args.Outcome.Result?.GetType().Name
+                    );
 
                     return ValueTask.CompletedTask;
                 },

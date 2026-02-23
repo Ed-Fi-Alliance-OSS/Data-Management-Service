@@ -35,7 +35,7 @@ internal class GetByIdHandler(
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         int attemptCount = 0;
-        var getResult = await _resiliencePipeline.ExecuteAsync(async t =>
+        var getResult = await _resiliencePipeline.ExecuteAsync(async _ =>
         {
             attemptCount++;
             return await documentStoreRepository.GetDocumentById(

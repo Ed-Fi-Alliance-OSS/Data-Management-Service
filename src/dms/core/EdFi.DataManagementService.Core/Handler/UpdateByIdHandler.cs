@@ -42,7 +42,7 @@ internal class UpdateByIdHandler(
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
         int attemptCount = 0;
-        var updateResult = await _resiliencePipeline.ExecuteAsync(async t =>
+        var updateResult = await _resiliencePipeline.ExecuteAsync(async _ =>
         {
             attemptCount++;
             return await documentStoreRepository.UpdateDocumentById(

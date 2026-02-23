@@ -633,30 +633,14 @@ public class DeadlockRetryPolicyTests
                         ),
                         OnRetry = args =>
                         {
-                            if (args.Outcome.Exception != null)
-                            {
-                                _retryLogger.LogWarning(
-                                    args.Outcome.Exception,
-                                    "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                                        + "after {DelayMs}ms. Exception: {ExceptionType} - {ExceptionMessage}",
-                                    args.AttemptNumber,
-                                    maxRetryAttempts,
-                                    args.RetryDelay.TotalMilliseconds,
-                                    args.Outcome.Exception.GetType().Name,
-                                    args.Outcome.Exception.Message
-                                );
-                            }
-                            else
-                            {
-                                _retryLogger.LogWarning(
-                                    "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
-                                        + "after {DelayMs}ms. OperationType: {OperationType}",
-                                    args.AttemptNumber,
-                                    maxRetryAttempts,
-                                    args.RetryDelay.TotalMilliseconds,
-                                    args.Outcome.Result?.GetType().Name
-                                );
-                            }
+                            _retryLogger.LogWarning(
+                                "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
+                                    + "after {DelayMs}ms. OperationType: {OperationType}",
+                                args.AttemptNumber,
+                                maxRetryAttempts,
+                                args.RetryDelay.TotalMilliseconds,
+                                args.Outcome.Result?.GetType().Name
+                            );
 
                             return ValueTask.CompletedTask;
                         },

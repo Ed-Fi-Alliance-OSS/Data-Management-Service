@@ -35,7 +35,7 @@ internal class DeleteByIdHandler(
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
         int attemptCount = 0;
-        var deleteResult = await _resiliencePipeline.ExecuteAsync(async t =>
+        var deleteResult = await _resiliencePipeline.ExecuteAsync(async _ =>
         {
             attemptCount++;
             return await documentStoreRepository.DeleteDocumentById(
