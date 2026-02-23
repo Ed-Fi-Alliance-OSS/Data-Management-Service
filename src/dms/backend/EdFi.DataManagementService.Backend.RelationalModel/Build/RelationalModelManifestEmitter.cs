@@ -6,6 +6,7 @@
 using System.Buffers;
 using System.Text;
 using System.Text.Json;
+using static EdFi.DataManagementService.Backend.RelationalModel.Manifest.ManifestWriterHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
@@ -15,7 +16,7 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 /// </summary>
 public static class RelationalModelManifestEmitter
 {
-    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true };
+    private static readonly JsonWriterOptions _writerOptions = new() { Indented = true, NewLine = "\n" };
     private static readonly DbTableName _descriptorTableName = new(new DbSchemaName("dms"), "Descriptor");
 
     /// <summary>
@@ -25,10 +26,7 @@ public static class RelationalModelManifestEmitter
     /// <returns>The JSON manifest.</returns>
     public static string Emit(RelationalModelBuildResult buildResult)
     {
-        if (buildResult is null)
-        {
-            throw new ArgumentNullException(nameof(buildResult));
-        }
+        ArgumentNullException.ThrowIfNull(buildResult);
 
         return Emit(buildResult.ResourceModel, buildResult.ExtensionSites);
     }
@@ -114,20 +112,6 @@ public static class RelationalModelManifestEmitter
         }
         writer.WriteEndArray();
 
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes the resource identity portion of the manifest.
-    /// </summary>
-    /// <param name="writer">The JSON writer to write to.</param>
-    /// <param name="resource">The resource identity to write.</param>
-    private static void WriteResource(Utf8JsonWriter writer, QualifiedResourceName resource)
-    {
-        writer.WritePropertyName("resource");
-        writer.WriteStartObject();
-        writer.WriteString("project_name", resource.ProjectName);
-        writer.WriteString("resource_name", resource.ResourceName);
         writer.WriteEndObject();
     }
 

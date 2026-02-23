@@ -639,7 +639,7 @@ public sealed class ReferenceConstraintPass : IRelationalModelSetPass
             return true;
         }
 
-        identityBinding = default!;
+        identityBinding = null;
         return false;
     }
 

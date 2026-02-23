@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
+
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 /// <summary>
@@ -19,8 +21,15 @@ internal static class RelationalModelCanonicalization
         ArgumentNullException.ThrowIfNull(resourceModel);
 
         var canonicalTables = resourceModel
-            .TablesInDependencyOrder.Select(RelationalModelOrdering.CanonicalizeTable)
-            .OrderBy(table => CountArrayDepth(table.JsonScope))
+            .TablesInDependencyOrder.Select(table =>
+            {
+                var referenceGroups = BuildReferenceGroupLookup(
+                    table.Table,
+                    resourceModel.DocumentReferenceBindings
+                );
+                return RelationalModelOrdering.CanonicalizeTable(table, referenceGroups);
+            })
+            .OrderBy(table => SetPassHelpers.CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Name, StringComparer.Ordinal)
@@ -86,6 +95,39 @@ internal static class RelationalModelCanonicalization
     }
 
     /// <summary>
+    /// Builds a lookup mapping column names to their reference group membership for the given table.
+    /// Returns null when no bindings match the table (avoids allocations).
+    /// </summary>
+    private static Dictionary<string, ReferenceGroupMembership>? BuildReferenceGroupLookup(
+        DbTableName table,
+        IReadOnlyList<DocumentReferenceBinding> bindings
+    )
+    {
+        Dictionary<string, ReferenceGroupMembership>? result = null;
+
+        foreach (var binding in bindings)
+        {
+            if (!binding.Table.Equals(table))
+            {
+                continue;
+            }
+
+            var groupKey = binding.FkColumn.Value;
+
+            result ??= new Dictionary<string, ReferenceGroupMembership>(StringComparer.Ordinal);
+            result.TryAdd(groupKey, new ReferenceGroupMembership(groupKey, 0));
+
+            for (var i = 0; i < binding.IdentityBindings.Count; i++)
+            {
+                var identityColumnName = binding.IdentityBindings[i].Column.Value;
+                result.TryAdd(identityColumnName, new ReferenceGroupMembership(groupKey, i + 1));
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Returns a copy of the extension sites list ordered canonically.
     /// </summary>
     internal static IReadOnlyList<ExtensionSite> CanonicalizeExtensionSites(
@@ -108,23 +150,5 @@ internal static class RelationalModelCanonicalization
             .ThenBy(site => site.ExtensionPath.Canonical, StringComparer.Ordinal)
             .ThenBy(site => string.Join("|", site.ProjectKeys), StringComparer.Ordinal)
             .ToArray();
-    }
-
-    /// <summary>
-    /// Counts the number of array wildcard segments in the scope, used for depth-first ordering.
-    /// </summary>
-    private static int CountArrayDepth(JsonPathExpression scope)
-    {
-        var depth = 0;
-
-        foreach (var segment in scope.Segments)
-        {
-            if (segment is JsonPathSegment.AnyArrayElement)
-            {
-                depth++;
-            }
-        }
-
-        return depth;
     }
 }

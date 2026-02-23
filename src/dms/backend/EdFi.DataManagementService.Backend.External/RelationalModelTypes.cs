@@ -377,14 +377,13 @@ public sealed record TableKey(string ConstraintName, IReadOnlyList<DbKeyColumn> 
 public sealed record DbKeyColumn(DbColumnName ColumnName, ColumnKind Kind);
 
 /// <summary>
-/// A derived table column definition.
+/// Discriminated union describing how a derived table column is physically stored.
+/// <list type="bullet">
+/// <item><see cref="Stored"/> — the column is directly stored and writable.</item>
+/// <item><see cref="UnifiedAlias"/> — the column is a generated (persisted computed) alias
+/// over a canonical stored column, optionally gated by a presence column.</item>
+/// </list>
 /// </summary>
-/// <param name="ColumnName">The physical column name.</param>
-/// <param name="Kind">The semantic role for the column.</param>
-/// <param name="ScalarType">The scalar type metadata (when applicable).</param>
-/// <param name="IsNullable">Whether the column allows NULL.</param>
-/// <param name="SourceJsonPath">The JSONPath that sources the column value (when applicable).</param>
-/// <param name="TargetResource">The referenced resource type for FK columns (when applicable).</param>
 public abstract record ColumnStorage
 {
     /// <summary>

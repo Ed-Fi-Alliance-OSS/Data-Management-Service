@@ -67,7 +67,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitEffectiveSchemaHashPreflight(SqlWriter writer, string effectiveSchemaHash)
     {
-        string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_effectiveSchemaTable);
         var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
 
@@ -83,8 +82,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 using (writer.Indent())
                 {
                     writer.AppendLine($"SELECT 1 FROM {table}");
-                    writer.AppendLine($"WHERE {Q("EffectiveSchemaSingletonId")} = 1");
-                    writer.AppendLine($"AND {Q("EffectiveSchemaHash")} <> {hashLiteral}");
+                    writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1");
+                    writer.AppendLine($"AND {Quote("EffectiveSchemaHash")} <> {hashLiteral}");
                 }
                 writer.AppendLine(") THEN");
                 using (writer.Indent())
@@ -103,8 +102,8 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             using (writer.Indent())
             {
                 writer.AppendLine($"SELECT 1 FROM {table}");
-                writer.AppendLine($"WHERE {Q("EffectiveSchemaSingletonId")} = 1");
-                writer.AppendLine($"AND {Q("EffectiveSchemaHash")} <> {hashLiteral}");
+                writer.AppendLine($"WHERE {Quote("EffectiveSchemaSingletonId")} = 1");
+                writer.AppendLine($"AND {Quote("EffectiveSchemaHash")} <> {hashLiteral}");
             }
             writer.AppendLine(")");
             writer.AppendLine("BEGIN");
@@ -130,7 +129,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             return;
         }
 
-        string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_resourceKeyTable);
 
         writer.AppendLine("-- ResourceKey seed inserts (insert-if-missing)");
@@ -145,22 +143,22 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
                 writer.AppendLine(
-                    $"INSERT INTO {table} ({Q("ResourceKeyId")}, {Q("ProjectName")}, {Q("ResourceName")}, {Q("ResourceVersion")})"
+                    $"INSERT INTO {table} ({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
                 );
                 writer.AppendLine(
                     $"VALUES ({idLiteral}, {projectLiteral}, {resourceLiteral}, {versionLiteral})"
                 );
-                writer.AppendLine($"ON CONFLICT ({Q("ResourceKeyId")}) DO NOTHING;");
+                writer.AppendLine($"ON CONFLICT ({Quote("ResourceKeyId")}) DO NOTHING;");
             }
             else
             {
                 writer.AppendLine(
-                    $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Q("ResourceKeyId")} = {idLiteral})"
+                    $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Quote("ResourceKeyId")} = {idLiteral})"
                 );
                 using (writer.Indent())
                 {
                     writer.AppendLine(
-                        $"INSERT INTO {table} ({Q("ResourceKeyId")}, {Q("ProjectName")}, {Q("ResourceName")}, {Q("ResourceVersion")})"
+                        $"INSERT INTO {table} ({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
                     );
                     writer.AppendLine(
                         $"VALUES ({idLiteral}, {projectLiteral}, {resourceLiteral}, {versionLiteral});"
@@ -181,7 +179,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             return;
         }
 
-        string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_resourceKeyTable);
         var expectedCount = _dialect.RenderIntegerLiteral(resourceKeys.Count);
 
@@ -230,12 +227,16 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                         }
                     }
                     writer.AppendLine(
-                        $") AS expected({Q("ResourceKeyId")}, {Q("ProjectName")}, {Q("ResourceName")}, {Q("ResourceVersion")})"
+                        $") AS expected({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
                     );
-                    writer.AppendLine($"WHERE expected.{Q("ResourceKeyId")} = rk.{Q("ResourceKeyId")}");
-                    writer.AppendLine($"AND expected.{Q("ProjectName")} = rk.{Q("ProjectName")}");
-                    writer.AppendLine($"AND expected.{Q("ResourceName")} = rk.{Q("ResourceName")}");
-                    writer.AppendLine($"AND expected.{Q("ResourceVersion")} = rk.{Q("ResourceVersion")}");
+                    writer.AppendLine(
+                        $"WHERE expected.{Quote("ResourceKeyId")} = rk.{Quote("ResourceKeyId")}"
+                    );
+                    writer.AppendLine($"AND expected.{Quote("ProjectName")} = rk.{Quote("ProjectName")}");
+                    writer.AppendLine($"AND expected.{Quote("ResourceName")} = rk.{Quote("ResourceName")}");
+                    writer.AppendLine(
+                        $"AND expected.{Quote("ResourceVersion")} = rk.{Quote("ResourceVersion")}"
+                    );
                 }
                 writer.AppendLine(");");
                 writer.AppendLine("IF _mismatched_count > 0 THEN");
@@ -288,12 +289,12 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     }
                 }
                 writer.AppendLine(
-                    $") AS expected({Q("ResourceKeyId")}, {Q("ProjectName")}, {Q("ResourceName")}, {Q("ResourceVersion")})"
+                    $") AS expected({Quote("ResourceKeyId")}, {Quote("ProjectName")}, {Quote("ResourceName")}, {Quote("ResourceVersion")})"
                 );
-                writer.AppendLine($"WHERE expected.{Q("ResourceKeyId")} = rk.{Q("ResourceKeyId")}");
-                writer.AppendLine($"AND expected.{Q("ProjectName")} = rk.{Q("ProjectName")}");
-                writer.AppendLine($"AND expected.{Q("ResourceName")} = rk.{Q("ResourceName")}");
-                writer.AppendLine($"AND expected.{Q("ResourceVersion")} = rk.{Q("ResourceVersion")}");
+                writer.AppendLine($"WHERE expected.{Quote("ResourceKeyId")} = rk.{Quote("ResourceKeyId")}");
+                writer.AppendLine($"AND expected.{Quote("ProjectName")} = rk.{Quote("ProjectName")}");
+                writer.AppendLine($"AND expected.{Quote("ResourceName")} = rk.{Quote("ResourceName")}");
+                writer.AppendLine($"AND expected.{Quote("ResourceVersion")} = rk.{Quote("ResourceVersion")}");
             }
             writer.AppendLine(");");
             writer.AppendLine("IF @mismatched_count > 0");
@@ -315,11 +316,10 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitEffectiveSchemaInsert(SqlWriter writer, EffectiveSchemaInfo effectiveSchema)
     {
-        string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_effectiveSchemaTable);
 
         var columns =
-            $"{Q("EffectiveSchemaSingletonId")}, {Q("ApiSchemaFormatVersion")}, {Q("EffectiveSchemaHash")}, {Q("ResourceKeyCount")}, {Q("ResourceKeySeedHash")}";
+            $"{Quote("EffectiveSchemaSingletonId")}, {Quote("ApiSchemaFormatVersion")}, {Quote("EffectiveSchemaHash")}, {Quote("ResourceKeyCount")}, {Quote("ResourceKeySeedHash")}";
 
         var values = string.Join(
             ", ",
@@ -336,12 +336,12 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         {
             writer.AppendLine($"INSERT INTO {table} ({columns})");
             writer.AppendLine($"VALUES ({values})");
-            writer.AppendLine($"ON CONFLICT ({Q("EffectiveSchemaSingletonId")}) DO NOTHING;");
+            writer.AppendLine($"ON CONFLICT ({Quote("EffectiveSchemaSingletonId")}) DO NOTHING;");
         }
         else
         {
             writer.AppendLine(
-                $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Q("EffectiveSchemaSingletonId")} = 1)"
+                $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Quote("EffectiveSchemaSingletonId")} = 1)"
             );
             using (writer.Indent())
             {
@@ -366,7 +366,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             return;
         }
 
-        string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_schemaComponentTable);
         var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
 
@@ -382,24 +381,24 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
             {
                 writer.AppendLine(
-                    $"INSERT INTO {table} ({Q("EffectiveSchemaHash")}, {Q("ProjectEndpointName")}, {Q("ProjectName")}, {Q("ProjectVersion")}, {Q("IsExtensionProject")})"
+                    $"INSERT INTO {table} ({Quote("EffectiveSchemaHash")}, {Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
                 );
                 writer.AppendLine(
                     $"VALUES ({hashLiteral}, {endpointLiteral}, {projectLiteral}, {versionLiteral}, {extensionLiteral})"
                 );
                 writer.AppendLine(
-                    $"ON CONFLICT ({Q("EffectiveSchemaHash")}, {Q("ProjectEndpointName")}) DO NOTHING;"
+                    $"ON CONFLICT ({Quote("EffectiveSchemaHash")}, {Quote("ProjectEndpointName")}) DO NOTHING;"
                 );
             }
             else
             {
                 writer.AppendLine(
-                    $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Q("EffectiveSchemaHash")} = {hashLiteral} AND {Q("ProjectEndpointName")} = {endpointLiteral})"
+                    $"IF NOT EXISTS (SELECT 1 FROM {table} WHERE {Quote("EffectiveSchemaHash")} = {hashLiteral} AND {Quote("ProjectEndpointName")} = {endpointLiteral})"
                 );
                 using (writer.Indent())
                 {
                     writer.AppendLine(
-                        $"INSERT INTO {table} ({Q("EffectiveSchemaHash")}, {Q("ProjectEndpointName")}, {Q("ProjectName")}, {Q("ProjectVersion")}, {Q("IsExtensionProject")})"
+                        $"INSERT INTO {table} ({Quote("EffectiveSchemaHash")}, {Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
                     );
                     writer.AppendLine(
                         $"VALUES ({hashLiteral}, {endpointLiteral}, {projectLiteral}, {versionLiteral}, {extensionLiteral});"
@@ -424,7 +423,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             return;
         }
 
-        string Q(string id) => _dialect.QuoteIdentifier(id);
         var table = _dialect.QualifyTable(_schemaComponentTable);
         var hashLiteral = _dialect.RenderStringLiteral(effectiveSchemaHash);
         var expectedCount = _dialect.RenderIntegerLiteral(schemaComponents.Count);
@@ -445,7 +443,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             {
                 // Count check
                 writer.AppendLine(
-                    $"SELECT COUNT(*) INTO _actual_count FROM {table} WHERE {Q("EffectiveSchemaHash")} = {hashLiteral};"
+                    $"SELECT COUNT(*) INTO _actual_count FROM {table} WHERE {Quote("EffectiveSchemaHash")} = {hashLiteral};"
                 );
                 writer.AppendLine($"IF _actual_count <> {expectedCount} THEN");
                 using (writer.Indent())
@@ -460,7 +458,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                 // Content check
                 writer.AppendLine("SELECT COUNT(*) INTO _mismatched_count");
                 writer.AppendLine($"FROM {table} sc");
-                writer.AppendLine($"WHERE sc.{Q("EffectiveSchemaHash")} = {hashLiteral}");
+                writer.AppendLine($"WHERE sc.{Quote("EffectiveSchemaHash")} = {hashLiteral}");
                 writer.AppendLine("AND NOT EXISTS (");
                 using (writer.Indent())
                 {
@@ -477,15 +475,17 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                         }
                     }
                     writer.AppendLine(
-                        $") AS expected({Q("ProjectEndpointName")}, {Q("ProjectName")}, {Q("ProjectVersion")}, {Q("IsExtensionProject")})"
+                        $") AS expected({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
                     );
                     writer.AppendLine(
-                        $"WHERE expected.{Q("ProjectEndpointName")} = sc.{Q("ProjectEndpointName")}"
+                        $"WHERE expected.{Quote("ProjectEndpointName")} = sc.{Quote("ProjectEndpointName")}"
                     );
-                    writer.AppendLine($"AND expected.{Q("ProjectName")} = sc.{Q("ProjectName")}");
-                    writer.AppendLine($"AND expected.{Q("ProjectVersion")} = sc.{Q("ProjectVersion")}");
+                    writer.AppendLine($"AND expected.{Quote("ProjectName")} = sc.{Quote("ProjectName")}");
                     writer.AppendLine(
-                        $"AND expected.{Q("IsExtensionProject")} = sc.{Q("IsExtensionProject")}"
+                        $"AND expected.{Quote("ProjectVersion")} = sc.{Quote("ProjectVersion")}"
+                    );
+                    writer.AppendLine(
+                        $"AND expected.{Quote("IsExtensionProject")} = sc.{Quote("IsExtensionProject")}"
                     );
                 }
                 writer.AppendLine(");");
@@ -508,7 +508,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
 
             // Count check
             writer.AppendLine(
-                $"SELECT @sc_actual_count = COUNT(*) FROM {table} WHERE {Q("EffectiveSchemaHash")} = {hashLiteral};"
+                $"SELECT @sc_actual_count = COUNT(*) FROM {table} WHERE {Quote("EffectiveSchemaHash")} = {hashLiteral};"
             );
             writer.AppendLine($"IF @sc_actual_count <> {expectedCount}");
             writer.AppendLine("BEGIN");
@@ -525,7 +525,7 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
             // Content check
             writer.AppendLine("SELECT @sc_mismatched_count = COUNT(*)");
             writer.AppendLine($"FROM {table} sc");
-            writer.AppendLine($"WHERE sc.{Q("EffectiveSchemaHash")} = {hashLiteral}");
+            writer.AppendLine($"WHERE sc.{Quote("EffectiveSchemaHash")} = {hashLiteral}");
             writer.AppendLine("AND NOT EXISTS (");
             using (writer.Indent())
             {
@@ -542,14 +542,16 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
                     }
                 }
                 writer.AppendLine(
-                    $") AS expected({Q("ProjectEndpointName")}, {Q("ProjectName")}, {Q("ProjectVersion")}, {Q("IsExtensionProject")})"
+                    $") AS expected({Quote("ProjectEndpointName")}, {Quote("ProjectName")}, {Quote("ProjectVersion")}, {Quote("IsExtensionProject")})"
                 );
                 writer.AppendLine(
-                    $"WHERE expected.{Q("ProjectEndpointName")} = sc.{Q("ProjectEndpointName")}"
+                    $"WHERE expected.{Quote("ProjectEndpointName")} = sc.{Quote("ProjectEndpointName")}"
                 );
-                writer.AppendLine($"AND expected.{Q("ProjectName")} = sc.{Q("ProjectName")}");
-                writer.AppendLine($"AND expected.{Q("ProjectVersion")} = sc.{Q("ProjectVersion")}");
-                writer.AppendLine($"AND expected.{Q("IsExtensionProject")} = sc.{Q("IsExtensionProject")}");
+                writer.AppendLine($"AND expected.{Quote("ProjectName")} = sc.{Quote("ProjectName")}");
+                writer.AppendLine($"AND expected.{Quote("ProjectVersion")} = sc.{Quote("ProjectVersion")}");
+                writer.AppendLine(
+                    $"AND expected.{Quote("IsExtensionProject")} = sc.{Quote("IsExtensionProject")}"
+                );
             }
             writer.AppendLine(");");
             writer.AppendLine("IF @sc_mismatched_count > 0");
@@ -565,4 +567,6 @@ public sealed class SeedDmlEmitter(ISqlDialect dialect)
         }
         writer.AppendLine();
     }
+
+    private string Quote(string identifier) => _dialect.QuoteIdentifier(identifier);
 }

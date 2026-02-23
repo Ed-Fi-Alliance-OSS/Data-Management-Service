@@ -476,12 +476,14 @@ public class Given_Abstract_Identity_Table_With_Extension_Project_Member
 }
 
 /// <summary>
-/// Test fixture for duplicate concrete member names across projects.
+/// Test fixture for same-named concrete members across different projects.
+/// Verifies that two projects contributing members with the same ResourceName
+/// produce a valid union view with deterministic arm ordering by (ResourceName, ProjectName).
 /// </summary>
 [TestFixture]
-public class Given_Abstract_Identity_Table_With_Duplicate_Member_Resource_Names_Across_Projects
+public class Given_Abstract_Identity_Table_With_Same_Member_Resource_Name_Across_Projects
 {
-    private Exception? _exception;
+    private DerivedRelationalModelSet _result = default!;
 
     /// <summary>
     /// Sets up the test fixture.
@@ -508,25 +510,37 @@ public class Given_Abstract_Identity_Table_With_Duplicate_Member_Resource_Names_
             }
         );
 
-        try
-        {
-            builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
-        }
-        catch (Exception exception)
-        {
-            _exception = exception;
-        }
+        _result = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
     /// <summary>
-    /// It should fail fast when two projects contribute members with the same resource name.
+    /// It should produce a union view with both members when they share a ResourceName across projects.
     /// </summary>
     [Test]
-    public void It_should_fail_fast_on_duplicate_member_resource_names_across_projects()
+    public void It_should_produce_union_view_with_both_members()
     {
-        _exception.Should().BeOfType<InvalidOperationException>();
-        _exception!.Message.Should().Contain("duplicate member ResourceName");
-        _exception.Message.Should().Contain("'School'");
+        _result.AbstractUnionViewsInNameOrder.Should().HaveCount(1);
+        var view = _result.AbstractUnionViewsInNameOrder[0];
+        view.UnionArmsInOrder.Should().HaveCount(2);
+    }
+
+    /// <summary>
+    /// It should order arms deterministically by (ResourceName, ProjectName).
+    /// </summary>
+    [Test]
+    public void It_should_order_arms_by_resource_name_then_project_name()
+    {
+        var view = _result.AbstractUnionViewsInNameOrder[0];
+        // Both arms have ResourceName "School"; Ed-Fi sorts before Sample
+        var discriminators = view
+            .UnionArmsInOrder.Select(a =>
+                a.ProjectionExpressionsInSelectOrder.OfType<AbstractUnionViewProjectionExpression.StringLiteral>()
+                    .Single()
+                    .Value
+            )
+            .ToArray();
+        discriminators[0].Should().Be("Ed-Fi:School");
+        discriminators[1].Should().Be("Sample:School");
     }
 
     /// <summary>

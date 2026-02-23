@@ -50,9 +50,7 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         List<DbIndexInfo> tableIndexes = [];
 
         // PK-implied index: one per table, reuses PK constraint name, unique.
-        var pkIndexName = string.IsNullOrWhiteSpace(table.Key.ConstraintName)
-            ? ConstraintNaming.BuildPrimaryKeyName(table.Table)
-            : table.Key.ConstraintName;
+        var pkIndexName = ConstraintNaming.ResolvePrimaryKeyConstraintName(table.Table, table.Key);
 
         tableIndexes.Add(
             new DbIndexInfo(
@@ -82,7 +80,14 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         // a leftmost prefix of any existing PK/UK/earlier-index key columns.
         // ValidateForeignKeyStorageInvariantPass runs earlier in the default pass order and
         // guarantees FK endpoints map to direct stored columns before index derivation.
-        foreach (var fk in table.Constraints.OfType<TableConstraint.ForeignKey>())
+        // Process longer FKs first so that shorter prefixes are suppressed by the longer
+        // index rather than the other way around.
+        var orderedFks = table
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .OrderByDescending(fk => fk.Columns.Count)
+            .ThenBy(fk => fk.Name, StringComparer.Ordinal);
+
+        foreach (var fk in orderedFks)
         {
             if (IsLeftmostPrefixCovered(fk.Columns, tableIndexes))
             {

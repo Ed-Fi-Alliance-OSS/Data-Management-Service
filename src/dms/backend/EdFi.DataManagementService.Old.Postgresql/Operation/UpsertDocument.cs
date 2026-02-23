@@ -4,9 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
-using EdFi.DataManagementService.Old.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Old.Postgresql.Model;
 using Json.Path;
 using Microsoft.Extensions.Logging;
 using Npgsql;

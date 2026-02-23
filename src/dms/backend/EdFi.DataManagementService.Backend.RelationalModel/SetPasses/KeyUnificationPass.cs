@@ -124,12 +124,12 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     {
         if (!resourceSchema.TryGetPropertyValue("equalityConstraints", out var equalityConstraintsNode))
         {
-            return Array.Empty<EqualityConstraintInput>();
+            return [];
         }
 
         if (equalityConstraintsNode is null)
         {
-            return Array.Empty<EqualityConstraintInput>();
+            return [];
         }
 
         if (equalityConstraintsNode is not JsonArray equalityConstraintsArray)
@@ -1306,11 +1306,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash.AsSpan(0, 4)).ToLowerInvariant();
     }
-
-    /// <summary>
-    /// Base resource entry used when resolving extension schemas.
-    /// </summary>
-    private sealed record BaseResourceEntry(int Index, ConcreteResourceModel Model);
 
     /// <summary>
     /// Parsed equality-constraint endpoints.

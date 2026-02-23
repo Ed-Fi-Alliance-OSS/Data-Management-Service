@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
-using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -31,18 +30,13 @@ public sealed class SqlWriter
     /// <summary>
     /// Initializes a new instance of the <see cref="SqlWriter"/> class.
     /// </summary>
-    /// <param name="dialect">The SQL dialect to use for quoting and type rendering.</param>
+    /// <param name="dialect">The SQL dialect (reserved for future use).</param>
     /// <param name="initialCapacity">Initial capacity of the internal buffer.</param>
     public SqlWriter(ISqlDialect dialect, int initialCapacity = 4096)
     {
-        Dialect = dialect ?? throw new ArgumentNullException(nameof(dialect));
+        ArgumentNullException.ThrowIfNull(dialect);
         _builder = new StringBuilder(initialCapacity);
     }
-
-    /// <summary>
-    /// Gets the SQL dialect used for quoting and type rendering.
-    /// </summary>
-    public ISqlDialect Dialect { get; }
 
     /// <summary>
     /// Creates an indented scope that increments indent on construction and decrements on disposal.
@@ -101,63 +95,12 @@ public sealed class SqlWriter
     }
 
     /// <summary>
-    /// Appends a quoted identifier using the dialect's quoting rules.
-    /// </summary>
-    /// <param name="identifier">The identifier to quote and append.</param>
-    /// <returns>This writer for method chaining.</returns>
-    public SqlWriter AppendQuoted(string identifier)
-    {
-        WriteIndentIfNeeded();
-        _builder.Append(Dialect.QuoteIdentifier(identifier));
-        return this;
-    }
-
-    /// <summary>
-    /// Appends a qualified table name (schema.table) with quoting.
-    /// </summary>
-    /// <param name="table">The table name.</param>
-    /// <returns>This writer for method chaining.</returns>
-    public SqlWriter AppendTable(DbTableName table)
-    {
-        WriteIndentIfNeeded();
-        _builder.Append(Dialect.QualifyTable(table));
-        return this;
-    }
-
-    /// <summary>
-    /// Appends a column type definition.
-    /// </summary>
-    /// <param name="scalarType">The scalar type metadata.</param>
-    /// <returns>This writer for method chaining.</returns>
-    public SqlWriter AppendColumnType(RelationalScalarType scalarType)
-    {
-        WriteIndentIfNeeded();
-        _builder.Append(Dialect.RenderColumnType(scalarType));
-        return this;
-    }
-
-    /// <summary>
     /// Returns the canonical SQL output with Unix line endings and no trailing whitespace.
     /// </summary>
     /// <returns>The canonical SQL string.</returns>
     public override string ToString()
     {
         return Canonicalize(_builder.ToString());
-    }
-
-    /// <summary>
-    /// Gets the current length of the internal buffer.
-    /// </summary>
-    public int Length => _builder.Length;
-
-    /// <summary>
-    /// Clears the internal buffer and resets indentation.
-    /// </summary>
-    public void Clear()
-    {
-        _builder.Clear();
-        _indentLevel = 0;
-        _atLineStart = true;
     }
 
     /// <summary>

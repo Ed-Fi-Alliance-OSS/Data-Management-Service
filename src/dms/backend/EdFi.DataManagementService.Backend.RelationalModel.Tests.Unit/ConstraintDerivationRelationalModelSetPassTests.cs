@@ -2579,7 +2579,12 @@ internal static class ConstraintDerivationTestSchemaBuilder
             ["isSubclass"] = false,
             ["allowIdentityUpdates"] = false,
             ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.schoolReference.schoolId",
+                "$.schoolReference.educationOrganizationId",
+                "$.studentReference.studentUniqueId",
+            },
             ["documentPathsMapping"] = new JsonObject
             {
                 ["School"] = new JsonObject
@@ -3209,7 +3214,10 @@ internal static class ConstraintDerivationTestSchemaBuilder
             ["isSubclass"] = false,
             ["allowIdentityUpdates"] = false,
             ["arrayUniquenessConstraints"] = new JsonArray(),
-            ["identityJsonPaths"] = new JsonArray(),
+            ["identityJsonPaths"] = new JsonArray
+            {
+                "$.educationOrganizationReference.educationOrganizationId",
+            },
             ["documentPathsMapping"] = new JsonObject
             {
                 ["EducationOrganization"] = new JsonObject

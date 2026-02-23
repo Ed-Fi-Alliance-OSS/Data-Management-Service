@@ -154,7 +154,13 @@ public abstract record AbstractUnionViewProjectionExpression
     /// Projects a source column from the arm's <see cref="AbstractUnionViewArm.FromTable"/>.
     /// </summary>
     /// <param name="ColumnName">The concrete source column.</param>
-    public sealed record SourceColumn(DbColumnName ColumnName) : AbstractUnionViewProjectionExpression;
+    /// <param name="SourceType">
+    /// The source column's scalar type on the concrete member table. When provided and different
+    /// from the view's canonical output type, the emitter wraps the column in an explicit CAST
+    /// to ensure cross-member type normalization in the <c>UNION ALL</c>.
+    /// </param>
+    public sealed record SourceColumn(DbColumnName ColumnName, RelationalScalarType? SourceType = null)
+        : AbstractUnionViewProjectionExpression;
 
     /// <summary>
     /// Projects a string literal.
@@ -212,30 +218,69 @@ public sealed record DbIndexInfo(
 );
 
 /// <summary>
-/// Classifies the logical intent of a derived trigger.
+/// Discriminated union for trigger-kind-specific parameters. Each subtype carries exactly
+/// the fields required by its trigger kind, providing compile-time type safety instead of
+/// nullable optional parameters.
 /// </summary>
-public enum DbTriggerKind
+public abstract record TriggerKindParameters
 {
-    /// <summary>
-    /// Trigger that stamps document representation/identity versions.
-    /// </summary>
-    DocumentStamping,
+    private TriggerKindParameters() { }
 
     /// <summary>
-    /// Trigger that maintains referential identity for concrete resources.
+    /// Parameters for triggers that stamp document representation/identity versions.
     /// </summary>
-    ReferentialIdentityMaintenance,
+    public sealed record DocumentStamping() : TriggerKindParameters;
 
     /// <summary>
-    /// Trigger that maintains abstract identity tables from concrete roots.
+    /// Parameters for triggers that maintain referential identity for concrete resources.
     /// </summary>
-    AbstractIdentityMaintenance,
+    /// <param name="ResourceKeyId">The resource key ID for UUIDv5 computation.</param>
+    /// <param name="ProjectName">The project name for UUIDv5 computation.</param>
+    /// <param name="ResourceName">The resource name for UUIDv5 computation.</param>
+    /// <param name="IdentityElements">Identity element mappings for UUIDv5 computation.</param>
+    /// <param name="SuperclassAlias">
+    /// Superclass alias information for subclass resources. <c>null</c> for non-subclass resources.
+    /// </param>
+    public sealed record ReferentialIdentityMaintenance(
+        short ResourceKeyId,
+        string ProjectName,
+        string ResourceName,
+        IReadOnlyList<IdentityElementMapping> IdentityElements,
+        SuperclassAliasInfo? SuperclassAlias = null
+    ) : TriggerKindParameters;
 
     /// <summary>
-    /// Trigger-based fallback for identity propagation when cascade paths are constrained.
+    /// Parameters for triggers that maintain abstract identity tables from concrete roots.
     /// </summary>
-    IdentityPropagationFallback,
+    /// <param name="TargetTable">The abstract identity table being maintained.</param>
+    /// <param name="TargetColumnMappings">Column mappings from the source table to the target table.</param>
+    /// <param name="DiscriminatorValue">The discriminator value written to the abstract identity table.</param>
+    public sealed record AbstractIdentityMaintenance(
+        DbTableName TargetTable,
+        IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        string DiscriminatorValue
+    ) : TriggerKindParameters;
+
+    /// <summary>
+    /// Parameters for trigger-based fallback for identity propagation when cascade paths are constrained.
+    /// The trigger is placed on the referenced entity and propagates identity updates to all referrers.
+    /// </summary>
+    /// <param name="ReferrerUpdates">The list of referrer tables to update when identity changes.</param>
+    public sealed record IdentityPropagationFallback(IReadOnlyList<PropagationReferrerTarget> ReferrerUpdates)
+        : TriggerKindParameters;
 }
+
+/// <summary>
+/// Describes a single referrer table to update during identity propagation fallback.
+/// </summary>
+/// <param name="ReferrerTable">The referrer table containing stored identity columns.</param>
+/// <param name="ReferrerFkColumn">The FK column on the referrer pointing to the source DocumentId.</param>
+/// <param name="ColumnMappings">Maps source identity columns to referrer stored identity columns.</param>
+public sealed record PropagationReferrerTarget(
+    DbTableName ReferrerTable,
+    DbColumnName ReferrerFkColumn,
+    IReadOnlyList<TriggerColumnMapping> ColumnMappings
+);
 
 /// <summary>
 /// Represents a physical database trigger name.
@@ -244,78 +289,60 @@ public enum DbTriggerKind
 public readonly record struct DbTriggerName(string Value);
 
 /// <summary>
-/// Ordered storage-column mapping used by identity-propagation fallback triggers.
+/// Maps a root table column to its identity JSON path for UUIDv5 computation.
 /// </summary>
-/// <param name="ReferrerStorageColumn">The storage column on the referrer table being updated.</param>
-/// <param name="ReferencedStorageColumn">The storage column on the referenced table supplying the new value.</param>
-public sealed record DbIdentityPropagationColumnPair(
-    DbColumnName ReferrerStorageColumn,
-    DbColumnName ReferencedStorageColumn
+/// <param name="Column">The physical column on the root table.</param>
+/// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
+/// <param name="ScalarType">The scalar type metadata for type-aware string formatting in hash expressions.</param>
+public sealed record IdentityElementMapping(
+    DbColumnName Column,
+    string IdentityJsonPath,
+    RelationalScalarType ScalarType
 );
 
 /// <summary>
-/// One fan-out action for an identity-propagation fallback trigger.
+/// Superclass alias information for subclass resources that must also maintain referential identity
+/// under their superclass resource key.
 /// </summary>
-/// <param name="ReferrerTable">The table receiving propagated identity updates.</param>
-/// <param name="ReferrerDocumentIdColumn">The referrer <c>..._DocumentId</c> column on <paramref name="ReferrerTable"/>.</param>
-/// <param name="ReferencedDocumentIdColumn">The referenced table document identifier column (typically <c>DocumentId</c>).</param>
-/// <param name="IdentityColumnPairs">
-/// Ordered pairs mapping each referrer storage identity-part column to its corresponding referenced storage column.
-/// </param>
-public sealed record DbIdentityPropagationReferrerAction(
-    DbTableName ReferrerTable,
-    DbColumnName ReferrerDocumentIdColumn,
-    DbColumnName ReferencedDocumentIdColumn,
-    IReadOnlyList<DbIdentityPropagationColumnPair> IdentityColumnPairs
+/// <param name="ResourceKeyId">The superclass resource key ID.</param>
+/// <param name="ProjectName">The superclass project name.</param>
+/// <param name="ResourceName">The superclass resource name.</param>
+/// <param name="IdentityElements">Identity element mappings for the superclass identity.</param>
+public sealed record SuperclassAliasInfo(
+    short ResourceKeyId,
+    string ProjectName,
+    string ResourceName,
+    IReadOnlyList<IdentityElementMapping> IdentityElements
 );
 
 /// <summary>
-/// Propagation payload for <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers.
+/// Maps a source column on the trigger's owning table to a target column on the maintenance table.
 /// </summary>
-/// <param name="ReferrerActions">Referrer fan-out actions executed by the trigger.</param>
-public sealed record DbIdentityPropagationFallbackInfo(
-    IReadOnlyList<DbIdentityPropagationReferrerAction> ReferrerActions
-);
+/// <param name="SourceColumn">The column on the trigger's owning table.</param>
+/// <param name="TargetColumn">The corresponding column on the target table.</param>
+public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnName TargetColumn);
 
 /// <summary>
 /// Derived trigger inventory entry.
 /// </summary>
 /// <param name="Name">The trigger name.</param>
-/// <param name="TriggerTable">The table the trigger is created on and fires on.</param>
-/// <param name="Kind">The trigger intent classification.</param>
-/// <param name="KeyColumns">
-/// Key columns used by non-propagation triggers to identify affected <c>DocumentId</c> rows.
-/// For <see cref="DbTriggerKind.IdentityPropagationFallback"/>, this is empty and
-/// <paramref name="PropagationFallback"/> carries the trigger-specific payload.
-/// </param>
+/// <param name="Table">The owning table.</param>
+/// <param name="KeyColumns">Key columns used to identify the affected <c>DocumentId</c>.</param>
 /// <param name="IdentityProjectionColumns">
-/// Null-safe, value-diff compare columns for non-propagation triggers. These are compared by
-/// value (including null transitions) and are not interpreted as <c>UPDATE(column)</c>-style
-/// updated-column gates.
-/// For <see cref="DbTriggerKind.DocumentStamping"/> triggers on root tables, these are the
-/// columns that additionally bump <c>IdentityVersion</c>. For
-/// <see cref="DbTriggerKind.ReferentialIdentityMaintenance"/> and
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, these are the columns whose
-/// value-diff causes recomputation. Empty for child/extension table stamping triggers and all
-/// <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers.
+/// Columns whose change affects the resource identity projection. For
+/// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these are the columns
+/// that should additionally bump <c>IdentityVersion</c>. For
+/// <see cref="TriggerKindParameters.ReferentialIdentityMaintenance"/> and
+/// <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers, these are the columns that
+/// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>
-/// <param name="MaintenanceTargetTable">
-/// The maintenance target table, when applicable. For
-/// <see cref="DbTriggerKind.AbstractIdentityMaintenance"/> triggers, this identifies the abstract
-/// identity table being maintained. <c>null</c> for other trigger kinds.
-/// </param>
-/// <param name="PropagationFallback">
-/// Typed payload for <see cref="DbTriggerKind.IdentityPropagationFallback"/> triggers. <c>null</c>
-/// for other trigger kinds.
-/// </param>
+/// <param name="Parameters">The trigger-kind-specific parameters.</param>
 public sealed record DbTriggerInfo(
     DbTriggerName Name,
-    DbTableName TriggerTable,
-    DbTriggerKind Kind,
+    DbTableName Table,
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
-    DbTableName? MaintenanceTargetTable = null,
-    DbIdentityPropagationFallbackInfo? PropagationFallback = null
+    TriggerKindParameters Parameters
 );
 
 /// <summary>
