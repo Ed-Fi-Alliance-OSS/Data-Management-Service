@@ -259,7 +259,9 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             QueryComparisonOperator.GreaterThanOrEqual => ">=",
             QueryComparisonOperator.Like => "LIKE",
             // Defer implementation until the real compilation stories
-            QueryComparisonOperator.In => "IN",
+            QueryComparisonOperator.In => throw new NotSupportedException(
+                $"Operator '{nameof(QueryComparisonOperator.In)}' is not yet supported by {nameof(ToSqlOperator)}."
+            ),
             _ => throw new ArgumentOutOfRangeException(
                 nameof(@operator),
                 @operator,
