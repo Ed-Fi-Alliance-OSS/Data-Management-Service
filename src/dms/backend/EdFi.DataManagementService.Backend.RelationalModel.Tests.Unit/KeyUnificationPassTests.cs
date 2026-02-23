@@ -341,9 +341,9 @@ public class Given_Key_Unification_For_Optional_NonReference_Descriptors
             .ToArray();
         var dedup = _resourceModel.DescriptorForeignKeyDeduplications.Should().ContainSingle().Subject;
 
-        descriptorForeignKeys.Should().ContainSingle();
-        descriptorForeignKeys[0].Columns.Should().Equal(keyUnificationClass.CanonicalColumn);
-        descriptorForeignKeys[0].TargetColumns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
+        var descriptorFk = descriptorForeignKeys.Should().ContainSingle().Subject;
+        descriptorFk.Columns.Should().Equal(keyUnificationClass.CanonicalColumn);
+        descriptorFk.TargetColumns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
         dedup.Table.Should().Be(_rootTable.Table);
         dedup.StorageColumn.Should().Be(keyUnificationClass.CanonicalColumn);
         dedup.BindingColumns.Should().Equal(expectedBindingColumns);
