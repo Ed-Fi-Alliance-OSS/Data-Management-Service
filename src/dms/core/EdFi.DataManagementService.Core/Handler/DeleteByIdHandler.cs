@@ -34,8 +34,11 @@ internal class DeleteByIdHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
+        int attemptCount = 0;
         var deleteResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await documentStoreRepository.DeleteDocumentById(
+        {
+            attemptCount++;
+            return await documentStoreRepository.DeleteDocumentById(
                 new DeleteRequest(
                     DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                     ResourceInfo: requestInfo.ResourceInfo,
@@ -54,8 +57,25 @@ internal class DeleteByIdHandler(
                     ),
                     Headers: requestInfo.FrontendRequest.Headers
                 )
-            )
-        );
+            );
+        });
+
+        if (deleteResult is DeleteFailureWriteConflict)
+        {
+            _logger.LogError(
+                "All deadlock retry attempts exhausted for delete after {AttemptCount} attempts - {TraceId}",
+                attemptCount,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+        else if (attemptCount > 1)
+        {
+            _logger.LogWarning(
+                "Deadlock resolved after {RetryCount} retries for delete - {TraceId}",
+                attemptCount - 1,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
 
         _logger.LogDebug(
             "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",

@@ -34,8 +34,11 @@ internal class GetByIdHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
+        int attemptCount = 0;
         var getResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await documentStoreRepository.GetDocumentById(
+        {
+            attemptCount++;
+            return await documentStoreRepository.GetDocumentById(
                 new GetRequest(
                     DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                     ResourceName: requestInfo.ResourceInfo.ResourceName,
@@ -47,8 +50,25 @@ internal class GetByIdHandler(
                     ),
                     TraceId: requestInfo.FrontendRequest.TraceId
                 )
-            )
-        );
+            );
+        });
+
+        if (getResult is GetFailureRetryable)
+        {
+            _logger.LogError(
+                "All deadlock retry attempts exhausted for get after {AttemptCount} attempts - {TraceId}",
+                attemptCount,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+        else if (attemptCount > 1)
+        {
+            _logger.LogWarning(
+                "Deadlock resolved after {RetryCount} retries for get - {TraceId}",
+                attemptCount - 1,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
 
         _logger.LogDebug(
             "Document store GetDocumentById returned {GetResult}- {TraceId}",
@@ -60,6 +80,7 @@ internal class GetByIdHandler(
         {
             GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
             GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            GetFailureRetryable => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             GetFailureNotAuthorized notAuthorized => new FrontendResponse(
                 StatusCode: 403,
                 Body: FailureResponse.ForForbidden(

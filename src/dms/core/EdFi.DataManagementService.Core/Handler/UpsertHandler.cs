@@ -38,8 +38,11 @@ internal class UpsertHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
+        int attemptCount = 0;
         var upsertResult = await _resiliencePipeline.ExecuteAsync(async t =>
         {
+            attemptCount++;
+
             // A document uuid that will be assigned if this is a new document
             DocumentUuid candidateDocumentUuid = new(FastGuid.NewPostgreSqlGuid());
 
@@ -65,6 +68,23 @@ internal class UpsertHandler(
                 )
             );
         });
+
+        if (upsertResult is UpsertFailureWriteConflict)
+        {
+            _logger.LogError(
+                "All deadlock retry attempts exhausted for upsert after {AttemptCount} attempts - {TraceId}",
+                attemptCount,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+        else if (attemptCount > 1)
+        {
+            _logger.LogWarning(
+                "Deadlock resolved after {RetryCount} retries for upsert - {TraceId}",
+                attemptCount - 1,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
 
         _logger.LogDebug(
             "Document store UpsertDocument returned {UpsertResult}- {TraceId}",

@@ -41,8 +41,11 @@ internal class UpdateByIdHandler(
 
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
+        int attemptCount = 0;
         var updateResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await documentStoreRepository.UpdateDocumentById(
+        {
+            attemptCount++;
+            return await documentStoreRepository.UpdateDocumentById(
                 new UpdateRequest(
                     DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                     ResourceInfo: requestInfo.ResourceInfo,
@@ -60,8 +63,25 @@ internal class UpdateByIdHandler(
                     ),
                     ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
                 )
-            )
-        );
+            );
+        });
+
+        if (updateResult is UpdateFailureWriteConflict)
+        {
+            _logger.LogError(
+                "All deadlock retry attempts exhausted for update after {AttemptCount} attempts - {TraceId}",
+                attemptCount,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+        else if (attemptCount > 1)
+        {
+            _logger.LogWarning(
+                "Deadlock resolved after {RetryCount} retries for update - {TraceId}",
+                attemptCount - 1,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
 
         _logger.LogDebug(
             "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",

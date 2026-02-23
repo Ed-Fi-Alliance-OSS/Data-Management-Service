@@ -31,8 +31,11 @@ internal class QueryRequestHandler(
         // Resolve query handler from service provider within request scope
         var queryHandler = _serviceProvider.GetRequiredService<IQueryHandler>();
 
+        int attemptCount = 0;
         var queryResult = await _resiliencePipeline.ExecuteAsync(async t =>
-            await queryHandler.QueryDocuments(
+        {
+            attemptCount++;
+            return await queryHandler.QueryDocuments(
                 new QueryRequest(
                     ResourceInfo: requestInfo.ResourceInfo,
                     QueryElements: requestInfo.QueryElements,
@@ -41,8 +44,25 @@ internal class QueryRequestHandler(
                     PaginationParameters: requestInfo.PaginationParameters,
                     TraceId: requestInfo.FrontendRequest.TraceId
                 )
-            )
-        );
+            );
+        });
+
+        if (queryResult is QueryFailureRetryable)
+        {
+            _logger.LogError(
+                "All deadlock retry attempts exhausted for query after {AttemptCount} attempts - {TraceId}",
+                attemptCount,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
+        else if (attemptCount > 1)
+        {
+            _logger.LogWarning(
+                "Deadlock resolved after {RetryCount} retries for query - {TraceId}",
+                attemptCount - 1,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+        }
 
         _logger.LogDebug(
             "QueryHandler returned {QueryResult}- {TraceId}",
@@ -59,6 +79,7 @@ internal class QueryRequestHandler(
                     ? new() { { "Total-Count", (success.TotalCount ?? 0).ToString() } }
                     : []
             ),
+            QueryFailureRetryable => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
             QueryFailureKnownError => new FrontendResponse(StatusCode: 400, Body: null, Headers: []),
             UnknownFailure failure => new FrontendResponse(
                 StatusCode: 500,

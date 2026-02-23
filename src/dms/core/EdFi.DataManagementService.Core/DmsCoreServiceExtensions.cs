@@ -24,7 +24,9 @@ using Microsoft.IdentityModel.Protocols;
 using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Polly;
 using Polly.CircuitBreaker;
+using Polly.Retry;
 using Polly.Telemetry;
+using Polly.Timeout;
 using Serilog;
 
 namespace EdFi.DataManagementService.Core;
@@ -41,6 +43,7 @@ public static class DmsCoreServiceExtensions
         this IServiceCollection services,
         Serilog.ILogger logger,
         IConfigurationSection circuitBreakerConfiguration,
+        IConfigurationSection deadlockRetryConfiguration,
         bool maskRequestBodyInLogs
     )
     {
@@ -115,10 +118,16 @@ public static class DmsCoreServiceExtensions
             CircuitBreakerSettings breakerSettings = new();
             circuitBreakerConfiguration.Bind(breakerSettings);
 
-            TelemetryOptions telemetryOptions = new()
-            {
-                LoggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger)),
-            };
+            DeadlockRetrySettings retrySettings = new();
+            deadlockRetryConfiguration.Bind(retrySettings);
+            ValidateDeadlockRetrySettings(retrySettings);
+
+            var loggerFactory = LoggerFactory.Create(builder => builder.AddSerilog(logger));
+            var cbFailureLogger = loggerFactory.CreateLogger("CircuitBreakerFailureDetection");
+            var cbLogger = loggerFactory.CreateLogger("CircuitBreaker");
+            var retryLogger = loggerFactory.CreateLogger("DeadlockRetry");
+
+            TelemetryOptions telemetryOptions = new() { LoggerFactory = loggerFactory };
 
             if (maskRequestBodyInLogs)
             {
@@ -161,10 +170,7 @@ public static class DmsCoreServiceExtensions
 
                     if (shouldHandle)
                     {
-                        var cbLogger = LoggerFactory
-                            .Create(b => b.AddSerilog(logger))
-                            .CreateLogger("CircuitBreakerFailureDetection");
-                        cbLogger.LogWarning(
+                        cbFailureLogger.LogWarning(
                             "Circuit breaker detected failure: {FailureType} - {FailureDetails}",
                             result.GetType().Name,
                             result.ToString()
@@ -175,9 +181,6 @@ public static class DmsCoreServiceExtensions
                 }),
                 OnOpened = args =>
                 {
-                    var cbLogger = LoggerFactory
-                        .Create(b => b.AddSerilog(logger))
-                        .CreateLogger("CircuitBreaker");
                     cbLogger.LogWarning(
                         "Circuit breaker opened due to failure threshold being reached. "
                             + "Check the CircuitBreakerFailureDetection logs above for specific failure details."
@@ -186,74 +189,88 @@ public static class DmsCoreServiceExtensions
                 },
                 OnClosed = args =>
                 {
-                    var cbLogger = LoggerFactory
-                        .Create(b => b.AddSerilog(logger))
-                        .CreateLogger("CircuitBreaker");
                     cbLogger.LogInformation("Circuit breaker closed - normal operation resumed");
                     return ValueTask.CompletedTask;
                 },
                 OnHalfOpened = args =>
                 {
-                    var cbLogger = LoggerFactory
-                        .Create(b => b.AddSerilog(logger))
-                        .CreateLogger("CircuitBreaker");
                     cbLogger.LogInformation("Circuit breaker half-opened - testing if service has recovered");
                     return ValueTask.CompletedTask;
                 },
             };
+
+            RetryStrategyOptions retryOptions = new()
+            {
+                BackoffType = DelayBackoffType.Exponential,
+                MaxRetryAttempts = retrySettings.MaxRetryAttempts,
+                Delay = TimeSpan.FromMilliseconds(retrySettings.BaseDelayMilliseconds),
+                UseJitter = retrySettings.UseJitter,
+                ShouldHandle = new PredicateBuilder().HandleResult(result =>
+                {
+                    return result switch
+                    {
+                        DeleteResult.DeleteFailureWriteConflict => true,
+                        GetResult.GetFailureRetryable => true,
+                        QueryResult.QueryFailureRetryable => true,
+                        UpdateResult.UpdateFailureWriteConflict => true,
+                        UpsertResult.UpsertFailureWriteConflict => true,
+                        _ => false,
+                    };
+                }),
+                OnRetry = args =>
+                {
+                    if (args.Outcome.Exception != null)
+                    {
+                        retryLogger.LogWarning(
+                            args.Outcome.Exception,
+                            "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
+                                + "after {DelayMs}ms. Exception: {ExceptionType} - {ExceptionMessage}",
+                            args.AttemptNumber,
+                            retrySettings.MaxRetryAttempts,
+                            args.RetryDelay.TotalMilliseconds,
+                            args.Outcome.Exception.GetType().Name,
+                            args.Outcome.Exception.Message
+                        );
+                    }
+                    else
+                    {
+                        retryLogger.LogWarning(
+                            "Deadlock retry attempt {DeadlockRetryAttempt}/{DeadlockRetryMaxAttempts} "
+                                + "after {DelayMs}ms. OperationType: {OperationType}",
+                            args.AttemptNumber,
+                            retrySettings.MaxRetryAttempts,
+                            args.RetryDelay.TotalMilliseconds,
+                            args.Outcome.Result?.GetType().Name
+                        );
+                    }
+
+                    return ValueTask.CompletedTask;
+                },
+            };
+
+            // Pipeline ordering (outermost → innermost): Timeout → CircuitBreaker → Retry → Execute.
+            // Retry wraps the full repository call (including connection/transaction lifecycle)
+            // because deadlock recovery requires replaying the entire transaction,
+            // not just the failing SQL statement.
             builder
                 .ConfigureTelemetry(telemetryOptions)
-                .AddCircuitBreaker(optionsUnknownFailure)
-                .AddRetry(
-                    new()
+                .AddTimeout(
+                    new TimeoutStrategyOptions
                     {
-                        BackoffType = DelayBackoffType.Exponential,
-                        MaxRetryAttempts = 4,
-                        Delay = TimeSpan.FromMilliseconds(500),
-                        ShouldHandle = new PredicateBuilder().HandleResult(result =>
-                        {
-                            return result switch
-                            {
-                                DeleteResult.DeleteFailureWriteConflict => true,
-                                GetResult.GetFailureRetryable => true,
-                                QueryResult.QueryFailureRetryable => true,
-                                UpdateResult.UpdateFailureWriteConflict => true,
-                                UpsertResult.UpsertFailureWriteConflict => true,
-                                _ => false,
-                            };
-                        }),
-                        OnRetry = args =>
-                        {
-                            var retryLogger = LoggerFactory
-                                .Create(b => b.AddSerilog(logger))
-                                .CreateLogger("RetryStrategy");
-
-                            if (args.Outcome.Exception != null)
-                            {
-                                retryLogger.LogWarning(
-                                    args.Outcome.Exception,
-                                    "Retry attempt {AttemptNumber} due to exception. Delay: {Delay}ms. Exception: {ExceptionType} - {ExceptionMessage}",
-                                    args.AttemptNumber,
-                                    args.RetryDelay.TotalMilliseconds,
-                                    args.Outcome.Exception.GetType().Name,
-                                    args.Outcome.Exception.Message
-                                );
-                            }
-                            else
-                            {
-                                retryLogger.LogWarning(
-                                    "Retry attempt {AttemptNumber} due to result failure. Delay: {Delay}ms. Outcome: {Outcome}",
-                                    args.AttemptNumber,
-                                    args.RetryDelay.TotalMilliseconds,
-                                    args.Outcome.Result?.ToString()
-                                );
-                            }
-
-                            return ValueTask.CompletedTask;
-                        },
+                        Timeout = TimeSpan.FromMilliseconds(retrySettings.TotalTimeoutMilliseconds),
                     }
-                )
-                .Build();
+                );
+
+            builder.AddCircuitBreaker(optionsUnknownFailure);
+
+            // MaxRetryAttempts = 0 disables retries (useful for debugging).
+            // Polly v8 requires MaxRetryAttempts >= 1, so we skip adding the strategy.
+            if (retrySettings.MaxRetryAttempts > 0)
+            {
+                builder.AddRetry(retryOptions);
+            }
+
+            builder.Build();
         }
     }
 
@@ -306,5 +323,23 @@ public static class DmsCoreServiceExtensions
         services.AddTransient<JwtRoleAuthenticationMiddleware>();
 
         return services;
+    }
+
+    private static void ValidateDeadlockRetrySettings(DeadlockRetrySettings settings)
+    {
+        if (settings.MaxRetryAttempts < 0)
+        {
+            throw new InvalidOperationException("DeadlockRetry:MaxRetryAttempts must be >= 0");
+        }
+
+        if (settings.BaseDelayMilliseconds < 1)
+        {
+            throw new InvalidOperationException("DeadlockRetry:BaseDelayMilliseconds must be >= 1");
+        }
+
+        if (settings.TotalTimeoutMilliseconds < 100)
+        {
+            throw new InvalidOperationException("DeadlockRetry:TotalTimeoutMilliseconds must be >= 100");
+        }
     }
 }

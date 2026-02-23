@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Diagnostics;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
@@ -34,6 +35,7 @@ public class PostgresqlDocumentStoreRepository(
             upsertRequest.TraceId.Value
         );
 
+        var sw = Stopwatch.StartNew();
         try
         {
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
@@ -51,13 +53,24 @@ public class PostgresqlDocumentStoreRepository(
                     await transaction.RollbackAsync();
                     break;
             }
+
+            sw.Stop();
+            _logger.LogDebug(
+                "UpsertDocument completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+                sw.ElapsedMilliseconds,
+                result.GetType().Name,
+                upsertRequest.TraceId.Value
+            );
+
             return result;
         }
         catch (Exception ex)
         {
+            sw.Stop();
             _logger.LogCritical(
                 ex,
-                "Uncaught UpsertDocument failure - {TraceId}",
+                "Uncaught UpsertDocument failure after {TransactionDurationMs}ms - {TraceId}",
+                sw.ElapsedMilliseconds,
                 upsertRequest.TraceId.Value
             );
             return new UpsertResult.UnknownFailure("Unknown Failure");
@@ -92,6 +105,7 @@ public class PostgresqlDocumentStoreRepository(
             updateRequest.TraceId.Value
         );
 
+        var sw = Stopwatch.StartNew();
         try
         {
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
@@ -112,13 +126,24 @@ public class PostgresqlDocumentStoreRepository(
                     await transaction.RollbackAsync();
                     break;
             }
+
+            sw.Stop();
+            _logger.LogDebug(
+                "UpdateDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+                sw.ElapsedMilliseconds,
+                result.GetType().Name,
+                updateRequest.TraceId.Value
+            );
+
             return result;
         }
         catch (Exception ex)
         {
+            sw.Stop();
             _logger.LogCritical(
                 ex,
-                "Uncaught UpdateDocumentById failure - {TraceId}",
+                "Uncaught UpdateDocumentById failure after {TransactionDurationMs}ms - {TraceId}",
+                sw.ElapsedMilliseconds,
                 updateRequest.TraceId.Value
             );
             return new UpdateResult.UnknownFailure("Unknown Failure");
@@ -128,10 +153,11 @@ public class PostgresqlDocumentStoreRepository(
     public async Task<DeleteResult> DeleteDocumentById(IDeleteRequest deleteRequest)
     {
         _logger.LogDebug(
-            "Entering PostgresqlDocumentStoreRepository.DeleteDocumentById  - {TraceId}",
+            "Entering PostgresqlDocumentStoreRepository.DeleteDocumentById - {TraceId}",
             deleteRequest.TraceId.Value
         );
 
+        var sw = Stopwatch.StartNew();
         try
         {
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
@@ -151,13 +177,24 @@ public class PostgresqlDocumentStoreRepository(
                     await transaction.RollbackAsync();
                     break;
             }
+
+            sw.Stop();
+            _logger.LogDebug(
+                "DeleteDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+                sw.ElapsedMilliseconds,
+                result.GetType().Name,
+                deleteRequest.TraceId.Value
+            );
+
             return result;
         }
         catch (Exception ex)
         {
+            sw.Stop();
             _logger.LogCritical(
                 ex,
-                "Uncaught DeleteDocumentById failure - {TraceId}",
+                "Uncaught DeleteDocumentById failure after {TransactionDurationMs}ms - {TraceId}",
+                sw.ElapsedMilliseconds,
                 deleteRequest.TraceId.Value
             );
             return new DeleteResult.UnknownFailure("Unknown Failure");
