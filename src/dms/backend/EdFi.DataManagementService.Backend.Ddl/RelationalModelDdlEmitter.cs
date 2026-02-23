@@ -763,10 +763,14 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
                 // PG timestamp::text gives 'YYYY-MM-DD HH:MM:SS' (space, no T).
                 // Use to_char for ISO 8601 with T separator.
                 //
-                // Timezone is intentionally omitted: both PG (timestamp without time zone) and
-                // MSSQL (datetime2, CONVERT style 126 truncated to 19 chars) produce timezone-free
-                // representations. This is by design to ensure cross-engine identity hash parity
-                // with Core's ReferentialIdCalculator. See also EmitMssqlColumnToNvarchar.
+                // No AT TIME ZONE 'UTC' conversion: the PG column type is timestamptz, which
+                // stores UTC internally but displays in the session timezone. The trigger fires
+                // in the same session as the INSERT/UPDATE, so to_char always reproduces the
+                // original literal that was inserted — matching what Core's ReferentialIdCalculator
+                // hashes from the raw JSON string. Adding AT TIME ZONE 'UTC' here would break
+                // parity because the C# path does not normalize to UTC before hashing.
+                // The DMS application must use a consistent session timezone (UTC recommended).
+                // See also EmitMssqlColumnToNvarchar (datetime2 is timezone-naive, no issue).
                 writer.Append("to_char(NEW.");
                 writer.Append(quoted);
                 writer.Append(", 'YYYY-MM-DD\"T\"HH24:MI:SS')");
