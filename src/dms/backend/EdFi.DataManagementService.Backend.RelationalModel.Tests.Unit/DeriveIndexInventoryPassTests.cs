@@ -772,8 +772,6 @@ file sealed class KeyUnificationStorageForeignKeysFixturePass : IRelationalModel
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: false,
@@ -792,8 +790,6 @@ file sealed class KeyUnificationAliasForeignKeyFixturePass : IRelationalModelSet
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: true,
@@ -812,8 +808,6 @@ file sealed class KeyUnificationAliasCustomCanonicalForeignKeyFixturePass : IRel
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: true,
@@ -834,8 +828,6 @@ file sealed class KeyUnificationPresenceForeignKeyFixturePass : IRelationalModel
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: false,
@@ -858,8 +850,6 @@ file sealed class KeyUnificationInvalidSyntheticPresenceForeignKeyFixturePass : 
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: false,
@@ -883,8 +873,6 @@ file sealed class KeyUnificationApiBoundSyntheticPresenceForeignKeyFixturePass :
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: false,
@@ -908,8 +896,6 @@ file sealed class KeyUnificationStoredSuffixForeignKeyFixturePass : IRelationalM
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         KeyUnificationIndexInventoryFixtureBuilder.AddFixtureResource(
             context,
             useAliasColumnInForeignKey: false,

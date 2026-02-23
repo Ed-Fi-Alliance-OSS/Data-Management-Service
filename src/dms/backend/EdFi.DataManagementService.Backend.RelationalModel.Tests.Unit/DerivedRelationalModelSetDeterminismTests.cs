@@ -142,8 +142,6 @@ public class Given_A_HandAuthored_EffectiveSchemaSet_With_Reordered_Inputs
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             foreach (var resource in context.ConcreteResourcesInNameOrder)
             {
                 _sitesByResource[resource.ResourceKey.Resource] = context.GetExtensionSitesForResource(

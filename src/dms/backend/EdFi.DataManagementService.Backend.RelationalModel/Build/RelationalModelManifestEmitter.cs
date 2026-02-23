@@ -472,8 +472,6 @@ public static class RelationalModelManifestEmitter
     /// <param name="storage">The storage metadata to write.</param>
     private static void WriteColumnStorage(Utf8JsonWriter writer, ColumnStorage storage)
     {
-        ArgumentNullException.ThrowIfNull(storage);
-
         writer.WriteStartObject();
 
         switch (storage)

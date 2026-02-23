@@ -88,8 +88,6 @@ public class Given_A_Relational_Model_Build_With_Shared_Input_Extraction
         /// </summary>
         public CountingExtractInputsStep(IRelationalModelBuilderStep inner)
         {
-            ArgumentNullException.ThrowIfNull(inner);
-
             _inner = inner;
         }
 

@@ -68,8 +68,6 @@ internal static class EffectiveSchemaSetFixtureBuilder
         bool reverseResourceOrder = false
     )
     {
-        ArgumentNullException.ThrowIfNull(fixtures);
-
         if (fixtures.Count == 0)
         {
             throw new ArgumentException("At least one fixture must be provided.", nameof(fixtures));
@@ -131,8 +129,6 @@ internal static class EffectiveSchemaSetFixtureBuilder
         bool isExtensionProject
     )
     {
-        ArgumentNullException.ThrowIfNull(projectSchema);
-
         var detachedSchema = projectSchema.DeepClone();
 
         if (detachedSchema is not JsonObject detachedObject)

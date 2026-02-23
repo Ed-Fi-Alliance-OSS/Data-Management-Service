@@ -1017,8 +1017,6 @@ file sealed class DuplicateSourcePathBindingPass(string resourceName, string sou
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
         {
             var concreteResource = context.ConcreteResourcesInNameOrder[index];
@@ -1123,8 +1121,6 @@ file sealed class NullDescriptorTargetResourcePass(string resourceName, string s
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
         {
             var concreteResource = context.ConcreteResourcesInNameOrder[index];
@@ -1194,8 +1190,6 @@ file sealed class DuplicateTableNameAcrossScopesPass(string resourceName, string
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
         {
             var concreteResource = context.ConcreteResourcesInNameOrder[index];
@@ -1259,8 +1253,6 @@ file static class KeyUnificationPassTestSchemaBuilder
         IReadOnlyList<(JsonObject ProjectSchema, bool IsExtensionProject)> projectSchemas
     )
     {
-        ArgumentNullException.ThrowIfNull(projectSchemas);
-
         if (projectSchemas.Count == 0)
         {
             throw new ArgumentException(

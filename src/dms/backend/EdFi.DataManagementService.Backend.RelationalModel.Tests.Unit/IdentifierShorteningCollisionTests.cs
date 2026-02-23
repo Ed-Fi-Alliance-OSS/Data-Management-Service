@@ -87,8 +87,6 @@ public class Given_Identifier_Shortening_Collision_In_Derived_Model_Set
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             context.ConcreteResourcesInNameOrder.Add(
                 new ConcreteResourceModel(
                     _resourceOne,
@@ -256,8 +254,6 @@ public class Given_Primary_Key_Identifier_Shortening_Collision_In_Derived_Model_
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             context.ConcreteResourcesInNameOrder.Add(
                 new ConcreteResourceModel(
                     _resourceOne,
@@ -417,8 +413,6 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
         /// </summary>
         public UnionArmSourceTableCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
         {
-            ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
-
             _abstractResource = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
                 effectiveSchemaSet,
                 "Ed-Fi",
@@ -441,8 +435,6 @@ public class Given_Abstract_Union_Arm_Source_Table_Shortening_Collision
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var schema = new DbSchemaName("edfi");
 
             context.AbstractUnionViewsInNameOrder.Add(
@@ -591,8 +583,6 @@ public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
         /// </summary>
         public UnionArmSourceColumnCollisionPass(EffectiveSchemaSet effectiveSchemaSet)
         {
-            ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
-
             _abstractResource = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
                 effectiveSchemaSet,
                 "Ed-Fi",
@@ -615,8 +605,6 @@ public class Given_Abstract_Union_Arm_Source_Column_Shortening_Collision
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var schema = new DbSchemaName("edfi");
             var sourceTable = new DbTableName(schema, "UnionArmSourceTable");
 

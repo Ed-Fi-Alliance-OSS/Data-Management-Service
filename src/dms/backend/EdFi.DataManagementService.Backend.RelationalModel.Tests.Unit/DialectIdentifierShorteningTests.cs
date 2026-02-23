@@ -610,8 +610,6 @@ internal sealed record ShorteningScenario(
     /// </summary>
     public static ShorteningScenario Build(ISqlDialectRules dialectRules, string prefix)
     {
-        ArgumentNullException.ThrowIfNull(dialectRules);
-
         var identifiers = ShorteningIdentifiers.Create(prefix, dialectRules.MaxIdentifierLength + 12);
         var effectiveSchemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
         var builder = new DerivedRelationalModelSetBuilder([
@@ -740,8 +738,6 @@ internal static class IdentifierShorteningAssertions
     /// </summary>
     public static void AssertShortened(ShorteningScenario scenario)
     {
-        ArgumentNullException.ThrowIfNull(scenario);
-
         var dialectRules = scenario.DialectRules;
         var identifiers = scenario.Identifiers;
         var result = scenario.Result;
@@ -916,8 +912,6 @@ internal static class IdentifierShorteningAssertions
     /// </summary>
     public static void AssertPropagationFallbackShortened(ShorteningScenario scenario)
     {
-        ArgumentNullException.ThrowIfNull(scenario);
-
         var dialectRules = scenario.DialectRules;
         var identifiers = scenario.Identifiers;
         var trigger = scenario.Result.TriggersInCreateOrder.Single(entry =>
@@ -977,9 +971,6 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
         ShorteningIdentifiers identifiers
     )
     {
-        ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
-        ArgumentNullException.ThrowIfNull(identifiers);
-
         _resourceKey = DerivedRelationalModelSetInvariantTestHelpers.FindResourceKey(
             effectiveSchemaSet,
             ShorteningScenario.Resource.ProjectName,
@@ -998,8 +989,6 @@ internal sealed class IdentifierShorteningFixturePass : IRelationalModelSetPass
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         UpdateProjectSchema(context);
 
         var schema = new DbSchemaName(_identifiers.SchemaName);

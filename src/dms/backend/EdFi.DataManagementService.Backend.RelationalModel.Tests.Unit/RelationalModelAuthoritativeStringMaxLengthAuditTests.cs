@@ -27,9 +27,15 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
     [SetUp]
     public void Setup()
     {
-        var projectRoot = FindProjectRoot(TestContext.CurrentContext.TestDirectory);
-        var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "authoritative", "ds-5.2");
-        var inputPath = Path.Combine(fixtureRoot, "inputs", "ds-5.2-api-schema-authoritative.json");
+        var authoritativeFixtureRoot = BackendFixturePaths.GetAuthoritativeFixtureRoot(
+            TestContext.CurrentContext.TestDirectory
+        );
+        var inputPath = Path.Combine(
+            authoritativeFixtureRoot,
+            "ds-5.2",
+            "inputs",
+            "ds-5.2-api-schema-authoritative.json"
+        );
 
         File.Exists(inputPath).Should().BeTrue($"fixture missing at {inputPath}");
 
@@ -384,32 +390,6 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi_String_MaxLength_Rules
         var root = JsonNode.Parse(File.ReadAllText(path));
 
         return root ?? throw new InvalidOperationException($"ApiSchema parsed null: {path}");
-    }
-
-    /// <summary>
-    /// Find project root.
-    /// </summary>
-    private static string FindProjectRoot(string startDirectory)
-    {
-        var directory = new DirectoryInfo(startDirectory);
-
-        while (directory is not null)
-        {
-            var candidate = Path.Combine(
-                directory.FullName,
-                "EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj"
-            );
-            if (File.Exists(candidate))
-            {
-                return directory.FullName;
-            }
-
-            directory = directory.Parent;
-        }
-
-        throw new DirectoryNotFoundException(
-            "Unable to locate EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit.csproj in parent directories."
-        );
     }
 
     /// <summary>
