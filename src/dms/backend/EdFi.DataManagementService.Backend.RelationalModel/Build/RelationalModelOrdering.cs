@@ -6,6 +6,13 @@
 namespace EdFi.DataManagementService.Backend.RelationalModel.Build;
 
 /// <summary>
+/// Identifies a column's membership in a reference group for ordering purposes.
+/// </summary>
+/// <param name="GroupKey">The FK column name anchoring the group (for inter-group sort).</param>
+/// <param name="Position">0 = the FK itself, 1+ = identity parts in binding order.</param>
+internal readonly record struct ReferenceGroupMembership(string GroupKey, int Position);
+
+/// <summary>
 /// Provides canonical ordering rules for columns and constraints within derived relational tables.
 /// </summary>
 internal static class RelationalModelOrdering
@@ -13,10 +20,13 @@ internal static class RelationalModelOrdering
     /// <summary>
     /// Returns a copy of the table with columns and constraints ordered deterministically.
     /// </summary>
-    public static DbTableModel CanonicalizeTable(DbTableModel table)
+    public static DbTableModel CanonicalizeTable(
+        DbTableModel table,
+        IReadOnlyDictionary<string, ReferenceGroupMembership>? referenceGroups = null
+    )
     {
         var keyColumnOrder = BuildKeyColumnOrder(table.Key.Columns);
-        var orderedColumns = OrderColumns(table, keyColumnOrder);
+        var orderedColumns = OrderColumns(table, keyColumnOrder, referenceGroups);
 
         var orderedConstraints = table
             .Constraints.OrderBy(GetConstraintGroup)
@@ -36,7 +46,8 @@ internal static class RelationalModelOrdering
     /// </summary>
     private static DbColumnModel[] OrderColumns(
         DbTableModel table,
-        IReadOnlyDictionary<string, int> keyColumnOrder
+        IReadOnlyDictionary<string, int> keyColumnOrder,
+        IReadOnlyDictionary<string, ReferenceGroupMembership>? referenceGroups
     )
     {
         Dictionary<string, DbColumnModel> columnsByName = new(StringComparer.Ordinal);
@@ -95,7 +106,9 @@ internal static class RelationalModelOrdering
             );
         }
 
-        SortedSet<string> availableColumns = new(GetColumnOrderingComparer(columnsByName, keyColumnOrder));
+        SortedSet<string> availableColumns = new(
+            GetColumnOrderingComparer(columnsByName, keyColumnOrder, referenceGroups)
+        );
 
         foreach (var columnName in columnsByName.Keys)
         {
@@ -198,7 +211,8 @@ internal static class RelationalModelOrdering
     /// </summary>
     private static IComparer<string> GetColumnOrderingComparer(
         IReadOnlyDictionary<string, DbColumnModel> columnsByName,
-        IReadOnlyDictionary<string, int> keyColumnOrder
+        IReadOnlyDictionary<string, int> keyColumnOrder,
+        IReadOnlyDictionary<string, ReferenceGroupMembership>? referenceGroups
     )
     {
         return Comparer<string>.Create(
@@ -207,8 +221,8 @@ internal static class RelationalModelOrdering
                 var leftColumn = columnsByName[left];
                 var rightColumn = columnsByName[right];
 
-                var groupComparison = GetColumnGroup(leftColumn, keyColumnOrder)
-                    .CompareTo(GetColumnGroup(rightColumn, keyColumnOrder));
+                var groupComparison = GetColumnGroup(leftColumn, keyColumnOrder, referenceGroups)
+                    .CompareTo(GetColumnGroup(rightColumn, keyColumnOrder, referenceGroups));
 
                 if (groupComparison != 0)
                 {
@@ -221,6 +235,34 @@ internal static class RelationalModelOrdering
                 if (keyIndexComparison != 0)
                 {
                     return keyIndexComparison;
+                }
+
+                // Sub-sort within reference groups: order by GroupKey then Position.
+                if (referenceGroups is not null)
+                {
+                    var leftInGroup = referenceGroups.TryGetValue(left, out var leftMembership);
+                    var rightInGroup = referenceGroups.TryGetValue(right, out var rightMembership);
+
+                    if (leftInGroup && rightInGroup)
+                    {
+                        var groupKeyComparison = string.Compare(
+                            leftMembership.GroupKey,
+                            rightMembership.GroupKey,
+                            StringComparison.Ordinal
+                        );
+
+                        if (groupKeyComparison != 0)
+                        {
+                            return groupKeyComparison;
+                        }
+
+                        var positionComparison = leftMembership.Position.CompareTo(rightMembership.Position);
+
+                        if (positionComparison != 0)
+                        {
+                            return positionComparison;
+                        }
+                    }
                 }
 
                 return string.Compare(left, right, StringComparison.Ordinal);
@@ -247,7 +289,11 @@ internal static class RelationalModelOrdering
     /// Returns a grouping value to order columns per spec: key → unification support →
     /// reference groups → descriptor FK → scalar → other.
     /// </summary>
-    private static int GetColumnGroup(DbColumnModel column, IReadOnlyDictionary<string, int> keyColumnOrder)
+    private static int GetColumnGroup(
+        DbColumnModel column,
+        IReadOnlyDictionary<string, int> keyColumnOrder,
+        IReadOnlyDictionary<string, ReferenceGroupMembership>? referenceGroups = null
+    )
     {
         // Group 0: Key columns
         if (keyColumnOrder.ContainsKey(column.ColumnName.Value))
@@ -261,6 +307,13 @@ internal static class RelationalModelOrdering
         if (column.Storage is ColumnStorage.Stored && column.SourceJsonPath is null)
         {
             return 1;
+        }
+
+        // Reference group members (identity-part columns) are promoted to group 2
+        // so they stay adjacent to their DocumentFk column.
+        if (referenceGroups is not null && referenceGroups.ContainsKey(column.ColumnName.Value))
+        {
+            return 2;
         }
 
         return column.Kind switch

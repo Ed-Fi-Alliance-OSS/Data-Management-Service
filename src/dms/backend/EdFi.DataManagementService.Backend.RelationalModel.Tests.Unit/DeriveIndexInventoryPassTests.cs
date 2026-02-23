@@ -763,6 +763,161 @@ public class Given_Stored_Suffix_Columns_In_FKs
 }
 
 /// <summary>
+/// Test fixture for FK leftmost-prefix suppression when a shorter FK is a prefix of a longer FK.
+/// Verifies that only the longer index survives regardless of FK iteration order.
+/// </summary>
+[TestFixture]
+public class Given_FK_With_Leftmost_Prefix_Of_Another_FK
+{
+    private IReadOnlyList<DbIndexInfo> _indexes = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateHandAuthoredEffectiveSchemaSet();
+        var builder = new DerivedRelationalModelSetBuilder([
+            new PrefixForeignKeyFixturePass(),
+            new DeriveIndexInventoryPass(),
+        ]);
+
+        _indexes = builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules()).IndexesInCreateOrder;
+    }
+
+    /// <summary>
+    /// It should suppress the shorter FK index that is a leftmost prefix of the longer FK index.
+    /// </summary>
+    [Test]
+    public void It_should_suppress_shorter_FK_index_that_is_prefix_of_longer()
+    {
+        var fkIndexes = _indexes
+            .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.ForeignKeySupport)
+            .ToArray();
+
+        fkIndexes.Should().ContainSingle("the shorter [RefA_DocumentId] index is a prefix of the longer one");
+
+        var surviving = fkIndexes.Single();
+        surviving.KeyColumns.Select(c => c.Value).Should().Equal("RefA_DocumentId", "RefA_IdentityPart");
+    }
+
+    /// <summary>
+    /// It should still produce PK and UK indexes.
+    /// </summary>
+    [Test]
+    public void It_should_still_produce_PK_and_UK_indexes()
+    {
+        _indexes
+            .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.PrimaryKey)
+            .Should()
+            .ContainSingle();
+
+        _indexes
+            .Where(index => index.Table.Name == "Enrollment" && index.Kind == DbIndexKind.UniqueConstraint)
+            .Should()
+            .ContainSingle();
+    }
+}
+
+/// <summary>
+/// Test pass that injects two FKs where one is a strict leftmost prefix of the other.
+/// </summary>
+file sealed class PrefixForeignKeyFixturePass : IRelationalModelSetPass
+{
+    /// <summary>
+    /// Execute.
+    /// </summary>
+    public void Execute(RelationalModelSetBuilderContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+
+        var resourceKey = context.EffectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder[0];
+        var schema = new DbSchemaName("edfi");
+        var rootTableName = new DbTableName(schema, "Enrollment");
+        var targetTable = new DbTableName(schema, "RefTarget");
+
+        // Two FKs: one single-column [RefA_DocumentId], one composite [RefA_DocumentId, RefA_IdentityPart].
+        // The single-column FK is a strict leftmost prefix of the composite FK.
+        var shortFk = new TableConstraint.ForeignKey(
+            "FK_Enrollment_RefA_Short",
+            [new DbColumnName("RefA_DocumentId")],
+            targetTable,
+            [RelationalNameConventions.DocumentIdColumnName]
+        );
+
+        var longFk = new TableConstraint.ForeignKey(
+            "FK_Enrollment_RefA_Long",
+            [new DbColumnName("RefA_DocumentId"), new DbColumnName("RefA_IdentityPart")],
+            targetTable,
+            [RelationalNameConventions.DocumentIdColumnName, new DbColumnName("IdentityPart")]
+        );
+
+        // Use a unique constraint on a different column so it doesn't suppress either FK index.
+        var uniqueConstraint = new TableConstraint.Unique(
+            "UK_Enrollment_UnrelatedKey",
+            [new DbColumnName("RefA_IdentityPart")]
+        );
+
+        // Deliberately order short FK first to verify descending-length sort fixes the issue.
+        var constraints = new TableConstraint[] { uniqueConstraint, shortFk, longFk };
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("RefA_DocumentId"),
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.refA"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "RefTarget")
+            ),
+            new DbColumnModel(
+                new DbColumnName("RefA_IdentityPart"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.refA.identityPart"),
+                TargetResource: null
+            ),
+        };
+
+        var rootTable = new DbTableModel(
+            rootTableName,
+            JsonPathExpressionCompiler.Compile("$"),
+            new TableKey(
+                "PK_Enrollment",
+                [new DbKeyColumn(RelationalNameConventions.DocumentIdColumnName, ColumnKind.ParentKeyPart)]
+            ),
+            columns,
+            constraints
+        );
+
+        var relationalModel = new RelationalResourceModel(
+            resourceKey.Resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            rootTable,
+            [rootTable],
+            [],
+            []
+        );
+
+        context.ConcreteResourcesInNameOrder.Add(
+            new ConcreteResourceModel(resourceKey, ResourceStorageKind.RelationalTables, relationalModel)
+        );
+    }
+}
+
+/// <summary>
 /// Test pass that injects a key-unification-like resource model where two FK endpoints share one storage key set.
 /// </summary>
 file sealed class KeyUnificationStorageForeignKeysFixturePass : IRelationalModelSetPass

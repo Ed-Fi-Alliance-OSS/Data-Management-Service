@@ -21,7 +21,14 @@ internal static class RelationalModelCanonicalization
         ArgumentNullException.ThrowIfNull(resourceModel);
 
         var canonicalTables = resourceModel
-            .TablesInDependencyOrder.Select(RelationalModelOrdering.CanonicalizeTable)
+            .TablesInDependencyOrder.Select(table =>
+            {
+                var referenceGroups = BuildReferenceGroupLookup(
+                    table.Table,
+                    resourceModel.DocumentReferenceBindings
+                );
+                return RelationalModelOrdering.CanonicalizeTable(table, referenceGroups);
+            })
             .OrderBy(table => SetPassHelpers.CountArrayDepth(table.JsonScope))
             .ThenBy(table => table.JsonScope.Canonical, StringComparer.Ordinal)
             .ThenBy(table => table.Table.Schema.Value, StringComparer.Ordinal)
@@ -85,6 +92,39 @@ internal static class RelationalModelCanonicalization
             DescriptorEdgeSources = orderedDescriptorEdges,
             DescriptorForeignKeyDeduplications = orderedDescriptorForeignKeyDeduplications,
         };
+    }
+
+    /// <summary>
+    /// Builds a lookup mapping column names to their reference group membership for the given table.
+    /// Returns null when no bindings match the table (avoids allocations).
+    /// </summary>
+    private static Dictionary<string, ReferenceGroupMembership>? BuildReferenceGroupLookup(
+        DbTableName table,
+        IReadOnlyList<DocumentReferenceBinding> bindings
+    )
+    {
+        Dictionary<string, ReferenceGroupMembership>? result = null;
+
+        foreach (var binding in bindings)
+        {
+            if (!binding.Table.Equals(table))
+            {
+                continue;
+            }
+
+            var groupKey = binding.FkColumn.Value;
+
+            result ??= new Dictionary<string, ReferenceGroupMembership>(StringComparer.Ordinal);
+            result.TryAdd(groupKey, new ReferenceGroupMembership(groupKey, 0));
+
+            for (var i = 0; i < binding.IdentityBindings.Count; i++)
+            {
+                var identityColumnName = binding.IdentityBindings[i].Column.Value;
+                result.TryAdd(identityColumnName, new ReferenceGroupMembership(groupKey, i + 1));
+            }
+        }
+
+        return result;
     }
 
     /// <summary>

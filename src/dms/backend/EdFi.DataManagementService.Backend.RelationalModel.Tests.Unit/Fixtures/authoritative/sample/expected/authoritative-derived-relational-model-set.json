@@ -42720,31 +42720,6 @@
               }
             },
             {
-              "name": "AssigningEducationOrganization_DocumentId",
-              "kind": "DocumentFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": false,
-              "source_path": "$.assigningEducationOrganizationReference",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "AdministrationIdentifier",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 255
-              },
-              "is_nullable": false,
-              "source_path": "$.administrationIdentifier",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
               "name": "Assessment_AssessmentIdentifier",
               "kind": "Scalar",
               "type": {
@@ -42771,6 +42746,18 @@
               }
             },
             {
+              "name": "AssigningEducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.assigningEducationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "AssigningEducationOrganization_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
@@ -42778,6 +42765,19 @@
               },
               "is_nullable": false,
               "source_path": "$.assigningEducationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AdministrationIdentifier",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 255
+              },
+              "is_nullable": false,
+              "source_path": "$.administrationIdentifier",
               "storage": {
                 "kind": "Stored"
               }
@@ -43306,15 +43306,30 @@
               }
             },
             {
-              "name": "ProgramEvaluation_DocumentId",
-              "kind": "DocumentFk",
+              "name": "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
+              "kind": "Scalar",
               "type": {
-                "kind": "Int64"
+                "kind": "String",
+                "max_length": 50
               },
-              "is_nullable": false,
-              "source_path": "$.programEvaluationReference",
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle",
               "storage": {
                 "kind": "Stored"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEducationOrganizationId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEducationOrganizationId_Unified",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
               }
             },
             {
@@ -43328,6 +43343,21 @@
               "storage": {
                 "kind": "UnifiedAlias",
                 "canonical_column": "ProgramEvaluationPeriodDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluationObjective_ProgramEvaluationTitle",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programEvaluationTitle",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationTitle_Unified",
                 "presence_column": "ProgramEvaluationObjective_DocumentId"
               }
             },
@@ -43346,6 +43376,21 @@
               }
             },
             {
+              "name": "ProgramEvaluationObjective_ProgramName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.programEvaluationObjectiveReference.programName",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramName_Unified",
+                "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
               "name": "ProgramEvaluationObjective_ProgramTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
@@ -43357,6 +43402,18 @@
                 "kind": "UnifiedAlias",
                 "canonical_column": "ProgramTypeDescriptor_Unified_DescriptorId",
                 "presence_column": "ProgramEvaluationObjective_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference",
+              "storage": {
+                "kind": "Stored"
               }
             },
             {
@@ -43374,6 +43431,21 @@
               }
             },
             {
+              "name": "ProgramEvaluation_ProgramEvaluationTitle",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 50
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programEvaluationTitle",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEvaluationTitle_Unified",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
               "name": "ProgramEvaluation_ProgramEvaluationTypeDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
@@ -43384,6 +43456,35 @@
               "storage": {
                 "kind": "UnifiedAlias",
                 "canonical_column": "ProgramEvaluationTypeDescriptor_Unified_DescriptorId",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programEducationOrganizationId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramEducationOrganizationId_Unified",
+                "presence_column": "ProgramEvaluation_DocumentId"
+              }
+            },
+            {
+              "name": "ProgramEvaluation_ProgramName",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": false,
+              "source_path": "$.programEvaluationReference.programName",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "ProgramName_Unified",
                 "presence_column": "ProgramEvaluation_DocumentId"
               }
             },
@@ -43465,107 +43566,6 @@
               "source_path": "$.programEvaluationElementTitle",
               "storage": {
                 "kind": "Stored"
-              }
-            },
-            {
-              "name": "ProgramEvaluationObjective_ProgramEducationOrganizationId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.programEvaluationObjectiveReference.programEducationOrganizationId",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "ProgramEducationOrganizationId_Unified",
-                "presence_column": "ProgramEvaluationObjective_DocumentId"
-              }
-            },
-            {
-              "name": "ProgramEvaluationObjective_ProgramEvaluationObjectiveTitle",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 50
-              },
-              "is_nullable": true,
-              "source_path": "$.programEvaluationObjectiveReference.programEvaluationObjectiveTitle",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "ProgramEvaluationObjective_ProgramEvaluationTitle",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 50
-              },
-              "is_nullable": true,
-              "source_path": "$.programEvaluationObjectiveReference.programEvaluationTitle",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "ProgramEvaluationTitle_Unified",
-                "presence_column": "ProgramEvaluationObjective_DocumentId"
-              }
-            },
-            {
-              "name": "ProgramEvaluationObjective_ProgramName",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 60
-              },
-              "is_nullable": true,
-              "source_path": "$.programEvaluationObjectiveReference.programName",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "ProgramName_Unified",
-                "presence_column": "ProgramEvaluationObjective_DocumentId"
-              }
-            },
-            {
-              "name": "ProgramEvaluation_ProgramEducationOrganizationId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": false,
-              "source_path": "$.programEvaluationReference.programEducationOrganizationId",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "ProgramEducationOrganizationId_Unified",
-                "presence_column": "ProgramEvaluation_DocumentId"
-              }
-            },
-            {
-              "name": "ProgramEvaluation_ProgramEvaluationTitle",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 50
-              },
-              "is_nullable": false,
-              "source_path": "$.programEvaluationReference.programEvaluationTitle",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "ProgramEvaluationTitle_Unified",
-                "presence_column": "ProgramEvaluation_DocumentId"
-              }
-            },
-            {
-              "name": "ProgramEvaluation_ProgramName",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 60
-              },
-              "is_nullable": false,
-              "source_path": "$.programEvaluationReference.programName",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "ProgramName_Unified",
-                "presence_column": "ProgramEvaluation_DocumentId"
               }
             }
           ],
@@ -44148,90 +44148,6 @@
               }
             },
             {
-              "name": "ReportingEducationOrganization_DocumentId",
-              "kind": "DocumentFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.reportingEducationOrganizationReference",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
-              "kind": "DocumentFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "StudentEducationOrganizationAssociation_DocumentId",
-              "kind": "DocumentFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": false,
-              "source_path": "$.studentEducationOrganizationAssociationReference",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "StudentSchoolAssociation_DocumentId",
-              "kind": "DocumentFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": false,
-              "source_path": "$.studentSchoolAssociationReference",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "TestingEducationOrganization_DocumentId",
-              "kind": "DocumentFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.testingEducationOrganizationReference",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "AssessmentGradeLevelDescriptor_DescriptorId",
-              "kind": "DescriptorFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.assessmentGradeLevelDescriptor",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "PlatformTypeDescriptor_DescriptorId",
-              "kind": "DescriptorFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.platformTypeDescriptor",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
               "name": "AssessmentAdministration_AdministrationIdentifier",
               "kind": "Scalar",
               "type": {
@@ -44258,18 +44174,6 @@
               }
             },
             {
-              "name": "AssessmentAdministration_AssigningEducationOrganizationId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": false,
-              "source_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
               "name": "AssessmentAdministration_Namespace",
               "kind": "Scalar",
               "type": {
@@ -44283,6 +44187,30 @@
               }
             },
             {
+              "name": "AssessmentAdministration_AssigningEducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.assessmentAdministrationReference.assigningEducationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ReportingEducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.reportingEducationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ReportingEducationOrganization_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
@@ -44290,6 +44218,18 @@
               },
               "is_nullable": true,
               "source_path": "$.reportingEducationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ScheduledStudentEducationOrganizationAssessmentAccom_8a1ccd30ea",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.scheduledStudentEducationOrganizationAssessmentAccommodationReference",
               "storage": {
                 "kind": "Stored"
               }
@@ -44320,6 +44260,18 @@
               }
             },
             {
+              "name": "StudentEducationOrganizationAssociation_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentEducationOrganizationAssociationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "StudentEducationOrganizationAssociation_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
@@ -44344,6 +44296,18 @@
                 "kind": "UnifiedAlias",
                 "canonical_column": "StudentUniqueId_Unified",
                 "presence_column": "StudentEducationOrganizationAssociation_DocumentId"
+              }
+            },
+            {
+              "name": "StudentSchoolAssociation_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": false,
+              "source_path": "$.studentSchoolAssociationReference",
+              "storage": {
+                "kind": "Stored"
               }
             },
             {
@@ -44386,6 +44350,18 @@
               }
             },
             {
+              "name": "TestingEducationOrganization_DocumentId",
+              "kind": "DocumentFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.testingEducationOrganizationReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "TestingEducationOrganization_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
@@ -44393,6 +44369,30 @@
               },
               "is_nullable": true,
               "source_path": "$.testingEducationOrganizationReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AssessmentGradeLevelDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.assessmentGradeLevelDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "PlatformTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.platformTypeDescriptor",
               "storage": {
                 "kind": "Stored"
               }
@@ -45102,6 +45102,47 @@
               }
             },
             {
+              "name": "Calendar_CalendarCode",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 60
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.calendarCode",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Calendar_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolId_Unified",
+                "presence_column": "Calendar_DocumentId"
+              }
+            },
+            {
+              "name": "Calendar_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.calendarReference.schoolYear",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolYear_Unified",
+                "presence_column": "Calendar_DocumentId"
+              }
+            },
+            {
               "name": "ClassOfSchoolYear_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -45109,6 +45150,18 @@
               },
               "is_nullable": true,
               "source_path": "$.classOfSchoolYearTypeReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "ClassOfSchoolYear_ClassOfSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.classOfSchoolYearTypeReference.schoolYear",
               "storage": {
                 "kind": "Stored"
               }
@@ -45126,6 +45179,42 @@
               }
             },
             {
+              "name": "GraduationPlan_EducationOrganizationId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "GraduationPlan_GraduationSchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.graduationPlanReference.graduationSchoolYear",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "NextYearSchool_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -45133,6 +45222,18 @@
               },
               "is_nullable": true,
               "source_path": "$.nextYearSchoolReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "NextYearSchool_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.nextYearSchoolReference.schoolId",
               "storage": {
                 "kind": "Stored"
               }
@@ -45150,6 +45251,20 @@
               }
             },
             {
+              "name": "SchoolYear_SchoolYear",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": true,
+              "source_path": "$.schoolYearTypeReference.schoolYear",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolYear_Unified",
+                "presence_column": "SchoolYear_DocumentId"
+              }
+            },
+            {
               "name": "School_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -45162,6 +45277,20 @@
               }
             },
             {
+              "name": "School_SchoolId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "Int32"
+              },
+              "is_nullable": false,
+              "source_path": "$.schoolReference.schoolId",
+              "storage": {
+                "kind": "UnifiedAlias",
+                "canonical_column": "SchoolId_Unified",
+                "presence_column": "School_DocumentId"
+              }
+            },
+            {
               "name": "Student_DocumentId",
               "kind": "DocumentFk",
               "type": {
@@ -45169,6 +45298,19 @@
               },
               "is_nullable": false,
               "source_path": "$.studentReference",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "Student_StudentUniqueId",
+              "kind": "Scalar",
+              "type": {
+                "kind": "String",
+                "max_length": 32
+              },
+              "is_nullable": false,
+              "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
               }
@@ -45234,18 +45376,6 @@
               }
             },
             {
-              "name": "GraduationPlan_GraduationPlanTypeDescriptor_DescriptorId",
-              "kind": "DescriptorFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.graduationPlanReference.graduationPlanTypeDescriptor",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
               "name": "NextYearGradeLevelDescriptor_DescriptorId",
               "kind": "DescriptorFk",
               "type": {
@@ -45277,59 +45407,6 @@
               },
               "is_nullable": true,
               "source_path": "$.schoolChoiceBasisDescriptor",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "Calendar_CalendarCode",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 60
-              },
-              "is_nullable": true,
-              "source_path": "$.calendarReference.calendarCode",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "Calendar_SchoolId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.calendarReference.schoolId",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolId_Unified",
-                "presence_column": "Calendar_DocumentId"
-              }
-            },
-            {
-              "name": "Calendar_SchoolYear",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.calendarReference.schoolYear",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolYear_Unified",
-                "presence_column": "Calendar_DocumentId"
-              }
-            },
-            {
-              "name": "ClassOfSchoolYear_ClassOfSchoolYear",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.classOfSchoolYearTypeReference.schoolYear",
               "storage": {
                 "kind": "Stored"
               }
@@ -45385,42 +45462,6 @@
               }
             },
             {
-              "name": "GraduationPlan_EducationOrganizationId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.graduationPlanReference.educationOrganizationId",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "GraduationPlan_GraduationSchoolYear",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.graduationPlanReference.graduationSchoolYear",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "NextYearSchool_SchoolId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.nextYearSchoolReference.schoolId",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
               "name": "PrimarySchool",
               "kind": "Scalar",
               "type": {
@@ -45464,47 +45505,6 @@
               },
               "is_nullable": true,
               "source_path": "$.schoolChoiceTransfer",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
-              "name": "SchoolYear_SchoolYear",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": true,
-              "source_path": "$.schoolYearTypeReference.schoolYear",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolYear_Unified",
-                "presence_column": "SchoolYear_DocumentId"
-              }
-            },
-            {
-              "name": "School_SchoolId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "Int32"
-              },
-              "is_nullable": false,
-              "source_path": "$.schoolReference.schoolId",
-              "storage": {
-                "kind": "UnifiedAlias",
-                "canonical_column": "SchoolId_Unified",
-                "presence_column": "School_DocumentId"
-              }
-            },
-            {
-              "name": "Student_StudentUniqueId",
-              "kind": "Scalar",
-              "type": {
-                "kind": "String",
-                "max_length": 32
-              },
-              "is_nullable": false,
-              "source_path": "$.studentReference.studentUniqueId",
               "storage": {
                 "kind": "Stored"
               }
@@ -46038,18 +46038,6 @@
               }
             },
             {
-              "name": "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
-              "kind": "DescriptorFk",
-              "type": {
-                "kind": "Int64"
-              },
-              "is_nullable": true,
-              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
-              "storage": {
-                "kind": "Stored"
-              }
-            },
-            {
               "name": "AlternativeGraduationPlan_EducationOrganizationId",
               "kind": "Scalar",
               "type": {
@@ -46057,6 +46045,18 @@
               },
               "is_nullable": true,
               "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.educationOrganizationId",
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
+              "name": "AlternativeGraduationPlan_GraduationPlanTypeDescript_0b71806181",
+              "kind": "DescriptorFk",
+              "type": {
+                "kind": "Int64"
+              },
+              "is_nullable": true,
+              "source_path": "$.alternativeGraduationPlans[*].alternativeGraduationPlanReference.graduationPlanTypeDescriptor",
               "storage": {
                 "kind": "Stored"
               }

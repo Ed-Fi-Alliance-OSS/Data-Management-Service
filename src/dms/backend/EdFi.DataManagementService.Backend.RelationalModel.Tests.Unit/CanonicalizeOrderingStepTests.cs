@@ -555,6 +555,148 @@ public class Given_Key_Unification_Alias_Dependencies
 }
 
 /// <summary>
+/// Test fixture for reference group columns being ordered adjacent to their DocumentFk.
+/// </summary>
+[TestFixture]
+public class Given_Reference_Group_Columns_In_Column_Ordering
+{
+    private List<string> _orderedColumnNames = default!;
+
+    /// <summary>
+    /// Sets up the test fixture.
+    /// </summary>
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new DbSchemaName("edfi");
+        var tableName = new DbTableName(schema, "ClassPeriod");
+        var jsonScope = JsonPathExpressionCompiler.Compile("$");
+        var keyColumn = new DbKeyColumn(
+            RelationalNameConventions.DocumentIdColumnName,
+            ColumnKind.ParentKeyPart
+        );
+
+        var columns = new[]
+        {
+            new DbColumnModel(
+                RelationalNameConventions.DocumentIdColumnName,
+                ColumnKind.ParentKeyPart,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_DocumentId"),
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "School")
+            ),
+            new DbColumnModel(
+                new DbColumnName("School_SchoolId"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                TargetResource: null
+            ),
+            new DbColumnModel(
+                new DbColumnName("AcademicYear"),
+                ColumnKind.Scalar,
+                new RelationalScalarType(ScalarKind.Int32),
+                IsNullable: true,
+                SourceJsonPath: JsonPathExpressionCompiler.Compile("$.academicYear"),
+                TargetResource: null
+            ),
+        };
+
+        var table = new DbTableModel(
+            tableName,
+            jsonScope,
+            new TableKey($"PK_{tableName.Name}", [keyColumn]),
+            columns,
+            Array.Empty<TableConstraint>()
+        );
+
+        var documentReferenceBindings = new[]
+        {
+            new DocumentReferenceBinding(
+                IsIdentityComponent: true,
+                ReferenceObjectPath: JsonPathExpressionCompiler.Compile("$.schoolReference"),
+                Table: tableName,
+                FkColumn: new DbColumnName("School_DocumentId"),
+                TargetResource: new QualifiedResourceName("Ed-Fi", "School"),
+                IdentityBindings:
+                [
+                    new ReferenceIdentityBinding(
+                        JsonPathExpressionCompiler.Compile("$.schoolReference.schoolId"),
+                        new DbColumnName("School_SchoolId")
+                    ),
+                ]
+            ),
+        };
+
+        var resourceModel = new RelationalResourceModel(
+            new QualifiedResourceName("Ed-Fi", "ClassPeriod"),
+            schema,
+            ResourceStorageKind.RelationalTables,
+            table,
+            new[] { table },
+            documentReferenceBindings,
+            Array.Empty<DescriptorEdgeSource>()
+        );
+
+        var context = new RelationalModelBuilderContext { ResourceModel = resourceModel };
+
+        var canonicalize = new CanonicalizeOrderingStep();
+        canonicalize.Execute(context);
+
+        _orderedColumnNames = context.ResourceModel!.Root.Columns.Select(c => c.ColumnName.Value).ToList();
+    }
+
+    /// <summary>
+    /// It should place identity part column immediately after the DocumentFk column.
+    /// </summary>
+    [Test]
+    public void It_should_place_identity_part_immediately_after_DocumentFk()
+    {
+        var docFkIndex = _orderedColumnNames.IndexOf("School_DocumentId");
+        var identityPartIndex = _orderedColumnNames.IndexOf("School_SchoolId");
+
+        identityPartIndex
+            .Should()
+            .Be(docFkIndex + 1, "School_SchoolId should immediately follow School_DocumentId");
+    }
+
+    /// <summary>
+    /// It should place standalone scalar after the reference group.
+    /// </summary>
+    [Test]
+    public void It_should_place_standalone_scalar_after_reference_group()
+    {
+        var identityPartIndex = _orderedColumnNames.IndexOf("School_SchoolId");
+        var scalarIndex = _orderedColumnNames.IndexOf("AcademicYear");
+
+        scalarIndex
+            .Should()
+            .BeGreaterThan(identityPartIndex, "AcademicYear should follow the reference group");
+    }
+
+    /// <summary>
+    /// It should produce the expected full column order.
+    /// </summary>
+    [Test]
+    public void It_should_produce_expected_column_order()
+    {
+        _orderedColumnNames
+            .Should()
+            .Equal("DocumentId", "School_DocumentId", "School_SchoolId", "AcademicYear");
+    }
+}
+
+/// <summary>
 /// Test type canonicalize ordering step test context.
 /// </summary>
 internal static class CanonicalizeOrderingStepTestContext
