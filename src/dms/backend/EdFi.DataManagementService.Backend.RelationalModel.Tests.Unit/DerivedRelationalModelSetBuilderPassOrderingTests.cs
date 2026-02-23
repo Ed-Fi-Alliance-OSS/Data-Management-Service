@@ -74,8 +74,6 @@ public class Given_A_Pass_List_With_Custom_Order
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             _executionOrder.Add(Label);
         }
     }

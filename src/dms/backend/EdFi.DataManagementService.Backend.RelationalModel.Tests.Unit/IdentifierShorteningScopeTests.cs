@@ -218,8 +218,6 @@ file sealed class IndexShorteningCollisionAcrossTablesPass : IRelationalModelSet
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var schema = new DbSchemaName("edfi");
         var tableAlpha = new DbTableName(schema, "School");
         var tableBeta = new DbTableName(schema, "Student");
@@ -252,8 +250,6 @@ file sealed class TriggerShorteningCollisionAcrossTablesPass : IRelationalModelS
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var schema = new DbSchemaName("edfi");
         var tableAlpha = new DbTableName(schema, "School");
         var tableBeta = new DbTableName(schema, "Student");

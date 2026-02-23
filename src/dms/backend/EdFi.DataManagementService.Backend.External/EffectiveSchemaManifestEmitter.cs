@@ -26,6 +26,7 @@ public static class EffectiveSchemaManifestEmitter
     /// <returns>The JSON manifest string with a trailing newline.</returns>
     public static string Emit(EffectiveSchemaInfo effectiveSchema, bool includeResourceKeys = false)
     {
+        ArgumentNullException.ThrowIfNull(effectiveSchema);
         ValidateInput(effectiveSchema);
 
         var buffer = new ArrayBufferWriter<byte>();
@@ -45,8 +46,6 @@ public static class EffectiveSchemaManifestEmitter
     /// </summary>
     private static void ValidateInput(EffectiveSchemaInfo effectiveSchema)
     {
-        ArgumentNullException.ThrowIfNull(effectiveSchema);
-
         if (string.IsNullOrEmpty(effectiveSchema.ApiSchemaFormatVersion))
         {
             throw new ArgumentException("ApiSchemaFormatVersion must not be empty.", nameof(effectiveSchema));

@@ -31,6 +31,13 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     public PageDocumentIdSqlPlan Compile(PageDocumentIdQuerySpec spec)
     {
         ArgumentNullException.ThrowIfNull(spec);
+        ArgumentNullException.ThrowIfNull(spec.Predicates);
+        ArgumentNullException.ThrowIfNull(spec.UnifiedAliasMappingsByColumn);
+
+        if (spec.Predicates.Any(predicate => predicate is null))
+        {
+            throw new ArgumentException("Predicates must not contain null entries.", nameof(spec.Predicates));
+        }
 
         PlanSqlWriterExtensions.ValidateBareParameterName(
             spec.OffsetParameterName,
@@ -61,9 +68,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> aliasMappingsByColumn
     )
     {
-        ArgumentNullException.ThrowIfNull(predicates);
-        ArgumentNullException.ThrowIfNull(aliasMappingsByColumn);
-
         var rewrittenPredicates = predicates
             .Select(predicate => RewritePredicate(predicate, aliasMappingsByColumn))
             .OrderBy(
@@ -113,9 +117,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         IReadOnlyDictionary<DbColumnName, ColumnStorage.UnifiedAlias> aliasMappingsByColumn
     )
     {
-        ArgumentNullException.ThrowIfNull(predicate);
-        ArgumentNullException.ThrowIfNull(aliasMappingsByColumn);
-
         PlanSqlWriterExtensions.ValidateBareParameterName(
             predicate.ParameterName,
             nameof(predicate.ParameterName)
@@ -189,9 +190,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private void AppendWhereClause(SqlWriter writer, IReadOnlyList<RewrittenPredicate> predicates)
     {
-        ArgumentNullException.ThrowIfNull(writer);
-        ArgumentNullException.ThrowIfNull(predicates);
-
         writer.AppendWhereClause(
             predicates.Count,
             (predicateWriter, index) => AppendPredicateSql(predicateWriter, predicates[index])
@@ -203,8 +201,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private void AppendPredicateSql(SqlWriter writer, RewrittenPredicate predicate)
     {
-        ArgumentNullException.ThrowIfNull(writer);
-
         if (predicate.PresenceColumn is not null)
         {
             AppendIsNotNullSql(writer, predicate.PresenceColumn.Value);
@@ -224,8 +220,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         string parameterName
     )
     {
-        ArgumentNullException.ThrowIfNull(writer);
-
         if (@operator is QueryComparisonOperator.In)
         {
             throw new NotSupportedException(
@@ -247,7 +241,6 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// </summary>
     private static void AppendIsNotNullSql(SqlWriter writer, DbColumnName column)
     {
-        ArgumentNullException.ThrowIfNull(writer);
         writer.Append("r.").AppendQuoted(column.Value).Append(" IS NOT NULL");
     }
 

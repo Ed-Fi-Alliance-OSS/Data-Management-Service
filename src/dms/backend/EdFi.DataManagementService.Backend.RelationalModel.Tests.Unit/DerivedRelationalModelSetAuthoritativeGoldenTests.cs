@@ -152,8 +152,6 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             foreach (var resource in context.ConcreteResourcesInNameOrder)
             {
                 _sitesByResource[resource.ResourceKey.Resource] = context.GetExtensionSitesForResource(

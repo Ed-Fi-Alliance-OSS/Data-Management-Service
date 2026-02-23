@@ -75,8 +75,6 @@ public class Given_Duplicate_Concrete_Resources_In_Derived_Model_Set
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             context.ConcreteResourcesInNameOrder.Add(
                 new ConcreteResourceModel(_resourceKey, ResourceStorageKind.RelationalTables, _model)
             );
@@ -213,8 +211,6 @@ public class Given_Duplicate_Trigger_Names_In_Derived_Model_Set
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var schema = new DbSchemaName("edfi");
             var table = new DbTableName(schema, "School");
 
@@ -332,8 +328,6 @@ internal static class DerivedRelationalModelSetInvariantTestHelpers
         string resourceName
     )
     {
-        ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
-
         return effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Single(entry =>
             entry.Resource.ProjectName == projectName && entry.Resource.ResourceName == resourceName
         );
@@ -388,8 +382,6 @@ file sealed class DuplicateIndexNamesAcrossTablesPass : IRelationalModelSetPass
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var schema = new DbSchemaName("edfi");
         var tableAlpha = new DbTableName(schema, "School");
         var tableBeta = new DbTableName(schema, "Student");
@@ -416,8 +408,6 @@ file sealed class DuplicateTriggerNamesAcrossTablesPass : IRelationalModelSetPas
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var schema = new DbSchemaName("edfi");
         var tableAlpha = new DbTableName(schema, "School");
         var tableBeta = new DbTableName(schema, "Student");

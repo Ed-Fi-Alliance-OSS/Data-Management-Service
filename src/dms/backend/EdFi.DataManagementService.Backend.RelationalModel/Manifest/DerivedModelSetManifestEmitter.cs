@@ -531,8 +531,6 @@ public static class DerivedModelSetManifestEmitter
     /// </summary>
     private static void WriteColumnStorage(Utf8JsonWriter writer, ColumnStorage storage)
     {
-        ArgumentNullException.ThrowIfNull(storage);
-
         writer.WriteStartObject();
 
         switch (storage)

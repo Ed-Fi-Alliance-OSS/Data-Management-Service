@@ -182,8 +182,6 @@ public class Given_A_Derived_Relational_Model_Set_Without_Key_Unification
     /// </summary>
     private static IEnumerable<DbTableModel> EnumerateTables(DerivedRelationalModelSet derived)
     {
-        ArgumentNullException.ThrowIfNull(derived);
-
         return derived
             .ConcreteResourcesInNameOrder.SelectMany(resource =>
                 resource.RelationalModel.TablesInDependencyOrder

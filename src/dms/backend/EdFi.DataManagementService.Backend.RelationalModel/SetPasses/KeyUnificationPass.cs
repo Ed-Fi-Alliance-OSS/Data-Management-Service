@@ -849,9 +849,6 @@ public sealed class KeyUnificationPass : IRelationalModelSetPass
     /// </summary>
     private static int CompareConnectedComponents(IReadOnlyList<string> left, IReadOnlyList<string> right)
     {
-        ArgumentNullException.ThrowIfNull(left);
-        ArgumentNullException.ThrowIfNull(right);
-
         if (left.Count == 0 || right.Count == 0)
         {
             return left.Count.CompareTo(right.Count);

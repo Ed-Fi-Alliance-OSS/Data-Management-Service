@@ -141,8 +141,6 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
     /// </summary>
     private static ResourceEndpointMappings BuildResourceEndpointMappings(JsonObject projectSchema)
     {
-        ArgumentNullException.ThrowIfNull(projectSchema);
-
         var projectName = RequireString(projectSchema, "projectName");
         var resourceSchemas = RequireObject(
             projectSchema["resourceSchemas"],
@@ -205,10 +203,6 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
         ResourceEndpointMappings endpointMappings
     )
     {
-        ArgumentNullException.ThrowIfNull(modelSet);
-        ArgumentNullException.ThrowIfNull(extensionSiteCapture);
-        ArgumentNullException.ThrowIfNull(endpointMappings);
-
         if (modelSet.ProjectSchemasInEndpointOrder.Count != 1)
         {
             throw new InvalidOperationException(
@@ -287,8 +281,6 @@ public class Given_An_Authoritative_ApiSchema_For_Derived_Relational_Model_Set
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             foreach (var resource in context.ConcreteResourcesInNameOrder)
             {
                 _sitesByResource[resource.ResourceKey.Resource] = context.GetExtensionSitesForResource(

@@ -1011,8 +1011,6 @@ internal sealed class ForceRootColumnNullablePass(QualifiedResourceName resource
     /// <inheritdoc />
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
             model.ResourceKey.Resource == resource
         );
@@ -1066,8 +1064,6 @@ internal sealed class ForceRootColumnSourcePathPass(
     /// <inheritdoc />
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
             model.ResourceKey.Resource == resource
         );
@@ -1132,8 +1128,6 @@ internal sealed class ForceRootColumnSourcePathNullPass(QualifiedResourceName re
     /// <inheritdoc />
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         var index = context.ConcreteResourcesInNameOrder.FindIndex(model =>
             model.ResourceKey.Resource == resource
         );

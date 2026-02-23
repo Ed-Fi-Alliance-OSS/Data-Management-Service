@@ -1098,8 +1098,6 @@ file sealed class UnmappedReferenceMappingFixturePass : IRelationalModelSetPass
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         foreach (var resourceContext in context.EnumerateConcreteResourceSchemasInNameOrder())
         {
             var builderContext = context.GetOrCreateResourceBuilderContext(resourceContext);
@@ -1142,8 +1140,6 @@ file sealed class InvalidUnifiedAliasPresenceGateFixturePass : IRelationalModelS
     /// </summary>
     public void Execute(RelationalModelSetBuilderContext context)
     {
-        ArgumentNullException.ThrowIfNull(context);
-
         for (
             var resourceIndex = 0;
             resourceIndex < context.ConcreteResourcesInNameOrder.Count;

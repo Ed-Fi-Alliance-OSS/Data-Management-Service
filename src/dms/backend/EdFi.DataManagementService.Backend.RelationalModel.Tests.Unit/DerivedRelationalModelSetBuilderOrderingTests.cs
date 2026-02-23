@@ -137,8 +137,6 @@ public class Given_Unordered_Derived_Collections
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var edfiSchema = new DbSchemaName("edfi");
             var sampleSchema = new DbSchemaName("sample");
 
@@ -319,8 +317,6 @@ public class Given_Unordered_Derived_Collections
             string resourceName
         )
         {
-            ArgumentNullException.ThrowIfNull(effectiveSchemaSet);
-
             var resourceKey = effectiveSchemaSet.EffectiveSchema.ResourceKeysInIdOrder.Single(entry =>
                 entry.Resource.ProjectName == projectName && entry.Resource.ResourceName == resourceName
             );

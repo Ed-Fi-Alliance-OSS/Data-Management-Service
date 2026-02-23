@@ -737,8 +737,6 @@ public class Given_Reference_Constraint_Derivation_With_Invalid_Unified_Alias_Pr
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             for (
                 var resourceIndex = 0;
                 resourceIndex < context.ConcreteResourcesInNameOrder.Count;
@@ -879,8 +877,6 @@ public class Given_Foreign_Key_Storage_Invariant_Validation
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var resource = new QualifiedResourceName("Ed-Fi", "Enrollment");
             var resourceIndex = context.ConcreteResourcesInNameOrder.FindIndex(model =>
                 model.ResourceKey.Resource == resource
@@ -1007,8 +1003,6 @@ public class Given_Foreign_Key_Storage_Invariant_Validation_With_Local_Alias
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var resource = new QualifiedResourceName("Ed-Fi", "Enrollment");
             var resourceIndex = context.ConcreteResourcesInNameOrder.FindIndex(model =>
                 model.ResourceKey.Resource == resource
@@ -1168,8 +1162,6 @@ public class Given_Shuffled_Reference_Identity_Bindings
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
             {
                 var resourceEntry = context.ConcreteResourcesInNameOrder[index];
@@ -1769,8 +1761,6 @@ public class Given_Array_Uniqueness_Constraint_With_Multiple_Candidate_Tables
         /// </summary>
         public void Execute(RelationalModelSetBuilderContext context)
         {
-            ArgumentNullException.ThrowIfNull(context);
-
             var resource = new QualifiedResourceName(ProjectName, ResourceName);
             var resourceKey = context.GetResourceKeyEntry(resource);
             var model = CreateResourceModel(resource);
