@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text;
+using EdFi.DataManagementService.Backend.External;
 
 namespace EdFi.DataManagementService.Backend.Ddl;
 
@@ -28,13 +29,19 @@ public sealed class SqlWriter
     private const int SpacesPerIndent = 4;
 
     /// <summary>
+    /// Gets the SQL dialect used for quoting and table qualification.
+    /// </summary>
+    public ISqlDialect Dialect { get; }
+
+    /// <summary>
     /// Initializes a new instance of the <see cref="SqlWriter"/> class.
     /// </summary>
-    /// <param name="dialect">The SQL dialect (reserved for future use).</param>
+    /// <param name="dialect">The SQL dialect for identifier quoting and table qualification.</param>
     /// <param name="initialCapacity">Initial capacity of the internal buffer.</param>
     public SqlWriter(ISqlDialect dialect, int initialCapacity = 4096)
     {
         ArgumentNullException.ThrowIfNull(dialect);
+        Dialect = dialect;
         _builder = new StringBuilder(initialCapacity);
     }
 
@@ -46,6 +53,30 @@ public sealed class SqlWriter
     {
         _indentLevel++;
         return new IndentScope(this);
+    }
+
+    /// <summary>
+    /// Appends a quoted identifier using the dialect's quoting rules.
+    /// </summary>
+    /// <param name="identifier">The raw identifier to quote and append.</param>
+    /// <returns>This writer for method chaining.</returns>
+    public SqlWriter AppendQuoted(string identifier)
+    {
+        WriteIndentIfNeeded();
+        _builder.Append(Dialect.QuoteIdentifier(identifier));
+        return this;
+    }
+
+    /// <summary>
+    /// Appends a fully qualified table name (schema.table) using the dialect's quoting rules.
+    /// </summary>
+    /// <param name="table">The table name to qualify and append.</param>
+    /// <returns>This writer for method chaining.</returns>
+    public SqlWriter AppendTable(DbTableName table)
+    {
+        WriteIndentIfNeeded();
+        _builder.Append(Dialect.QualifyTable(table));
+        return this;
     }
 
     /// <summary>
