@@ -26,14 +26,12 @@ public class Given_PlanSqlFoundations_GoldenFixture
         var expectedRoot = Path.Combine(
             projectRoot,
             "Fixtures",
-            "small",
             "plan-sql-foundations",
             "minimal",
             "expected"
         );
         var actualRoot = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
-            "small",
             "plan-sql-foundations",
             "minimal",
             "actual"
@@ -87,13 +85,13 @@ public class Given_PlanSqlFoundations_GoldenFixture
     [Test]
     public void It_should_match_pgsql_minimal_insert_sql_golden()
     {
-        AssertGoldenMatches("pgsql.minimal-insert.sql");
+        AssertGoldenMatches("pgsql.insert.sql");
     }
 
     [Test]
     public void It_should_match_mssql_minimal_insert_sql_golden()
     {
-        AssertGoldenMatches("mssql.minimal-insert.sql");
+        AssertGoldenMatches("mssql.insert.sql");
     }
 
     private void AssertGoldenMatches(string fileName)
@@ -112,8 +110,8 @@ public class Given_PlanSqlFoundations_GoldenFixture
         {
             ["pgsql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Pgsql),
             ["mssql.page-document-id.sql"] = BuildPageDocumentIdSql(SqlDialect.Mssql),
-            ["pgsql.minimal-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
-            ["mssql.minimal-insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
+            ["pgsql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Pgsql),
+            ["mssql.insert.sql"] = BuildSimpleInsertSql(SqlDialect.Mssql),
         };
     }
 
