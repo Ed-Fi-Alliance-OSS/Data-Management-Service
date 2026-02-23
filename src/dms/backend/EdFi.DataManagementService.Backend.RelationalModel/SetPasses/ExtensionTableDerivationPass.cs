@@ -17,6 +17,26 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
     private const string ExtensionPropertyName = "_ext";
 
     /// <summary>
+    /// Immutable context threaded through the recursive schema walk. Groups parameters that remain
+    /// constant for the lifetime of a single extension-table derivation.
+    /// </summary>
+    private sealed record ExtensionWalkContext(
+        RelationalModelBuilderContext BuilderContext,
+        INameOverrideProvider OverrideProvider,
+        string ResourceLabel,
+        ProjectSchemaInfo ExtensionProject,
+        string BaseRootBaseName,
+        string ExtensionRootBaseName,
+        IReadOnlyDictionary<string, DbTableModel> BaseTablesByScope,
+        Dictionary<string, ExtensionTableBuilder> ExtensionTablesByScope,
+        HashSet<string> IdentityPaths,
+        IReadOnlySet<string> ReferenceIdentityPaths,
+        IReadOnlySet<string> ReferenceObjectPaths,
+        HashSet<string> UsedDescriptorPaths,
+        List<DescriptorEdgeSource> DescriptorEdgeSources
+    );
+
+    /// <summary>
     /// Executes extension table derivation across all resource-extension schemas.
     /// </summary>
     /// <param name="context">The shared set-level builder context.</param>
@@ -180,13 +200,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         var usedDescriptorPaths = new HashSet<string>(StringComparer.Ordinal);
         List<DescriptorEdgeSource> descriptorEdgeSources = [];
 
-        WalkSchema(
-            rootSchema,
-            tableBuilder: null,
-            [],
-            [],
-            "$",
-            hasOptionalAncestor: false,
+        var walkContext = new ExtensionWalkContext(
             extensionContext,
             overrideProvider,
             resourceLabel,
@@ -201,6 +215,8 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             usedDescriptorPaths,
             descriptorEdgeSources
         );
+
+        WalkSchema(rootSchema, tableBuilder: null, [], [], "$", hasOptionalAncestor: false, walkContext);
 
         EnsureAllDescriptorPathsUsed(extensionContext, usedDescriptorPaths);
 
@@ -244,19 +260,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         List<string> columnSegments,
         string schemaPath,
         bool hasOptionalAncestor,
-        RelationalModelBuilderContext context,
-        INameOverrideProvider overrideProvider,
-        string resourceLabel,
-        ProjectSchemaInfo extensionProject,
-        string baseRootBaseName,
-        string extensionRootBaseName,
-        IReadOnlyDictionary<string, DbTableModel> baseTablesByScope,
-        Dictionary<string, ExtensionTableBuilder> extensionTablesByScope,
-        HashSet<string> identityPaths,
-        IReadOnlySet<string> referenceIdentityPaths,
-        IReadOnlySet<string> referenceObjectPaths,
-        HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        ExtensionWalkContext ctx
     )
     {
         var schemaKind = JsonSchemaTraversalConventions.DetermineSchemaKind(schema);
@@ -271,41 +275,11 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     columnSegments,
                     schemaPath,
                     hasOptionalAncestor,
-                    context,
-                    overrideProvider,
-                    resourceLabel,
-                    extensionProject,
-                    baseRootBaseName,
-                    extensionRootBaseName,
-                    baseTablesByScope,
-                    extensionTablesByScope,
-                    identityPaths,
-                    referenceIdentityPaths,
-                    referenceObjectPaths,
-                    usedDescriptorPaths,
-                    descriptorEdgeSources
+                    ctx
                 );
                 break;
             case SchemaKind.Array:
-                WalkArraySchema(
-                    schema,
-                    tableBuilder,
-                    pathSegments,
-                    schemaPath,
-                    context,
-                    overrideProvider,
-                    resourceLabel,
-                    extensionProject,
-                    baseRootBaseName,
-                    extensionRootBaseName,
-                    baseTablesByScope,
-                    extensionTablesByScope,
-                    identityPaths,
-                    referenceIdentityPaths,
-                    referenceObjectPaths,
-                    usedDescriptorPaths,
-                    descriptorEdgeSources
-                );
+                WalkArraySchema(schema, tableBuilder, pathSegments, schemaPath, ctx);
                 break;
             case SchemaKind.Scalar:
                 var currentPath = JsonPathExpressionCompiler.FromSegments(pathSegments).Canonical;
@@ -325,19 +299,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         List<string> columnSegments,
         string schemaPath,
         bool hasOptionalAncestor,
-        RelationalModelBuilderContext context,
-        INameOverrideProvider overrideProvider,
-        string resourceLabel,
-        ProjectSchemaInfo extensionProject,
-        string baseRootBaseName,
-        string extensionRootBaseName,
-        IReadOnlyDictionary<string, DbTableModel> baseTablesByScope,
-        Dictionary<string, ExtensionTableBuilder> extensionTablesByScope,
-        HashSet<string> identityPaths,
-        IReadOnlySet<string> referenceIdentityPaths,
-        IReadOnlySet<string> referenceObjectPaths,
-        HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        ExtensionWalkContext ctx
     )
     {
         if (!schema.TryGetPropertyValue("properties", out var propertiesNode) || propertiesNode is null)
@@ -353,7 +315,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         }
 
         var requiredProperties = GetRequiredProperties(schema, pathSegments);
-        var isReferenceScope = referenceObjectPaths.Contains(scopePath);
+        var isReferenceScope = ctx.ReferenceObjectPaths.Contains(scopePath);
 
         foreach (var property in propertiesObject.OrderBy(entry => entry.Key, StringComparer.Ordinal))
         {
@@ -374,19 +336,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     schemaPath,
                     requiredProperties,
                     hasOptionalAncestor,
-                    context,
-                    overrideProvider,
-                    resourceLabel,
-                    extensionProject,
-                    baseRootBaseName,
-                    extensionRootBaseName,
-                    baseTablesByScope,
-                    extensionTablesByScope,
-                    identityPaths,
-                    referenceIdentityPaths,
-                    referenceObjectPaths,
-                    usedDescriptorPaths,
-                    descriptorEdgeSources
+                    ctx
                 );
                 continue;
             }
@@ -420,27 +370,15 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                         propertyColumnSegments,
                         propertySchemaPath,
                         nextHasOptionalAncestor,
-                        context,
-                        overrideProvider,
-                        resourceLabel,
-                        extensionProject,
-                        baseRootBaseName,
-                        extensionRootBaseName,
-                        baseTablesByScope,
-                        extensionTablesByScope,
-                        identityPaths,
-                        referenceIdentityPaths,
-                        referenceObjectPaths,
-                        usedDescriptorPaths,
-                        descriptorEdgeSources
+                        ctx
                     );
                     break;
                 case SchemaKind.Scalar:
                     if (tableBuilder is null)
                     {
-                        if (context.TryGetDescriptorPath(propertyPath, out _))
+                        if (ctx.BuilderContext.TryGetDescriptorPath(propertyPath, out _))
                         {
-                            usedDescriptorPaths.Add(propertyPath.Canonical);
+                            ctx.UsedDescriptorPaths.Add(propertyPath.Canonical);
                         }
 
                         continue;
@@ -452,13 +390,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                         propertyColumnSegments,
                         propertyPath,
                         isNullable,
-                        context,
-                        overrideProvider,
-                        resourceLabel,
-                        identityPaths,
-                        referenceIdentityPaths,
-                        usedDescriptorPaths,
-                        descriptorEdgeSources
+                        ctx
                     );
                     break;
                 default:
@@ -477,19 +409,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         string schemaPath,
         HashSet<string> requiredProperties,
         bool hasOptionalAncestor,
-        RelationalModelBuilderContext context,
-        INameOverrideProvider overrideProvider,
-        string resourceLabel,
-        ProjectSchemaInfo extensionProject,
-        string baseRootBaseName,
-        string extensionRootBaseName,
-        IReadOnlyDictionary<string, DbTableModel> baseTablesByScope,
-        Dictionary<string, ExtensionTableBuilder> extensionTablesByScope,
-        HashSet<string> identityPaths,
-        IReadOnlySet<string> referenceIdentityPaths,
-        IReadOnlySet<string> referenceObjectPaths,
-        HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        ExtensionWalkContext ctx
     )
     {
         if (
@@ -509,7 +429,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             );
         }
 
-        var projectKey = ResolveExtensionProjectKey(projectKeysObject, extensionProject, schemaPath);
+        var projectKey = ResolveExtensionProjectKey(projectKeysObject, ctx.ExtensionProject, schemaPath);
 
         if (!projectKeysObject.TryGetPropertyValue(projectKey, out var projectSchemaNode))
         {
@@ -554,17 +474,17 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             owningScopeSegments,
             projectKey,
             projectPath,
-            baseRootBaseName,
-            extensionRootBaseName,
-            baseTablesByScope,
-            extensionTablesByScope,
-            extensionProject,
-            overrideProvider,
-            resourceLabel,
-            context.OverrideCollisionDetector,
-            string.IsNullOrWhiteSpace(context.SuperclassResourceName)
+            ctx.BaseRootBaseName,
+            ctx.ExtensionRootBaseName,
+            ctx.BaseTablesByScope,
+            ctx.ExtensionTablesByScope,
+            ctx.ExtensionProject,
+            ctx.OverrideProvider,
+            ctx.ResourceLabel,
+            ctx.BuilderContext.OverrideCollisionDetector,
+            string.IsNullOrWhiteSpace(ctx.BuilderContext.SuperclassResourceName)
                 ? null
-                : RelationalNameConventions.ToPascalCase(context.SuperclassResourceName)
+                : RelationalNameConventions.ToPascalCase(ctx.BuilderContext.SuperclassResourceName)
         );
 
         WalkSchema(
@@ -574,19 +494,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             [],
             projectSchemaPath,
             projectHasOptionalAncestor,
-            context,
-            overrideProvider,
-            resourceLabel,
-            extensionProject,
-            baseRootBaseName,
-            extensionRootBaseName,
-            baseTablesByScope,
-            extensionTablesByScope,
-            identityPaths,
-            referenceIdentityPaths,
-            referenceObjectPaths,
-            usedDescriptorPaths,
-            descriptorEdgeSources
+            ctx
         );
     }
 
@@ -599,19 +507,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         ExtensionTableBuilder? tableBuilder,
         List<JsonPathSegment> propertySegments,
         string schemaPath,
-        RelationalModelBuilderContext context,
-        INameOverrideProvider overrideProvider,
-        string resourceLabel,
-        ProjectSchemaInfo extensionProject,
-        string baseRootBaseName,
-        string extensionRootBaseName,
-        IReadOnlyDictionary<string, DbTableModel> baseTablesByScope,
-        Dictionary<string, ExtensionTableBuilder> extensionTablesByScope,
-        HashSet<string> identityPaths,
-        IReadOnlySet<string> referenceIdentityPaths,
-        IReadOnlySet<string> referenceObjectPaths,
-        HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        ExtensionWalkContext ctx
     )
     {
         var arrayPath = JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
@@ -642,7 +538,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         var parentSuffix = tableBuilder is null
             ? string.Empty
             : string.Concat(tableBuilder.CollectionBaseNames);
-        var hasOverride = overrideProvider.TryGetNameOverride(
+        var hasOverride = ctx.OverrideProvider.TryGetNameOverride(
             arrayPathExpression,
             NameOverrideKind.Collection,
             out var overrideName
@@ -661,19 +557,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     [],
                     itemsSchemaPath,
                     hasOptionalAncestor: false,
-                    context,
-                    overrideProvider,
-                    resourceLabel,
-                    extensionProject,
-                    baseRootBaseName,
-                    extensionRootBaseName,
-                    baseTablesByScope,
-                    extensionTablesByScope,
-                    identityPaths,
-                    referenceIdentityPaths,
-                    referenceObjectPaths,
-                    usedDescriptorPaths,
-                    descriptorEdgeSources
+                    ctx
                 );
                 return;
             }
@@ -682,9 +566,9 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             {
                 var elementPath = JsonPathExpressionCompiler.FromSegments(arraySegments);
 
-                if (context.TryGetDescriptorPath(elementPath, out _))
+                if (ctx.BuilderContext.TryGetDescriptorPath(elementPath, out _))
                 {
-                    usedDescriptorPaths.Add(elementPath.Canonical);
+                    ctx.UsedDescriptorPaths.Add(elementPath.Canonical);
                 }
             }
 
@@ -695,16 +579,16 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
 
         if (hasOverride)
         {
-            var superclassBaseName = string.IsNullOrWhiteSpace(context.SuperclassResourceName)
+            var superclassBaseName = string.IsNullOrWhiteSpace(ctx.BuilderContext.SuperclassResourceName)
                 ? null
-                : RelationalNameConventions.ToPascalCase(context.SuperclassResourceName);
+                : RelationalNameConventions.ToPascalCase(ctx.BuilderContext.SuperclassResourceName);
             var includeSuperclass =
                 !string.IsNullOrWhiteSpace(superclassBaseName)
                 && !string.Equals(overrideName, defaultCollectionBaseName, StringComparison.Ordinal);
             var impliedPrefixes = RelationalModelSetSchemaHelpers.BuildCollectionOverridePrefixes(
-                extensionRootBaseName,
+                ctx.ExtensionRootBaseName,
                 parentSuffix,
-                baseRootBaseName,
+                ctx.BaseRootBaseName,
                 includeSuperclass ? superclassBaseName : null
             );
 
@@ -712,7 +596,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 overrideName,
                 impliedPrefixes,
                 arrayPathExpression.Canonical,
-                resourceLabel
+                ctx.ResourceLabel
             );
         }
 
@@ -725,38 +609,26 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 [],
                 itemsSchemaPath,
                 hasOptionalAncestor: false,
-                context,
-                overrideProvider,
-                resourceLabel,
-                extensionProject,
-                baseRootBaseName,
-                extensionRootBaseName,
-                baseTablesByScope,
-                extensionTablesByScope,
-                identityPaths,
-                referenceIdentityPaths,
-                referenceObjectPaths,
-                usedDescriptorPaths,
-                descriptorEdgeSources
+                ctx
             );
             return;
         }
 
-        if (!extensionTablesByScope.TryGetValue(arrayScope, out var childTable))
+        if (!ctx.ExtensionTablesByScope.TryGetValue(arrayScope, out var childTable))
         {
             childTable = CreateChildTableBuilder(
                 tableBuilder,
                 propertySegments,
                 arraySegments,
-                baseRootBaseName,
-                extensionRootBaseName,
-                extensionProject,
+                ctx.BaseRootBaseName,
+                ctx.ExtensionRootBaseName,
+                ctx.ExtensionProject,
                 collectionBaseName,
                 defaultCollectionBaseName,
-                context.OverrideCollisionDetector,
-                resourceLabel
+                ctx.BuilderContext.OverrideCollisionDetector,
+                ctx.ResourceLabel
             );
-            extensionTablesByScope[arrayScope] = childTable;
+            ctx.ExtensionTablesByScope[arrayScope] = childTable;
         }
 
         switch (itemsKind)
@@ -769,35 +641,11 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     [],
                     itemsSchemaPath,
                     hasOptionalAncestor: false,
-                    context,
-                    overrideProvider,
-                    resourceLabel,
-                    extensionProject,
-                    baseRootBaseName,
-                    extensionRootBaseName,
-                    baseTablesByScope,
-                    extensionTablesByScope,
-                    identityPaths,
-                    referenceIdentityPaths,
-                    referenceObjectPaths,
-                    usedDescriptorPaths,
-                    descriptorEdgeSources
+                    ctx
                 );
                 break;
             case SchemaKind.Scalar:
-                AddDescriptorArrayColumn(
-                    childTable,
-                    itemsSchema,
-                    propertySegments,
-                    arraySegments,
-                    context,
-                    overrideProvider,
-                    resourceLabel,
-                    identityPaths,
-                    referenceIdentityPaths,
-                    usedDescriptorPaths,
-                    descriptorEdgeSources
-                );
+                AddDescriptorArrayColumn(childTable, itemsSchema, propertySegments, arraySegments, ctx);
                 break;
             case SchemaKind.Array:
                 throw new InvalidOperationException($"Array schema items must be an object at {arrayPath}.");
@@ -1200,18 +1048,12 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         JsonObject itemsSchema,
         List<JsonPathSegment> propertySegments,
         List<JsonPathSegment> arraySegments,
-        RelationalModelBuilderContext context,
-        INameOverrideProvider overrideProvider,
-        string resourceLabel,
-        HashSet<string> identityPaths,
-        IReadOnlySet<string> referenceIdentityPaths,
-        HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        ExtensionWalkContext ctx
     )
     {
         var elementPath = JsonPathExpressionCompiler.FromSegments(arraySegments);
 
-        if (!context.TryGetDescriptorPath(elementPath, out _))
+        if (!ctx.BuilderContext.TryGetDescriptorPath(elementPath, out _))
         {
             var arrayPath = JsonPathExpressionCompiler.FromSegments(propertySegments).Canonical;
 
@@ -1221,20 +1063,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         var columnSegments = BuildDescriptorArrayColumnSegments(propertySegments);
         var isNullable = IsXNullable(itemsSchema, elementPath.Canonical);
 
-        AddScalarOrDescriptorColumn(
-            tableBuilder,
-            itemsSchema,
-            columnSegments,
-            elementPath,
-            isNullable,
-            context,
-            overrideProvider,
-            resourceLabel,
-            identityPaths,
-            referenceIdentityPaths,
-            usedDescriptorPaths,
-            descriptorEdgeSources
-        );
+        AddScalarOrDescriptorColumn(tableBuilder, itemsSchema, columnSegments, elementPath, isNullable, ctx);
     }
 
     /// <summary>
@@ -1264,29 +1093,23 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         IReadOnlyList<string> columnSegments,
         JsonPathExpression sourcePath,
         bool isNullable,
-        RelationalModelBuilderContext context,
-        INameOverrideProvider overrideProvider,
-        string resourceLabel,
-        HashSet<string> identityPaths,
-        IReadOnlySet<string> referenceIdentityPaths,
-        HashSet<string> usedDescriptorPaths,
-        List<DescriptorEdgeSource> descriptorEdgeSources
+        ExtensionWalkContext ctx
     )
     {
-        if (referenceIdentityPaths.Contains(sourcePath.Canonical))
+        if (ctx.ReferenceIdentityPaths.Contains(sourcePath.Canonical))
         {
-            if (context.TryGetDescriptorPath(sourcePath, out _))
+            if (ctx.BuilderContext.TryGetDescriptorPath(sourcePath, out _))
             {
-                usedDescriptorPaths.Add(sourcePath.Canonical);
+                ctx.UsedDescriptorPaths.Add(sourcePath.Canonical);
             }
 
             return;
         }
 
-        if (context.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
+        if (ctx.BuilderContext.TryGetDescriptorPath(sourcePath, out var descriptorPathInfo))
         {
             var descriptorBaseName = ResolveColumnBaseName(
-                overrideProvider,
+                ctx.OverrideProvider,
                 sourcePath,
                 columnSegments,
                 out var originalDescriptorBaseName
@@ -1311,12 +1134,12 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                     tableBuilder.Definition.Table,
                     columnName,
                     descriptorPathInfo.DescriptorValuePath,
-                    resourceLabel
+                    ctx.ResourceLabel
                 )
             );
 
-            var isIdentityComponent = identityPaths.Contains(sourcePath.Canonical);
-            descriptorEdgeSources.Add(
+            var isIdentityComponent = ctx.IdentityPaths.Contains(sourcePath.Canonical);
+            ctx.DescriptorEdgeSources.Add(
                 new DescriptorEdgeSource(
                     isIdentityComponent,
                     descriptorPathInfo.DescriptorValuePath,
@@ -1326,13 +1149,13 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 )
             );
 
-            usedDescriptorPaths.Add(sourcePath.Canonical);
+            ctx.UsedDescriptorPaths.Add(sourcePath.Canonical);
             return;
         }
 
-        var scalarType = ResolveScalarType(schema, sourcePath, context);
+        var scalarType = ResolveScalarType(schema, sourcePath, ctx.BuilderContext);
         var scalarBaseName = ResolveColumnBaseName(
-            overrideProvider,
+            ctx.OverrideProvider,
             sourcePath,
             columnSegments,
             out var originalBaseName
@@ -1353,7 +1176,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 tableBuilder.Definition.Table,
                 scalarColumn.ColumnName,
                 sourcePath,
-                resourceLabel
+                ctx.ResourceLabel
             )
         );
     }
