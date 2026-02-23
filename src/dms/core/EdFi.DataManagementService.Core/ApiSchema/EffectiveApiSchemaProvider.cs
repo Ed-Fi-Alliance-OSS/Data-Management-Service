@@ -453,7 +453,10 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     /// </summary>
     private static string PathArrayToKey(JsonArray paths)
     {
-        return string.Join('\0', paths.Select(p => p?.GetValue<string>() ?? string.Empty).Order());
+        return string.Join(
+            '\0',
+            paths.Select(p => p?.GetValue<string>() ?? string.Empty).Order(StringComparer.Ordinal)
+        );
     }
 
     /// <summary>
