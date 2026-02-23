@@ -682,6 +682,112 @@ public class EffectiveApiSchemaProviderTests
     }
 
     [TestFixture]
+    public class Given_Extension_With_Differently_Ordered_Paths_In_ArrayUniquenessConstraints
+        : EffectiveApiSchemaProviderTests
+    {
+        private JsonArray? _mergedConstraints;
+
+        [SetUp]
+        public void Setup()
+        {
+            // Core has addresses uniqueness constraint with paths in alphabetical order
+            var coreConstraints = JsonNode
+                .Parse(
+                    """
+                    [
+                        {
+                            "paths": [
+                                "$.addresses[*].addressTypeDescriptor",
+                                "$.addresses[*].city",
+                                "$.addresses[*].postalCode"
+                            ],
+                            "nestedConstraints": [
+                                {
+                                    "basePath": "$.addresses[*]",
+                                    "paths": ["$.periods[*].beginDate"]
+                                }
+                            ]
+                        }
+                    ]
+                    """
+                )!
+                .AsArray();
+
+            var coreSchema = BuildCoreSchema(
+                "contacts",
+                BuildCoreContactsJsonSchemaForInsert(),
+                arrayUniquenessConstraints: coreConstraints
+            );
+
+            // Extension has the SAME paths but in a DIFFERENT order
+            var extConstraints = JsonNode
+                .Parse(
+                    """
+                    [
+                        {
+                            "paths": [
+                                "$.addresses[*].postalCode",
+                                "$.addresses[*].addressTypeDescriptor",
+                                "$.addresses[*].city"
+                            ],
+                            "nestedConstraints": [
+                                {
+                                    "basePath": "$.addresses[*]",
+                                    "paths": ["$._ext.sample.terms[*].termDescriptor"]
+                                }
+                            ]
+                        }
+                    ]
+                    """
+                )!
+                .AsArray();
+
+            var extensionSchema = BuildExtensionSchema(
+                "contacts",
+                BuildSampleExtensionProperties(),
+                commonExtensionOverrides: BuildSampleAddressOverrides(),
+                arrayUniquenessConstraints: extConstraints
+            );
+
+            var provider = CreateProvider();
+            provider.Initialize(new ApiSchemaDocumentNodes(coreSchema, [extensionSchema]));
+
+            var contacts = GetResourceSchema(provider, "contacts").AsObject();
+            _mergedConstraints = contacts["arrayUniquenessConstraints"]?.AsArray();
+        }
+
+        [Test]
+        public void It_matches_constraints_despite_different_path_order()
+        {
+            var addressConstraints = _mergedConstraints!.Where(c =>
+                c?["paths"]?.AsArray()
+                    .Any(p => p?.GetValue<string>() == "$.addresses[*].addressTypeDescriptor") == true
+            );
+            addressConstraints.Should().HaveCount(1);
+        }
+
+        [Test]
+        public void It_merges_nested_constraints_from_extension()
+        {
+            var constraint = _mergedConstraints!.First(c =>
+                c?["paths"]?.AsArray()
+                    .Any(p => p?.GetValue<string>() == "$.addresses[*].addressTypeDescriptor") == true
+            );
+
+            var nested = constraint!["nestedConstraints"]?.AsArray();
+            nested.Should().NotBeNull();
+
+            var allPaths = nested!
+                .SelectMany(n => n?["paths"]?.AsArray() ?? [])
+                .Select(p => p?.GetValue<string>())
+                .ToList();
+
+            allPaths.Should().Contain("$.periods[*].beginDate");
+            allPaths.Should().Contain("$._ext.sample.terms[*].termDescriptor");
+        }
+    }
+
+    [TestFixture]
     public class Given_Extension_With_Non_Standard_Ext_Casing : EffectiveApiSchemaProviderTests
     {
         [Test]

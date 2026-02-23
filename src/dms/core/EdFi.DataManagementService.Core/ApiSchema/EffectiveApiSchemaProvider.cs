@@ -196,7 +196,10 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
             switch (nodeValueKind)
             {
                 case JsonValueKind.Object:
-                    var overrideTargetedKeys = GetOverrideTargetedPropertyKeys(extensionResource);
+                    var overrideTargetedKeys =
+                        nodeKey == JsonSchemaForInsertProperties
+                            ? GetOverrideTargetedPropertyKeys(extensionResource)
+                            : [];
                     MergeExtensionObjectIntoCore(
                         sourceExtensionNode,
                         targetCoreNode,
@@ -445,12 +448,12 @@ internal class EffectiveApiSchemaProvider : IEffectiveApiSchemaProvider
     }
 
     /// <summary>
-    /// Creates a stable dictionary key from a JSON array of string paths
-    /// by joining the individual string values with a null separator.
+    /// Creates a stable, order-independent dictionary key from a JSON array of string paths
+    /// by sorting and joining the individual string values with a null separator.
     /// </summary>
     private static string PathArrayToKey(JsonArray paths)
     {
-        return string.Join('\0', paths.Select(p => p?.GetValue<string>() ?? string.Empty));
+        return string.Join('\0', paths.Select(p => p?.GetValue<string>() ?? string.Empty).Order());
     }
 
     /// <summary>
