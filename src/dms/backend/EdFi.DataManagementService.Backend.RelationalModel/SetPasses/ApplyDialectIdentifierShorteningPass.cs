@@ -33,69 +33,76 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     {
         UpdateProjectSchemas(context, dialectRules);
 
-        for (var index = 0; index < context.ConcreteResourcesInNameOrder.Count; index++)
-        {
-            var entry = context.ConcreteResourcesInNameOrder[index];
-            var updatedModel = ApplyToResource(entry.RelationalModel, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.ConcreteResourcesInNameOrder,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToResource(entry.RelationalModel, rules, out var changed);
+                return changed ? entry with { RelationalModel = updated } : null;
+            },
+            dialectRules
+        );
 
-            context.ConcreteResourcesInNameOrder[index] = entry with { RelationalModel = updatedModel };
-        }
-
-        for (var index = 0; index < context.AbstractIdentityTablesInNameOrder.Count; index++)
-        {
-            var entry = context.AbstractIdentityTablesInNameOrder[index];
-            var updatedTable = ApplyToTable(entry.TableModel, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.AbstractIdentityTablesInNameOrder,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToTable(entry.TableModel, rules, out var changed);
+                return changed ? entry with { TableModel = updated } : null;
+            },
+            dialectRules
+        );
 
-            context.AbstractIdentityTablesInNameOrder[index] = entry with { TableModel = updatedTable };
-        }
-
-        for (var index = 0; index < context.AbstractUnionViewsInNameOrder.Count; index++)
-        {
-            var entry = context.AbstractUnionViewsInNameOrder[index];
-            var updatedView = ApplyToUnionView(entry, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.AbstractUnionViewsInNameOrder,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToUnionView(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
 
-            context.AbstractUnionViewsInNameOrder[index] = updatedView;
-        }
-
-        for (var index = 0; index < context.IndexInventory.Count; index++)
-        {
-            var entry = context.IndexInventory[index];
-            var updatedIndex = ApplyToIndex(entry, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.IndexInventory,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToIndex(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
 
-            context.IndexInventory[index] = updatedIndex;
-        }
-
-        for (var index = 0; index < context.TriggerInventory.Count; index++)
-        {
-            var entry = context.TriggerInventory[index];
-            var updatedTrigger = ApplyToTrigger(entry, dialectRules, out var changed);
-
-            if (!changed)
+        ApplyInPlace(
+            context.TriggerInventory,
+            (entry, rules) =>
             {
-                continue;
-            }
+                var updated = ApplyToTrigger(entry, rules, out var changed);
+                return changed ? updated : null;
+            },
+            dialectRules
+        );
+    }
 
-            context.TriggerInventory[index] = updatedTrigger;
+    /// <summary>
+    /// Applies a transformation to each element of a list in-place, replacing only
+    /// those elements for which the transform returns a non-null result.
+    /// </summary>
+    private static void ApplyInPlace<T>(
+        IList<T> list,
+        Func<T, ISqlDialectRules, T?> transform,
+        ISqlDialectRules dialectRules
+    )
+        where T : class
+    {
+        for (var index = 0; index < list.Count; index++)
+        {
+            var updated = transform(list[index], dialectRules);
+
+            if (updated is not null)
+            {
+                list[index] = updated;
+            }
         }
     }
 
@@ -325,9 +332,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     )
     {
         changed = false;
-        var keyName = string.IsNullOrWhiteSpace(key.ConstraintName)
-            ? ConstraintNaming.BuildPrimaryKeyName(table)
-            : key.ConstraintName;
+        var keyName = ConstraintNaming.ResolvePrimaryKeyConstraintName(table, key);
         var updatedConstraintName = dialectRules.ShortenIdentifier(keyName);
 
         if (!string.Equals(updatedConstraintName, key.ConstraintName, StringComparison.Ordinal))
@@ -1102,31 +1107,24 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     )
     {
         var updatedName = new DbTriggerName(dialectRules.ShortenIdentifier(trigger.Name.Value));
-        var updatedTriggerTable = ShortenTable(trigger.TriggerTable, dialectRules);
+        var updatedTable = ShortenTable(trigger.Table, dialectRules);
         var updatedColumns = ShortenColumns(trigger.KeyColumns, dialectRules, out var columnsChanged);
         var updatedIdentityColumns = ShortenColumns(
             trigger.IdentityProjectionColumns,
             dialectRules,
             out var identityColumnsChanged
         );
-        var updatedMaintenanceTargetTable = trigger.MaintenanceTargetTable is { } target
-            ? ShortenTable(target, dialectRules)
-            : trigger.MaintenanceTargetTable;
-        var maintenanceTargetChanged =
-            updatedMaintenanceTargetTable is not null
-            && trigger.MaintenanceTargetTable is not null
-            && !updatedMaintenanceTargetTable.Value.Equals(trigger.MaintenanceTargetTable.Value);
-        var propagationChanged = false;
-        var updatedPropagationFallback = trigger.PropagationFallback is { } fallback
-            ? ApplyToPropagationFallback(fallback, dialectRules, out propagationChanged)
-            : trigger.PropagationFallback;
+        var updatedParameters = ApplyToTriggerParameters(
+            trigger.Parameters,
+            dialectRules,
+            out var parametersChanged
+        );
 
         changed =
             columnsChanged
             || identityColumnsChanged
-            || maintenanceTargetChanged
-            || propagationChanged
-            || !updatedTriggerTable.Equals(trigger.TriggerTable)
+            || parametersChanged
+            || !updatedTable.Equals(trigger.Table)
             || !updatedName.Equals(trigger.Name);
 
         if (!changed)
@@ -1137,99 +1135,202 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         return trigger with
         {
             Name = updatedName,
-            TriggerTable = updatedTriggerTable,
+            Table = updatedTable,
             KeyColumns = updatedColumns,
             IdentityProjectionColumns = updatedIdentityColumns,
-            MaintenanceTargetTable = updatedMaintenanceTargetTable,
-            PropagationFallback = updatedPropagationFallback,
+            Parameters = updatedParameters,
         };
     }
 
     /// <summary>
-    /// Applies dialect shortening to identity-propagation fallback payload and reports whether it changed.
+    /// Applies dialect shortening to trigger-kind-specific parameters and reports whether they changed.
     /// </summary>
-    private static DbIdentityPropagationFallbackInfo ApplyToPropagationFallback(
-        DbIdentityPropagationFallbackInfo fallback,
+    private static TriggerKindParameters ApplyToTriggerParameters(
+        TriggerKindParameters parameters,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        switch (parameters)
+        {
+            case TriggerKindParameters.ReferentialIdentityMaintenance refId:
+            {
+                var updatedElements = ShortenIdentityElementMappings(
+                    refId.IdentityElements,
+                    dialectRules,
+                    out var elementsChanged
+                );
+                var updatedAlias = ShortenSuperclassAlias(
+                    refId.SuperclassAlias,
+                    dialectRules,
+                    out var aliasChanged
+                );
+                changed = elementsChanged || aliasChanged;
+                return changed
+                    ? refId with
+                    {
+                        IdentityElements = updatedElements,
+                        SuperclassAlias = updatedAlias,
+                    }
+                    : parameters;
+            }
+            case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
+            {
+                var updatedTargetTable = ShortenTable(abstractId.TargetTable, dialectRules);
+                var updatedMappings = ShortenTriggerColumnMappings(
+                    abstractId.TargetColumnMappings,
+                    dialectRules,
+                    out var mappingsChanged
+                );
+                changed = mappingsChanged || !updatedTargetTable.Equals(abstractId.TargetTable);
+                return changed
+                    ? abstractId with
+                    {
+                        TargetTable = updatedTargetTable,
+                        TargetColumnMappings = updatedMappings,
+                    }
+                    : parameters;
+            }
+            case TriggerKindParameters.IdentityPropagationFallback propagation:
+            {
+                var updatedReferrers = ShortenPropagationReferrerTargets(
+                    propagation.ReferrerUpdates,
+                    dialectRules,
+                    out var referrersChanged
+                );
+                changed = referrersChanged;
+                return changed ? propagation with { ReferrerUpdates = updatedReferrers } : parameters;
+            }
+            case TriggerKindParameters.DocumentStamping:
+                changed = false;
+                return parameters;
+            default:
+                throw new InvalidOperationException(
+                    $"Unsupported trigger kind parameters type '{parameters.GetType().Name}'."
+                );
+        }
+    }
+
+    /// <summary>
+    /// Shortens column names in trigger column mappings using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<TriggerColumnMapping> ShortenTriggerColumnMappings(
+        IReadOnlyList<TriggerColumnMapping> mappings,
         ISqlDialectRules dialectRules,
         out bool changed
     )
     {
         changed = false;
+        var updated = new TriggerColumnMapping[mappings.Count];
 
-        if (fallback.ReferrerActions.Count == 0)
+        for (var i = 0; i < mappings.Count; i++)
         {
-            return fallback;
-        }
+            var mapping = mappings[i];
+            var updatedSource = ShortenColumn(mapping.SourceColumn, dialectRules);
+            var updatedTarget = ShortenColumn(mapping.TargetColumn, dialectRules);
 
-        var updatedActions = new DbIdentityPropagationReferrerAction[fallback.ReferrerActions.Count];
-
-        for (var actionIndex = 0; actionIndex < fallback.ReferrerActions.Count; actionIndex++)
-        {
-            var action = fallback.ReferrerActions[actionIndex];
-            var updatedReferrerTable = ShortenTable(action.ReferrerTable, dialectRules);
-            var updatedReferrerDocumentIdColumn = ShortenColumn(
-                action.ReferrerDocumentIdColumn,
-                dialectRules
-            );
-            var updatedReferencedDocumentIdColumn = ShortenColumn(
-                action.ReferencedDocumentIdColumn,
-                dialectRules
-            );
-            var pairCount = action.IdentityColumnPairs.Count;
-            var updatedPairs = new DbIdentityPropagationColumnPair[pairCount];
-            var pairsChanged = false;
-
-            for (var pairIndex = 0; pairIndex < pairCount; pairIndex++)
-            {
-                var pair = action.IdentityColumnPairs[pairIndex];
-                var updatedReferrerStorageColumn = ShortenColumn(pair.ReferrerStorageColumn, dialectRules);
-                var updatedReferencedStorageColumn = ShortenColumn(
-                    pair.ReferencedStorageColumn,
-                    dialectRules
-                );
-                var pairChanged =
-                    !updatedReferrerStorageColumn.Equals(pair.ReferrerStorageColumn)
-                    || !updatedReferencedStorageColumn.Equals(pair.ReferencedStorageColumn);
-
-                if (pairChanged)
-                {
-                    pairsChanged = true;
-                    updatedPairs[pairIndex] = new DbIdentityPropagationColumnPair(
-                        updatedReferrerStorageColumn,
-                        updatedReferencedStorageColumn
-                    );
-                }
-                else
-                {
-                    updatedPairs[pairIndex] = pair;
-                }
-            }
-
-            var actionChanged =
-                !updatedReferrerTable.Equals(action.ReferrerTable)
-                || !updatedReferrerDocumentIdColumn.Equals(action.ReferrerDocumentIdColumn)
-                || !updatedReferencedDocumentIdColumn.Equals(action.ReferencedDocumentIdColumn)
-                || pairsChanged;
-
-            if (actionChanged)
+            if (!updatedSource.Equals(mapping.SourceColumn) || !updatedTarget.Equals(mapping.TargetColumn))
             {
                 changed = true;
+            }
 
-                updatedActions[actionIndex] = action with
-                {
-                    ReferrerTable = updatedReferrerTable,
-                    ReferrerDocumentIdColumn = updatedReferrerDocumentIdColumn,
-                    ReferencedDocumentIdColumn = updatedReferencedDocumentIdColumn,
-                    IdentityColumnPairs = updatedPairs,
-                };
-            }
-            else
-            {
-                updatedActions[actionIndex] = action;
-            }
+            updated[i] = new TriggerColumnMapping(updatedSource, updatedTarget);
         }
 
-        return changed ? fallback with { ReferrerActions = updatedActions } : fallback;
+        return changed ? updated : mappings;
+    }
+
+    /// <summary>
+    /// Shortens identifiers in propagation referrer targets using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<PropagationReferrerTarget> ShortenPropagationReferrerTargets(
+        IReadOnlyList<PropagationReferrerTarget> referrers,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new PropagationReferrerTarget[referrers.Count];
+
+        for (var i = 0; i < referrers.Count; i++)
+        {
+            var referrer = referrers[i];
+            var updatedReferrerTable = ShortenTable(referrer.ReferrerTable, dialectRules);
+            var updatedFkColumn = ShortenColumn(referrer.ReferrerFkColumn, dialectRules);
+            var updatedMappings = ShortenTriggerColumnMappings(
+                referrer.ColumnMappings,
+                dialectRules,
+                out var mappingsChanged
+            );
+
+            var referrerChanged =
+                mappingsChanged
+                || !updatedReferrerTable.Equals(referrer.ReferrerTable)
+                || !updatedFkColumn.Equals(referrer.ReferrerFkColumn);
+
+            if (referrerChanged)
+            {
+                changed = true;
+            }
+
+            updated[i] = referrerChanged
+                ? new PropagationReferrerTarget(updatedReferrerTable, updatedFkColumn, updatedMappings)
+                : referrer;
+        }
+
+        return changed ? updated : referrers;
+    }
+
+    /// <summary>
+    /// Shortens column names in identity element mappings using dialect rules.
+    /// </summary>
+    private static IReadOnlyList<IdentityElementMapping> ShortenIdentityElementMappings(
+        IReadOnlyList<IdentityElementMapping> elements,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        changed = false;
+        var updated = new IdentityElementMapping[elements.Count];
+
+        for (var i = 0; i < elements.Count; i++)
+        {
+            var element = elements[i];
+            var updatedColumn = ShortenColumn(element.Column, dialectRules);
+
+            if (!updatedColumn.Equals(element.Column))
+            {
+                changed = true;
+            }
+
+            updated[i] = element with { Column = updatedColumn };
+        }
+
+        return changed ? updated : elements;
+    }
+
+    /// <summary>
+    /// Shortens column names in a superclass alias's identity elements using dialect rules.
+    /// </summary>
+    private static SuperclassAliasInfo? ShortenSuperclassAlias(
+        SuperclassAliasInfo? alias,
+        ISqlDialectRules dialectRules,
+        out bool changed
+    )
+    {
+        if (alias is null)
+        {
+            changed = false;
+            return null;
+        }
+
+        var updatedElements = ShortenIdentityElementMappings(
+            alias.IdentityElements,
+            dialectRules,
+            out changed
+        );
+
+        return changed ? alias with { IdentityElements = updatedElements } : alias;
     }
 
     /// <summary>
@@ -1296,8 +1397,8 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             .ToArray();
 
         var canonicalTriggers = context
-            .TriggerInventory.OrderBy(trigger => trigger.TriggerTable.Schema.Value, StringComparer.Ordinal)
-            .ThenBy(trigger => trigger.TriggerTable.Name, StringComparer.Ordinal)
+            .TriggerInventory.OrderBy(trigger => trigger.Table.Schema.Value, StringComparer.Ordinal)
+            .ThenBy(trigger => trigger.Table.Name, StringComparer.Ordinal)
             .ThenBy(trigger => trigger.Name.Value, StringComparer.Ordinal)
             .ToArray();
         var registeredTables = new HashSet<DbTableName>();
@@ -1330,7 +1431,10 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                     registeredColumns.Add((table.Table, column.ColumnName));
                 }
 
-                var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(table.Table, table.Key);
+                var primaryKeyConstraintName = ConstraintNaming.ResolvePrimaryKeyConstraintName(
+                    table.Table,
+                    table.Key
+                );
 
                 detector.RegisterConstraint(
                     table.Table,
@@ -1390,7 +1494,10 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 registeredColumns.Add((tableModel.Table, column.ColumnName));
             }
 
-            var primaryKeyConstraintName = ResolvePrimaryKeyConstraintName(tableModel.Table, tableModel.Key);
+            var primaryKeyConstraintName = ConstraintNaming.ResolvePrimaryKeyConstraintName(
+                tableModel.Table,
+                tableModel.Key
+            );
 
             detector.RegisterConstraint(
                 tableModel.Table,
@@ -1466,13 +1573,9 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         foreach (var trigger in canonicalTriggers)
         {
             detector.RegisterTrigger(
-                trigger.TriggerTable,
+                trigger.Table,
                 trigger.Name,
-                BuildOrigin(
-                    $"trigger {trigger.Name.Value} on {FormatTable(trigger.TriggerTable)}",
-                    null,
-                    null
-                )
+                BuildOrigin($"trigger {trigger.Name.Value} on {FormatTable(trigger.Table)}", null, null)
             );
         }
 
@@ -1636,16 +1739,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     private static string FormatColumn(DbTableName table, DbColumnName column)
     {
         return $"{FormatTable(table)}.{column.Value}";
-    }
-
-    /// <summary>
-    /// Resolves a primary key constraint name for collision registration.
-    /// </summary>
-    private static string ResolvePrimaryKeyConstraintName(DbTableName table, TableKey key)
-    {
-        return string.IsNullOrWhiteSpace(key.ConstraintName)
-            ? ConstraintNaming.BuildPrimaryKeyName(table)
-            : key.ConstraintName;
     }
 
     /// <summary>

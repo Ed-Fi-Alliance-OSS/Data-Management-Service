@@ -7,6 +7,7 @@ using System.Buffers;
 using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.External;
+using static EdFi.DataManagementService.Backend.RelationalModel.Manifest.ManifestWriterHelpers;
 
 namespace EdFi.DataManagementService.Backend.RelationalModel.Manifest;
 
@@ -310,28 +311,114 @@ public static class DerivedModelSetManifestEmitter
             writer.WriteStartObject();
             writer.WriteString("name", trigger.Name.Value);
             writer.WritePropertyName("table");
-            WriteTableReference(writer, trigger.TriggerTable);
-            writer.WriteString("kind", trigger.Kind.ToString());
+            WriteTableReference(writer, trigger.Table);
+            writer.WriteString(
+                "kind",
+                trigger.Parameters switch
+                {
+                    TriggerKindParameters.DocumentStamping => "DocumentStamping",
+                    TriggerKindParameters.ReferentialIdentityMaintenance => "ReferentialIdentityMaintenance",
+                    TriggerKindParameters.AbstractIdentityMaintenance => "AbstractIdentityMaintenance",
+                    TriggerKindParameters.IdentityPropagationFallback => "IdentityPropagationFallback",
+                    _ => throw new ArgumentOutOfRangeException(
+                        nameof(trigger),
+                        "Unsupported trigger kind parameters type."
+                    ),
+                }
+            );
             writer.WritePropertyName("key_columns");
             WriteColumnNameList(writer, trigger.KeyColumns);
             writer.WritePropertyName("identity_projection_columns");
             WriteColumnNameList(writer, trigger.IdentityProjectionColumns);
 
-            if (trigger.MaintenanceTargetTable is { } maintenanceTargetTable)
+            switch (trigger.Parameters)
             {
-                writer.WritePropertyName("target_table");
-                WriteTableReference(writer, maintenanceTargetTable);
-            }
+                case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
+                    writer.WritePropertyName("target_table");
+                    WriteTableReference(writer, abstractId.TargetTable);
+                    WriteTargetColumnMappings(writer, abstractId.TargetColumnMappings);
+                    writer.WriteString("discriminator_value", abstractId.DiscriminatorValue);
+                    break;
 
-            if (trigger.PropagationFallback is { } propagationFallback)
-            {
-                writer.WritePropertyName("propagation_fallback");
-                WritePropagationFallback(writer, propagationFallback);
+                case TriggerKindParameters.IdentityPropagationFallback propagation:
+                    writer.WritePropertyName("referrer_updates");
+                    writer.WriteStartArray();
+                    foreach (var referrer in propagation.ReferrerUpdates)
+                    {
+                        writer.WriteStartObject();
+                        writer.WritePropertyName("referrer_table");
+                        WriteTableReference(writer, referrer.ReferrerTable);
+                        writer.WriteString("referrer_fk_column", referrer.ReferrerFkColumn.Value);
+                        WriteTargetColumnMappings(writer, referrer.ColumnMappings);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+                    break;
+
+                case TriggerKindParameters.ReferentialIdentityMaintenance refId:
+                    writer.WriteNumber("resource_key_id", refId.ResourceKeyId);
+                    writer.WriteString("project_name", refId.ProjectName);
+                    writer.WriteString("resource_name", refId.ResourceName);
+                    writer.WritePropertyName("identity_elements");
+                    writer.WriteStartArray();
+                    foreach (var element in refId.IdentityElements)
+                    {
+                        writer.WriteStartObject();
+                        writer.WriteString("column", element.Column.Value);
+                        writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                        writer.WriteEndObject();
+                    }
+                    writer.WriteEndArray();
+
+                    if (refId.SuperclassAlias is { } alias)
+                    {
+                        writer.WritePropertyName("superclass_alias");
+                        writer.WriteStartObject();
+                        writer.WriteNumber("resource_key_id", alias.ResourceKeyId);
+                        writer.WriteString("project_name", alias.ProjectName);
+                        writer.WriteString("resource_name", alias.ResourceName);
+                        writer.WritePropertyName("identity_elements");
+                        writer.WriteStartArray();
+                        foreach (var element in alias.IdentityElements)
+                        {
+                            writer.WriteStartObject();
+                            writer.WriteString("column", element.Column.Value);
+                            writer.WriteString("identity_json_path", element.IdentityJsonPath);
+                            writer.WriteEndObject();
+                        }
+                        writer.WriteEndArray();
+                        writer.WriteEndObject();
+                    }
+                    break;
+
+                case TriggerKindParameters.DocumentStamping:
+                    // DocumentStamping has no additional properties
+                    break;
             }
 
             writer.WriteEndObject();
         }
 
+        writer.WriteEndArray();
+    }
+
+    /// <summary>
+    /// Writes a <c>target_column_mappings</c> array of source/target column pairs.
+    /// </summary>
+    private static void WriteTargetColumnMappings(
+        Utf8JsonWriter writer,
+        IReadOnlyList<TriggerColumnMapping> mappings
+    )
+    {
+        writer.WritePropertyName("target_column_mappings");
+        writer.WriteStartArray();
+        foreach (var mapping in mappings)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("source_column", mapping.SourceColumn.Value);
+            writer.WriteString("target_column", mapping.TargetColumn.Value);
+            writer.WriteEndObject();
+        }
         writer.WriteEndArray();
     }
 
@@ -417,18 +504,6 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes a <c>resource</c> property containing project and resource name.
-    /// </summary>
-    private static void WriteResource(Utf8JsonWriter writer, QualifiedResourceName resource)
-    {
-        writer.WritePropertyName("resource");
-        writer.WriteStartObject();
-        writer.WriteString("project_name", resource.ProjectName);
-        writer.WriteString("resource_name", resource.ResourceName);
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
     /// Writes a table object with its key columns, columns, and constraints.
     /// </summary>
     private static void WriteTable(Utf8JsonWriter writer, DbTableModel table)
@@ -474,226 +549,6 @@ public static class DerivedModelSetManifestEmitter
     }
 
     /// <summary>
-    /// Writes a single key column object.
-    /// </summary>
-    private static void WriteKeyColumn(Utf8JsonWriter writer, DbKeyColumn keyColumn)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("name", keyColumn.ColumnName.Value);
-        writer.WriteString("kind", keyColumn.Kind.ToString());
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a single column object with its type and source path.
-    /// </summary>
-    private static void WriteColumn(Utf8JsonWriter writer, DbColumnModel column)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("name", column.ColumnName.Value);
-        writer.WriteString("kind", column.Kind.ToString());
-        writer.WritePropertyName("type");
-        WriteScalarType(writer, column.ScalarType);
-        writer.WriteBoolean("is_nullable", column.IsNullable);
-        writer.WritePropertyName("source_path");
-        if (column.SourceJsonPath is { } sourcePath)
-        {
-            writer.WriteStringValue(sourcePath.Canonical);
-        }
-        else
-        {
-            writer.WriteNullValue();
-        }
-
-        writer.WritePropertyName("storage");
-        WriteColumnStorage(writer, column.Storage);
-
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a key unification class entry.
-    /// </summary>
-    private static void WriteKeyUnificationClass(
-        Utf8JsonWriter writer,
-        KeyUnificationClass keyUnificationClass
-    )
-    {
-        writer.WriteStartObject();
-        writer.WriteString("canonical_column", keyUnificationClass.CanonicalColumn.Value);
-        writer.WritePropertyName("member_path_columns");
-        WriteColumnNameList(writer, keyUnificationClass.MemberPathColumns);
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes column storage metadata.
-    /// </summary>
-    private static void WriteColumnStorage(Utf8JsonWriter writer, ColumnStorage storage)
-    {
-        writer.WriteStartObject();
-
-        switch (storage)
-        {
-            case ColumnStorage.Stored:
-                writer.WriteString("kind", nameof(ColumnStorage.Stored));
-                break;
-            case ColumnStorage.UnifiedAlias unifiedAlias:
-                writer.WriteString("kind", nameof(ColumnStorage.UnifiedAlias));
-                writer.WriteString("canonical_column", unifiedAlias.CanonicalColumn.Value);
-
-                if (unifiedAlias.PresenceColumn is { } presenceColumn)
-                {
-                    writer.WriteString("presence_column", presenceColumn.Value);
-                }
-                else
-                {
-                    writer.WriteNull("presence_column");
-                }
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(storage),
-                    storage,
-                    "Unknown column storage type."
-                );
-        }
-
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a scalar type object or null value.
-    /// </summary>
-    private static void WriteScalarType(Utf8JsonWriter writer, RelationalScalarType? scalarType)
-    {
-        if (scalarType is null)
-        {
-            writer.WriteNullValue();
-            return;
-        }
-
-        writer.WriteStartObject();
-        writer.WriteString("kind", scalarType.Kind.ToString());
-
-        if (scalarType.MaxLength is not null)
-        {
-            writer.WriteNumber("max_length", scalarType.MaxLength.Value);
-        }
-
-        if (scalarType.Decimal is not null)
-        {
-            writer.WriteNumber("precision", scalarType.Decimal.Value.Precision);
-            writer.WriteNumber("scale", scalarType.Decimal.Value.Scale);
-        }
-
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a single table constraint (Unique, ForeignKey, AllOrNoneNullability, or NullOrTrue).
-    /// </summary>
-    private static void WriteConstraint(Utf8JsonWriter writer, TableConstraint constraint)
-    {
-        writer.WriteStartObject();
-
-        switch (constraint)
-        {
-            case TableConstraint.Unique unique:
-                writer.WriteString("kind", "Unique");
-                writer.WriteString("name", unique.Name);
-                writer.WritePropertyName("columns");
-                WriteColumnNameList(writer, unique.Columns);
-                break;
-            case TableConstraint.ForeignKey foreignKey:
-                writer.WriteString("kind", "ForeignKey");
-                writer.WriteString("name", foreignKey.Name);
-                writer.WritePropertyName("columns");
-                WriteColumnNameList(writer, foreignKey.Columns);
-                writer.WritePropertyName("target_table");
-                WriteTableReference(writer, foreignKey.TargetTable);
-                writer.WritePropertyName("target_columns");
-                WriteColumnNameList(writer, foreignKey.TargetColumns);
-                writer.WriteString("on_delete", foreignKey.OnDelete.ToString());
-                writer.WriteString("on_update", foreignKey.OnUpdate.ToString());
-                break;
-            case TableConstraint.AllOrNoneNullability allOrNone:
-                writer.WriteString("kind", "AllOrNoneNullability");
-                writer.WriteString("name", allOrNone.Name);
-                writer.WriteString("fk_column", allOrNone.FkColumn.Value);
-                writer.WritePropertyName("dependent_columns");
-                WriteColumnNameList(writer, allOrNone.DependentColumns);
-                break;
-            case TableConstraint.NullOrTrue nullOrTrue:
-                writer.WriteString("kind", "NullOrTrue");
-                writer.WriteString("name", nullOrTrue.Name);
-                writer.WriteString("column", nullOrTrue.Column.Value);
-                break;
-            default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(constraint),
-                    constraint,
-                    "Unknown table constraint type."
-                );
-        }
-
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes an array of column name strings.
-    /// </summary>
-    private static void WriteColumnNameList(Utf8JsonWriter writer, IReadOnlyList<DbColumnName> columns)
-    {
-        writer.WriteStartArray();
-        foreach (var column in columns)
-        {
-            writer.WriteStringValue(column.Value);
-        }
-        writer.WriteEndArray();
-    }
-
-    /// <summary>
-    /// Writes identity-propagation fallback payload details.
-    /// </summary>
-    private static void WritePropagationFallback(
-        Utf8JsonWriter writer,
-        DbIdentityPropagationFallbackInfo propagationFallback
-    )
-    {
-        writer.WriteStartObject();
-        writer.WritePropertyName("referrer_actions");
-        writer.WriteStartArray();
-
-        foreach (var referrerAction in propagationFallback.ReferrerActions)
-        {
-            writer.WriteStartObject();
-            writer.WritePropertyName("referrer_table");
-            WriteTableReference(writer, referrerAction.ReferrerTable);
-            writer.WriteString("referrer_document_id_column", referrerAction.ReferrerDocumentIdColumn.Value);
-            writer.WriteString(
-                "referenced_document_id_column",
-                referrerAction.ReferencedDocumentIdColumn.Value
-            );
-
-            writer.WritePropertyName("identity_column_pairs");
-            writer.WriteStartArray();
-            foreach (var columnPair in referrerAction.IdentityColumnPairs)
-            {
-                writer.WriteStartObject();
-                writer.WriteString("referrer_storage_column", columnPair.ReferrerStorageColumn.Value);
-                writer.WriteString("referenced_storage_column", columnPair.ReferencedStorageColumn.Value);
-                writer.WriteEndObject();
-            }
-            writer.WriteEndArray();
-            writer.WriteEndObject();
-        }
-
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
     /// Writes a single document reference binding with its identity bindings.
     /// </summary>
     private static void WriteDocumentReferenceBinding(Utf8JsonWriter writer, DocumentReferenceBinding binding)
@@ -727,62 +582,6 @@ public static class DerivedModelSetManifestEmitter
         writer.WriteStartObject();
         writer.WriteString("reference_json_path", identityBinding.ReferenceJsonPath.Canonical);
         writer.WriteString("column", identityBinding.Column.Value);
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a single descriptor edge source.
-    /// </summary>
-    private static void WriteDescriptorEdge(Utf8JsonWriter writer, DescriptorEdgeSource edge)
-    {
-        writer.WriteStartObject();
-        writer.WriteBoolean("is_identity_component", edge.IsIdentityComponent);
-        writer.WriteString("descriptor_value_path", edge.DescriptorValuePath.Canonical);
-        writer.WritePropertyName("table");
-        WriteTableReference(writer, edge.Table);
-        writer.WriteString("fk_column", edge.FkColumn.Value);
-        writer.WritePropertyName("descriptor_resource");
-        WriteResourceReference(writer, edge.DescriptorResource);
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a single extension site with its project keys.
-    /// </summary>
-    private static void WriteExtensionSite(Utf8JsonWriter writer, ExtensionSite site)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("owning_scope", site.OwningScope.Canonical);
-        writer.WriteString("extension_path", site.ExtensionPath.Canonical);
-        writer.WritePropertyName("project_keys");
-        writer.WriteStartArray();
-        foreach (var projectKey in site.ProjectKeys)
-        {
-            writer.WriteStringValue(projectKey);
-        }
-        writer.WriteEndArray();
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a table reference object with schema and name.
-    /// </summary>
-    private static void WriteTableReference(Utf8JsonWriter writer, DbTableName tableName)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("schema", tableName.Schema.Value);
-        writer.WriteString("name", tableName.Name);
-        writer.WriteEndObject();
-    }
-
-    /// <summary>
-    /// Writes a resource reference object with project and resource name.
-    /// </summary>
-    private static void WriteResourceReference(Utf8JsonWriter writer, QualifiedResourceName resource)
-    {
-        writer.WriteStartObject();
-        writer.WriteString("project_name", resource.ProjectName);
-        writer.WriteString("resource_name", resource.ResourceName);
         writer.WriteEndObject();
     }
 }

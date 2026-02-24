@@ -61,19 +61,22 @@ internal static class SecurityHelper
                     new MetaEdPropertyFullName(eo!["PropertyName"]!.GetValue<string>()),
                     new EducationOrganizationId(long.Parse(eo["Id"]!.GetValue<string>()))
                 ))
-                .ToArray() ?? [];
+                .ToArray()
+            ?? [];
 
         StudentUniqueId[] studentUniqueId =
             jsonObject["Student"]
                 ?.AsArray()
                 .Select(id => new StudentUniqueId(id!.GetValue<string>()))
-                .ToArray() ?? [];
+                .ToArray()
+            ?? [];
 
         ContactUniqueId[] contactUniqueId =
             jsonObject["Contact"]
                 ?.AsArray()
                 .Select(id => new ContactUniqueId(id!.GetValue<string>()))
-                .ToArray() ?? [];
+                .ToArray()
+            ?? [];
 
         StaffUniqueId[] staffUniqueId =
             jsonObject["Staff"]?.AsArray().Select(id => new StaffUniqueId(id!.GetValue<string>())).ToArray()

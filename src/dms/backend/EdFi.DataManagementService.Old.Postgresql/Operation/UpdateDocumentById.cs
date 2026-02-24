@@ -5,9 +5,9 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DataManagementService.Old.Postgresql.Model;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Old.Postgresql.Model;
 using Json.More;
 using Json.Path;
 using Microsoft.Extensions.Logging;

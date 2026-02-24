@@ -25,9 +25,9 @@ public class Given_Pgsql_Ddl_Emission_With_Reserved_Identifiers
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new PgsqlDialectRules();
-        var modelSet = ReservedIdentifierFixture.Build(dialectRules.Dialect);
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Pgsql);
+        var modelSet = ReservedIdentifierFixture.Build(dialect.Rules.Dialect);
+        var emitter = new RelationalModelDdlEmitter(dialect);
 
         _sql = emitter.Emit(modelSet);
     }
@@ -56,9 +56,9 @@ public class Given_Mssql_Ddl_Emission_With_Reserved_Identifiers
     [SetUp]
     public void Setup()
     {
-        var dialectRules = new MssqlDialectRules();
-        var modelSet = ReservedIdentifierFixture.Build(dialectRules.Dialect);
-        var emitter = new RelationalModelDdlEmitter(dialectRules);
+        var dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
+        var modelSet = ReservedIdentifierFixture.Build(dialect.Rules.Dialect);
+        var emitter = new RelationalModelDdlEmitter(dialect);
 
         _sql = emitter.Emit(modelSet);
     }
@@ -91,7 +91,7 @@ internal static class ReservedIdentifierAssertions
         sql.Should().Contain(quoted);
         sql.Should().Contain("CREATE TABLE");
         Regex.IsMatch(sql, @"CREATE\s+(UNIQUE\s+)?INDEX").Should().BeTrue();
-        sql.Should().Contain("CREATE TRIGGER");
+        Regex.IsMatch(sql, @"CREATE\s+(OR\s+(REPLACE|ALTER)\s+)?TRIGGER").Should().BeTrue();
         sql.Should().Contain($"CONSTRAINT {quoted}");
 
         AssertNoUnquotedIdentifier(sql, dialect);
@@ -99,9 +99,15 @@ internal static class ReservedIdentifierAssertions
 
     /// <summary>
     /// Asserts that the emitted DDL contains no unquoted occurrences of the reserved identifier for the given dialect.
+    /// String literals (e.g., N'Select' in MSSQL or 'Select' in Pgsql) are excluded from this check because
+    /// they are values for name-based lookups, not identifiers.
     /// </summary>
     private static void AssertNoUnquotedIdentifier(string sql, SqlDialect dialect)
     {
+        // Strip string literals before checking for unquoted identifiers.
+        // This removes N'...' and '...' sequences to avoid false positives from idempotency checks.
+        var sqlWithoutStringLiterals = Regex.Replace(sql, @"N?'(?:[^']|'')*'", "");
+
         var pattern = dialect switch
         {
             SqlDialect.Pgsql => $@"(?<!\"")\b{Regex.Escape(Identifier)}\b(?!\"")",
@@ -109,7 +115,10 @@ internal static class ReservedIdentifierAssertions
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported SQL dialect."),
         };
 
-        Regex.IsMatch(sql, pattern).Should().BeFalse($"Expected all {Identifier} identifiers to be quoted.");
+        Regex
+            .IsMatch(sqlWithoutStringLiterals, pattern)
+            .Should()
+            .BeFalse($"Expected all {Identifier} identifiers to be quoted.");
     }
 }
 
@@ -188,9 +197,9 @@ internal static class ReservedIdentifierFixture
                 new DbTriggerInfo(
                     new DbTriggerName(Identifier),
                     table,
-                    DbTriggerKind.DocumentStamping,
                     [column],
-                    []
+                    [],
+                    new TriggerKindParameters.DocumentStamping()
                 ),
             ]
         );
