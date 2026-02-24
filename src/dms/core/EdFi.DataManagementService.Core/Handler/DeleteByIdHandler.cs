@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
-using Polly.Timeout;
 using static EdFi.DataManagementService.Core.External.Backend.DeleteResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 
@@ -35,13 +34,14 @@ internal class DeleteByIdHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        int attemptCount = 0;
-        try
-        {
-            var deleteResult = await _resiliencePipeline.ExecuteAsync(async _ =>
-            {
-                attemptCount++;
-                return await documentStoreRepository.DeleteDocumentById(
+        var deleteResult = await ExecuteWithRetryLogging(
+            _resiliencePipeline,
+            _logger,
+            "delete",
+            requestInfo.FrontendRequest.TraceId,
+            r => r is DeleteFailureWriteConflict,
+            async _ =>
+                await documentStoreRepository.DeleteDocumentById(
                     new DeleteRequest(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceInfo: requestInfo.ResourceInfo,
@@ -60,93 +60,63 @@ internal class DeleteByIdHandler(
                         ),
                         Headers: requestInfo.FrontendRequest.Headers
                     )
-                );
-            });
-
-            if (deleteResult is DeleteFailureWriteConflict)
-            {
-                _logger.LogError(
-                    "All deadlock retry attempts exhausted for delete after {AttemptCount} attempts - {TraceId}",
-                    attemptCount,
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
-            }
-            else if (attemptCount > 1)
-            {
-                _logger.LogWarning(
-                    "Deadlock resolved after {RetryCount} retries for delete - {TraceId}",
-                    attemptCount - 1,
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
-            }
-
-            _logger.LogDebug(
-                "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
-                deleteResult.GetType().FullName,
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-
-            requestInfo.FrontendResponse = deleteResult switch
-            {
-                DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
-                DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-                DeleteFailureNotAuthorized notAuthorized => new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(
-                        traceId: requestInfo.FrontendRequest.TraceId,
-                        errors: notAuthorized.ErrorMessages
-                    ),
-                    Headers: []
                 ),
-                DeleteFailureReference failure => new FrontendResponse(
-                    StatusCode: 409,
-                    Body: FailureResponse.ForDataConflict(
-                        failure.ReferencingDocumentResourceNames,
-                        traceId: requestInfo.FrontendRequest.TraceId
-                    ),
-                    Headers: []
-                ),
-                DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
-                DeleteFailureETagMisMatch => new FrontendResponse(
-                    StatusCode: 412,
-                    Body: FailureResponse.ForETagMisMatch(
-                        "The item has been modified by another user.",
-                        traceId: requestInfo.FrontendRequest.TraceId,
-                        errors: new[]
-                        {
-                            "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
-                        }
-                    ),
-                    Headers: []
-                ),
-                UnknownFailure failure => new(
-                    StatusCode: 500,
-                    Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-                _ => new(
-                    StatusCode: 500,
-                    Body: ToJsonError("Unknown DeleteResult", requestInfo.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-            };
-        }
-        catch (TimeoutRejectedException ex)
+            requestInfo
+        );
+        if (deleteResult == null)
         {
-            _logger.LogError(
-                ex,
-                "Operation timed out after {AttemptCount} attempts for delete - {TraceId}",
-                attemptCount,
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-            requestInfo.FrontendResponse = new FrontendResponse(
-                StatusCode: 503,
-                Body: ToJsonError(
-                    "Request timed out due to database contention",
-                    requestInfo.FrontendRequest.TraceId
+            return;
+        }
+
+        _logger.LogDebug(
+            "Document store DeleteDocumentById returned {DeleteResult}- {TraceId}",
+            deleteResult.GetType().FullName,
+            requestInfo.FrontendRequest.TraceId.Value
+        );
+
+        requestInfo.FrontendResponse = deleteResult switch
+        {
+            DeleteSuccess => new FrontendResponse(StatusCode: 204, Body: null, Headers: []),
+            DeleteFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            DeleteFailureNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: notAuthorized.ErrorMessages
                 ),
                 Headers: []
-            );
-        }
+            ),
+            DeleteFailureReference failure => new FrontendResponse(
+                StatusCode: 409,
+                Body: FailureResponse.ForDataConflict(
+                    failure.ReferencingDocumentResourceNames,
+                    traceId: requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
+            ),
+            DeleteFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+            DeleteFailureETagMisMatch => new FrontendResponse(
+                StatusCode: 412,
+                Body: FailureResponse.ForETagMisMatch(
+                    "The item has been modified by another user.",
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: new[]
+                    {
+                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                    }
+                ),
+                Headers: []
+            ),
+            UnknownFailure failure => new(
+                StatusCode: 500,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            _ => new(
+                StatusCode: 500,
+                Body: ToJsonError("Unknown DeleteResult", requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+        };
     }
 }

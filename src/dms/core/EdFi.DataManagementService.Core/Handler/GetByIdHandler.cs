@@ -12,7 +12,6 @@ using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
-using Polly.Timeout;
 using static EdFi.DataManagementService.Core.External.Backend.GetResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 
@@ -35,13 +34,14 @@ internal class GetByIdHandler(
         // Resolve repository from service provider within request scope
         var documentStoreRepository = _serviceProvider.GetRequiredService<IDocumentStoreRepository>();
 
-        int attemptCount = 0;
-        try
-        {
-            var getResult = await _resiliencePipeline.ExecuteAsync(async _ =>
-            {
-                attemptCount++;
-                return await documentStoreRepository.GetDocumentById(
+        var getResult = await ExecuteWithRetryLogging(
+            _resiliencePipeline,
+            _logger,
+            "get",
+            requestInfo.FrontendRequest.TraceId,
+            r => r is GetFailureRetryable,
+            async _ =>
+                await documentStoreRepository.GetDocumentById(
                     new GetRequest(
                         DocumentUuid: requestInfo.PathComponents.DocumentUuid,
                         ResourceName: requestInfo.ResourceInfo.ResourceName,
@@ -53,85 +53,51 @@ internal class GetByIdHandler(
                         ),
                         TraceId: requestInfo.FrontendRequest.TraceId
                     )
-                );
-            });
-
-            if (getResult is GetFailureRetryable)
-            {
-                _logger.LogError(
-                    "All deadlock retry attempts exhausted for get after {AttemptCount} attempts - {TraceId}",
-                    attemptCount,
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
-            }
-            else if (attemptCount > 1)
-            {
-                _logger.LogWarning(
-                    "Deadlock resolved after {RetryCount} retries for get - {TraceId}",
-                    attemptCount - 1,
-                    requestInfo.FrontendRequest.TraceId.Value
-                );
-            }
-
-            _logger.LogDebug(
-                "Document store GetDocumentById returned {GetResult}- {TraceId}",
-                getResult.GetType().FullName,
-                requestInfo.FrontendRequest.TraceId
-            );
-
-            requestInfo.FrontendResponse = getResult switch
-            {
-                GetSuccess success => new FrontendResponse(
-                    StatusCode: 200,
-                    Body: success.EdfiDoc,
-                    Headers: []
                 ),
-                GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
-                GetFailureRetryable => new FrontendResponse(
-                    StatusCode: 503,
-                    Body: ToJsonError(
-                        "Request could not be completed due to database contention",
-                        requestInfo.FrontendRequest.TraceId
-                    ),
-                    Headers: []
-                ),
-                GetFailureNotAuthorized notAuthorized => new FrontendResponse(
-                    StatusCode: 403,
-                    Body: FailureResponse.ForForbidden(
-                        traceId: requestInfo.FrontendRequest.TraceId,
-                        errors: notAuthorized.ErrorMessages,
-                        hints: notAuthorized.Hints
-                    ),
-                    Headers: []
-                ),
-                UnknownFailure failure => new FrontendResponse(
-                    StatusCode: 500,
-                    Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-                _ => new(
-                    StatusCode: 500,
-                    Body: ToJsonError("Unknown GetResult", requestInfo.FrontendRequest.TraceId),
-                    Headers: []
-                ),
-            };
-        }
-        catch (TimeoutRejectedException ex)
+            requestInfo
+        );
+        if (getResult == null)
         {
-            _logger.LogError(
-                ex,
-                "Operation timed out after {AttemptCount} attempts for get - {TraceId}",
-                attemptCount,
-                requestInfo.FrontendRequest.TraceId.Value
-            );
-            requestInfo.FrontendResponse = new FrontendResponse(
+            return;
+        }
+
+        _logger.LogDebug(
+            "Document store GetDocumentById returned {GetResult}- {TraceId}",
+            getResult.GetType().FullName,
+            requestInfo.FrontendRequest.TraceId
+        );
+
+        requestInfo.FrontendResponse = getResult switch
+        {
+            GetSuccess success => new FrontendResponse(StatusCode: 200, Body: success.EdfiDoc, Headers: []),
+            GetFailureNotExists => new FrontendResponse(StatusCode: 404, Body: null, Headers: []),
+            GetFailureRetryable => new FrontendResponse(
                 StatusCode: 503,
                 Body: ToJsonError(
-                    "Request timed out due to database contention",
+                    "Request could not be completed due to database contention",
                     requestInfo.FrontendRequest.TraceId
                 ),
                 Headers: []
-            );
-        }
+            ),
+            GetFailureNotAuthorized notAuthorized => new FrontendResponse(
+                StatusCode: 403,
+                Body: FailureResponse.ForForbidden(
+                    traceId: requestInfo.FrontendRequest.TraceId,
+                    errors: notAuthorized.ErrorMessages,
+                    hints: notAuthorized.Hints
+                ),
+                Headers: []
+            ),
+            UnknownFailure failure => new FrontendResponse(
+                StatusCode: 500,
+                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+            _ => new(
+                StatusCode: 500,
+                Body: ToJsonError("Unknown GetResult", requestInfo.FrontendRequest.TraceId),
+                Headers: []
+            ),
+        };
     }
 }

@@ -5,6 +5,11 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Core.Model;
+using EdFi.DataManagementService.Core.Pipeline;
+using Microsoft.Extensions.Logging;
+using Polly;
+using Polly.Timeout;
 
 namespace EdFi.DataManagementService.Core.Handler;
 
@@ -16,5 +21,68 @@ public static class Utility
     public static JsonNode? ToJsonError(string errorInfo, TraceId traceId)
     {
         return new JsonObject { ["error"] = errorInfo, ["correlationId"] = traceId.Value };
+    }
+
+    /// <summary>
+    /// Executes an operation within a resilience pipeline, handling retry logging and timeout.
+    /// Returns null if a timeout occurred (caller should return early).
+    /// </summary>
+    internal static async Task<TResult?> ExecuteWithRetryLogging<TResult>(
+        ResiliencePipeline resiliencePipeline,
+        ILogger logger,
+        string operationName,
+        TraceId traceId,
+        Func<TResult, bool> isRetryExhausted,
+        Func<CancellationToken, ValueTask<TResult>> operation,
+        RequestInfo requestInfo
+    )
+        where TResult : class
+    {
+        int attemptCount = 0;
+        try
+        {
+            var result = await resiliencePipeline.ExecuteAsync(async ct =>
+            {
+                attemptCount++;
+                return await operation(ct);
+            });
+
+            if (isRetryExhausted(result))
+            {
+                logger.LogError(
+                    "All deadlock retry attempts exhausted for {OperationName} after {AttemptCount} attempts - {TraceId}",
+                    operationName,
+                    attemptCount,
+                    traceId.Value
+                );
+            }
+            else if (attemptCount > 1)
+            {
+                logger.LogWarning(
+                    "Deadlock resolved after {RetryCount} retries for {OperationName} - {TraceId}",
+                    attemptCount - 1,
+                    operationName,
+                    traceId.Value
+                );
+            }
+
+            return result;
+        }
+        catch (TimeoutRejectedException ex)
+        {
+            logger.LogError(
+                ex,
+                "Operation timed out after {AttemptCount} attempts for {OperationName} - {TraceId}",
+                attemptCount,
+                operationName,
+                traceId.Value
+            );
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: ToJsonError("Request timed out due to database contention", traceId),
+                Headers: []
+            );
+            return null;
+        }
     }
 }
