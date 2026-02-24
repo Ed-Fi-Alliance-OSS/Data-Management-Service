@@ -889,10 +889,10 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
         writer.Append(Uuidv5Namespace);
         // Format intentionally matches ReferentialIdCalculator.ResourceInfoString: {ProjectName}{ResourceName}
         // with no separator — do not add one without updating the calculator.
-        writer.Append("', N'");
+        writer.Append("', CAST(N'");
         writer.Append(SqlDialectBase.EscapeSingleQuote(projectName));
         writer.Append(SqlDialectBase.EscapeSingleQuote(resourceName));
-        writer.Append("' + ");
+        writer.Append("' AS nvarchar(max)) + ");
         EmitMssqlIdentityHashExpression(writer, identityElements);
         writer.Append("), i.");
         writer.Append(documentIdCol);
@@ -1245,55 +1245,69 @@ public sealed class RelationalModelDdlEmitter(ISqlDialect dialect)
 
         var documentIdCol = Quote(DocumentIdColumn);
 
-        // Emit an UPDATE statement for each referrer table.
-        foreach (var referrer in propagation.ReferrerUpdates)
+        // Performance pre-filter: UPDATE(col) returns true if the column appeared in the SET
+        // clause, regardless of whether the value actually changed. This short-circuits the
+        // entire trigger body when non-identity columns are updated, avoiding the cost of
+        // joining inserted/deleted for every UPDATE on the table.
+        writer.Append("IF (");
+        EmitMssqlUpdateColumnDisjunction(writer, trigger.IdentityProjectionColumns);
+        writer.AppendLine(")");
+        writer.AppendLine("BEGIN");
+
+        using (writer.Indent())
         {
-            var referrerTable = Quote(referrer.ReferrerTable);
-            var fkColumn = Quote(referrer.ReferrerFkColumn);
-
-            writer.AppendLine("UPDATE r");
-            writer.Append("SET ");
-            for (int i = 0; i < referrer.ColumnMappings.Count; i++)
+            // Emit an UPDATE statement for each referrer table.
+            foreach (var referrer in propagation.ReferrerUpdates)
             {
-                if (i > 0)
-                    writer.Append(", ");
-                // TargetColumn = referrer's stored identity column (e.g., School_SchoolId)
-                // SourceColumn = trigger table's identity column (e.g., SchoolId)
-                writer.Append("r.");
-                writer.Append(Quote(referrer.ColumnMappings[i].TargetColumn));
-                writer.Append(" = i.");
-                writer.Append(Quote(referrer.ColumnMappings[i].SourceColumn));
+                var referrerTable = Quote(referrer.ReferrerTable);
+                var fkColumn = Quote(referrer.ReferrerFkColumn);
+
+                writer.AppendLine("UPDATE r");
+                writer.Append("SET ");
+                for (int i = 0; i < referrer.ColumnMappings.Count; i++)
+                {
+                    if (i > 0)
+                        writer.Append(", ");
+                    // TargetColumn = referrer's stored identity column (e.g., School_SchoolId)
+                    // SourceColumn = trigger table's identity column (e.g., SchoolId)
+                    writer.Append("r.");
+                    writer.Append(Quote(referrer.ColumnMappings[i].TargetColumn));
+                    writer.Append(" = i.");
+                    writer.Append(Quote(referrer.ColumnMappings[i].SourceColumn));
+                }
+                writer.AppendLine();
+
+                writer.Append("FROM ");
+                writer.Append(referrerTable);
+                writer.AppendLine(" r");
+
+                // Join referrer to deleted via FK column pointing to DocumentId.
+                writer.Append("INNER JOIN deleted d ON r.");
+                writer.Append(fkColumn);
+                writer.Append(" = d.");
+                writer.AppendLine(documentIdCol);
+
+                // Correlate old/new rows by DocumentId (the universal PK of the trigger's owning table).
+                writer.Append("INNER JOIN inserted i ON i.");
+                writer.Append(documentIdCol);
+                writer.Append(" = d.");
+                writer.AppendLine(documentIdCol);
+
+                // Only update if identity columns actually changed.
+                writer.Append("WHERE ");
+                for (int i = 0; i < referrer.ColumnMappings.Count; i++)
+                {
+                    if (i > 0)
+                        writer.Append(" OR ");
+                    var col = Quote(referrer.ColumnMappings[i].SourceColumn);
+                    EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
+                }
+                writer.AppendLine(";");
+                writer.AppendLine();
             }
-            writer.AppendLine();
-
-            writer.Append("FROM ");
-            writer.Append(referrerTable);
-            writer.AppendLine(" r");
-
-            // Join referrer to deleted via FK column pointing to DocumentId.
-            writer.Append("INNER JOIN deleted d ON r.");
-            writer.Append(fkColumn);
-            writer.Append(" = d.");
-            writer.AppendLine(documentIdCol);
-
-            // Correlate old/new rows by DocumentId (the universal PK of the trigger's owning table).
-            writer.Append("INNER JOIN inserted i ON i.");
-            writer.Append(documentIdCol);
-            writer.Append(" = d.");
-            writer.AppendLine(documentIdCol);
-
-            // Only update if identity columns actually changed.
-            writer.Append("WHERE ");
-            for (int i = 0; i < referrer.ColumnMappings.Count; i++)
-            {
-                if (i > 0)
-                    writer.Append(" OR ");
-                var col = Quote(referrer.ColumnMappings[i].SourceColumn);
-                EmitMssqlNullSafeNotEqual(writer, "i", col, "d", col);
-            }
-            writer.AppendLine(";");
-            writer.AppendLine();
         }
+
+        writer.AppendLine("END");
     }
 
     /// <summary>
