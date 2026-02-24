@@ -533,6 +533,33 @@ public class ProfileStepDefinitions(
         ExtractIdFromResponse();
     }
 
+    [When(@"a POST request is made to ""([^""]*)"" without profile header with body")]
+    public async Task WhenAPOSTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        _logger.log.Information($"POST url (no profile header): {url}");
+        _logger.log.Information($"POST body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", "application/json"),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PostAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+
+        ExtractIdFromResponse();
+    }
+
     /// <summary>
     /// Makes a PUT request with an explicit profile Content-Type header for write filtering tests.
     /// Format: application/vnd.ed-fi.{resource}.{profile}.writable+json
@@ -566,6 +593,33 @@ public class ProfileStepDefinitions(
         {
             new("Authorization", _dmsToken),
             new("Content-Type", contentType),
+        };
+
+        _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
+            url,
+            new() { Data = body, Headers = headers }
+        )!;
+
+        _logger.log.Information($"Response status: {_apiResponse.Status}");
+        _logger.log.Information($"Response body: {await _apiResponse.TextAsync()}");
+    }
+
+    [When(@"a PUT request is made to ""([^""]*)"" without profile header with body")]
+    public async Task WhenAPUTRequestIsMadeToWithoutProfileHeaderWithBody(string url, string body)
+    {
+        url = AddDataPrefixIfNecessary(url)
+            .Replace("{id}", _id)
+            .ReplacePlaceholdersWithDictionaryValues(_scenarioVariables.VariableByName);
+
+        body = body.Replace("{id}", _id);
+
+        _logger.log.Information($"PUT url (no profile header): {url}");
+        _logger.log.Information($"PUT body: {body}");
+
+        var headers = new List<KeyValuePair<string, string>>
+        {
+            new("Authorization", _dmsToken),
+            new("Content-Type", "application/json"),
         };
 
         _apiResponse = await _playwrightContext.ApiRequestContext?.PutAsync(
@@ -817,24 +871,12 @@ public class ProfileStepDefinitions(
 
         foreach (JsonObject obj in objects)
         {
-            JsonNode? current = obj;
-
-            foreach (string part in pathParts)
-            {
-                if (
-                    current is JsonObject currentObj
-                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
-                )
-                {
-                    current = next;
-                }
-                else
-                {
-                    throw new AssertionException(
-                        $"Path '{jsonPath}' not found in response. Failed at '{part}'. Response: {obj}"
-                    );
-                }
-            }
+            bool pathExists = TryResolvePath(obj, pathParts, out _, out string failedAtPart);
+            pathExists
+                .Should()
+                .BeTrue(
+                    $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {obj}"
+                );
         }
     }
 
@@ -857,24 +899,7 @@ public class ProfileStepDefinitions(
 
         foreach (JsonObject obj in objects)
         {
-            JsonNode? current = obj;
-            bool pathExists = true;
-
-            foreach (string part in pathParts)
-            {
-                if (
-                    current is JsonObject currentObj
-                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
-                )
-                {
-                    current = next;
-                }
-                else
-                {
-                    pathExists = false;
-                    break;
-                }
-            }
+            bool pathExists = TryResolvePath(obj, pathParts, out _, out _);
 
             pathExists
                 .Should()
@@ -901,24 +926,12 @@ public class ProfileStepDefinitions(
 
         foreach (JsonObject obj in objects)
         {
-            JsonNode? current = obj;
-
-            foreach (string part in pathParts)
-            {
-                if (
-                    current is JsonObject currentObj
-                    && currentObj.TryGetPropertyValue(part, out JsonNode? next)
-                )
-                {
-                    current = next;
-                }
-                else
-                {
-                    throw new AssertionException(
-                        $"Path '{jsonPath}' not found in response. Failed at '{part}'. Response: {obj}"
-                    );
-                }
-            }
+            bool pathExists = TryResolvePath(obj, pathParts, out JsonNode? current, out string failedAtPart);
+            pathExists
+                .Should()
+                .BeTrue(
+                    $"Path '{jsonPath}' not found in response. Failed at '{failedAtPart}'. Response: {obj}"
+                );
 
             string? actualValue = current?.ToString();
             actualValue
@@ -928,6 +941,53 @@ public class ProfileStepDefinitions(
                     $"Path '{jsonPath}' should have value '{expectedValue}' but was '{actualValue}'"
                 );
         }
+    }
+
+    private static bool TryResolvePath(
+        JsonNode? root,
+        IReadOnlyList<string> pathParts,
+        out JsonNode? resolvedNode,
+        out string failedAtPart
+    )
+    {
+        JsonNode? current = root;
+        failedAtPart = string.Empty;
+
+        foreach (string part in pathParts)
+        {
+            if (current is JsonObject currentObj)
+            {
+                if (currentObj.TryGetPropertyValue(part, out JsonNode? next))
+                {
+                    current = next;
+                    continue;
+                }
+
+                failedAtPart = part;
+                resolvedNode = null;
+                return false;
+            }
+
+            if (current is JsonArray currentArray && int.TryParse(part, out int index))
+            {
+                if (index >= 0 && index < currentArray.Count)
+                {
+                    current = currentArray[index];
+                    continue;
+                }
+
+                failedAtPart = part;
+                resolvedNode = null;
+                return false;
+            }
+
+            failedAtPart = part;
+            resolvedNode = null;
+            return false;
+        }
+
+        resolvedNode = current;
+        return true;
     }
 
     /// <summary>
