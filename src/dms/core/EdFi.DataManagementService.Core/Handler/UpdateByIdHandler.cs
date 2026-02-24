@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Core.Security;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Polly;
+using Polly.Timeout;
 using static EdFi.DataManagementService.Core.External.Backend.UpdateResult;
 using static EdFi.DataManagementService.Core.Handler.Utility;
 using static EdFi.DataManagementService.Core.Response.FailureResponse;
@@ -42,147 +43,167 @@ internal class UpdateByIdHandler(
         var updateCascadeHandler = new UpdateCascadeHandler(_apiSchemaProvider, _logger);
 
         int attemptCount = 0;
-        var updateResult = await _resiliencePipeline.ExecuteAsync(async _ =>
+        try
         {
-            attemptCount++;
-            return await documentStoreRepository.UpdateDocumentById(
-                new UpdateRequest(
-                    DocumentUuid: requestInfo.PathComponents.DocumentUuid,
-                    ResourceInfo: requestInfo.ResourceInfo,
-                    DocumentInfo: requestInfo.DocumentInfo,
-                    EdfiDoc: requestInfo.ParsedBody,
-                    Headers: requestInfo.FrontendRequest.Headers,
-                    DocumentSecurityElements: requestInfo.DocumentSecurityElements,
-                    TraceId: requestInfo.FrontendRequest.TraceId,
-                    UpdateCascadeHandler: updateCascadeHandler,
-                    ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
-                        requestInfo.AuthorizationStrategyEvaluators,
-                        requestInfo.AuthorizationSecurableInfo,
-                        authorizationServiceFactory,
-                        _logger
-                    ),
-                    ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
-                )
-            );
-        });
+            var updateResult = await _resiliencePipeline.ExecuteAsync(async _ =>
+            {
+                attemptCount++;
+                return await documentStoreRepository.UpdateDocumentById(
+                    new UpdateRequest(
+                        DocumentUuid: requestInfo.PathComponents.DocumentUuid,
+                        ResourceInfo: requestInfo.ResourceInfo,
+                        DocumentInfo: requestInfo.DocumentInfo,
+                        EdfiDoc: requestInfo.ParsedBody,
+                        Headers: requestInfo.FrontendRequest.Headers,
+                        DocumentSecurityElements: requestInfo.DocumentSecurityElements,
+                        TraceId: requestInfo.FrontendRequest.TraceId,
+                        UpdateCascadeHandler: updateCascadeHandler,
+                        ResourceAuthorizationHandler: new ResourceAuthorizationHandler(
+                            requestInfo.AuthorizationStrategyEvaluators,
+                            requestInfo.AuthorizationSecurableInfo,
+                            authorizationServiceFactory,
+                            _logger
+                        ),
+                        ResourceAuthorizationPathways: requestInfo.AuthorizationPathways
+                    )
+                );
+            });
 
-        if (updateResult is UpdateFailureWriteConflict)
+            if (updateResult is UpdateFailureWriteConflict)
+            {
+                _logger.LogError(
+                    "All deadlock retry attempts exhausted for update after {AttemptCount} attempts - {TraceId}",
+                    attemptCount,
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
+            else if (attemptCount > 1)
+            {
+                _logger.LogWarning(
+                    "Deadlock resolved after {RetryCount} retries for update - {TraceId}",
+                    attemptCount - 1,
+                    requestInfo.FrontendRequest.TraceId.Value
+                );
+            }
+
+            _logger.LogDebug(
+                "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
+                updateResult.GetType().FullName,
+                requestInfo.FrontendRequest.TraceId.Value
+            );
+
+            requestInfo.FrontendResponse = updateResult switch
+            {
+                UpdateSuccess updateSuccess => new FrontendResponse(
+                    StatusCode: 204,
+                    Body: null,
+                    Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
+                    LocationHeaderPath: PathComponents.ToResourcePath(
+                        requestInfo.PathComponents,
+                        updateSuccess.ExistingDocumentUuid
+                    )
+                ),
+                UpdateFailureETagMisMatch => new FrontendResponse(
+                    StatusCode: 412,
+                    Body: FailureResponse.ForETagMisMatch(
+                        "The item has been modified by another user.",
+                        traceId: requestInfo.FrontendRequest.TraceId,
+                        errors: new[]
+                        {
+                            "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
+                        }
+                    ),
+                    Headers: []
+                ),
+                UpdateFailureNotExists => new FrontendResponse(
+                    StatusCode: 404,
+                    Body: FailureResponse.ForNotFound(
+                        "Resource to update was not found",
+                        traceId: requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                ),
+                UpdateFailureDescriptorReference failure => new(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForBadRequest(
+                        "Data validation failed. See 'validationErrors' for details.",
+                        traceId: requestInfo.FrontendRequest.TraceId,
+                        failure.InvalidDescriptorReferences.ToDictionary(
+                            d => d.Path.Value,
+                            d =>
+                                d.DocumentIdentity.DocumentIdentityElements.Select(e =>
+                                        $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
+                                    )
+                                    .ToArray()
+                        ),
+                        []
+                    ),
+                    Headers: []
+                ),
+                UpdateFailureReference failure => new FrontendResponse(
+                    StatusCode: 409,
+                    Body: FailureResponse.ForInvalidReferences(
+                        failure.ReferencingDocumentInfo,
+                        traceId: requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                ),
+                UpdateFailureIdentityConflict failure => new FrontendResponse(
+                    StatusCode: 409,
+                    Body: ForIdentityConflict(
+                        [
+                            $"A natural key conflict occurred when attempting to update a resource {failure.ResourceName.Value} with a duplicate key. "
+                                + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}",
+                        ],
+                        traceId: requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                ),
+                UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
+                UpdateFailureImmutableIdentity failure => new FrontendResponse(
+                    StatusCode: 400,
+                    Body: FailureResponse.ForImmutableIdentity(
+                        failure.FailureMessage,
+                        traceId: requestInfo.FrontendRequest.TraceId
+                    ),
+                    Headers: []
+                ),
+                UpdateFailureNotAuthorized failure => new FrontendResponse(
+                    StatusCode: 403,
+                    Body: FailureResponse.ForForbidden(
+                        traceId: requestInfo.FrontendRequest.TraceId,
+                        errors: failure.ErrorMessages
+                    ),
+                    Headers: []
+                ),
+                UnknownFailure failure => new FrontendResponse(
+                    StatusCode: 500,
+                    Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
+                    Headers: []
+                ),
+                _ => new FrontendResponse(
+                    StatusCode: 500,
+                    Body: ToJsonError("Unknown UpdateResult", requestInfo.FrontendRequest.TraceId),
+                    Headers: []
+                ),
+            };
+        }
+        catch (TimeoutRejectedException ex)
         {
             _logger.LogError(
-                "All deadlock retry attempts exhausted for update after {AttemptCount} attempts - {TraceId}",
+                ex,
+                "Operation timed out after {AttemptCount} attempts for update - {TraceId}",
                 attemptCount,
                 requestInfo.FrontendRequest.TraceId.Value
             );
-        }
-        else if (attemptCount > 1)
-        {
-            _logger.LogWarning(
-                "Deadlock resolved after {RetryCount} retries for update - {TraceId}",
-                attemptCount - 1,
-                requestInfo.FrontendRequest.TraceId.Value
+            requestInfo.FrontendResponse = new FrontendResponse(
+                StatusCode: 503,
+                Body: ToJsonError(
+                    "Request timed out due to database contention",
+                    requestInfo.FrontendRequest.TraceId
+                ),
+                Headers: []
             );
         }
-
-        _logger.LogDebug(
-            "Document store UpdateDocumentById returned {UpdateResult}- {TraceId}",
-            updateResult.GetType().FullName,
-            requestInfo.FrontendRequest.TraceId.Value
-        );
-
-        requestInfo.FrontendResponse = updateResult switch
-        {
-            UpdateSuccess updateSuccess => new FrontendResponse(
-                StatusCode: 204,
-                Body: null,
-                Headers: new() { ["etag"] = requestInfo.ParsedBody["_etag"]?.ToString() ?? "" },
-                LocationHeaderPath: PathComponents.ToResourcePath(
-                    requestInfo.PathComponents,
-                    updateSuccess.ExistingDocumentUuid
-                )
-            ),
-            UpdateFailureETagMisMatch => new FrontendResponse(
-                StatusCode: 412,
-                Body: FailureResponse.ForETagMisMatch(
-                    "The item has been modified by another user.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: new[]
-                    {
-                        "The resource item's etag value does not match what was specified in the 'If-Match' request header indicating that it has been modified by another client since it was last retrieved.",
-                    }
-                ),
-                Headers: []
-            ),
-            UpdateFailureNotExists => new FrontendResponse(
-                StatusCode: 404,
-                Body: FailureResponse.ForNotFound(
-                    "Resource to update was not found",
-                    traceId: requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            ),
-            UpdateFailureDescriptorReference failure => new(
-                StatusCode: 400,
-                Body: FailureResponse.ForBadRequest(
-                    "Data validation failed. See 'validationErrors' for details.",
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    failure.InvalidDescriptorReferences.ToDictionary(
-                        d => d.Path.Value,
-                        d =>
-                            d.DocumentIdentity.DocumentIdentityElements.Select(e =>
-                                    $"{d.ResourceInfo.ResourceName.Value} value '{e.IdentityValue}' does not exist."
-                                )
-                                .ToArray()
-                    ),
-                    []
-                ),
-                Headers: []
-            ),
-            UpdateFailureReference failure => new FrontendResponse(
-                StatusCode: 409,
-                Body: FailureResponse.ForInvalidReferences(
-                    failure.ReferencingDocumentInfo,
-                    traceId: requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            ),
-            UpdateFailureIdentityConflict failure => new FrontendResponse(
-                StatusCode: 409,
-                Body: ForIdentityConflict(
-                    [
-                        $"A natural key conflict occurred when attempting to update a resource {failure.ResourceName.Value} with a duplicate key. "
-                            + $"The duplicate keys and values are {string.Join(',', failure.DuplicateIdentityValues.Select(d => $"({d.Key} = {d.Value})"))}",
-                    ],
-                    traceId: requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            ),
-            UpdateFailureWriteConflict => new FrontendResponse(StatusCode: 409, Body: null, Headers: []),
-            UpdateFailureImmutableIdentity failure => new FrontendResponse(
-                StatusCode: 400,
-                Body: FailureResponse.ForImmutableIdentity(
-                    failure.FailureMessage,
-                    traceId: requestInfo.FrontendRequest.TraceId
-                ),
-                Headers: []
-            ),
-            UpdateFailureNotAuthorized failure => new FrontendResponse(
-                StatusCode: 403,
-                Body: FailureResponse.ForForbidden(
-                    traceId: requestInfo.FrontendRequest.TraceId,
-                    errors: failure.ErrorMessages
-                ),
-                Headers: []
-            ),
-            UnknownFailure failure => new FrontendResponse(
-                StatusCode: 500,
-                Body: ToJsonError(failure.FailureMessage, requestInfo.FrontendRequest.TraceId),
-                Headers: []
-            ),
-            _ => new FrontendResponse(
-                StatusCode: 500,
-                Body: ToJsonError("Unknown UpdateResult", requestInfo.FrontendRequest.TraceId),
-                Headers: []
-            ),
-        };
     }
 }

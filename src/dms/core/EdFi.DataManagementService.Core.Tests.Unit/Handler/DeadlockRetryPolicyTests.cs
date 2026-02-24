@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.Backend;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
@@ -320,58 +320,34 @@ public class DeadlockRetryPolicyTests
     [Parallelizable]
     public class Given_Invalid_MaxRetryAttempts : DeadlockRetryPolicyTests
     {
-        private MethodInfo? _validateMethod;
-        private Type? _settingsType;
-
-        [SetUp]
-        public void Setup()
-        {
-            _settingsType = typeof(DmsCoreServiceExtensions).Assembly.GetType(
-                "EdFi.DataManagementService.Core.Configuration.DeadlockRetrySettings"
-            )!;
-            _validateMethod = typeof(DmsCoreServiceExtensions).GetMethod(
-                "ValidateDeadlockRetrySettings",
-                BindingFlags.NonPublic | BindingFlags.Static
-            )!;
-        }
-
         [Test]
         public void It_throws_on_negative_MaxRetryAttempts()
         {
-            var settings = Activator.CreateInstance(_settingsType!)!;
-            _settingsType!.GetProperty("MaxRetryAttempts")!.SetValue(settings, -1);
+            var settings = new DeadlockRetrySettings { MaxRetryAttempts = -1 };
 
-            var ex = Assert.Throws<TargetInvocationException>(() =>
-                _validateMethod!.Invoke(null, [settings])
-            );
-            ex!.InnerException.Should().BeOfType<InvalidOperationException>();
-            ex.InnerException!.Message.Should().Contain("MaxRetryAttempts");
+            var act = () => DmsCoreServiceExtensions.ValidateDeadlockRetrySettings(settings);
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*MaxRetryAttempts*");
         }
 
         [Test]
         public void It_throws_on_zero_BaseDelayMilliseconds()
         {
-            var settings = Activator.CreateInstance(_settingsType!)!;
-            _settingsType!.GetProperty("BaseDelayMilliseconds")!.SetValue(settings, 0);
+            var settings = new DeadlockRetrySettings { BaseDelayMilliseconds = 0 };
 
-            var ex = Assert.Throws<TargetInvocationException>(() =>
-                _validateMethod!.Invoke(null, [settings])
-            );
-            ex!.InnerException.Should().BeOfType<InvalidOperationException>();
-            ex.InnerException!.Message.Should().Contain("BaseDelayMilliseconds");
+            var act = () => DmsCoreServiceExtensions.ValidateDeadlockRetrySettings(settings);
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*BaseDelayMilliseconds*");
         }
 
         [Test]
         public void It_throws_on_low_TotalTimeoutMilliseconds()
         {
-            var settings = Activator.CreateInstance(_settingsType!)!;
-            _settingsType!.GetProperty("TotalTimeoutMilliseconds")!.SetValue(settings, 50);
+            var settings = new DeadlockRetrySettings { TotalTimeoutMilliseconds = 50 };
 
-            var ex = Assert.Throws<TargetInvocationException>(() =>
-                _validateMethod!.Invoke(null, [settings])
-            );
-            ex!.InnerException.Should().BeOfType<InvalidOperationException>();
-            ex.InnerException!.Message.Should().Contain("TotalTimeoutMilliseconds");
+            var act = () => DmsCoreServiceExtensions.ValidateDeadlockRetrySettings(settings);
+
+            act.Should().Throw<InvalidOperationException>().WithMessage("*TotalTimeoutMilliseconds*");
         }
     }
 

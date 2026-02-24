@@ -84,16 +84,32 @@ public class PostgresqlDocumentStoreRepository(
             getRequest.TraceId.Value
         );
 
+        var sw = Stopwatch.StartNew();
         try
         {
             await using var connection = await _dataSourceProvider.DataSource.OpenConnectionAsync();
 
             GetResult result = await _getDocumentById.GetById(getRequest, connection, null);
+
+            sw.Stop();
+            _logger.LogDebug(
+                "GetDocumentById completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+                sw.ElapsedMilliseconds,
+                result.GetType().Name,
+                getRequest.TraceId.Value
+            );
+
             return result;
         }
         catch (Exception ex)
         {
-            _logger.LogCritical(ex, "Uncaught GetDocumentById failure - {TraceId}", getRequest.TraceId.Value);
+            sw.Stop();
+            _logger.LogCritical(
+                ex,
+                "Uncaught GetDocumentById failure after {TransactionDurationMs}ms - {TraceId}",
+                sw.ElapsedMilliseconds,
+                getRequest.TraceId.Value
+            );
             return new GetResult.UnknownFailure("Unknown Failure");
         }
     }
@@ -208,15 +224,28 @@ public class PostgresqlDocumentStoreRepository(
             queryRequest.TraceId.Value
         );
 
+        var sw = Stopwatch.StartNew();
         try
         {
-            return await _queryDocument.QueryDocuments(queryRequest);
+            QueryResult result = await _queryDocument.QueryDocuments(queryRequest);
+
+            sw.Stop();
+            _logger.LogDebug(
+                "QueryDocuments completed in {TransactionDurationMs}ms with result {ResultType} - {TraceId}",
+                sw.ElapsedMilliseconds,
+                result.GetType().Name,
+                queryRequest.TraceId.Value
+            );
+
+            return result;
         }
         catch (Exception ex)
         {
+            sw.Stop();
             _logger.LogCritical(
                 ex,
-                "Uncaught QueryDocuments failure - {TraceId}",
+                "Uncaught QueryDocuments failure after {TransactionDurationMs}ms - {TraceId}",
+                sw.ElapsedMilliseconds,
                 queryRequest.TraceId.Value
             );
             return new QueryResult.UnknownFailure("Unknown Failure");

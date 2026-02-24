@@ -309,7 +309,7 @@ public static class DmsCoreServiceExtensions
         return services;
     }
 
-    private static void ValidateDeadlockRetrySettings(DeadlockRetrySettings settings)
+    internal static void ValidateDeadlockRetrySettings(DeadlockRetrySettings settings)
     {
         if (settings.MaxRetryAttempts < 0)
         {
