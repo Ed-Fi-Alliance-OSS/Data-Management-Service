@@ -159,3 +159,160 @@ Feature: Profile Embedded Object Filtering
             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-Write-IncludeAll" for resource "School"
             Then the profile response status is 200
              And the "addresses" collection item at index 0 should have "nameOfCounty" value "IncludedCounty"
+
+    Rule: True embedded object filtering on Assessment contentStandard is enforced
+
+        Background:
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+              And the system has these descriptors
+                  | descriptorValue                                                 |
+                  | uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz         |
+                  | uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts |
+              And a profile test POST request is made to "/ed-fi/assessments" with
+                  """
+                  {
+                      "assessmentIdentifier": "EMBED-99003005",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz",
+                      "assessmentTitle": "Embedded Object Assessment",
+                      "contentStandard": {
+                          "title": "Original Content Standard"
+                      },
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+
+        Scenario: 05 Read profile excluding embedded object currently returns contentStandard
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Readable-Excludes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Readable-Excludes-Embedded-Object" for resource "Assessment"
+            Then the profile response status is 200
+             And the response body should contain path "contentStandard"
+
+        Scenario: 06 Read profile including embedded object is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Readable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a GET request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Readable-Includes-Embedded-Object" for resource "Assessment"
+            Then the profile response status is 406
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 07 Write profile excluding embedded object is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object" for resource "Assessment" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentIdentifier": "EMBED-99003005",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz",
+                      "assessmentTitle": "Embedded Object Assessment",
+                      "contentStandard": {
+                          "title": "Excluded Updated Title"
+                      },
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 08 Write profile including embedded object is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Includes-Embedded-Object" for resource "Assessment" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentIdentifier": "EMBED-99003005",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz",
+                      "assessmentTitle": "Embedded Object Assessment",
+                      "contentStandard": {
+                          "title": "Included Updated Title"
+                      },
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 09 Data validation with invalid embedded object is currently accepted without profile
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized without profiles and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentIdentifier": "EMBED-99003005",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz",
+                      "assessmentTitle": "Embedded Object Assessment",
+                      "contentStandard": {
+                          "authors": []
+                      },
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 200
+
+        Scenario: 10 Data validation with invalid embedded object profile is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Includes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Includes-Embedded-Object" for resource "Assessment" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentIdentifier": "EMBED-99003005",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz",
+                      "assessmentTitle": "Embedded Object Assessment",
+                      "contentStandard": {
+                          "authors": []
+                      },
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"
+
+        Scenario: 11 Data validation with invalid embedded object exclude profile is currently unsupported by host
+            Given the claimSet "E2E-NoFurtherAuthRequiredClaimSet" is authorized with profile "Assessment-Writable-Excludes-Embedded-Object" and namespacePrefixes "uri://ed-fi.org"
+            When a PUT request is made to "/ed-fi/assessments/{id}" with profile "Assessment-Writable-Excludes-Embedded-Object" for resource "Assessment" with body
+                  """
+                  {
+                      "id": "{id}",
+                      "assessmentIdentifier": "EMBED-99003005",
+                      "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+                      "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Class quiz",
+                      "assessmentTitle": "Embedded Object Assessment",
+                      "contentStandard": {
+                          "authors": []
+                      },
+                      "academicSubjects": [
+                          {
+                              "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#English Language Arts"
+                          }
+                      ]
+                  }
+                  """
+            Then the profile response status is 415
+             And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+             And the response body should have error message "is not supported by this host"

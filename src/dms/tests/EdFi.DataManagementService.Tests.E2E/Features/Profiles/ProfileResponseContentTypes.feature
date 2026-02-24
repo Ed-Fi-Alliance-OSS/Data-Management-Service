@@ -50,3 +50,35 @@ Feature: Profile Response Content Types
                       "Content-Type": "application/json"
                   }
                   """
+
+        Scenario: 03 GET with explicit profile returns content type including profile and readable suffix
+             When a GET request is made to "/ed-fi/schools/{id}" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+             Then the profile response status is 200
+              And the profile response headers include
+                  """
+                  {
+                      "Content-Type": "application/json"
+                  }
+                  """
+
+        Scenario: 04 GET collection with explicit profile returns profile-specific media type
+             When a GET request is made to "/ed-fi/schools?schoolId=99002001" with profile "E2E-Test-School-IncludeOnly" for resource "School"
+             Then the profile response status is 200
+              And the profile response headers include
+                  """
+                  {
+                      "Content-Type": "application/json"
+                  }
+                  """
+
+        Scenario: 05 GET item by id with profile Accept header and media-type parameters returns invalid profile usage
+             When a GET request is made to "/ed-fi/schools/{id}" with Accept header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json; charset=utf-8"
+             Then the profile response status is 400
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+              And the response body should have error message "The format of the profile-based content type header was invalid"
+
+        Scenario: 06 GET collection with profile Accept header and media-type parameters returns invalid profile usage
+             When a GET request is made to "/ed-fi/schools?schoolId=99002001" with Accept header "application/vnd.ed-fi.school.e2e-test-school-includeonly.readable+json; q=1.0"
+             Then the profile response status is 400
+              And the response body should have error type "urn:ed-fi:api:profile:invalid-profile-usage"
+              And the response body should have error message "The format of the profile-based content type header was invalid"
