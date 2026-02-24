@@ -991,7 +991,8 @@ public class ProfileStepDefinitions(
     public async Task ThenTheResponseBodyShouldHaveDetail(string expectedDetail)
     {
         string responseBody = await _apiResponse.TextAsync();
-        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+        JsonNode? responseJson = JsonNode.Parse(responseBody);
+        responseJson.Should().NotBeNull("Response should be valid JSON");
 
         if (responseJson is JsonObject jsonObject)
         {
@@ -1005,6 +1006,12 @@ public class ProfileStepDefinitions(
                 throw new AssertionException($"Response does not contain 'detail' field: {responseBody}");
             }
         }
+        else
+        {
+            throw new AssertionException(
+                $"Response should be a JSON object but was {responseJson?.GetType().Name ?? "null"}: {responseBody}"
+            );
+        }
     }
 
     /// <summary>
@@ -1014,7 +1021,8 @@ public class ProfileStepDefinitions(
     public async Task ThenTheResponseBodyErrorsShouldMatchRegex(string regexPattern)
     {
         string responseBody = await _apiResponse.TextAsync();
-        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+        JsonNode? responseJson = JsonNode.Parse(responseBody);
+        responseJson.Should().NotBeNull("Response should be valid JSON");
 
         if (responseJson is JsonObject jsonObject)
         {
@@ -1041,6 +1049,12 @@ public class ProfileStepDefinitions(
                 throw new AssertionException($"Response does not contain 'errors' array: {responseBody}");
             }
         }
+        else
+        {
+            throw new AssertionException(
+                $"Response should be a JSON object but was {responseJson?.GetType().Name ?? "null"}: {responseBody}"
+            );
+        }
     }
 
     /// <summary>
@@ -1050,7 +1064,8 @@ public class ProfileStepDefinitions(
     public async Task ThenTheResponseBodyStatusShouldEqualTheResponseStatusCode()
     {
         string responseBody = await _apiResponse.TextAsync();
-        JsonNode responseJson = JsonNode.Parse(responseBody)!;
+        JsonNode? responseJson = JsonNode.Parse(responseBody);
+        responseJson.Should().NotBeNull("Response should be valid JSON");
 
         if (responseJson is JsonObject jsonObject)
         {
@@ -1063,6 +1078,12 @@ public class ProfileStepDefinitions(
             {
                 throw new AssertionException($"Response does not contain 'status' field: {responseBody}");
             }
+        }
+        else
+        {
+            throw new AssertionException(
+                $"Response should be a JSON object but was {responseJson?.GetType().Name ?? "null"}: {responseBody}"
+            );
         }
     }
 
