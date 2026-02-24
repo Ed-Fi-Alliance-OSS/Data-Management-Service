@@ -2038,3 +2038,373 @@ public class Given_Uuidv5Namespace_Constant
         RelationalModelDdlEmitter.Uuidv5Namespace.Should().Be(expected);
     }
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Input-Order Permutation Regression Tests
+// ═══════════════════════════════════════════════════════════════════
+
+/// <summary>
+/// Regression tests that verify the emitter produces byte-for-byte identical DDL regardless of the
+/// order in which resources, schemas, indexes, and triggers appear in the <see cref="DerivedRelationalModelSet"/>.
+/// This guards against regressions where dictionary iteration order or JSON-file processing order
+/// leaks into the emitted SQL text.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql, "\"Alpha\"", "\"Zeta\"")]
+[TestFixture(SqlDialect.Mssql, "[Alpha]", "[Zeta]")]
+public class Given_RelationalModelDdlEmitter_InputOrder_Is_Irrelevant(
+    SqlDialect sqlDialect,
+    string quotedAlpha,
+    string quotedZeta
+)
+{
+    private string _zetaFirstDdl = default!;
+    private string _alphaFirstDdl = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var dialect = SqlDialectFactory.Create(sqlDialect);
+        var emitter = new RelationalModelDdlEmitter(dialect);
+
+        _zetaFirstDdl = emitter.Emit(PermutationInputOrderFixture.BuildZetaFirstOrder(dialect.Rules.Dialect));
+        _alphaFirstDdl = emitter.Emit(
+            PermutationInputOrderFixture.BuildAlphaFirstOrder(dialect.Rules.Dialect)
+        );
+    }
+
+    [Test]
+    public void It_should_produce_identical_ddl_regardless_of_input_ordering()
+    {
+        _zetaFirstDdl
+            .Should()
+            .Be(
+                _alphaFirstDdl,
+                "DDL output must be byte-for-byte identical regardless of input element ordering"
+            );
+    }
+
+    [Test]
+    public void It_should_emit_alpha_table_before_zeta_table()
+    {
+        // Use a regex to match CREATE TABLE statements containing the quoted table name,
+        // accounting for dialect differences (schema prefix, IF NOT EXISTS clause, etc.).
+        var alphaMatch = System.Text.RegularExpressions.Regex.Match(
+            _zetaFirstDdl,
+            @$"CREATE TABLE\b.*{System.Text.RegularExpressions.Regex.Escape(quotedAlpha)}"
+        );
+        var zetaMatch = System.Text.RegularExpressions.Regex.Match(
+            _zetaFirstDdl,
+            @$"CREATE TABLE\b.*{System.Text.RegularExpressions.Regex.Escape(quotedZeta)}"
+        );
+
+        alphaMatch.Success.Should().BeTrue("expected CREATE TABLE for Alpha in DDL");
+        zetaMatch.Success.Should().BeTrue("expected CREATE TABLE for Zeta in DDL");
+        alphaMatch
+            .Index.Should()
+            .BeLessThan(zetaMatch.Index, "Alpha must precede Zeta in canonical ordinal order");
+    }
+}
+
+/// <summary>
+/// Fixture for input-order permutation tests.
+/// Two concrete resources ("Alpha" and "Zeta"), two abstract identity tables ("AlphaAbstract"
+/// and "ZetaAbstract"), and two abstract union views are provided in opposite orderings across
+/// the two <c>Build*</c> methods so the emitter's canonical sort is the only thing that can
+/// produce identical output.
+/// </summary>
+internal static class PermutationInputOrderFixture
+{
+    private static DerivedRelationalModelSet Build(
+        SqlDialect dialect,
+        IReadOnlyList<ConcreteResourceModel> resourceOrder,
+        IReadOnlyList<AbstractIdentityTableInfo> abstractIdentityTableOrder,
+        IReadOnlyList<AbstractUnionViewInfo> abstractUnionViewOrder,
+        IReadOnlyList<DbIndexInfo> indexOrder,
+        IReadOnlyList<DbTriggerInfo> triggerOrder
+    )
+    {
+        var alphaResource = new QualifiedResourceName("Ed-Fi", "Alpha");
+        var alphaKey = new ResourceKeyEntry(1, alphaResource, "1.0.0", false);
+
+        var zetaResource = new QualifiedResourceName("Ed-Fi", "Zeta");
+        var zetaKey = new ResourceKeyEntry(2, zetaResource, "1.0.0", false);
+
+        var alphaAbstractResource = new QualifiedResourceName("Ed-Fi", "AlphaAbstract");
+        var alphaAbstractKey = new ResourceKeyEntry(3, alphaAbstractResource, "1.0.0", true);
+
+        var zetaAbstractResource = new QualifiedResourceName("Ed-Fi", "ZetaAbstract");
+        var zetaAbstractKey = new ResourceKeyEntry(4, zetaAbstractResource, "1.0.0", true);
+
+        return new DerivedRelationalModelSet(
+            new EffectiveSchemaInfo(
+                "1.0.0",
+                "1.0.0",
+                "abc123",
+                4,
+                [0xAB, 0xC1],
+                [
+                    new SchemaComponentInfo(
+                        "ed-fi",
+                        "Ed-Fi",
+                        "1.0.0",
+                        false,
+                        "edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1edf1"
+                    ),
+                ],
+                [alphaKey, zetaKey, alphaAbstractKey, zetaAbstractKey]
+            ),
+            dialect,
+            [new ProjectSchemaInfo("ed-fi", "Ed-Fi", "1.0.0", false, new DbSchemaName("edfi"))],
+            resourceOrder,
+            abstractIdentityTableOrder,
+            abstractUnionViewOrder,
+            indexOrder,
+            triggerOrder
+        );
+    }
+
+    private static ConcreteResourceModel BuildConcreteResource(
+        DbSchemaName schema,
+        DbColumnName documentIdColumn,
+        short keyId,
+        string resourceName
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", resourceName);
+        var key = new ResourceKeyEntry(keyId, resource, "1.0.0", false);
+        var parentTableName = new DbTableName(schema, resourceName);
+        var childTableName = new DbTableName(schema, $"{resourceName}Child");
+        var childOrdinalColumn = new DbColumnName("ChildOrdinal");
+
+        var parentTable = new DbTableModel(
+            parentTableName,
+            new JsonPathExpression("$", []),
+            new TableKey($"PK_{resourceName}", [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+
+        var childTable = new DbTableModel(
+            childTableName,
+            new JsonPathExpression("$.children[*]", []),
+            new TableKey(
+                $"PK_{resourceName}Child",
+                [
+                    new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart),
+                    new DbKeyColumn(childOrdinalColumn, ColumnKind.Scalar),
+                ]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    childOrdinalColumn,
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new TableConstraint.ForeignKey(
+                    $"FK_{resourceName}Child_{resourceName}",
+                    [documentIdColumn],
+                    parentTableName,
+                    [documentIdColumn],
+                    ReferentialAction.Cascade,
+                    ReferentialAction.NoAction
+                ),
+            ]
+        );
+
+        var model = new RelationalResourceModel(
+            resource,
+            schema,
+            ResourceStorageKind.RelationalTables,
+            parentTable,
+            [parentTable, childTable],
+            [],
+            []
+        );
+        return new ConcreteResourceModel(key, ResourceStorageKind.RelationalTables, model);
+    }
+
+    private static AbstractIdentityTableInfo BuildAbstractIdentityTable(
+        DbSchemaName schema,
+        DbColumnName documentIdColumn,
+        short keyId,
+        string resourceName
+    )
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", resourceName);
+        var key = new ResourceKeyEntry(keyId, resource, "1.0.0", true);
+        var table = new DbTableModel(
+            new DbTableName(schema, $"{resourceName}Identity"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                $"PK_{resourceName}Identity",
+                [new DbKeyColumn(documentIdColumn, ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    documentIdColumn,
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Discriminator"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, MaxLength: 50),
+                    IsNullable: false,
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            []
+        );
+        return new AbstractIdentityTableInfo(key, table);
+    }
+
+    private static AbstractUnionViewInfo BuildAbstractUnionView(
+        DbSchemaName schema,
+        List<AbstractUnionViewOutputColumn> outputColumns,
+        short abstractKeyId,
+        string abstractResourceName,
+        short concreteKeyId,
+        string concreteResourceName
+    )
+    {
+        var documentIdColumn = new DbColumnName("DocumentId");
+        var abstractResource = new QualifiedResourceName("Ed-Fi", abstractResourceName);
+        var abstractKey = new ResourceKeyEntry(abstractKeyId, abstractResource, "1.0.0", true);
+        var concreteKey = new ResourceKeyEntry(
+            concreteKeyId,
+            new QualifiedResourceName("Ed-Fi", concreteResourceName),
+            "1.0.0",
+            false
+        );
+        return new AbstractUnionViewInfo(
+            abstractKey,
+            new DbTableName(schema, abstractResourceName),
+            outputColumns,
+            [
+                new AbstractUnionViewArm(
+                    concreteKey,
+                    new DbTableName(schema, concreteResourceName),
+                    [
+                        new AbstractUnionViewProjectionExpression.SourceColumn(documentIdColumn),
+                        new AbstractUnionViewProjectionExpression.StringLiteral(concreteResourceName),
+                    ]
+                ),
+            ]
+        );
+    }
+
+    private static DbIndexInfo BuildIndex(DbSchemaName schema, string tableName)
+    {
+        return new DbIndexInfo(
+            new DbIndexName($"IX_{tableName}_DocumentId"),
+            new DbTableName(schema, tableName),
+            [new DbColumnName("DocumentId")],
+            false,
+            DbIndexKind.ForeignKeySupport
+        );
+    }
+
+    private static DbTriggerInfo BuildTrigger(DbSchemaName schema, string tableName)
+    {
+        return new DbTriggerInfo(
+            new DbTriggerName($"TR_{tableName}_Stamp"),
+            new DbTableName(schema, tableName),
+            [new DbColumnName("DocumentId")],
+            [],
+            new TriggerKindParameters.DocumentStamping()
+        );
+    }
+
+    /// <summary>
+    /// Builds a model set with all elements in Zeta-first (non-alphabetical) order.
+    /// </summary>
+    internal static DerivedRelationalModelSet BuildZetaFirstOrder(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var docId = new DbColumnName("DocumentId");
+        var (alpha, zeta, alphaIdentity, zetaIdentity, alphaView, zetaView) = BuildAllModels(schema, docId);
+
+        // Intentionally non-alphabetical: Zeta first, Alpha second
+        return Build(
+            dialect,
+            resourceOrder: [zeta, alpha],
+            abstractIdentityTableOrder: [zetaIdentity, alphaIdentity],
+            abstractUnionViewOrder: [zetaView, alphaView],
+            indexOrder: [BuildIndex(schema, "Zeta"), BuildIndex(schema, "Alpha")],
+            triggerOrder: [BuildTrigger(schema, "Zeta"), BuildTrigger(schema, "Alpha")]
+        );
+    }
+
+    /// <summary>
+    /// Builds a model set with the same data as <see cref="BuildZetaFirstOrder"/> but with
+    /// all elements in Alpha-first (alphabetical) order.
+    /// </summary>
+    internal static DerivedRelationalModelSet BuildAlphaFirstOrder(SqlDialect dialect)
+    {
+        var schema = new DbSchemaName("edfi");
+        var docId = new DbColumnName("DocumentId");
+        var (alpha, zeta, alphaIdentity, zetaIdentity, alphaView, zetaView) = BuildAllModels(schema, docId);
+
+        // Alphabetical order: Alpha first, Zeta second
+        return Build(
+            dialect,
+            resourceOrder: [alpha, zeta],
+            abstractIdentityTableOrder: [alphaIdentity, zetaIdentity],
+            abstractUnionViewOrder: [alphaView, zetaView],
+            indexOrder: [BuildIndex(schema, "Alpha"), BuildIndex(schema, "Zeta")],
+            triggerOrder: [BuildTrigger(schema, "Alpha"), BuildTrigger(schema, "Zeta")]
+        );
+    }
+
+    private static (
+        ConcreteResourceModel alpha,
+        ConcreteResourceModel zeta,
+        AbstractIdentityTableInfo alphaIdentity,
+        AbstractIdentityTableInfo zetaIdentity,
+        AbstractUnionViewInfo alphaView,
+        AbstractUnionViewInfo zetaView
+    ) BuildAllModels(DbSchemaName schema, DbColumnName documentIdColumn)
+    {
+        var discriminator = new DbColumnName("Discriminator");
+        List<AbstractUnionViewOutputColumn> outputColumns =
+        [
+            new(documentIdColumn, new RelationalScalarType(ScalarKind.Int64), null, null),
+            new(discriminator, new RelationalScalarType(ScalarKind.String, MaxLength: 50), null, null),
+        ];
+
+        return (
+            BuildConcreteResource(schema, documentIdColumn, 1, "Alpha"),
+            BuildConcreteResource(schema, documentIdColumn, 2, "Zeta"),
+            BuildAbstractIdentityTable(schema, documentIdColumn, 3, "AlphaAbstract"),
+            BuildAbstractIdentityTable(schema, documentIdColumn, 4, "ZetaAbstract"),
+            BuildAbstractUnionView(schema, outputColumns, 3, "AlphaAbstract", 1, "Alpha"),
+            BuildAbstractUnionView(schema, outputColumns, 4, "ZetaAbstract", 2, "Zeta")
+        );
+    }
+}

@@ -1,17 +1,17 @@
 CREATE SCHEMA IF NOT EXISTS "edfi";
 
-CREATE TABLE IF NOT EXISTS "edfi"."School"
-(
-    "DocumentId" bigint NOT NULL,
-    "EducationOrganizationId" integer NOT NULL,
-    CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId")
-);
-
 CREATE TABLE IF NOT EXISTS "edfi"."LocalEducationAgency"
 (
     "DocumentId" bigint NOT NULL,
     "EducationOrganizationId" integer NOT NULL,
     CONSTRAINT "PK_LocalEducationAgency" PRIMARY KEY ("DocumentId")
+);
+
+CREATE TABLE IF NOT EXISTS "edfi"."School"
+(
+    "DocumentId" bigint NOT NULL,
+    "EducationOrganizationId" integer NOT NULL,
+    CONSTRAINT "PK_School" PRIMARY KEY ("DocumentId")
 );
 
 CREATE TABLE IF NOT EXISTS "edfi"."EducationOrganizationIdentity"
@@ -26,12 +26,12 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_School_EducationOrganizationIdentity'
-        AND conrelid = to_regclass('"edfi"."School"')
+        WHERE conname = 'FK_LocalEducationAgency_EducationOrganizationIdentity'
+        AND conrelid = to_regclass('"edfi"."LocalEducationAgency"')
     )
     THEN
-        ALTER TABLE "edfi"."School"
-        ADD CONSTRAINT "FK_School_EducationOrganizationIdentity"
+        ALTER TABLE "edfi"."LocalEducationAgency"
+        ADD CONSTRAINT "FK_LocalEducationAgency_EducationOrganizationIdentity"
         FOREIGN KEY ("DocumentId")
         REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId")
         ON DELETE CASCADE
@@ -43,12 +43,12 @@ DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_constraint
-        WHERE conname = 'FK_LocalEducationAgency_EducationOrganizationIdentity'
-        AND conrelid = to_regclass('"edfi"."LocalEducationAgency"')
+        WHERE conname = 'FK_School_EducationOrganizationIdentity'
+        AND conrelid = to_regclass('"edfi"."School"')
     )
     THEN
-        ALTER TABLE "edfi"."LocalEducationAgency"
-        ADD CONSTRAINT "FK_LocalEducationAgency_EducationOrganizationIdentity"
+        ALTER TABLE "edfi"."School"
+        ADD CONSTRAINT "FK_School_EducationOrganizationIdentity"
         FOREIGN KEY ("DocumentId")
         REFERENCES "edfi"."EducationOrganizationIdentity" ("DocumentId")
         ON DELETE CASCADE
@@ -80,33 +80,6 @@ UNION ALL
 SELECT "DocumentId" AS "DocumentId", "EducationOrganizationId" AS "EducationOrganizationId", 'Ed-Fi:LocalEducationAgency'::varchar(50) AS "Discriminator"
 FROM "edfi"."LocalEducationAgency"
 ;
-
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
-RETURNS TRIGGER AS $$
-BEGIN
-    IF TG_OP = 'DELETE' THEN
-        UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-        WHERE "DocumentId" = OLD."DocumentId";
-        RETURN OLD;
-    END IF;
-    UPDATE "dms"."Document"
-    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
-    WHERE "DocumentId" = NEW."DocumentId";
-    IF TG_OP = 'UPDATE' AND (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
-        UPDATE "dms"."Document"
-        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
-        WHERE "DocumentId" = NEW."DocumentId";
-    END IF;
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_Stamp" ON "edfi"."LocalEducationAgency";
-CREATE TRIGGER "TR_LocalEducationAgency_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgency"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_AbstractIdentity"()
 RETURNS TRIGGER AS $$
@@ -150,7 +123,7 @@ BEFORE INSERT OR UPDATE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_ReferentialIdentity"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"()
 RETURNS TRIGGER AS $$
 BEGIN
     IF TG_OP = 'DELETE' THEN
@@ -171,11 +144,11 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
-CREATE TRIGGER "TR_School_Stamp"
-BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
+DROP TRIGGER IF EXISTS "TR_LocalEducationAgency_Stamp" ON "edfi"."LocalEducationAgency";
+CREATE TRIGGER "TR_LocalEducationAgency_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."LocalEducationAgency"
 FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
+EXECUTE FUNCTION "edfi"."TF_TR_LocalEducationAgency_Stamp"();
 
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_AbstractIdentity"()
 RETURNS TRIGGER AS $$
@@ -218,4 +191,31 @@ CREATE TRIGGER "TR_School_ReferentialIdentity"
 BEFORE INSERT OR UPDATE ON "edfi"."School"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
+
+CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF TG_OP = 'DELETE' THEN
+        UPDATE "dms"."Document"
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        WHERE "DocumentId" = OLD."DocumentId";
+        RETURN OLD;
+    END IF;
+    UPDATE "dms"."Document"
+    SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+    WHERE "DocumentId" = NEW."DocumentId";
+    IF TG_OP = 'UPDATE' AND (OLD."EducationOrganizationId" IS DISTINCT FROM NEW."EducationOrganizationId") THEN
+        UPDATE "dms"."Document"
+        SET "IdentityVersion" = nextval('"dms"."ChangeVersionSequence"'), "IdentityLastModifiedAt" = now()
+        WHERE "DocumentId" = NEW."DocumentId";
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS "TR_School_Stamp" ON "edfi"."School";
+CREATE TRIGGER "TR_School_Stamp"
+BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."School"
+FOR EACH ROW
+EXECUTE FUNCTION "edfi"."TF_TR_School_Stamp"();
 
