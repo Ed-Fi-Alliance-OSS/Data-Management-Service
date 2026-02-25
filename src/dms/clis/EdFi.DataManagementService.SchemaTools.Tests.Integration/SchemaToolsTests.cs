@@ -70,8 +70,9 @@ public class SchemaToolsTests
         }
 
         using var process = Process.Start(startInfo)!;
+        var errorTask = process.StandardError.ReadToEndAsync();
         var output = process.StandardOutput.ReadToEnd();
-        var error = process.StandardError.ReadToEnd();
+        var error = errorTask.GetAwaiter().GetResult();
         process.WaitForExit();
 
         return (process.ExitCode, output, error);
@@ -413,10 +414,7 @@ public class SchemaToolsTests
             var files1 = Directory.GetFiles(dir1).Select(Path.GetFileName).Order().ToList();
             var files2 = Directory.GetFiles(dir2).Select(Path.GetFileName).Order().ToList();
 
-            if (!files1.SequenceEqual(files2))
-            {
-                return false;
-            }
+            files1.Should().BeEquivalentTo(files2, "both directories should contain the same set of files");
 
             foreach (var fileName in files1)
             {
@@ -424,7 +422,19 @@ public class SchemaToolsTests
                 var bytes2 = File.ReadAllBytes(Path.Combine(dir2, fileName!));
                 if (!bytes1.AsSpan().SequenceEqual(bytes2))
                 {
-                    return false;
+                    // Find first differing byte offset for diagnostics
+                    var offset = 0;
+                    while (
+                        offset < bytes1.Length && offset < bytes2.Length && bytes1[offset] == bytes2[offset]
+                    )
+                    {
+                        offset++;
+                    }
+
+                    Assert.Fail(
+                        $"File '{fileName}' differs at byte offset {offset} "
+                            + $"(length1={bytes1.Length}, length2={bytes2.Length})"
+                    );
                 }
             }
 

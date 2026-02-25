@@ -83,7 +83,7 @@ public static class DdlEmitCommand
                 LoggingSanitizer.SanitizeForLogging(dialectName)
             );
             Console.Error.WriteLine(
-                $"Error: Invalid dialect '{LoggingSanitizer.SanitizeForLogging(dialectName)}'. Must be pgsql, mssql, or both."
+                $"Error: Invalid dialect '{dialectName}'. Must be pgsql, mssql, or both."
             );
             return 1;
         }
@@ -103,9 +103,7 @@ public static class DdlEmitCommand
                     "Schema file not found: {FilePath}",
                     LoggingSanitizer.SanitizeForLogging(schemaPath)
                 );
-                Console.Error.WriteLine(
-                    $"Error: Schema file not found: {LoggingSanitizer.SanitizeForLogging(schemaPath)}"
-                );
+                Console.Error.WriteLine($"Error: Schema file not found: {schemaPath}");
                 return 1;
             }
         }
@@ -191,9 +189,7 @@ public static class DdlEmitCommand
             emittedFiles.Add("effective-schema.manifest.json");
 
             // Print summary
-            Console.WriteLine(
-                $"DDL emission complete. Output directory: {LoggingSanitizer.SanitizeForLogging(outputDir)}"
-            );
+            Console.WriteLine($"DDL emission complete. Output directory: {outputDir}");
             Console.WriteLine($"Effective schema hash: {effectiveSchemaInfo.EffectiveSchemaHash}");
             Console.WriteLine($"Resource key count: {effectiveSchemaInfo.ResourceKeyCount}");
             Console.WriteLine("Files written:");
@@ -207,9 +203,7 @@ public static class DdlEmitCommand
         catch (Exception ex)
         {
             logger.LogCritical(ex, "An unexpected error occurred during DDL emission");
-            Console.Error.WriteLine(
-                $"Error: An unexpected error occurred: {LoggingSanitizer.SanitizeForLogging(ex.Message)}"
-            );
+            Console.Error.WriteLine($"Error: An unexpected error occurred: {ex.Message}");
             return 1;
         }
     }
@@ -266,6 +260,10 @@ public static class DdlEmitCommand
     {
         // Normalize to LF line endings for deterministic output
         var normalized = content.Replace("\r\n", "\n").Replace("\r", "\n");
-        File.WriteAllText(path, normalized);
+        File.WriteAllText(
+            path,
+            normalized,
+            new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false)
+        );
     }
 }
