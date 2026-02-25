@@ -16,7 +16,7 @@ namespace EdFi.DataManagementService.Core.Startup;
 /// Seeds are ordered by (ProjectName, ResourceName) using ordinal comparison
 /// and assigned sequential ResourceKeyId values from 1..N.
 /// </summary>
-internal class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) : IResourceKeySeedProvider
+public class ResourceKeySeedProvider(ILogger<ResourceKeySeedProvider> logger) : IResourceKeySeedProvider
 {
     /// <summary>
     /// Maximum number of resource keys supported (smallint max value).
