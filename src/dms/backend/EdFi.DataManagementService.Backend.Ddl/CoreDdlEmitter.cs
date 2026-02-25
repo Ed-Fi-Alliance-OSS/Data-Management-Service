@@ -103,10 +103,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitSchemas(SqlWriter writer)
     {
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 1: Schemas");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(1, "Schemas");
 
         writer.AppendLine(_dialect.CreateSchemaIfNotExists(DmsTableNames.DmsSchema));
         writer.AppendLine();
@@ -141,10 +138,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitSequences(SqlWriter writer)
     {
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 3: Sequences");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(2, "Sequences");
 
         EmitChangeVersionSequence(writer);
     }
@@ -184,10 +178,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTables(SqlWriter writer)
     {
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 5: Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(3, "Tables (PK/UNIQUE/CHECK only, no cross-table FKs)");
 
         // Alphabetical order by table name within the dms schema.
         EmitDescriptorTable(writer);
@@ -586,10 +577,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitForeignKeys(SqlWriter writer)
     {
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 6: Foreign Keys");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(4, "Foreign Keys");
 
         // Ordered by (table name, constraint name).
 
@@ -694,10 +682,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitIndexes(SqlWriter writer)
     {
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 7: Indexes");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(5, "Indexes");
 
         // Ordered by (table name, index name).
 
@@ -763,10 +748,7 @@ public sealed class CoreDdlEmitter(ISqlDialect dialect)
     /// </summary>
     private void EmitTriggers(SqlWriter writer)
     {
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine("-- Phase 8: Triggers");
-        writer.AppendLine("-- ==========================================================");
-        writer.AppendLine();
+        writer.WritePhaseHeader(6, "Triggers");
 
         if (_dialect.Rules.Dialect == SqlDialect.Pgsql)
         {
